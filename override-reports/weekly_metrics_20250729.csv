@@ -1,0 +1,9 @@
+week_start,developer_id,developer_name,developer_email,project,commits,story_points,lines_added,lines_removed,files_changed,complexity_delta,ticket_coverage_pct,avg_commit_size,unique_tickets,prs_involved
+2025-06-02,740c1d37-b9c1-47b9-90e6-4ae93e115fa2,Lindsey Todd,lindseydeckertodd@gmail.com,FRONTEND,4,0,1185,548,12,0.0,75.0,433.2,4,0
+2025-06-09,740c1d37-b9c1-47b9-90e6-4ae93e115fa2,Lindsey Todd,lindseydeckertodd@gmail.com,FRONTEND,5,0,754,10,7,0.0,40.0,152.8,3,0
+2025-06-09,164bee5f-045a-4854-baed-33b28b28ce04,Osvaldo Hernandez,104402947+osvaldohernandezdev@users.noreply.github.com,FRONTEND,3,0,14,16,10,0.0,0.0,10.0,0,0
+2025-06-16,740c1d37-b9c1-47b9-90e6-4ae93e115fa2,Lindsey Todd,lindseydeckertodd@gmail.com,FRONTEND,2,0,2,2,2,0.0,50.0,2.0,1,0
+2025-06-16,164bee5f-045a-4854-baed-33b28b28ce04,Osvaldo Hernandez,104402947+osvaldohernandezdev@users.noreply.github.com,FRONTEND,3,0,26,16,11,0.0,66.7,14.0,2,0
+2025-06-23,164bee5f-045a-4854-baed-33b28b28ce04,Osvaldo Hernandez,104402947+osvaldohernandezdev@users.noreply.github.com,FRONTEND,2,0,2,2,2,0.0,50.0,2.0,1,0
+2025-07-14,164bee5f-045a-4854-baed-33b28b28ce04,Osvaldo Hernandez,104402947+osvaldohernandezdev@users.noreply.github.com,FRONTEND,1,0,71,2,5,0.0,100.0,73.0,2,0
+2025-07-14,d843b5ad-d92c-449a-a7e8-d8e23c883b3a,Rodrigo Chaljub,32915688+rodrian95@users.noreply.github.com,FRONTEND,1,0,71,2,5,0.0,100.0,73.0,1,0
