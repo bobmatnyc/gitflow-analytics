@@ -8,6 +8,7 @@ import click
 import git
 import pandas as pd
 
+from ._version import __version__
 from .config import ConfigLoader
 from .core.analyzer import GitAnalyzer
 from .core.cache import GitAnalysisCache
@@ -21,7 +22,7 @@ from .reports.narrative_writer import NarrativeReportGenerator
 
 
 @click.group()
-@click.version_option(version='0.1.0', prog_name='GitFlow Analytics')
+@click.version_option(version=__version__, prog_name='GitFlow Analytics')
 def cli():
     """GitFlow Analytics - Analyze Git repositories for productivity insights."""
     pass

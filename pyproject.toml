@@ -45,6 +45,10 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0",
     "black>=23.0",
+    "isort>=5.0",
+    "bandit[toml]>=1.7",
+    "safety>=2.0",
+    "python-semantic-release>=8.0.0",
 ]
 
 github = [
@@ -83,6 +87,15 @@ ignore = ["E501"]  # Line too long - handled by formatter
 line-length = 100
 target-version = ['py38']
 
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
 [tool.mypy]
 python_version = "3.8"
 warn_return_any = true
@@ -114,3 +127,34 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
+
+[tool.semantic_release]
+version_variables = [
+    "src/gitflow_analytics/_version.py:__version__",
+]
+build_command = "pip install build && python -m build"
+major_on_zero = false
+tag_format = "v{version}"
+upload_to_vcs_release = true
+upload_to_pypi = false  # Handled separately in release workflow
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "docs", "style", "refactor", "perf", "test", "chore", "ci", "build"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf", "docs", "style", "refactor", "chore", "ci", "build", "test"]
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+exclude_commit_patterns = [
+    "^Merge pull request .*",
+    "^Merge branch .*",
+    "^chore\\(release\\): .*",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101"]  # Skip assert_used test

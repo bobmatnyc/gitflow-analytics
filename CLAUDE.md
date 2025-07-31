@@ -198,22 +198,97 @@ gitflow-analytics/
 └── README.md                # User documentation
 ```
 
-## Version Management
+## Atomic Versioning System
 
-- Version is stored in `src/gitflow_analytics/_version.py`
-- Follow semantic versioning (MAJOR.MINOR.PATCH)
-- Update version before releases
-- Tag releases with `v` prefix (e.g., `v1.0.0`)
+The project uses **python-semantic-release** for automated, atomic version management. This ensures consistency between the source code version, git tags, PyPI releases, and GitHub releases.
 
-## Release Process
+### Version Source of Truth
 
-1. Update version in `_version.py`
-2. Run full test suite
-3. Update CHANGELOG.md
-4. Commit with message: `chore: bump version to X.Y.Z`
-5. Tag the release: `git tag -a vX.Y.Z -m "Release version X.Y.Z"`
-6. Push tags: `git push origin main --tags`
-7. Build and publish to PyPI (see DEPLOY.md)
+The single source of truth for versioning is:
+- **File**: `src/gitflow_analytics/_version.py`
+- **Format**: `__version__ = "X.Y.Z"`
+- **Management**: Automatically updated by semantic-release
+
+### Semantic Versioning Rules
+
+Version bumps are determined by conventional commit messages:
+- **MAJOR** (X.0.0): Breaking changes (rare, manual intervention required)
+- **MINOR** (0.X.0): New features (`feat:` commits)
+- **PATCH** (0.0.X): Bug fixes and maintenance (`fix:`, `docs:`, `chore:`, etc.)
+
+### Conventional Commit Format
+
+Use these prefixes for automatic version detection:
+```bash
+# Minor version bump (new features)
+feat: add new story point extraction pattern
+feat(cli): add --validate-only flag for configuration testing
+
+# Patch version bump (fixes, improvements, maintenance)
+fix: resolve identity resolution bug with similar names
+fix(cache): handle database lock errors gracefully
+docs: update installation instructions
+chore: update dependency versions
+style: fix code formatting issues
+refactor: improve error handling in GitHub client
+perf: optimize commit batch processing
+test: add integration tests for organization discovery
+ci: update GitHub Actions workflow
+build: update pyproject.toml configuration
+```
+
+### CLI Version Display Fix
+
+The project includes a fix for proper CLI version display:
+- Version is dynamically imported from `_version.py`
+- CLI command `gitflow-analytics --version` correctly shows current version
+- Prevents version mismatch between package and CLI
+
+## Automated Release Process
+
+The project uses GitHub Actions for fully automated releases:
+
+### Workflow Triggers
+1. **Push to main branch**: Triggers semantic analysis
+2. **Manual dispatch**: Can be triggered manually via GitHub UI
+3. **Conventional commits**: Drive version bump decisions
+
+### Release Steps (Automated)
+1. **Semantic Analysis**: Analyze commits since last release
+2. **Version Calculation**: Determine next version based on commit types
+3. **Version Update**: Update `_version.py` with new version
+4. **Git Operations**: Create git tag and GitHub release
+5. **Quality Checks**: Run full test suite, linting, and type checking
+6. **Package Build**: Build wheel and source distributions
+7. **PyPI Publishing**: Automatically publish to PyPI
+8. **Asset Upload**: Attach build artifacts to GitHub release
+9. **Changelog**: Auto-generate and update CHANGELOG.md
+
+### Manual Override (Emergency Only)
+
+For emergency releases or version fixes:
+```bash
+# Only if semantic-release is not working
+git checkout main
+git pull origin main
+# Edit src/gitflow_analytics/_version.py manually
+git commit -m "chore(release): manual version bump to X.Y.Z"
+git tag -a vX.Y.Z -m "Emergency release X.Y.Z"
+git push origin main --tags
+```
+
+### GitHub Actions Configuration
+
+The project includes comprehensive CI/CD:
+- **`.github/workflows/semantic-release.yml`**: Main release workflow
+- **`.github/workflows/tests.yml`**: Testing on multiple Python versions
+- **`.github/workflows/release.yml`**: Additional release validation
+
+### PyPI Publishing
+
+- **Trusted Publishing**: Uses GitHub's OIDC for secure PyPI publishing
+- **No API Keys**: No need to manage PyPI tokens in secrets
+- **Automatic**: Publishing happens on every version tag creation
 
 ## Common Gotchas
 
@@ -224,6 +299,9 @@ gitflow-analytics/
 5. **Cache invalidation**: Some changes require clearing the cache
 6. **Directory defaults**: Cache and reports now default to config file directory, not current working directory
 7. **Organization permissions**: GitHub token must have organization read access for automatic repository discovery
+8. **Version conflicts**: Never manually edit version in `_version.py` unless bypassing semantic-release
+9. **Commit message format**: Incorrect commit message format will not trigger version bumps
+10. **Release permissions**: Only repository owners can trigger releases (configured in workflow)
 
 ## Quick Commands
 
@@ -246,6 +324,11 @@ black src/ tests/
 # Check code quality
 ruff check src/
 mypy src/
+
+# Version and release commands (automated via CI/CD)
+semantic-release version --dry-run  # Preview next version
+semantic-release version           # Create release (CI only)
+gitflow-analytics --version       # Check current version
 ```
 
 ## Contact

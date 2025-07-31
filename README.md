@@ -1,5 +1,9 @@
 # GitFlow Analytics
 
+[![PyPI version](https://badge.fury.io/py/gitflow-analytics.svg)](https://badge.fury.io/py/gitflow-analytics)
+[![Python Support](https://img.shields.io/pypi/pyversions/gitflow-analytics.svg)](https://pypi.org/project/gitflow-analytics/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A Python package for analyzing Git repositories to generate comprehensive developer productivity reports. It extracts data directly from Git history and GitHub APIs, providing weekly summaries, productivity insights, and gap analysis.
 
 ## Features
@@ -19,8 +23,18 @@ A Python package for analyzing Git repositories to generate comprehensive develo
 
 ### Installation
 
+**From PyPI (Recommended):**
+
 ```bash
 pip install gitflow-analytics
+```
+
+**From Source (Development):**
+
+```bash
+git clone https://github.com/bobmatnyc/gitflow-analytics.git
+cd gitflow-analytics
+pip install -e ".[dev]"
 ```
 
 ### Basic Usage
