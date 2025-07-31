@@ -28,15 +28,15 @@ class TestDORAMetricsCalculator:
         
         # Test commits with deployment patterns
         deployment_commits = [
-            {"message": "deploy: release v1.0.0", "timestamp": datetime(2024, 1, 1, tzinfo=timezone.utc)},
-            {"message": "feat: ship new feature to production", "timestamp": datetime(2024, 1, 2, tzinfo=timezone.utc)},
-            {"message": "release: version 2.0.0 is live", "timestamp": datetime(2024, 1, 3, tzinfo=timezone.utc)},
+            {"hash": "abc123", "message": "deploy: release v1.0.0", "timestamp": datetime(2024, 1, 1, tzinfo=timezone.utc)},
+            {"hash": "def456", "message": "feat: ship new feature to production", "timestamp": datetime(2024, 1, 2, tzinfo=timezone.utc)},
+            {"hash": "ghi789", "message": "release: version 2.0.0 is live", "timestamp": datetime(2024, 1, 3, tzinfo=timezone.utc)},
         ]
         
         # Test commits without deployment patterns
         regular_commits = [
-            {"message": "fix: resolve bug in user service", "timestamp": datetime(2024, 1, 4, tzinfo=timezone.utc)},
-            {"message": "feat: add new user authentication", "timestamp": datetime(2024, 1, 5, tzinfo=timezone.utc)},
+            {"hash": "jkl012", "message": "fix: resolve bug in user service", "timestamp": datetime(2024, 1, 4, tzinfo=timezone.utc)},
+            {"hash": "mno345", "message": "feat: add new user authentication", "timestamp": datetime(2024, 1, 5, tzinfo=timezone.utc)},
         ]
         
         all_commits = deployment_commits + regular_commits
@@ -57,14 +57,14 @@ class TestDORAMetricsCalculator:
         
         # Test commits with failure patterns
         failure_commits = [
-            {"message": "revert: rollback problematic deployment", "timestamp": datetime(2024, 1, 1, tzinfo=timezone.utc)},
-            {"message": "hotfix: emergency fix for production issue", "timestamp": datetime(2024, 1, 2, tzinfo=timezone.utc)},
-            {"message": "fix: resolve incident with user authentication", "timestamp": datetime(2024, 1, 3, tzinfo=timezone.utc)},
+            {"hash": "fail123", "message": "revert: rollback problematic deployment", "timestamp": datetime(2024, 1, 1, tzinfo=timezone.utc)},
+            {"hash": "fail456", "message": "hotfix: emergency fix for production issue", "timestamp": datetime(2024, 1, 2, tzinfo=timezone.utc)},
+            {"hash": "fail789", "message": "fix: resolve incident with user authentication", "timestamp": datetime(2024, 1, 3, tzinfo=timezone.utc)},
         ]
         
         regular_commits = [
-            {"message": "feat: add new dashboard feature", "timestamp": datetime(2024, 1, 4, tzinfo=timezone.utc)},
-            {"message": "docs: update API documentation", "timestamp": datetime(2024, 1, 5, tzinfo=timezone.utc)},
+            {"hash": "reg123", "message": "feat: add new dashboard feature", "timestamp": datetime(2024, 1, 4, tzinfo=timezone.utc)},
+            {"hash": "reg456", "message": "docs: update API documentation", "timestamp": datetime(2024, 1, 5, tzinfo=timezone.utc)},
         ]
         
         all_commits = failure_commits + regular_commits
@@ -87,10 +87,10 @@ class TestDORAMetricsCalculator:
         end_date = datetime(2024, 1, 31, tzinfo=timezone.utc)
         
         commits = [
-            {"message": "deploy: release v1.0.0", "timestamp": datetime(2024, 1, 5, tzinfo=timezone.utc)},
-            {"message": "deploy: release v1.1.0", "timestamp": datetime(2024, 1, 15, tzinfo=timezone.utc)},
-            {"message": "hotfix: emergency fix", "timestamp": datetime(2024, 1, 20, tzinfo=timezone.utc)},
-            {"message": "feat: add feature", "timestamp": datetime(2024, 1, 25, tzinfo=timezone.utc)},
+            {"hash": "deploy1", "message": "deploy: release v1.0.0", "timestamp": datetime(2024, 1, 5, tzinfo=timezone.utc)},
+            {"hash": "deploy2", "message": "deploy: release v1.1.0", "timestamp": datetime(2024, 1, 15, tzinfo=timezone.utc)},
+            {"hash": "hotfix1", "message": "hotfix: emergency fix", "timestamp": datetime(2024, 1, 20, tzinfo=timezone.utc)},
+            {"hash": "feat1", "message": "feat: add feature", "timestamp": datetime(2024, 1, 25, tzinfo=timezone.utc)},
         ]
         
         prs = [

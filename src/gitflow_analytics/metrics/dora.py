@@ -9,7 +9,7 @@ import numpy as np
 class DORAMetricsCalculator:
     """Calculate DORA metrics for software delivery performance."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize DORA metrics calculator."""
         self.deployment_patterns = ["deploy", "release", "ship", "live", "production", "prod"]
         self.failure_patterns = ["revert", "rollback", "hotfix", "emergency", "incident", "outage"]

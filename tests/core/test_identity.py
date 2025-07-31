@@ -135,8 +135,8 @@ class TestDeveloperIdentityResolver:
         # Check structure
         for stat in stats:
             assert "canonical_id" in stat
-            assert "canonical_email" in stat
-            assert "name" in stat
+            assert "primary_email" in stat
+            assert "primary_name" in stat
             assert "total_commits" in stat
             assert stat["total_commits"] >= 0
 

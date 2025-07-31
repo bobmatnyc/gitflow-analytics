@@ -17,14 +17,14 @@ class DeveloperIdentityResolver:
 
     def __init__(
         self,
-        db_path,
+        db_path: str,
         similarity_threshold: float = 0.85,
         manual_mappings: Optional[list[dict[str, Any]]] = None,
-    ):
+    ) -> None:
         """Initialize with database for persistence."""
         self.similarity_threshold = similarity_threshold
         self.db = Database(db_path)
-        self._cache = {}  # In-memory cache for performance
+        self._cache: dict[str, str] = {}  # In-memory cache for performance
         self._load_cache()
 
         # Store manual mappings to apply later
@@ -43,7 +43,7 @@ class DeveloperIdentityResolver:
         finally:
             session.close()
 
-    def _load_cache(self):
+    def _load_cache(self) -> None:
         """Load identities into memory cache."""
         with self.get_session() as session:
             # Load all identities
@@ -61,7 +61,7 @@ class DeveloperIdentityResolver:
                 key = f"{alias.email.lower()}:{alias.name.lower()}"
                 self._cache[key] = alias.canonical_id
 
-    def _apply_manual_mappings(self, manual_mappings: list[dict[str, Any]]):
+    def _apply_manual_mappings(self, manual_mappings: list[dict[str, Any]]) -> None:
         """Apply manual identity mappings from configuration."""
         # Clear cache to ensure we get fresh data
         self._cache.clear()

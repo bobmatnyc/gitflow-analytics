@@ -6,7 +6,7 @@ narrative reports, and analytics output.
 """
 
 import csv
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
@@ -37,50 +37,49 @@ class TestCSVReportGenerator:
         generator = CSVReportGenerator()
         output_path = temp_dir / "weekly_report.csv"
         
-        # Sample data
+        # Sample data - use recent dates
+        recent_date = datetime.now(timezone.utc) - timedelta(days=7)
         commits = [
             {
                 "hash": "abc123",
                 "author_name": "John Doe",
                 "author_email": "john@example.com",
                 "canonical_id": "john@example.com",
-                "timestamp": datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+                "timestamp": recent_date,
                 "insertions": 25,
                 "deletions": 5,
                 "files_changed": 3,
                 "story_points": 3,
-                "project": "FRONTEND"
+                "project_key": "FRONTEND"
             },
             {
                 "hash": "def456",
                 "author_name": "Jane Smith",
                 "author_email": "jane@example.com",
                 "canonical_id": "jane@example.com",
-                "timestamp": datetime(2024, 1, 2, 14, 0, 0, tzinfo=timezone.utc),
+                "timestamp": recent_date + timedelta(days=1),
                 "insertions": 15,
                 "deletions": 8,
                 "files_changed": 2,
                 "story_points": 2,
-                "project": "BACKEND"
+                "project_key": "BACKEND"
             }
         ]
         
         developer_stats = [
             {
                 "canonical_id": "john@example.com",
-                "canonical_email": "john@example.com",
-                "name": "John Doe",
+                "primary_name": "John Doe",
+                "primary_email": "john@example.com",
                 "total_commits": 1,
-                "avg_files_per_commit": 3,
-                "story_points": 3
+                "total_story_points": 3
             },
             {
                 "canonical_id": "jane@example.com",
-                "canonical_email": "jane@example.com",
-                "name": "Jane Smith",
+                "primary_name": "Jane Smith",
+                "primary_email": "jane@example.com",
                 "total_commits": 1,
-                "avg_files_per_commit": 2,
-                "story_points": 2
+                "total_story_points": 2
             }
         ]
         
@@ -111,21 +110,25 @@ class TestCSVReportGenerator:
         developer_stats = [
             {
                 "canonical_id": "john@example.com",
-                "canonical_email": "john@example.com", 
-                "name": "John Doe",
+                "primary_name": "John Doe",
+                "primary_email": "john@example.com",
+                "github_username": "johndoe",
                 "total_commits": 25,
-                "avg_files_per_commit": 2.5,
-                "story_points": 45,
-                "focus_ratio": 0.85
+                "total_story_points": 45,
+                "alias_count": 1,
+                "first_seen": datetime(2024, 1, 1, tzinfo=timezone.utc),
+                "last_seen": datetime(2024, 1, 31, tzinfo=timezone.utc)
             },
             {
                 "canonical_id": "jane@example.com",
-                "canonical_email": "jane@example.com",
-                "name": "Jane Smith", 
+                "primary_name": "Jane Smith",
+                "primary_email": "jane@example.com", 
+                "github_username": "janesmith",
                 "total_commits": 18,
-                "avg_files_per_commit": 3.2,
-                "story_points": 38,
-                "focus_ratio": 0.75
+                "total_story_points": 38,
+                "alias_count": 2,
+                "first_seen": datetime(2024, 1, 5, tzinfo=timezone.utc),
+                "last_seen": datetime(2024, 1, 30, tzinfo=timezone.utc)
             }
         ]
         
@@ -274,7 +277,8 @@ class TestNarrativeReportGenerator:
         
         ticket_analysis = {
             "coverage_percentage": 85.0,
-            "total_commits": 25
+            "total_commits": 25,
+            "commit_coverage_pct": 85.0
         }
         
         pr_metrics = {
@@ -326,10 +330,14 @@ class TestReportingIntegration:
         
         developer_stats = [{
             "canonical_id": "john@example.com",
-            "canonical_email": "john@example.com",
-            "name": "John Doe",
+            "primary_name": "John Doe",
+            "primary_email": "john@example.com",
+            "github_username": "johndoe",
             "total_commits": 1,
-            "avg_files_per_commit": 3.0
+            "total_story_points": 5,
+            "alias_count": 1,
+            "first_seen": datetime(2024, 1, 1, tzinfo=timezone.utc),
+            "last_seen": datetime(2024, 1, 1, tzinfo=timezone.utc)
         }]
         
         # Generate all report types

@@ -232,7 +232,7 @@ class TestGitAnalysisCache:
         assert cached is not None
 
         # Clear cache
-        cache.clear_stale_entries(24)  # Clear entries older than 24 hours
+        cache.clear_stale_cache()  # Clear stale entries
 
         # This test mainly ensures the clear method doesn't raise exceptions
         # since we can't easily test actual clearing without manipulating timestamps

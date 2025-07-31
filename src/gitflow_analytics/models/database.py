@@ -4,10 +4,10 @@ from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Index, Integer, String, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker, declarative_base
+from typing import Any
 
-Base = declarative_base()
+Base: Any = declarative_base()
 
 
 class CachedCommit(Base):
@@ -176,6 +176,6 @@ class Database:
         """Get a new database session."""
         return self.SessionLocal()
 
-    def init_db(self):
+    def init_db(self) -> None:
         """Initialize database tables."""
         Base.metadata.create_all(self.engine)

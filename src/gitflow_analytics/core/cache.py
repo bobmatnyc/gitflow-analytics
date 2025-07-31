@@ -13,7 +13,7 @@ from ..models.database import CachedCommit, Database, IssueCache, PullRequestCac
 class GitAnalysisCache:
     """Cache for Git analysis results."""
 
-    def __init__(self, cache_dir: Path, ttl_hours: int = 168):
+    def __init__(self, cache_dir: Path, ttl_hours: int = 168) -> None:
         """Initialize cache with SQLite backend."""
         self.cache_dir = cache_dir
         self.ttl_hours = ttl_hours

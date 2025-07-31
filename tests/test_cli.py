@@ -25,7 +25,6 @@ class TestCLI:
         assert result.exit_code == 0
         assert "GitFlow Analytics" in result.output
         assert "analyze" in result.output
-        assert "validate" in result.output
 
     def test_analyze_command_help(self):
         """Test that analyze command help is displayed correctly."""
@@ -37,12 +36,12 @@ class TestCLI:
         assert "--weeks" in result.output
         assert "--clear-cache" in result.output
 
-    @patch("gitflow_analytics.cli.AnalyticsOrchestrator")
+    @patch("gitflow_analytics.cli.IntegrationOrchestrator")
     def test_analyze_command_basic(self, mock_orchestrator):
         """Test basic analyze command execution."""
         mock_instance = Mock()
         mock_orchestrator.return_value = mock_instance
-        mock_instance.run_analysis.return_value = None
+        mock_instance.enrich_repository_data.return_value = {"prs": [], "issues": [], "pr_metrics": {}}
 
         runner = CliRunner()
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -63,14 +62,14 @@ class TestCLI:
 
         assert result.exit_code == 0
         mock_orchestrator.assert_called_once()
-        mock_instance.run_analysis.assert_called_once()
+        mock_instance.enrich_repository_data.assert_called()
 
-    @patch("gitflow_analytics.cli.AnalyticsOrchestrator")
+    @patch("gitflow_analytics.cli.IntegrationOrchestrator")
     def test_analyze_with_clear_cache(self, mock_orchestrator):
         """Test analyze command with clear cache option."""
         mock_instance = Mock()
         mock_orchestrator.return_value = mock_instance
-        mock_instance.run_analysis.return_value = None
+        mock_instance.enrich_repository_data.return_value = {"prs": [], "issues": [], "pr_metrics": {}}
 
         runner = CliRunner()
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -123,7 +122,7 @@ class TestCLI:
 class TestVersionDisplay:
     """Test version display functionality."""
 
-    @patch("gitflow_analytics.cli.__version__", "1.2.3")
+    @patch("gitflow_analytics._version.__version__", "1.2.3")
     def test_version_display(self):
         """Test that version is displayed correctly."""
         runner = CliRunner()

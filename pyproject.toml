@@ -49,6 +49,7 @@ dev = [
     "safety>=2.0",
     "python-semantic-release>=8.0.0",
     "types-PyYAML>=6.0",
+    "types-requests>=2.28",
 ]
 
 github = [

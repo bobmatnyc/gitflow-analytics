@@ -19,7 +19,7 @@ class RepositoryConfig:
     project_key: Optional[str] = None
     branch: Optional[str] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.path = Path(self.path).expanduser().resolve()
         if not self.project_key:
             self.project_key = self.name.upper().replace("-", "_")
