@@ -3,7 +3,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Index, Integer, String, create_engine
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, create_engine
 from sqlalchemy.orm import Session, sessionmaker, declarative_base
 from typing import Any
 
@@ -159,6 +159,133 @@ class IssueCache(Base):
     __table_args__ = (
         Index("idx_platform_issue", "platform", "issue_id", unique=True),
         Index("idx_project_key", "project_key"),
+    )
+
+
+class QualitativeCommitData(Base):
+    """Extended commit data with qualitative analysis results.
+    
+    This table stores the results of qualitative analysis performed on commits,
+    including change type classification, domain analysis, risk assessment,
+    and processing metadata.
+    """
+    __tablename__ = 'qualitative_commits'
+    
+    # Link to existing commit
+    commit_id = Column(Integer, ForeignKey('cached_commits.id'), primary_key=True)
+    
+    # Classification results
+    change_type = Column(String, nullable=False)
+    change_type_confidence = Column(Float, nullable=False)
+    business_domain = Column(String, nullable=False)  
+    domain_confidence = Column(Float, nullable=False)
+    risk_level = Column(String, nullable=False)
+    risk_factors = Column(JSON)  # List of risk factors
+    
+    # Intent and context analysis
+    intent_signals = Column(JSON)  # Intent analysis results
+    collaboration_patterns = Column(JSON)  # Team interaction patterns
+    technical_context = Column(JSON)  # Technical context information
+    
+    # Processing metadata
+    processing_method = Column(String, nullable=False)  # 'nlp' or 'llm'
+    processing_time_ms = Column(Float)
+    confidence_score = Column(Float, nullable=False)
+    
+    # Timestamps
+    analyzed_at = Column(DateTime, default=datetime.utcnow)
+    analysis_version = Column(String, default="1.0")
+    
+    # Indexes for efficient querying
+    __table_args__ = (
+        Index('idx_change_type', 'change_type'),
+        Index('idx_business_domain', 'business_domain'),
+        Index('idx_risk_level', 'risk_level'),
+        Index('idx_confidence', 'confidence_score'),
+        Index('idx_processing_method', 'processing_method'),
+        Index('idx_analyzed_at', 'analyzed_at'),
+    )
+
+
+class PatternCache(Base):
+    """Cache for learned patterns and classifications.
+    
+    This table stores frequently occurring patterns to avoid reprocessing
+    similar commits and to improve classification accuracy over time.
+    """
+    __tablename__ = 'pattern_cache'
+    
+    id = Column(Integer, primary_key=True)
+    
+    # Pattern identification
+    message_hash = Column(String, nullable=False, unique=True)
+    semantic_fingerprint = Column(String, nullable=False)
+    
+    # Cached classification results
+    classification_result = Column(JSON, nullable=False)
+    confidence_score = Column(Float, nullable=False)
+    
+    # Usage tracking for cache management
+    hit_count = Column(Integer, default=1)
+    last_used = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Source tracking
+    source_method = Column(String, nullable=False)  # 'nlp' or 'llm'
+    source_model = Column(String)  # Model/method that created this pattern
+    
+    # Performance tracking
+    avg_processing_time_ms = Column(Float)
+    
+    # Indexes for pattern matching and cleanup
+    __table_args__ = (
+        Index('idx_semantic_fingerprint', 'semantic_fingerprint'),
+        Index('idx_confidence', 'confidence_score'),
+        Index('idx_hit_count', 'hit_count'),
+        Index('idx_last_used', 'last_used'),
+        Index('idx_source_method', 'source_method'),
+    )
+
+
+class LLMUsageStats(Base):
+    """Track LLM usage statistics for cost monitoring and optimization.
+    
+    This table helps monitor LLM API usage, costs, and performance to
+    optimize the balance between speed, accuracy, and cost.
+    """
+    __tablename__ = 'llm_usage_stats'
+    
+    id = Column(Integer, primary_key=True)
+    
+    # API call metadata
+    model_name = Column(String, nullable=False)
+    api_provider = Column(String, default='openrouter')
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    
+    # Usage metrics
+    input_tokens = Column(Integer, nullable=False)
+    output_tokens = Column(Integer, nullable=False)
+    processing_time_ms = Column(Float, nullable=False)
+    
+    # Cost tracking
+    estimated_cost_usd = Column(Float)
+    cost_per_token = Column(Float)
+    
+    # Batch information
+    batch_size = Column(Integer, default=1)  # Number of commits processed
+    batch_id = Column(String)  # Group related calls
+    
+    # Quality metrics
+    avg_confidence_score = Column(Float)
+    success = Column(Boolean, default=True)
+    error_message = Column(String)
+    
+    # Indexes for analysis and monitoring
+    __table_args__ = (
+        Index('idx_model_timestamp', 'model_name', 'timestamp'),
+        Index('idx_timestamp', 'timestamp'),
+        Index('idx_batch_id', 'batch_id'),
+        Index('idx_success', 'success'),
     )
 
 

@@ -114,6 +114,7 @@ class Config:
     cache: CacheConfig
     jira: Optional[JIRAConfig] = None
     jira_integration: Optional[JIRAIntegrationConfig] = None
+    qualitative: Optional['QualitativeConfig'] = None
 
     def discover_organization_repositories(
         self, clone_base_path: Optional[Path] = None
@@ -369,6 +370,87 @@ class ConfigLoader:
                 ),
             )
 
+        # Process qualitative analysis settings
+        qualitative_config = None
+        qualitative_data = data.get("qualitative", {})
+        if qualitative_data:
+            # Import here to avoid circular imports
+            try:
+                from .qualitative.models.schemas import (
+                    QualitativeConfig, NLPConfig, LLMConfig, CacheConfig as QualitativeCacheConfig,
+                    ChangeTypeConfig, IntentConfig, DomainConfig, RiskConfig
+                )
+                
+                # Parse NLP configuration
+                nlp_data = qualitative_data.get("nlp", {})
+                nlp_config = NLPConfig(
+                    spacy_model=nlp_data.get("spacy_model", "en_core_web_sm"),
+                    spacy_batch_size=nlp_data.get("spacy_batch_size", 1000),
+                    fast_mode=nlp_data.get("fast_mode", True),
+                    enable_parallel_processing=nlp_data.get("enable_parallel_processing", True),
+                    max_workers=nlp_data.get("max_workers", 4),
+                    change_type_config=ChangeTypeConfig(**nlp_data.get("change_type", {})),
+                    intent_config=IntentConfig(**nlp_data.get("intent", {})),
+                    domain_config=DomainConfig(**nlp_data.get("domain", {})),
+                    risk_config=RiskConfig(**nlp_data.get("risk", {}))
+                )
+                
+                # Parse LLM configuration
+                llm_data = qualitative_data.get("llm", {})
+                llm_config = LLMConfig(
+                    openrouter_api_key=cls._resolve_env_var(llm_data.get("openrouter_api_key", "${OPENROUTER_API_KEY}")),
+                    base_url=llm_data.get("base_url", "https://openrouter.ai/api/v1"),
+                    primary_model=llm_data.get("primary_model", "anthropic/claude-3-haiku"),
+                    fallback_model=llm_data.get("fallback_model", "meta-llama/llama-3.1-8b-instruct:free"),
+                    complex_model=llm_data.get("complex_model", "anthropic/claude-3-sonnet"),
+                    complexity_threshold=llm_data.get("complexity_threshold", 0.5),
+                    cost_threshold_per_1k=llm_data.get("cost_threshold_per_1k", 0.01),
+                    max_tokens=llm_data.get("max_tokens", 1000),
+                    temperature=llm_data.get("temperature", 0.1),
+                    max_group_size=llm_data.get("max_group_size", 10),
+                    similarity_threshold=llm_data.get("similarity_threshold", 0.8),
+                    requests_per_minute=llm_data.get("requests_per_minute", 200),
+                    max_retries=llm_data.get("max_retries", 3),
+                    max_daily_cost=llm_data.get("max_daily_cost", 5.0),
+                    enable_cost_tracking=llm_data.get("enable_cost_tracking", True)
+                )
+                
+                # Parse cache configuration
+                cache_data = qualitative_data.get("cache", {})
+                qualitative_cache_config = QualitativeCacheConfig(
+                    cache_dir=cache_data.get("cache_dir", ".qualitative_cache"),
+                    semantic_cache_size=cache_data.get("semantic_cache_size", 10000),
+                    pattern_cache_ttl_hours=cache_data.get("pattern_cache_ttl_hours", 168),
+                    enable_pattern_learning=cache_data.get("enable_pattern_learning", True),
+                    learning_threshold=cache_data.get("learning_threshold", 10),
+                    confidence_boost_factor=cache_data.get("confidence_boost_factor", 0.1),
+                    enable_compression=cache_data.get("enable_compression", True),
+                    max_cache_size_mb=cache_data.get("max_cache_size_mb", 100)
+                )
+                
+                # Create main qualitative configuration
+                qualitative_config = QualitativeConfig(
+                    enabled=qualitative_data.get("enabled", True),
+                    batch_size=qualitative_data.get("batch_size", 1000),
+                    max_llm_fallback_pct=qualitative_data.get("max_llm_fallback_pct", 0.15),
+                    confidence_threshold=qualitative_data.get("confidence_threshold", 0.7),
+                    nlp_config=nlp_config,
+                    llm_config=llm_config,
+                    cache_config=qualitative_cache_config,
+                    enable_performance_tracking=qualitative_data.get("enable_performance_tracking", True),
+                    target_processing_time_ms=qualitative_data.get("target_processing_time_ms", 2.0),
+                    min_overall_confidence=qualitative_data.get("min_overall_confidence", 0.6),
+                    enable_quality_feedback=qualitative_data.get("enable_quality_feedback", True)
+                )
+                
+            except ImportError as e:
+                print(f"⚠️  Qualitative analysis dependencies missing: {e}")
+                print("   Install with: pip install spacy scikit-learn openai tiktoken")
+                qualitative_config = None
+            except Exception as e:
+                print(f"⚠️  Error parsing qualitative configuration: {e}")
+                qualitative_config = None
+
         return Config(
             repositories=repositories,
             github=github_config,
@@ -377,6 +459,7 @@ class ConfigLoader:
             cache=cache_config,
             jira=jira_config,
             jira_integration=jira_integration_config,
+            qualitative=qualitative_config,
         )
 
     @staticmethod

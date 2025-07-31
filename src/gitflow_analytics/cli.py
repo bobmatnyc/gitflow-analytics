@@ -30,6 +30,29 @@ def cli() -> None:
 
 
 @cli.command()
+def tui() -> None:
+    """Launch the Terminal User Interface for interactive analysis."""
+    try:
+        from .tui import GitFlowAnalyticsApp
+        
+        click.echo("🚀 Launching GitFlow Analytics TUI...")
+        app = GitFlowAnalyticsApp()
+        app.run()
+        
+    except ImportError as e:
+        click.echo("❌ TUI dependencies not available. Install with:", err=True)
+        click.echo("   pip install 'gitflow-analytics[tui]'", err=True)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        click.echo("\n👋 Goodbye!")
+    except Exception as e:
+        click.echo(f"❌ TUI Error: {e}", err=True)
+        if "--debug" in sys.argv:
+            raise
+        sys.exit(1)
+
+
+@cli.command()
 @click.option(
     "--config",
     "-c",
@@ -53,6 +76,8 @@ def cli() -> None:
     "--validate-only", is_flag=True, help="Validate configuration without running analysis"
 )
 @click.option("--clear-cache", is_flag=True, help="Clear cache before running analysis")
+@click.option("--enable-qualitative", is_flag=True, help="Enable qualitative analysis (requires additional dependencies)")
+@click.option("--qualitative-only", is_flag=True, help="Run only qualitative analysis on existing commits")
 def analyze(
     config: Path,
     weeks: int,
@@ -61,6 +86,8 @@ def analyze(
     no_cache: bool,
     validate_only: bool,
     clear_cache: bool,
+    enable_qualitative: bool,
+    qualitative_only: bool,
 ) -> None:
     """Analyze Git repositories using configuration file."""
 
@@ -225,6 +252,88 @@ def analyze(
 
         for platform, count in ticket_analysis["ticket_summary"].items():
             click.echo(f"   - {platform.title()}: {count} unique tickets")
+
+        # Perform qualitative analysis if enabled
+        qualitative_results = []
+        if (enable_qualitative or qualitative_only) and cfg.qualitative and cfg.qualitative.enabled:
+            click.echo("\n🧠 Performing qualitative analysis...")
+            
+            try:
+                from .qualitative import QualitativeProcessor
+                from .models.database import Database
+                
+                # Initialize qualitative analysis components
+                qual_db = Database(cfg.cache.directory / "qualitative.db")
+                qual_processor = QualitativeProcessor(cfg.qualitative, qual_db)
+                
+                # Validate setup
+                is_valid, issues = qual_processor.validate_setup()
+                if not is_valid:
+                    click.echo("   ⚠️  Qualitative analysis setup issues:")
+                    for issue in issues:
+                        click.echo(f"      - {issue}")
+                    if issues:
+                        click.echo("   💡 Install dependencies: pip install spacy scikit-learn openai tiktoken")
+                        click.echo("   💡 Download spaCy model: python -m spacy download en_core_web_sm")
+                
+                # Convert commits to qualitative format
+                commits_for_qual = []
+                for commit in all_commits:
+                    commit_dict = {
+                        'hash': commit.hash,
+                        'message': commit.message,
+                        'author_name': commit.author_name,
+                        'author_email': commit.author_email,
+                        'timestamp': commit.timestamp,
+                        'files_changed': commit.files_changed or [],
+                        'insertions': commit.insertions,
+                        'deletions': commit.deletions,
+                        'branch': getattr(commit, 'branch', 'main')
+                    }
+                    commits_for_qual.append(commit_dict)
+                
+                # Perform qualitative analysis
+                qualitative_results = qual_processor.process_commits(commits_for_qual, show_progress=True)
+                
+                click.echo(f"   ✅ Analyzed {len(qualitative_results)} commits with qualitative insights")
+                
+                # Get processing statistics
+                qual_stats = qual_processor.get_processing_statistics()
+                processing_summary = qual_stats['processing_summary']
+                
+                click.echo(f"   📈 Processing: {processing_summary['commits_per_second']:.1f} commits/sec")
+                click.echo(f"   🎯 Methods: {processing_summary['method_breakdown']['cache']:.1f}% cached, "
+                          f"{processing_summary['method_breakdown']['nlp']:.1f}% NLP, "
+                          f"{processing_summary['method_breakdown']['llm']:.1f}% LLM")
+                
+                if qual_stats['llm_statistics']['model_usage'] == 'available':
+                    llm_stats = qual_stats['llm_statistics']['cost_tracking']
+                    if llm_stats['total_cost'] > 0:
+                        click.echo(f"   💰 LLM Cost: ${llm_stats['total_cost']:.4f}")
+                        
+            except ImportError as e:
+                click.echo(f"   ❌ Qualitative analysis dependencies missing: {e}")
+                click.echo("   💡 Install with: pip install spacy scikit-learn openai tiktoken")
+                if not qualitative_only:
+                    click.echo("   ⏭️  Continuing with standard analysis...")
+                else:
+                    click.echo("   ❌ Cannot perform qualitative-only analysis without dependencies")
+                    return
+            except Exception as e:
+                click.echo(f"   ❌ Qualitative analysis failed: {e}")
+                if qualitative_only:
+                    click.echo("   ❌ Cannot continue with qualitative-only analysis")
+                    return
+                else:
+                    click.echo("   ⏭️  Continuing with standard analysis...")
+        elif enable_qualitative and not cfg.qualitative:
+            click.echo("\n⚠️  Qualitative analysis requested but not configured in config file")
+            click.echo("   Add a 'qualitative:' section to your configuration")
+        
+        # Skip standard analysis if qualitative-only mode
+        if qualitative_only:
+            click.echo("\n✅ Qualitative-only analysis completed!")
+            return
 
         # Generate reports
         click.echo("\n📊 Generating reports...")
