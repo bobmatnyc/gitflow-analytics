@@ -1,7 +1,7 @@
 """DORA (DevOps Research and Assessment) metrics calculation."""
-from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
-from collections import defaultdict
+from datetime import datetime
+from typing import Any, Dict, List
+
 import numpy as np
 
 

@@ -1,7 +1,8 @@
 """GitHub API integration for PR and issue enrichment."""
-from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
 import time
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 from github import Github
 from github.GithubException import RateLimitExceededException, UnknownObjectException
 
@@ -12,12 +13,14 @@ class GitHubIntegration:
     """Integrate with GitHub API for PR and issue data."""
     
     def __init__(self, token: str, cache: GitAnalysisCache, 
-                 rate_limit_retries: int = 3, backoff_factor: int = 2):
+                 rate_limit_retries: int = 3, backoff_factor: int = 2,
+                 allowed_ticket_platforms: Optional[List[str]] = None):
         """Initialize GitHub integration."""
         self.github = Github(token)
         self.cache = cache
         self.rate_limit_retries = rate_limit_retries
         self.backoff_factor = backoff_factor
+        self.allowed_ticket_platforms = allowed_ticket_platforms
     
     def enrich_repository_with_prs(self, repo_name: str, commits: List[Dict[str, Any]], 
                                   since: datetime) -> List[Dict[str, Any]]:
@@ -67,6 +70,10 @@ class GitHubIntegration:
         """Get pull requests with rate limit handling."""
         prs = []
         
+        # Ensure since is timezone-aware for comparison with GitHub's timezone-aware datetimes
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=timezone.utc)
+        
         for attempt in range(self.rate_limit_retries):
             try:
                 # Get all PRs updated since the date
@@ -97,7 +104,7 @@ class GitHubIntegration:
         from ..extractors.tickets import TicketExtractor
         
         sp_extractor = StoryPointExtractor()
-        ticket_extractor = TicketExtractor()
+        ticket_extractor = TicketExtractor(allowed_platforms=self.allowed_ticket_platforms)
         
         # Extract story points from PR title and body
         pr_text = f"{pr.title} {pr.body or ''}"

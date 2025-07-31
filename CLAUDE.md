@@ -42,9 +42,28 @@ The project uses SQLite for caching:
 
 Configuration uses YAML with environment variable support:
 - Variables use format: `${VARIABLE_NAME}`
+- **Environment files**: Automatically loads `.env` file from same directory as config YAML
+- **Organization support**: `github.organization` field enables automatic repository discovery
+- **Directory defaults**: Cache and reports now default to config file directory (not current working directory)
 - Default ticket platform can be specified
 - Branch mapping rules for project inference
 - Manual identity mappings for consolidating developer identities
+- Full backward compatibility with existing repository-based configurations
+
+#### Using .env Files
+
+The system automatically looks for a `.env` file in the same directory as your configuration YAML:
+```bash
+# Example .env file
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+JIRA_ACCESS_USER=your.email@company.com
+JIRA_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxx
+```
+
+This approach is recommended for:
+- Keeping credentials out of configuration files
+- Easy credential management across environments
+- Preventing accidental credential commits
 
 ### 5. Report Generation
 
@@ -86,6 +105,40 @@ When testing changes:
 2. Review manual mappings in config
 3. Clear cache and re-run analysis
 4. Check for typos in email addresses
+
+#### Working with Organization Support
+
+1. **Organization Discovery**: When `github.organization` is specified and no repositories are manually configured:
+   - All non-archived repositories are automatically discovered from the GitHub organization
+   - Repositories are cloned to local directories if they don't exist
+   - Uses the organization name as the project key prefix if not specified
+
+2. **Testing Organization Configs**:
+   ```bash
+   # Test with organization discovery
+   gitflow-analytics analyze -c config-org.yaml --weeks 4 --validate-only
+   
+   # Run with discovered repositories
+   gitflow-analytics analyze -c config-org.yaml --weeks 4
+   ```
+
+3. **Directory Structure**: With organization support, the recommended directory structure is:
+   ```
+   /project/
+   ├── config-org.yaml       # Organization config
+   ├── repos/                # Auto-cloned repositories
+   │   ├── repo1/
+   │   ├── repo2/
+   │   └── repo3/
+   ├── .gitflow-cache/       # Cache (relative to config)
+   └── reports/              # Reports (default output location)
+   ```
+
+4. **Debugging Organization Discovery**:
+   - Check GitHub token has organization read permissions
+   - Verify organization name is correct (case-sensitive)
+   - Use `--validate-only` to test configuration without full analysis
+   - Check for API rate limiting issues
 
 ### 8. Performance Considerations
 
@@ -169,6 +222,8 @@ gitflow-analytics/
 3. **Memory usage**: Large repositories can consume significant memory
 4. **Identity resolution**: Manual mappings must be applied after initial analysis
 5. **Cache invalidation**: Some changes require clearing the cache
+6. **Directory defaults**: Cache and reports now default to config file directory, not current working directory
+7. **Organization permissions**: GitHub token must have organization read access for automatic repository discovery
 
 ## Quick Commands
 

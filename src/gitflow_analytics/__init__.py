@@ -13,6 +13,8 @@ from .extractors.tickets import TicketExtractor
 from .reports.csv_writer import CSVReportGenerator
 
 __all__ = [
+    '__version__',
+    '__version_info__',
     'GitAnalyzer',
     'GitAnalysisCache',
     'DeveloperIdentityResolver',

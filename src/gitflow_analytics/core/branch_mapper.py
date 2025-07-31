@@ -1,7 +1,7 @@
 """Map git branches to projects based on naming conventions."""
 import re
-from typing import Dict, List, Optional, Tuple
 from pathlib import Path
+from typing import Dict, List, Optional
 
 
 class BranchToProjectMapper:

@@ -1,15 +1,14 @@
 """Developer identity resolution with persistence."""
-import uuid
 import difflib
-from datetime import datetime
-from typing import Dict, List, Optional, Set, Tuple, Any
+import uuid
 from collections import defaultdict
 from contextlib import contextmanager
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_
 
-from ..models.database import Database, DeveloperIdentity, DeveloperAlias
+from ..models.database import Database, DeveloperAlias, DeveloperIdentity
 
 
 class DeveloperIdentityResolver:

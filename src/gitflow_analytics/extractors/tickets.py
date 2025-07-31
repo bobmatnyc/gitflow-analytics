@@ -1,14 +1,20 @@
 """Ticket reference extraction for multiple platforms."""
 import re
-from typing import List, Dict, Any, Set
 from collections import defaultdict
+from typing import Any, Dict, List
 
 
 class TicketExtractor:
     """Extract ticket references from various issue tracking systems."""
     
-    def __init__(self):
-        """Initialize with patterns for different platforms."""
+    def __init__(self, allowed_platforms=None):
+        """Initialize with patterns for different platforms.
+        
+        Args:
+            allowed_platforms: List of platforms to extract tickets from.
+                              If None, all platforms are allowed.
+        """
+        self.allowed_platforms = allowed_platforms
         self.patterns = {
             'jira': [
                 r'([A-Z]{2,10}-\d+)',  # Standard JIRA format: PROJ-123
@@ -28,9 +34,12 @@ class TicketExtractor:
             ]
         }
         
-        # Compile patterns
+        # Compile patterns only for allowed platforms
         self.compiled_patterns = {}
         for platform, patterns in self.patterns.items():
+            # Skip platforms not in allowed list
+            if self.allowed_platforms and platform not in self.allowed_platforms:
+                continue
             self.compiled_patterns[platform] = [
                 re.compile(pattern, re.IGNORECASE if platform != 'jira' else 0) 
                 for pattern in patterns

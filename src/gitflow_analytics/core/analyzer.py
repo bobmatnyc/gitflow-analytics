@@ -1,29 +1,33 @@
 """Git repository analyzer with batch processing support."""
-import re
+import fnmatch
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple, Generator
 from pathlib import Path
+from typing import Any, Dict, Generator, List, Optional
+
 import git
 from git import Repo
 from tqdm import tqdm
 
-from .cache import GitAnalysisCache
 from ..extractors.story_points import StoryPointExtractor
 from ..extractors.tickets import TicketExtractor
 from .branch_mapper import BranchToProjectMapper
+from .cache import GitAnalysisCache
 
 
 class GitAnalyzer:
     """Analyze Git repositories with caching and batch processing."""
     
     def __init__(self, cache: GitAnalysisCache, batch_size: int = 1000, 
-                 branch_mapping_rules: Optional[Dict[str, List[str]]] = None):
+                 branch_mapping_rules: Optional[Dict[str, List[str]]] = None,
+                 allowed_ticket_platforms: Optional[List[str]] = None,
+                 exclude_paths: Optional[List[str]] = None):
         """Initialize analyzer with cache."""
         self.cache = cache
         self.batch_size = batch_size
         self.story_point_extractor = StoryPointExtractor()
-        self.ticket_extractor = TicketExtractor()
+        self.ticket_extractor = TicketExtractor(allowed_platforms=allowed_ticket_platforms)
         self.branch_mapper = BranchToProjectMapper(branch_mapping_rules)
+        self.exclude_paths = exclude_paths or []
     
     def analyze_repository(self, repo_path: Path, since: datetime, 
                          branch: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -31,7 +35,7 @@ class GitAnalyzer:
         try:
             repo = Repo(repo_path)
         except Exception as e:
-            raise ValueError(f"Failed to open repository at {repo_path}: {e}")
+            raise ValueError(f"Failed to open repository at {repo_path}: {e}") from e
         
         # Get commits to analyze
         commits = self._get_commits(repo, since, branch)
@@ -133,11 +137,17 @@ class GitAnalyzer:
             commit_data['branch'], repo_path
         )
         
-        # Calculate metrics
+        # Calculate metrics - use raw stats for backward compatibility
         stats = commit.stats.total
         commit_data['files_changed'] = stats.get('files', 0)
         commit_data['insertions'] = stats.get('insertions', 0)
         commit_data['deletions'] = stats.get('deletions', 0)
+        
+        # Calculate filtered metrics (excluding boilerplate/generated files)
+        filtered_stats = self._calculate_filtered_stats(commit)
+        commit_data['filtered_files_changed'] = filtered_stats['files']
+        commit_data['filtered_insertions'] = filtered_stats['insertions']
+        commit_data['filtered_deletions'] = filtered_stats['deletions']
         
         # Extract story points
         commit_data['story_points'] = self.story_point_extractor.extract_from_text(
@@ -193,3 +203,53 @@ class GitAnalyzer:
         }
         
         return any(filepath.endswith(ext) for ext in code_extensions)
+    
+    def _should_exclude_file(self, filepath: str) -> bool:
+        """Check if file should be excluded from line counting."""
+        if not filepath:
+            return False
+        
+        # Normalize path separators for consistent matching
+        filepath = filepath.replace('\\', '/')
+        
+        # Check against exclude patterns
+        return any(fnmatch.fnmatch(filepath, pattern) for pattern in self.exclude_paths)
+    
+    def _calculate_filtered_stats(self, commit: git.Commit) -> Dict[str, int]:
+        """Calculate commit statistics excluding boilerplate/generated files."""
+        filtered_stats = {
+            'files': 0,
+            'insertions': 0,
+            'deletions': 0
+        }
+        
+        # For initial commits or commits without parents
+        parent = commit.parents[0] if commit.parents else None
+        
+        try:
+            for diff in commit.diff(parent):
+                # Get file path
+                file_path = diff.b_path if diff.b_path else diff.a_path
+                if not file_path:
+                    continue
+                
+                # Skip excluded files
+                if self._should_exclude_file(file_path):
+                    continue
+                
+                # Count the file
+                filtered_stats['files'] += 1
+                
+                # Count insertions and deletions
+                if diff.diff:
+                    diff_text = diff.diff.decode('utf-8', errors='ignore')
+                    for line in diff_text.split('\n'):
+                        if line.startswith('+') and not line.startswith('+++'):
+                            filtered_stats['insertions'] += 1
+                        elif line.startswith('-') and not line.startswith('---'):
+                            filtered_stats['deletions'] += 1
+        except Exception:
+            # If we can't calculate filtered stats, return zeros
+            pass
+        
+        return filtered_stats

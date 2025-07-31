@@ -1,10 +1,11 @@
 """Integration orchestrator for multiple platforms."""
-from typing import Dict, Any, List, Optional
-from datetime import datetime
 import json
+from datetime import datetime
+from typing import Any, Dict, List
 
 from ..core.cache import GitAnalysisCache
 from .github_integration import GitHubIntegration
+from .jira_integration import JIRAIntegration
 
 
 class IntegrationOrchestrator:
@@ -22,8 +23,24 @@ class IntegrationOrchestrator:
                 config.github.token,
                 cache,
                 config.github.max_retries,
-                config.github.backoff_factor
+                config.github.backoff_factor,
+                allowed_ticket_platforms=getattr(config.analysis, 'ticket_platforms', None)
             )
+        
+        # Initialize JIRA integration if configured
+        if config.jira and config.jira.access_user and config.jira.access_token:
+            # Get JIRA specific settings if available
+            jira_settings = getattr(config, 'jira_integration', {})
+            if hasattr(jira_settings, 'enabled') and jira_settings.enabled:
+                base_url = getattr(config.jira, 'base_url', None)
+                if base_url:
+                    self.integrations['jira'] = JIRAIntegration(
+                        base_url,
+                        config.jira.access_user,
+                        config.jira.access_token,
+                        cache,
+                        story_point_fields=getattr(jira_settings, 'story_point_fields', None)
+                    )
     
     def enrich_repository_data(self, repo_config: Any, commits: List[Dict[str, Any]], 
                              since: datetime) -> Dict[str, Any]:
@@ -52,10 +69,19 @@ class IntegrationOrchestrator:
             except Exception as e:
                 print(f"   ⚠️  GitHub enrichment failed: {e}")
         
-        # Future: Add other platform integrations here
-        # - ClickUp
-        # - JIRA
-        # - Linear
+        # JIRA enrichment for story points
+        if 'jira' in self.integrations:
+            jira = self.integrations['jira']
+            try:
+                # Enrich commits with JIRA story points
+                jira.enrich_commits_with_jira_data(commits)
+                
+                # Enrich PRs with JIRA story points
+                if enrichment['prs']:
+                    jira.enrich_prs_with_jira_data(enrichment['prs'])
+                    
+            except Exception as e:
+                print(f"   ⚠️  JIRA enrichment failed: {e}")
         
         return enrichment
     

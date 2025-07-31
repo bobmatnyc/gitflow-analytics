@@ -5,6 +5,45 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2025-07-31
+
+### Added
+- Path exclusion support for filtering boilerplate/generated files from line count metrics
+  - Configurable via `analysis.exclude.paths` in YAML configuration
+  - Default exclusions for common patterns (node_modules, lock files, minified files, etc.)
+  - Filtered metrics available as `filtered_insertions`, `filtered_deletions`, `filtered_files_changed`
+- JIRA integration for fetching story points from tickets
+  - Configurable story point field names via `jira_integration.story_point_fields`
+  - Automatic story point extraction from JIRA tickets referenced in commits
+  - Support for custom field IDs and field names
+- Organization-based repository discovery from GitHub
+  - Automatic discovery of all non-archived repositories in an organization
+  - No manual repository configuration needed for organization-wide analysis
+- Ticket platform filtering via `analysis.ticket_platforms`
+  - Ability to track only specific platforms (e.g., only JIRA, ignoring GitHub Issues)
+- Enhanced `.env` file support
+  - Automatic loading from configuration directory
+  - Validation of required environment variables
+  - Clear error messages for missing credentials
+- New CLI command: `discover-jira-fields` to find custom field IDs
+
+### Changed
+- All report generators now use filtered line counts when available
+- Cache and output directories now default to config file location (not current directory)
+- Improved developer identity resolution with better consolidation
+
+### Fixed
+- Timezone comparison errors between GitHub and local timestamps
+- License configuration in pyproject.toml for PyPI compatibility
+- Manual identity mapping format validation
+- Linting errors for better code quality
+
+### Documentation
+- Added comprehensive environment variable configuration guide
+- Complete configuration examples with `.env` and YAML files
+- Path exclusion documentation with default patterns
+- Updated README with clearer setup instructions
+
 ## [1.0.0] - 2025-07-29
 
 ### Added
@@ -51,4 +90,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Progress indicators during analysis
 - Detailed logging of operations
 
+[1.0.1]: https://github.com/bobmatnyc/gitflow-analytics/releases/tag/v1.0.1
 [1.0.0]: https://github.com/bobmatnyc/gitflow-analytics/releases/tag/v1.0.0

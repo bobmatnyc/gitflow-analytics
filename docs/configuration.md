@@ -28,16 +28,45 @@
 
 ### GitHub Authentication
 
-The `github` section supports both direct tokens and environment variables:
+The `github` section supports both direct tokens and environment variables, plus organization-based repository discovery:
 
 ```yaml
 github:
-  token: "${GITHUB_TOKEN}"  # From environment variable
-  owner: "${GITHUB_OWNER}"  # Default owner for repositories
+  token: "${GITHUB_TOKEN}"     # From environment variable
+  owner: "${GITHUB_OWNER}"     # Default owner for repository-based config
+  organization: "myorg"        # For organization-based discovery
   # token: "ghp_direct_token_here"  # Or direct token (not recommended)
 ```
 
-The `owner` field is used as a default when repository names don't include the owner:
+#### Organization-based Configuration
+
+When `organization` is specified, GitFlow Analytics automatically discovers all non-archived repositories:
+
+```yaml
+version: "1.0"
+
+github:
+  token: "${GITHUB_TOKEN}"
+  organization: "myorg"  # Automatically discovers repositories
+
+# No repositories section needed - they're discovered automatically!
+analysis:
+  story_point_patterns:
+    - "(?:story\\s*points?|sp|pts?)\\s*[:=]\\s*(\\d+)"
+```
+
+**Benefits:**
+- Automatically includes new repositories as they're added to the organization
+- No need to manually update configuration for each new repository
+- Perfect for organizations with many repositories
+
+**Requirements:**
+- GitHub token must have organization read access
+- Token must have repository read access for all organization repositories
+
+#### Repository-based Configuration
+
+For manual control over which repositories to analyze:
 
 ```yaml
 repositories:
@@ -72,7 +101,9 @@ analysis:
     - "\\bSP(\\d+)\\b"                                  # SP5, SP13
 ```
 
-### Filtering Commits
+### Filtering Commits and Files
+
+#### Exclude Commits
 
 Exclude bot commits and merge commits:
 
@@ -87,6 +118,35 @@ analysis:
       - "^Merge branch"
       - "^\\[skip ci\\]"
 ```
+
+#### Path Exclusions (New Feature)
+
+Filter out boilerplate and generated files from line count metrics:
+
+```yaml
+analysis:
+  exclude:
+    # Glob patterns for files to exclude from line counting
+    paths:
+      - "**/node_modules/**"    # Node.js dependencies
+      - "**/vendor/**"          # PHP/Ruby dependencies
+      - "**/*.min.js"           # Minified JavaScript
+      - "**/package-lock.json"  # Lock files
+      - "**/generated/**"       # Generated code directories
+```
+
+**Default Exclusions:**
+If you don't specify custom `paths`, the following patterns are excluded by default:
+- Package manager lock files: `package-lock.json`, `yarn.lock`, `poetry.lock`, etc.
+- Build/distribution directories: `dist/`, `build/`, `.next/`
+- Dependencies: `node_modules/`, `vendor/`
+- Minified files: `*.min.js`, `*.min.css`
+- Source maps: `*.map`
+- Generated files: `*.generated.*`, `generated/`
+- Coverage reports: `coverage/`, `htmlcov/`
+- Python cache: `__pycache__/`
+
+**Note:** The filtered line counts are used in all reports alongside the raw Git statistics for backward compatibility.
 
 ### Output Configuration
 
@@ -104,10 +164,30 @@ output:
     # - html     # Web report (uncomment to enable)
 ```
 
+#### Directory Defaults (New Behavior)
+
+GitFlow Analytics now defaults directories to be relative to the configuration file location:
+
+**Output Directory:**
+- If `output.directory` is not specified: defaults to the config file's directory
+- If `output.directory` is a relative path: resolved relative to config file directory
+- If `output.directory` is an absolute path: used as-is
+- CLI `--output` flag overrides configuration file setting
+
+**Example:**
+```
+/project/
+├── config.yaml           # Configuration file location
+├── weekly_metrics.csv     # Reports generated here (default)
+├── summary.csv
+└── data/
+    └── custom-reports/    # If output.directory: "data/custom-reports"
+```
+
 The output directory can be:
 - Specified in the config file (recommended for project-specific locations)
 - Overridden via CLI with `--output` flag
-- Defaults to `./reports` if not specified
+- Defaults to config file directory if not specified (changed from `./reports`)
 
 ### Anonymization
 
@@ -128,10 +208,16 @@ Configure cache behavior for performance:
 
 ```yaml
 cache:
-  directory: ".gitflow-cache"  # Cache location
+  directory: ".gitflow-cache"  # Cache location (relative to config file)
   ttl_hours: 168              # Cache validity (1 week)
   max_size_mb: 500            # Maximum cache size
 ```
+
+**Cache Directory Behavior:**
+- If `cache.directory` is not specified: defaults to `.gitflow-cache/` in config file directory
+- If `cache.directory` is a relative path: resolved relative to config file directory
+- If `cache.directory` is an absolute path: used as-is
+- Contains SQLite databases for commit analysis and identity resolution
 
 ## Environment Variables
 

@@ -1,14 +1,12 @@
 """Caching layer for Git analysis with SQLite backend."""
-import hashlib
-from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
-from pathlib import Path
 from contextlib import contextmanager
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
-from ..models.database import Database, CachedCommit, PullRequestCache, IssueCache
+from ..models.database import CachedCommit, Database, IssueCache, PullRequestCache
 
 
 class GitAnalysisCache:

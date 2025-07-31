@@ -1,6 +1,6 @@
 """Story point extraction from commits and pull requests."""
 import re
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 
 class StoryPointExtractor:

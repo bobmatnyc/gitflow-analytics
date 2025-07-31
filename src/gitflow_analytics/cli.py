@@ -1,23 +1,23 @@
 """Command-line interface for GitFlow Analytics."""
-import click
-import yaml
-from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Optional
 import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Optional
+
+import click
+import git
 import pandas as pd
 
-from .config import ConfigLoader, Config
-from .core.cache import GitAnalysisCache
+from .config import ConfigLoader
 from .core.analyzer import GitAnalyzer
+from .core.cache import GitAnalysisCache
 from .core.identity import DeveloperIdentityResolver
-from .extractors.story_points import StoryPointExtractor
 from .extractors.tickets import TicketExtractor
-from .reports.csv_writer import CSVReportGenerator
-from .reports.analytics_writer import AnalyticsReportGenerator
-from .reports.narrative_writer import NarrativeReportGenerator
-from .metrics.dora import DORAMetricsCalculator
 from .integrations.orchestrator import IntegrationOrchestrator
+from .metrics.dora import DORAMetricsCalculator
+from .reports.analytics_writer import AnalyticsReportGenerator
+from .reports.csv_writer import CSVReportGenerator
+from .reports.narrative_writer import NarrativeReportGenerator
 
 
 @click.group()
@@ -101,14 +101,36 @@ def analyze(config: Path, weeks: int, output: Optional[Path], anonymize: bool,
             manual_mappings=cfg.analysis.manual_identity_mappings
         )
         
-        analyzer = GitAnalyzer(cache, branch_mapping_rules=cfg.analysis.branch_mapping_rules)
+        analyzer = GitAnalyzer(
+            cache, 
+            branch_mapping_rules=cfg.analysis.branch_mapping_rules,
+            allowed_ticket_platforms=getattr(cfg.analysis, 'ticket_platforms', None),
+            exclude_paths=cfg.analysis.exclude_paths
+        )
         orchestrator = IntegrationOrchestrator(cfg, cache)
+        
+        # Discovery organization repositories if needed
+        repositories_to_analyze = cfg.repositories
+        if cfg.github.organization and not repositories_to_analyze:
+            click.echo(f"🔍 Discovering repositories from organization: {cfg.github.organization}")
+            try:
+                # Use a 'repos' directory in the config directory for cloned repositories
+                config_dir = Path(config).parent if config else Path.cwd()
+                repos_dir = config_dir / "repos"
+                discovered_repos = cfg.discover_organization_repositories(clone_base_path=repos_dir)
+                repositories_to_analyze = discovered_repos
+                click.echo(f"   ✅ Found {len(discovered_repos)} repositories in organization")
+                for repo in discovered_repos:
+                    click.echo(f"      - {repo.name} ({repo.github_repo})")
+            except Exception as e:
+                click.echo(f"   ❌ Failed to discover repositories: {e}")
+                return
         
         # Analysis period
         end_date = datetime.now()
         start_date = end_date - timedelta(weeks=weeks)
         
-        click.echo(f"\n🚀 Analyzing {len(cfg.repositories)} repositories...")
+        click.echo(f"\n🚀 Analyzing {len(repositories_to_analyze)} repositories...")
         click.echo(f"   Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         
         # Analyze repositories
@@ -116,13 +138,32 @@ def analyze(config: Path, weeks: int, output: Optional[Path], anonymize: bool,
         all_prs = []
         all_enrichments = {}
         
-        for repo_config in cfg.repositories:
+        for repo_config in repositories_to_analyze:
             click.echo(f"\n📁 Analyzing {repo_config.name}...")
             
-            # Check if repo exists
+            # Check if repo exists, clone if needed
             if not repo_config.path.exists():
-                click.echo(f"   ❌ Repository path not found: {repo_config.path}")
-                continue
+                # Try to clone if we have a github_repo configured
+                if repo_config.github_repo and cfg.github.organization:
+                    click.echo("   📥 Cloning repository from GitHub...")
+                    try:
+                        # Ensure parent directory exists
+                        repo_config.path.parent.mkdir(parents=True, exist_ok=True)
+                        
+                        # Clone the repository
+                        clone_url = f"https://github.com/{repo_config.github_repo}.git"
+                        if cfg.github.token:
+                            # Use token for authentication
+                            clone_url = f"https://{cfg.github.token}@github.com/{repo_config.github_repo}.git"
+                        
+                        git.Repo.clone_from(clone_url, repo_config.path, branch=repo_config.branch)
+                        click.echo(f"   ✅ Successfully cloned {repo_config.github_repo}")
+                    except Exception as e:
+                        click.echo(f"   ❌ Failed to clone repository: {e}")
+                        continue
+                else:
+                    click.echo(f"   ❌ Repository path not found: {repo_config.path}")
+                    continue
             
             # Analyze repository
             try:
@@ -174,7 +215,7 @@ def analyze(config: Path, weeks: int, output: Optional[Path], anonymize: bool,
         
         # Analyze tickets
         click.echo("\n🎫 Analyzing ticket references...")
-        ticket_extractor = TicketExtractor()
+        ticket_extractor = TicketExtractor(allowed_platforms=getattr(cfg.analysis, 'ticket_platforms', None))
         ticket_analysis = ticket_extractor.analyze_ticket_coverage(all_commits, all_prs)
         
         for platform, count in ticket_analysis['ticket_summary'].items():
@@ -319,7 +360,7 @@ def analyze(config: Path, weeks: int, output: Optional[Path], anonymize: bool,
         click.echo(f"   - Total story points: {total_story_points}")
         
         if dora_metrics:
-            click.echo(f"\n🎯 DORA Metrics:")
+            click.echo("\n🎯 DORA Metrics:")
             click.echo(f"   - Deployment frequency: {dora_metrics['deployment_frequency']['category']}")
             click.echo(f"   - Lead time: {dora_metrics['lead_time_hours']:.1f} hours")
             click.echo(f"   - Change failure rate: {dora_metrics['change_failure_rate']:.1f}%")
@@ -357,7 +398,7 @@ def cache_stats(config: Path):
         # Calculate cache size
         import os
         cache_size = 0
-        for root, dirs, files in os.walk(cfg.cache.directory):
+        for root, _dirs, files in os.walk(cfg.cache.directory):
             for f in files:
                 cache_size += os.path.getsize(os.path.join(root, f))
         
@@ -387,6 +428,59 @@ def merge_identity(config: Path, dev1: str, dev2: str):
         identity_resolver.merge_identities(dev1, dev2)
         click.echo("✅ Identities merged successfully!")
         
+    except Exception as e:
+        click.echo(f"❌ Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--config', '-c',
+              type=click.Path(exists=True, path_type=Path),
+              required=True,
+              help='Path to YAML configuration file')
+def discover_jira_fields(config: Path):
+    """Discover available JIRA fields, particularly story point fields."""
+    try:
+        cfg = ConfigLoader.load(config)
+        
+        # Check if JIRA is configured
+        if not cfg.jira or not cfg.jira.base_url:
+            click.echo("❌ JIRA is not configured in the configuration file")
+            return
+        
+        # Initialize JIRA integration
+        from .integrations.jira_integration import JIRAIntegration
+        
+        jira = JIRAIntegration(
+            cfg.jira.base_url,
+            cfg.jira.access_user,
+            cfg.jira.access_token,
+            None  # No cache needed for field discovery
+        )
+        
+        # Validate connection
+        click.echo(f"🔗 Connecting to JIRA at {cfg.jira.base_url}...")
+        if not jira.validate_connection():
+            click.echo("❌ Failed to connect to JIRA. Check your credentials.")
+            return
+        
+        click.echo("✅ Connected successfully!\n")
+        click.echo("🔍 Discovering fields with potential story point data...")
+        
+        fields = jira.discover_fields()
+        
+        if not fields:
+            click.echo("No potential story point fields found.")
+        else:
+            click.echo(f"\nFound {len(fields)} potential story point fields:")
+            click.echo("\nAdd these to your configuration under jira_integration.story_point_fields:")
+            click.echo("```yaml")
+            click.echo("jira_integration:")
+            click.echo("  story_point_fields:")
+            for field_id, field_info in fields.items():
+                click.echo(f'    - "{field_id}"  # {field_info["name"]}')
+            click.echo("```")
+            
     except Exception as e:
         click.echo(f"❌ Error: {e}", err=True)
         sys.exit(1)

@@ -1,10 +1,10 @@
 """Database models for GitFlow Analytics using SQLAlchemy."""
 from datetime import datetime
-from typing import Optional
-from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Boolean, JSON, Index
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
 from pathlib import Path
+
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Index, Integer, String, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import Session, sessionmaker
 
 Base = declarative_base()
 
