@@ -5,7 +5,7 @@ import uuid
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from sqlalchemy import and_
 
@@ -19,7 +19,7 @@ class DeveloperIdentityResolver:
         self,
         db_path,
         similarity_threshold: float = 0.85,
-        manual_mappings: Optional[List[Dict[str, Any]]] = None,
+        manual_mappings: Optional[list[dict[str, Any]]] = None,
     ):
         """Initialize with database for persistence."""
         self.similarity_threshold = similarity_threshold
@@ -61,7 +61,7 @@ class DeveloperIdentityResolver:
                 key = f"{alias.email.lower()}:{alias.name.lower()}"
                 self._cache[key] = alias.canonical_id
 
-    def _apply_manual_mappings(self, manual_mappings: List[Dict[str, Any]]):
+    def _apply_manual_mappings(self, manual_mappings: list[dict[str, Any]]):
         """Apply manual identity mappings from configuration."""
         # Clear cache to ensure we get fresh data
         self._cache.clear()
@@ -204,7 +204,7 @@ class DeveloperIdentityResolver:
         self._cache[cache_key] = canonical_id
         return canonical_id
 
-    def _find_best_match(self, name: str, email: str) -> Optional[Tuple[str, float]]:
+    def _find_best_match(self, name: str, email: str) -> Optional[tuple[str, float]]:
         """Find the best matching existing developer."""
         best_score = 0.0
         best_canonical_id = None
@@ -371,7 +371,7 @@ class DeveloperIdentityResolver:
         self._cache.clear()
         self._load_cache()
 
-    def get_developer_stats(self) -> List[Dict[str, Any]]:
+    def get_developer_stats(self) -> list[dict[str, Any]]:
         """Get statistics for all developers."""
         stats = []
 
@@ -403,7 +403,7 @@ class DeveloperIdentityResolver:
         # Sort by total commits
         return sorted(stats, key=lambda x: x["total_commits"], reverse=True)
 
-    def update_commit_stats(self, commits: List[Dict[str, Any]]):
+    def update_commit_stats(self, commits: list[dict[str, Any]]):
         """Update developer statistics based on commits."""
         # Aggregate stats by canonical ID
         stats_by_dev = defaultdict(lambda: {"commits": 0, "story_points": 0})

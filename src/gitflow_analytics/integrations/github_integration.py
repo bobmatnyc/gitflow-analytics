@@ -2,7 +2,7 @@
 
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from github import Github
 from github.GithubException import RateLimitExceededException, UnknownObjectException
@@ -19,7 +19,7 @@ class GitHubIntegration:
         cache: GitAnalysisCache,
         rate_limit_retries: int = 3,
         backoff_factor: int = 2,
-        allowed_ticket_platforms: Optional[List[str]] = None,
+        allowed_ticket_platforms: Optional[list[str]] = None,
     ):
         """Initialize GitHub integration."""
         self.github = Github(token)
@@ -29,8 +29,8 @@ class GitHubIntegration:
         self.allowed_ticket_platforms = allowed_ticket_platforms
 
     def enrich_repository_with_prs(
-        self, repo_name: str, commits: List[Dict[str, Any]], since: datetime
-    ) -> List[Dict[str, Any]]:
+        self, repo_name: str, commits: list[dict[str, Any]], since: datetime
+    ) -> list[dict[str, Any]]:
         """Enrich repository commits with PR data."""
         try:
             repo = self.github.get_repo(repo_name)
@@ -73,7 +73,7 @@ class GitHubIntegration:
 
         return enriched_prs
 
-    def _get_pull_requests(self, repo, since: datetime) -> List[Any]:
+    def _get_pull_requests(self, repo, since: datetime) -> list[Any]:
         """Get pull requests with rate limit handling."""
         prs = []
 
@@ -105,7 +105,7 @@ class GitHubIntegration:
 
         return prs
 
-    def _extract_pr_data(self, pr) -> Dict[str, Any]:
+    def _extract_pr_data(self, pr) -> dict[str, Any]:
         """Extract relevant data from a GitHub PR object."""
         from ..extractors.story_points import StoryPointExtractor
         from ..extractors.tickets import TicketExtractor
@@ -140,7 +140,7 @@ class GitHubIntegration:
             "deletions": pr.deletions,
         }
 
-    def calculate_pr_metrics(self, prs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def calculate_pr_metrics(self, prs: list[dict[str, Any]]) -> dict[str, Any]:
         """Calculate PR-level metrics."""
         if not prs:
             return {

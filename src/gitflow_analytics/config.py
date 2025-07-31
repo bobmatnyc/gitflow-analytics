@@ -3,7 +3,7 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import yaml
 from dotenv import load_dotenv
@@ -49,15 +49,15 @@ class GitHubConfig:
 class AnalysisConfig:
     """Analysis-specific configuration."""
 
-    story_point_patterns: List[str] = field(default_factory=list)
-    exclude_authors: List[str] = field(default_factory=list)
-    exclude_message_patterns: List[str] = field(default_factory=list)
-    exclude_paths: List[str] = field(default_factory=list)
+    story_point_patterns: list[str] = field(default_factory=list)
+    exclude_authors: list[str] = field(default_factory=list)
+    exclude_message_patterns: list[str] = field(default_factory=list)
+    exclude_paths: list[str] = field(default_factory=list)
     similarity_threshold: float = 0.85
-    manual_identity_mappings: List[Dict[str, Any]] = field(default_factory=list)
+    manual_identity_mappings: list[dict[str, Any]] = field(default_factory=list)
     default_ticket_platform: Optional[str] = None
-    branch_mapping_rules: Dict[str, List[str]] = field(default_factory=dict)
-    ticket_platforms: Optional[List[str]] = None
+    branch_mapping_rules: dict[str, list[str]] = field(default_factory=dict)
+    ticket_platforms: Optional[list[str]] = None
 
 
 @dataclass
@@ -65,11 +65,11 @@ class OutputConfig:
     """Output configuration."""
 
     directory: Optional[Path] = None
-    formats: List[str] = field(default_factory=lambda: ["csv", "markdown"])
+    formats: list[str] = field(default_factory=lambda: ["csv", "markdown"])
     csv_delimiter: str = ","
     csv_encoding: str = "utf-8"
     anonymize_enabled: bool = False
-    anonymize_fields: List[str] = field(default_factory=list)
+    anonymize_fields: list[str] = field(default_factory=list)
     anonymize_method: str = "hash"
 
 
@@ -97,8 +97,8 @@ class JIRAIntegrationConfig:
 
     enabled: bool = True
     fetch_story_points: bool = True
-    project_keys: List[str] = field(default_factory=list)
-    story_point_fields: List[str] = field(
+    project_keys: list[str] = field(default_factory=list)
+    story_point_fields: list[str] = field(
         default_factory=lambda: ["customfield_10016", "customfield_10021", "Story Points"]
     )
 
@@ -107,7 +107,7 @@ class JIRAIntegrationConfig:
 class Config:
     """Main configuration container."""
 
-    repositories: List[RepositoryConfig]
+    repositories: list[RepositoryConfig]
     github: GitHubConfig
     analysis: AnalysisConfig
     output: OutputConfig
@@ -117,7 +117,7 @@ class Config:
 
     def discover_organization_repositories(
         self, clone_base_path: Optional[Path] = None
-    ) -> List[RepositoryConfig]:
+    ) -> list[RepositoryConfig]:
         """Discover repositories from GitHub organization.
 
         Args:
@@ -395,7 +395,7 @@ class ConfigLoader:
         return value
 
     @staticmethod
-    def validate_config(config: Config) -> List[str]:
+    def validate_config(config: Config) -> list[str]:
         """Validate configuration and return list of warnings."""
         warnings = []
 

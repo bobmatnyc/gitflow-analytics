@@ -3,7 +3,7 @@
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, cast, Dict, Any, List
+from typing import Any, Optional, cast
 
 import click
 import git
@@ -291,15 +291,15 @@ def analyze(
 
             # Load activity distribution data
             activity_df = pd.read_csv(activity_report)
-            activity_data = cast(List[Dict[str, Any]], activity_df.to_dict("records"))
+            activity_data = cast(list[dict[str, Any]], activity_df.to_dict("records"))
 
             # Load focus data
             focus_df = pd.read_csv(focus_report)
-            focus_data = cast(List[Dict[str, Any]], focus_df.to_dict("records"))
+            focus_data = cast(list[dict[str, Any]], focus_df.to_dict("records"))
 
             # Load insights data
             insights_df = pd.read_csv(insights_report)
-            insights_data = cast(List[Dict[str, Any]], insights_df.to_dict("records"))
+            insights_data = cast(list[dict[str, Any]], insights_df.to_dict("records"))
 
             narrative_report = output / f'narrative_report_{datetime.now().strftime("%Y%m%d")}.md'
             narrative_gen.generate_narrative_report(

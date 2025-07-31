@@ -1,9 +1,10 @@
 """Git repository analyzer with batch processing support."""
 
 import fnmatch
+from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Union
+from typing import Any, Optional
 
 import git
 from git import Repo
@@ -22,9 +23,9 @@ class GitAnalyzer:
         self,
         cache: GitAnalysisCache,
         batch_size: int = 1000,
-        branch_mapping_rules: Optional[Dict[str, List[str]]] = None,
-        allowed_ticket_platforms: Optional[List[str]] = None,
-        exclude_paths: Optional[List[str]] = None,
+        branch_mapping_rules: Optional[dict[str, list[str]]] = None,
+        allowed_ticket_platforms: Optional[list[str]] = None,
+        exclude_paths: Optional[list[str]] = None,
     ):
         """Initialize analyzer with cache."""
         self.cache = cache
@@ -36,7 +37,7 @@ class GitAnalyzer:
 
     def analyze_repository(
         self, repo_path: Path, since: datetime, branch: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Analyze a Git repository with batch processing."""
         try:
             repo = Repo(repo_path)
@@ -67,7 +68,7 @@ class GitAnalyzer:
 
     def _get_commits(
         self, repo: Repo, since: datetime, branch: Optional[str] = None
-    ) -> List[git.Commit]:
+    ) -> list[git.Commit]:
         """Get commits from repository."""
         if branch:
             try:
@@ -101,15 +102,15 @@ class GitAnalyzer:
         return sorted(commits, key=lambda c: c.committed_datetime)
 
     def _batch_commits(
-        self, commits: List[git.Commit], batch_size: int
-    ) -> Generator[List[git.Commit], None, None]:
+        self, commits: list[git.Commit], batch_size: int
+    ) -> Generator[list[git.Commit], None, None]:
         """Yield batches of commits."""
         for i in range(0, len(commits), batch_size):
             yield commits[i : i + batch_size]
 
     def _process_batch(
-        self, repo: Repo, repo_path: Path, commits: List[git.Commit]
-    ) -> List[Dict[str, Any]]:
+        self, repo: Repo, repo_path: Path, commits: list[git.Commit]
+    ) -> list[dict[str, Any]]:
         """Process a batch of commits."""
         results = []
 
@@ -126,7 +127,7 @@ class GitAnalyzer:
 
         return results
 
-    def _analyze_commit(self, repo: Repo, commit: git.Commit, repo_path: Path) -> Dict[str, Any]:
+    def _analyze_commit(self, repo: Repo, commit: git.Commit, repo_path: Path) -> dict[str, Any]:
         """Analyze a single commit."""
         # Basic commit data
         commit_data = {
@@ -148,9 +149,9 @@ class GitAnalyzer:
 
         # Calculate metrics - use raw stats for backward compatibility
         stats = commit.stats.total
-        commit_data["files_changed"] = int(stats.get("files", 0)) if hasattr(stats, 'get') else 0
-        commit_data["insertions"] = int(stats.get("insertions", 0)) if hasattr(stats, 'get') else 0
-        commit_data["deletions"] = int(stats.get("deletions", 0)) if hasattr(stats, 'get') else 0
+        commit_data["files_changed"] = int(stats.get("files", 0)) if hasattr(stats, "get") else 0
+        commit_data["insertions"] = int(stats.get("insertions", 0)) if hasattr(stats, "get") else 0
+        commit_data["deletions"] = int(stats.get("deletions", 0)) if hasattr(stats, "get") else 0
 
         # Calculate filtered metrics (excluding boilerplate/generated files)
         filtered_stats = self._calculate_filtered_stats(commit)
@@ -159,7 +160,11 @@ class GitAnalyzer:
         commit_data["filtered_deletions"] = filtered_stats["deletions"]
 
         # Extract story points
-        message_str = commit.message if isinstance(commit.message, str) else commit.message.decode('utf-8', errors='ignore')
+        message_str = (
+            commit.message
+            if isinstance(commit.message, str)
+            else commit.message.decode("utf-8", errors="ignore")
+        )
         commit_data["story_points"] = self.story_point_extractor.extract_from_text(message_str)
 
         # Extract ticket references
@@ -195,7 +200,11 @@ class GitAnalyzer:
             else:
                 # Modified file - estimate based on change size
                 if diff.diff:
-                    diff_content = diff.diff if isinstance(diff.diff, str) else diff.diff.decode("utf-8", errors="ignore")
+                    diff_content = (
+                        diff.diff
+                        if isinstance(diff.diff, str)
+                        else diff.diff.decode("utf-8", errors="ignore")
+                    )
                     added = len(diff_content.split("\n+"))
                     removed = len(diff_content.split("\n-"))
                     total_delta += (added - removed) / 10
@@ -243,7 +252,7 @@ class GitAnalyzer:
         # Check against exclude patterns
         return any(fnmatch.fnmatch(filepath, pattern) for pattern in self.exclude_paths)
 
-    def _calculate_filtered_stats(self, commit: git.Commit) -> Dict[str, int]:
+    def _calculate_filtered_stats(self, commit: git.Commit) -> dict[str, int]:
         """Calculate commit statistics excluding boilerplate/generated files."""
         filtered_stats = {"files": 0, "insertions": 0, "deletions": 0}
 
@@ -266,7 +275,11 @@ class GitAnalyzer:
 
                 # Count insertions and deletions
                 if diff.diff:
-                    diff_text = diff.diff if isinstance(diff.diff, str) else diff.diff.decode("utf-8", errors="ignore")
+                    diff_text = (
+                        diff.diff
+                        if isinstance(diff.diff, str)
+                        else diff.diff.decode("utf-8", errors="ignore")
+                    )
                     for line in diff_text.split("\n"):
                         if line.startswith("+") and not line.startswith("+++"):
                             filtered_stats["insertions"] += 1

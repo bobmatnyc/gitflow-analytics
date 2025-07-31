@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from sqlalchemy import and_
 
@@ -32,7 +32,7 @@ class GitAnalysisCache:
         finally:
             session.close()
 
-    def get_cached_commit(self, repo_path: str, commit_hash: str) -> Optional[Dict[str, Any]]:
+    def get_cached_commit(self, repo_path: str, commit_hash: str) -> Optional[dict[str, Any]]:
         """Retrieve cached commit data if not stale."""
         with self.get_session() as session:
             cached = (
@@ -50,7 +50,7 @@ class GitAnalysisCache:
 
             return None
 
-    def cache_commit(self, repo_path: str, commit_data: Dict[str, Any]):
+    def cache_commit(self, repo_path: str, commit_data: dict[str, Any]):
         """Cache commit analysis results."""
         with self.get_session() as session:
             # Check if already exists
@@ -91,7 +91,7 @@ class GitAnalysisCache:
                 )
                 session.add(cached_commit)
 
-    def cache_commits_batch(self, repo_path: str, commits: List[Dict[str, Any]]):
+    def cache_commits_batch(self, repo_path: str, commits: list[dict[str, Any]]):
         """Cache multiple commits in a single transaction."""
         with self.get_session() as session:
             for commit_data in commits:
@@ -133,7 +133,7 @@ class GitAnalysisCache:
                     )
                     session.add(cached_commit)
 
-    def get_cached_pr(self, repo_path: str, pr_number: int) -> Optional[Dict[str, Any]]:
+    def get_cached_pr(self, repo_path: str, pr_number: int) -> Optional[dict[str, Any]]:
         """Retrieve cached pull request data."""
         with self.get_session() as session:
             cached = (
@@ -152,7 +152,7 @@ class GitAnalysisCache:
 
             return None
 
-    def cache_pr(self, repo_path: str, pr_data: Dict[str, Any]):
+    def cache_pr(self, repo_path: str, pr_data: dict[str, Any]):
         """Cache pull request data."""
         with self.get_session() as session:
             cached_pr = PullRequestCache(
@@ -169,7 +169,7 @@ class GitAnalysisCache:
             )
             session.merge(cached_pr)
 
-    def cache_issue(self, platform: str, issue_data: Dict[str, Any]):
+    def cache_issue(self, platform: str, issue_data: dict[str, Any]):
         """Cache issue data from various platforms."""
         with self.get_session() as session:
             cached_issue = IssueCache(
@@ -189,7 +189,7 @@ class GitAnalysisCache:
             )
             session.merge(cached_issue)
 
-    def get_cached_issues(self, platform: str, project_key: str) -> List[Dict[str, Any]]:
+    def get_cached_issues(self, platform: str, project_key: str) -> list[dict[str, Any]]:
         """Get all cached issues for a platform and project."""
         with self.get_session() as session:
             issues = (
@@ -219,7 +219,7 @@ class GitAnalysisCache:
 
             session.query(IssueCache).filter(IssueCache.cached_at < cutoff_time).delete()
 
-    def get_cache_stats(self) -> Dict[str, int]:
+    def get_cache_stats(self) -> dict[str, int]:
         """Get cache statistics."""
         with self.get_session() as session:
             stats = {
@@ -240,7 +240,7 @@ class GitAnalysisCache:
             return False
         return cached_at < datetime.utcnow() - timedelta(hours=self.ttl_hours)
 
-    def _commit_to_dict(self, commit: CachedCommit) -> Dict[str, Any]:
+    def _commit_to_dict(self, commit: CachedCommit) -> dict[str, Any]:
         """Convert CachedCommit to dictionary."""
         return {
             "hash": commit.commit_hash,
@@ -258,7 +258,7 @@ class GitAnalysisCache:
             "ticket_references": commit.ticket_references or [],
         }
 
-    def _pr_to_dict(self, pr: PullRequestCache) -> Dict[str, Any]:
+    def _pr_to_dict(self, pr: PullRequestCache) -> dict[str, Any]:
         """Convert PullRequestCache to dictionary."""
         return {
             "number": pr.pr_number,
@@ -272,7 +272,7 @@ class GitAnalysisCache:
             "commit_hashes": pr.commit_hashes or [],
         }
 
-    def _issue_to_dict(self, issue: IssueCache) -> Dict[str, Any]:
+    def _issue_to_dict(self, issue: IssueCache) -> dict[str, Any]:
         """Convert IssueCache to dictionary."""
         return {
             "platform": issue.platform,

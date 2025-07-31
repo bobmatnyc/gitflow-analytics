@@ -1,7 +1,7 @@
 """DORA (DevOps Research and Assessment) metrics calculation."""
 
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 
@@ -16,11 +16,11 @@ class DORAMetricsCalculator:
 
     def calculate_dora_metrics(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
         start_date: datetime,
         end_date: datetime,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Calculate the four key DORA metrics."""
 
         # Identify deployments and failures
@@ -55,8 +55,8 @@ class DORAMetricsCalculator:
         }
 
     def _identify_deployments(
-        self, commits: List[Dict[str, Any]], prs: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, commits: list[dict[str, Any]], prs: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Identify deployment events from commits and PRs."""
         deployments = []
 
@@ -115,8 +115,8 @@ class DORAMetricsCalculator:
         return unique_deployments
 
     def _identify_failures(
-        self, commits: List[Dict[str, Any]], prs: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, commits: list[dict[str, Any]], prs: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Identify failure events from commits and PRs."""
         failures = []
 
@@ -157,8 +157,8 @@ class DORAMetricsCalculator:
         return failures
 
     def _calculate_deployment_frequency(
-        self, deployments: List[Dict[str, Any]], start_date: datetime, end_date: datetime
-    ) -> Dict[str, Any]:
+        self, deployments: list[dict[str, Any]], start_date: datetime, end_date: datetime
+    ) -> dict[str, Any]:
         """Calculate deployment frequency metrics."""
         if not deployments:
             return {"daily_average": 0, "weekly_average": 0, "category": "Low"}
@@ -185,7 +185,7 @@ class DORAMetricsCalculator:
         return {"daily_average": daily_avg, "weekly_average": weekly_avg, "category": category}
 
     def _calculate_lead_time(
-        self, prs: List[Dict[str, Any]], deployments: List[Dict[str, Any]]
+        self, prs: list[dict[str, Any]], deployments: list[dict[str, Any]]
     ) -> float:
         """Calculate lead time for changes in hours."""
         if not prs:
@@ -208,7 +208,7 @@ class DORAMetricsCalculator:
         return float(np.median(lead_times))
 
     def _calculate_change_failure_rate(
-        self, deployments: List[Dict[str, Any]], failures: List[Dict[str, Any]]
+        self, deployments: list[dict[str, Any]], failures: list[dict[str, Any]]
     ) -> float:
         """Calculate the percentage of deployments causing failures."""
         if not deployments:
@@ -232,7 +232,7 @@ class DORAMetricsCalculator:
         return (failure_causing_deployments / len(deployments)) * 100
 
     def _calculate_mttr(
-        self, failures: List[Dict[str, Any]], commits: List[Dict[str, Any]]
+        self, failures: list[dict[str, Any]], commits: list[dict[str, Any]]
     ) -> float:
         """Calculate mean time to recovery in hours."""
         if not failures:
@@ -241,7 +241,7 @@ class DORAMetricsCalculator:
         recovery_times = []
 
         # For each failure, find the recovery time
-        for i, failure in enumerate(failures):
+        for _i, failure in enumerate(failures):
             failure_time = failure["timestamp"]
 
             # Look for recovery indicators in subsequent commits
@@ -275,7 +275,7 @@ class DORAMetricsCalculator:
 
     def _determine_performance_level(
         self,
-        deployment_freq: Dict[str, Any],
+        deployment_freq: dict[str, Any],
         lead_time_hours: float,
         change_failure_rate: float,
         mttr_hours: float,

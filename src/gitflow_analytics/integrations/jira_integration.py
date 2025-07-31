@@ -1,7 +1,7 @@
 """JIRA API integration for story point and ticket enrichment."""
 
 import base64
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 
 import requests
 from requests.exceptions import RequestException
@@ -18,7 +18,7 @@ class JIRAIntegration:
         username: str,
         api_token: str,
         cache: GitAnalysisCache,
-        story_point_fields: Optional[List[str]] = None,
+        story_point_fields: Optional[list[str]] = None,
     ):
         """Initialize JIRA integration.
 
@@ -52,7 +52,7 @@ class JIRAIntegration:
         # Cache for field mapping
         self._field_mapping = None
 
-    def enrich_commits_with_jira_data(self, commits: List[Dict[str, Any]]) -> None:
+    def enrich_commits_with_jira_data(self, commits: list[dict[str, Any]]) -> None:
         """Enrich commits with JIRA story points by looking up ticket references.
 
         Args:
@@ -94,7 +94,7 @@ class JIRAIntegration:
             if commit_story_points > 0:
                 commit["story_points"] = commit_story_points
 
-    def enrich_prs_with_jira_data(self, prs: List[Dict[str, Any]]) -> None:
+    def enrich_prs_with_jira_data(self, prs: list[dict[str, Any]]) -> None:
         """Enrich PRs with JIRA story points.
 
         Args:
@@ -118,7 +118,7 @@ class JIRAIntegration:
                 if max_points > 0:
                     pr["story_points"] = max_points
 
-    def _fetch_tickets_batch(self, ticket_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    def _fetch_tickets_batch(self, ticket_ids: list[str]) -> dict[str, dict[str, Any]]:
         """Fetch multiple tickets from JIRA API.
 
         Args:
@@ -172,7 +172,7 @@ class JIRAIntegration:
 
         return cached_tickets
 
-    def _extract_ticket_data(self, issue: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_ticket_data(self, issue: dict[str, Any]) -> dict[str, Any]:
         """Extract relevant data from JIRA issue.
 
         Args:
@@ -211,7 +211,7 @@ class JIRAIntegration:
 
         return bool(re.match(r"^[A-Z]{2,10}-\d+$", text))
 
-    def _extract_jira_tickets(self, text: str) -> Set[str]:
+    def _extract_jira_tickets(self, text: str) -> set[str]:
         """Extract JIRA ticket IDs from text."""
         import re
 
@@ -219,13 +219,13 @@ class JIRAIntegration:
         matches = re.findall(pattern, text)
         return set(matches)
 
-    def _get_cached_ticket(self, ticket_id: str) -> Optional[Dict[str, Any]]:
+    def _get_cached_ticket(self, ticket_id: str) -> Optional[dict[str, Any]]:
         """Get ticket data from cache."""
         # TODO: Implement cache lookup using self.cache
         # For now, return None to always fetch from API
         return None
 
-    def _cache_ticket(self, ticket_id: str, ticket_data: Dict[str, Any]) -> None:
+    def _cache_ticket(self, ticket_id: str, ticket_data: dict[str, Any]) -> None:
         """Cache ticket data."""
         # TODO: Implement cache storage using self.cache
         pass
@@ -244,7 +244,7 @@ class JIRAIntegration:
             print(f"   ❌ JIRA connection failed: {e}")
             return False
 
-    def discover_fields(self) -> Dict[str, Dict[str, str]]:
+    def discover_fields(self) -> dict[str, dict[str, str]]:
         """Discover all available fields in JIRA instance.
 
         Returns:

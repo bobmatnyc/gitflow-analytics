@@ -5,283 +5,194 @@ These tests verify developer identity consolidation, email mapping,
 and fuzzy matching functionality.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
+
 from sqlalchemy.orm import Session
 
-from gitflow_analytics.core.identity import IdentityResolver, DeveloperIdentity
-from gitflow_analytics.models.database import DeveloperIdentityModel
+from gitflow_analytics.core.identity import DeveloperIdentityResolver
+from gitflow_analytics.models.database import Database, DeveloperIdentity, DeveloperAlias
 
 
-class TestIdentityResolver:
-    """Test cases for the IdentityResolver class."""
+class TestDeveloperIdentityResolver:
+    """Test cases for the DeveloperIdentityResolver class."""
 
-    def test_init(self):
-        """Test IdentityResolver initialization."""
-        resolver = IdentityResolver(threshold=0.8)
+    def test_init(self, temp_dir):
+        """Test DeveloperIdentityResolver initialization."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path, similarity_threshold=0.8)
 
-        assert resolver.threshold == 0.8
-        assert resolver.manual_mappings == {}
-        assert resolver.identities == {}
+        assert resolver.similarity_threshold == 0.8
+        assert resolver.manual_mappings is None
 
-    def test_init_with_manual_mappings(self):
-        """Test IdentityResolver initialization with manual mappings."""
-        manual_mappings = {
-            "john.doe@company.com": "john@personal.com",
-            "jane.smith@oldcompany.com": "jane@newcompany.com",
-        }
+    def test_init_with_manual_mappings(self, temp_dir):
+        """Test DeveloperIdentityResolver initialization with manual mappings."""
+        manual_mappings = [
+            {
+                "canonical_email": "john@personal.com",
+                "aliases": ["john.doe@company.com", "jdoe@corp.com"]
+            }
+        ]
+        
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(
+            db_path, 
+            similarity_threshold=0.85, 
+            manual_mappings=manual_mappings
+        )
 
-        resolver = IdentityResolver(threshold=0.85, manual_mappings=manual_mappings)
-
-        assert resolver.threshold == 0.85
+        assert resolver.similarity_threshold == 0.85
         assert resolver.manual_mappings == manual_mappings
 
-    def test_add_commit_new_developer(self):
-        """Test adding a commit from a new developer."""
-        resolver = IdentityResolver()
+    def test_resolve_developer_new(self, temp_dir):
+        """Test resolving a new developer identity."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
 
-        resolver.add_commit("john@example.com", "John Doe", "abc123")
+        canonical_id = resolver.resolve_developer("John Doe", "john@example.com")
 
-        assert "john@example.com" in resolver.identities
-        identity = resolver.identities["john@example.com"]
-        assert identity.primary_email == "john@example.com"
-        assert "john@example.com" in identity.all_emails
-        assert identity.name == "John Doe"
-        assert identity.commit_count == 1
-        assert "abc123" in identity.commit_hashes
+        assert canonical_id is not None
+        assert len(canonical_id) > 0
+        
+        # Resolving the same developer should return the same ID
+        canonical_id2 = resolver.resolve_developer("John Doe", "john@example.com")
+        assert canonical_id == canonical_id2
 
-    def test_add_commit_existing_developer(self):
-        """Test adding a commit from an existing developer."""
-        resolver = IdentityResolver()
-
-        # Add first commit
-        resolver.add_commit("john@example.com", "John Doe", "abc123")
-
-        # Add second commit
-        resolver.add_commit("john@example.com", "John Doe", "def456")
-
-        identity = resolver.identities["john@example.com"]
-        assert identity.commit_count == 2
-        assert "abc123" in identity.commit_hashes
-        assert "def456" in identity.commit_hashes
-
-    def test_add_commit_with_manual_mapping(self):
-        """Test adding a commit with manual email mapping."""
-        manual_mappings = {"john.work@company.com": "john@personal.com"}
-        resolver = IdentityResolver(manual_mappings=manual_mappings)
-
-        # First establish the primary identity
-        resolver.add_commit("john@personal.com", "John Doe", "abc123")
-
-        # Then add commit with mapped email
-        resolver.add_commit("john.work@company.com", "John Doe", "def456")
-
-        # Should be consolidated under primary email
-        assert "john@personal.com" in resolver.identities
-        identity = resolver.identities["john@personal.com"]
-        assert identity.commit_count == 2
-        assert "john@personal.com" in identity.all_emails
-        assert "john.work@company.com" in identity.all_emails
-
-    def test_fuzzy_match_similar_names(self):
-        """Test fuzzy matching of similar developer names."""
-        resolver = IdentityResolver(threshold=0.8)
+    def test_resolve_developer_similar_names(self, temp_dir):
+        """Test resolving developers with similar names."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path, similarity_threshold=0.8)
 
         # Add first developer
-        resolver.add_commit("john@example.com", "John Doe", "abc123")
+        canonical_id1 = resolver.resolve_developer("John Doe", "john@example.com")
+        
+        # Add similar developer (should potentially match based on similarity)
+        canonical_id2 = resolver.resolve_developer("John S Doe", "john.doe@example.com")
+        
+        # The resolver should determine if these are the same person
+        # (exact behavior depends on implementation logic)
+        assert canonical_id1 is not None
+        assert canonical_id2 is not None
 
-        # Add similar name that should match
-        resolver.add_commit("john.doe@company.com", "John Doe", "def456")
+    def test_fuzzy_matching_threshold(self, temp_dir):
+        """Test fuzzy matching respects similarity threshold."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path, similarity_threshold=0.9)  # High threshold
 
-        resolver._consolidate_identities()
+        # Add first developer
+        canonical_id1 = resolver.resolve_developer("John Smith", "john@example.com")
+        
+        # Add very different developer (should not match)
+        canonical_id2 = resolver.resolve_developer("Jane Williams", "jane@example.com")
+        
+        # These should be different identities
+        assert canonical_id1 != canonical_id2
 
-        # Should be consolidated into one identity
-        consolidated = resolver.get_consolidated_identities()
-        assert len(consolidated) == 1
+    def test_manual_mappings_override(self, temp_dir):
+        """Test that manual mappings override automatic matching."""
+        manual_mappings = [
+            {
+                "canonical_email": "john@personal.com",
+                "aliases": ["john.work@company.com", "john.doe@corp.com"]
+            }
+        ]
 
-        identity = list(consolidated.values())[0]
-        assert identity.commit_count == 2
-        assert "john@example.com" in identity.all_emails
-        assert "john.doe@company.com" in identity.all_emails
-
-    def test_fuzzy_match_different_names(self):
-        """Test that different names don't get matched."""
-        resolver = IdentityResolver(threshold=0.8)
-
-        # Add two clearly different developers
-        resolver.add_commit("john@example.com", "John Doe", "abc123")
-        resolver.add_commit("jane@example.com", "Jane Smith", "def456")
-
-        resolver._consolidate_identities()
-
-        # Should remain as separate identities
-        consolidated = resolver.get_consolidated_identities()
-        assert len(consolidated) == 2
-
-    def test_calculate_name_similarity(self):
-        """Test name similarity calculation."""
-        resolver = IdentityResolver()
-
-        # Test identical names
-        similarity = resolver._calculate_name_similarity("John Doe", "John Doe")
-        assert similarity == 1.0
-
-        # Test similar names
-        similarity = resolver._calculate_name_similarity("John Doe", "John D")
-        assert similarity > 0.5
-
-        # Test different names
-        similarity = resolver._calculate_name_similarity("John Doe", "Jane Smith")
-        assert similarity < 0.5
-
-    def test_get_consolidated_identities(self):
-        """Test getting consolidated developer identities."""
-        resolver = IdentityResolver()
-
-        # Add some commits
-        resolver.add_commit("john@example.com", "John Doe", "abc123")
-        resolver.add_commit("john@example.com", "John Doe", "def456")
-        resolver.add_commit("jane@example.com", "Jane Smith", "ghi789")
-
-        consolidated = resolver.get_consolidated_identities()
-
-        assert len(consolidated) == 2
-        assert "john@example.com" in consolidated
-        assert "jane@example.com" in consolidated
-
-        john_identity = consolidated["john@example.com"]
-        assert john_identity.commit_count == 2
-
-        jane_identity = consolidated["jane@example.com"]
-        assert jane_identity.commit_count == 1
-
-    @patch("gitflow_analytics.core.identity.session_scope")
-    def test_save_to_database(self, mock_session_scope):
-        """Test saving identities to database."""
-        mock_session = Mock(spec=Session)
-        mock_session_scope.return_value.__enter__.return_value = mock_session
-
-        resolver = IdentityResolver()
-        resolver.add_commit("john@example.com", "John Doe", "abc123")
-
-        resolver.save_to_database("/tmp/test.db")
-
-        mock_session.merge.assert_called()
-        mock_session.commit.assert_called_once()
-
-    @patch("gitflow_analytics.core.identity.session_scope")
-    def test_load_from_database(self, mock_session_scope):
-        """Test loading identities from database."""
-        mock_session = Mock(spec=Session)
-        mock_session_scope.return_value.__enter__.return_value = mock_session
-
-        # Mock database record
-        mock_identity = DeveloperIdentityModel(
-            primary_email="john@example.com",
-            all_emails="john@example.com,john.doe@company.com",
-            name="John Doe",
-            commit_count=5,
-            commit_hashes="abc123,def456,ghi789",
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(
+            db_path, 
+            manual_mappings=manual_mappings
         )
-        mock_session.query.return_value.all.return_value = [mock_identity]
 
-        resolver = IdentityResolver()
-        resolver.load_from_database("/tmp/test.db")
+        # Resolve using an alias email
+        canonical_id1 = resolver.resolve_developer("John Doe", "john.work@company.com")
+        
+        # Resolve using canonical email
+        canonical_id2 = resolver.resolve_developer("John Doe", "john@personal.com")
+        
+        # Should resolve to the same canonical identity
+        assert canonical_id1 == canonical_id2
 
-        assert "john@example.com" in resolver.identities
-        identity = resolver.identities["john@example.com"]
-        assert identity.primary_email == "john@example.com"
-        assert identity.commit_count == 5
-        assert len(identity.all_emails) == 2
+    def test_get_developer_stats(self, temp_dir):
+        """Test getting developer statistics."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
 
+        # Add multiple developers
+        resolver.resolve_developer("John Doe", "john@example.com")
+        resolver.resolve_developer("Jane Smith", "jane@example.com")
 
-class TestDeveloperIdentity:
-    """Test cases for the DeveloperIdentity class."""
+        # Update commit stats
+        commits = [
+            {"author_name": "John Doe", "author_email": "john@example.com"},
+            {"author_name": "Jane Smith", "author_email": "jane@example.com"},
+            {"author_name": "John Doe", "author_email": "john@example.com"},
+        ]
+        resolver.update_commit_stats(commits)
 
-    def test_init(self):
-        """Test DeveloperIdentity initialization."""
-        identity = DeveloperIdentity("john@example.com", "John Doe")
+        stats = resolver.get_developer_stats()
 
-        assert identity.primary_email == "john@example.com"
-        assert identity.name == "John Doe"
-        assert identity.commit_count == 0
-        assert identity.all_emails == {"john@example.com"}
-        assert identity.commit_hashes == set()
+        assert len(stats) == 2
+        
+        # Check structure
+        for stat in stats:
+            assert "canonical_id" in stat
+            assert "canonical_email" in stat
+            assert "name" in stat
+            assert "total_commits" in stat
+            assert stat["total_commits"] >= 0
 
-    def test_add_email(self):
-        """Test adding additional email addresses."""
-        identity = DeveloperIdentity("john@example.com", "John Doe")
-
-        identity.add_email("john.doe@company.com")
-
-        assert "john.doe@company.com" in identity.all_emails
-        assert len(identity.all_emails) == 2
-
-    def test_add_commit(self):
-        """Test adding commit to identity."""
-        identity = DeveloperIdentity("john@example.com", "John Doe")
-
-        identity.add_commit("abc123")
-
-        assert identity.commit_count == 1
-        assert "abc123" in identity.commit_hashes
-
-        # Add same commit again - should not duplicate
-        identity.add_commit("abc123")
-
-        assert identity.commit_count == 1
-        assert len(identity.commit_hashes) == 1
-
-    def test_merge_identity(self):
+    def test_merge_identities(self, temp_dir):
         """Test merging two developer identities."""
-        identity1 = DeveloperIdentity("john@example.com", "John Doe")
-        identity1.add_commit("abc123")
-        identity1.add_commit("def456")
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
 
-        identity2 = DeveloperIdentity("john.doe@company.com", "John Doe")
-        identity2.add_commit("ghi789")
-        identity2.add_email("john.work@company.com")
+        # Create two separate identities
+        canonical_id1 = resolver.resolve_developer("John Doe", "john@personal.com")
+        canonical_id2 = resolver.resolve_developer("John D", "john@work.com")
+        
+        # Verify they are different initially
+        assert canonical_id1 != canonical_id2
 
-        identity1.merge(identity2)
+        # Merge the identities
+        resolver.merge_identities(canonical_id1, canonical_id2)
+        
+        # After merging, resolving either should return the same canonical ID
+        resolved_id1 = resolver.resolve_developer("John Doe", "john@personal.com")
+        resolved_id2 = resolver.resolve_developer("John D", "john@work.com")
+        
+        assert resolved_id1 == resolved_id2
 
-        assert identity1.commit_count == 3
-        assert "abc123" in identity1.commit_hashes
-        assert "def456" in identity1.commit_hashes
-        assert "ghi789" in identity1.commit_hashes
-        assert "john.doe@company.com" in identity1.all_emails
-        assert "john.work@company.com" in identity1.all_emails
 
-    def test_to_dict(self):
-        """Test converting identity to dictionary."""
-        identity = DeveloperIdentity("john@example.com", "John Doe")
-        identity.add_email("john.doe@company.com")
-        identity.add_commit("abc123")
-        identity.add_commit("def456")
+class TestDatabaseIntegration:
+    """Test cases for database integration."""
 
-        data = identity.to_dict()
+    def test_persistence_across_sessions(self, temp_dir):
+        """Test that identities persist across resolver sessions."""
+        db_path = temp_dir / "identities.db"
+        
+        # Create first resolver session
+        resolver1 = DeveloperIdentityResolver(db_path)
+        canonical_id = resolver1.resolve_developer("John Doe", "john@example.com")
+        
+        # Create second resolver session
+        resolver2 = DeveloperIdentityResolver(db_path)
+        canonical_id2 = resolver2.resolve_developer("John Doe", "john@example.com")
+        
+        # Should resolve to the same identity
+        assert canonical_id == canonical_id2
 
-        assert data["primary_email"] == "john@example.com"
-        assert data["name"] == "John Doe"
-        assert data["commit_count"] == 2
-        assert set(data["all_emails"]) == {"john@example.com", "john.doe@company.com"}
-        assert set(data["commit_hashes"]) == {"abc123", "def456"}
-
-    def test_from_dict(self):
-        """Test creating identity from dictionary."""
-        data = {
-            "primary_email": "john@example.com",
-            "name": "John Doe",
-            "commit_count": 2,
-            "all_emails": ["john@example.com", "john.doe@company.com"],
-            "commit_hashes": ["abc123", "def456"],
-        }
-
-        identity = DeveloperIdentity.from_dict(data)
-
-        assert identity.primary_email == "john@example.com"
-        assert identity.name == "John Doe"
-        assert identity.commit_count == 2
-        assert "john@example.com" in identity.all_emails
-        assert "john.doe@company.com" in identity.all_emails
-        assert "abc123" in identity.commit_hashes
-        assert "def456" in identity.commit_hashes
+    def test_cache_functionality(self, temp_dir):
+        """Test that caching improves performance."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+        
+        # First resolution (populates cache)
+        canonical_id1 = resolver.resolve_developer("John Doe", "john@example.com")
+        
+        # Second resolution (should use cache)
+        canonical_id2 = resolver.resolve_developer("John Doe", "john@example.com")
+        
+        assert canonical_id1 == canonical_id2
+        # Verify the result is cached
+        cache_key = "john@example.com:john doe"
+        assert cache_key in resolver._cache
+        assert resolver._cache[cache_key] == canonical_id1

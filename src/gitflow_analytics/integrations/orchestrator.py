@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 
 from ..core.cache import GitAnalysisCache
 from .github_integration import GitHubIntegration
@@ -16,7 +16,7 @@ class IntegrationOrchestrator:
         """Initialize integration orchestrator."""
         self.config = config
         self.cache = cache
-        self.integrations: Dict[str, Union[GitHubIntegration, JIRAIntegration]] = {}
+        self.integrations: dict[str, Union[GitHubIntegration, JIRAIntegration]] = {}
 
         # Initialize available integrations
         if config.github and config.github.token:
@@ -44,10 +44,10 @@ class IntegrationOrchestrator:
                     )
 
     def enrich_repository_data(
-        self, repo_config: Any, commits: List[Dict[str, Any]], since: datetime
-    ) -> Dict[str, Any]:
+        self, repo_config: Any, commits: list[dict[str, Any]], since: datetime
+    ) -> dict[str, Any]:
         """Enrich repository data from all available integrations."""
-        enrichment: Dict[str, Any] = {"prs": [], "issues": [], "pr_metrics": {}}
+        enrichment: dict[str, Any] = {"prs": [], "issues": [], "pr_metrics": {}}
 
         # GitHub enrichment
         if "github" in self.integrations and repo_config.github_repo:
@@ -55,7 +55,9 @@ class IntegrationOrchestrator:
             if isinstance(github_integration, GitHubIntegration):
                 try:
                     # Get PR data
-                    prs = github_integration.enrich_repository_with_prs(repo_config.github_repo, commits, since)
+                    prs = github_integration.enrich_repository_with_prs(
+                        repo_config.github_repo, commits, since
+                    )
                     enrichment["prs"] = prs
 
                     # Calculate PR metrics
@@ -82,9 +84,9 @@ class IntegrationOrchestrator:
 
         return enrichment
 
-    def get_platform_issues(self, project_key: str, since: datetime) -> List[Dict[str, Any]]:
+    def get_platform_issues(self, project_key: str, since: datetime) -> list[dict[str, Any]]:
         """Get issues from all configured platforms."""
-        all_issues: List[Dict[str, Any]] = []
+        all_issues: list[dict[str, Any]] = []
 
         # Check cache first
         cached_issues = []
@@ -102,11 +104,11 @@ class IntegrationOrchestrator:
 
     def export_to_json(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
-        project_metrics: Dict[str, Any],
-        dora_metrics: Dict[str, Any],
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
+        project_metrics: dict[str, Any],
+        dora_metrics: dict[str, Any],
         output_path: str,
     ) -> str:
         """Export all data to JSON format for API consumption."""

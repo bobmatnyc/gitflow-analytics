@@ -1,13 +1,13 @@
 """Story point extraction from commits and pull requests."""
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 class StoryPointExtractor:
     """Extract story points from text using configurable patterns."""
 
-    def __init__(self, patterns: Optional[List[str]] = None):
+    def __init__(self, patterns: Optional[list[str]] = None):
         """Initialize with extraction patterns."""
         if patterns is None:
             patterns = [
@@ -40,7 +40,7 @@ class StoryPointExtractor:
         return None
 
     def extract_from_pr(
-        self, pr_data: Dict[str, Any], commit_messages: Optional[List[str]] = None
+        self, pr_data: dict[str, Any], commit_messages: Optional[list[str]] = None
     ) -> Optional[int]:
         """Extract story points from PR with fallback to commits."""
         # Try PR description first (most authoritative)
@@ -79,8 +79,8 @@ class StoryPointExtractor:
         return None
 
     def aggregate_story_points(
-        self, prs: List[Dict[str, Any]], commits: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, prs: list[dict[str, Any]], commits: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Aggregate story points from PRs and commits."""
         # Map commits to PRs
         pr_by_commit = {}
@@ -92,9 +92,9 @@ class StoryPointExtractor:
         pr_commits = set(pr_by_commit.keys())
 
         # Aggregate results
-        orphan_commits: List[Dict[str, Any]] = []
-        unestimated_prs: List[Dict[str, Any]] = []
-        
+        orphan_commits: list[dict[str, Any]] = []
+        unestimated_prs: list[dict[str, Any]] = []
+
         results = {
             "total_story_points": 0,
             "pr_story_points": 0,
@@ -110,7 +110,9 @@ class StoryPointExtractor:
                 results["pr_story_points"] += pr_points
                 results["total_story_points"] += pr_points
             else:
-                unestimated_prs.append({"number": pr.get("number", 0), "title": pr.get("title", "")})
+                unestimated_prs.append(
+                    {"number": pr.get("number", 0), "title": pr.get("title", "")}
+                )
 
         # Process commits not in PRs
         for commit in commits:

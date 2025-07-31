@@ -5,13 +5,13 @@ These tests verify the command-line interface functionality including argument p
 configuration loading, and command execution.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-from click.testing import CliRunner
 import tempfile
 from pathlib import Path
+from unittest.mock import Mock, patch
 
-from gitflow_analytics.cli import cli, analyze, validate
+from click.testing import CliRunner
+
+from gitflow_analytics.cli import analyze, cli
 
 
 class TestCLI:
@@ -103,58 +103,21 @@ class TestCLI:
         assert result.exit_code != 0
         assert "Config file not found" in result.output or "Error" in result.output
 
-    def test_validate_command_help(self):
-        """Test that validate command help is displayed correctly."""
+    def test_cache_stats_command_help(self):
+        """Test that cache-stats command help is displayed correctly."""
         runner = CliRunner()
-        result = runner.invoke(validate, ["--help"])
+        result = runner.invoke(cli, ["cache-stats", "--help"])
 
         assert result.exit_code == 0
         assert "--config" in result.output
 
-    @patch("gitflow_analytics.cli.Config")
-    def test_validate_command_basic(self, mock_config_class):
-        """Test basic validate command execution."""
-        mock_config = Mock()
-        mock_config_class.from_file.return_value = mock_config
-        mock_config.validate.return_value = True
-
+    def test_list_developers_command_help(self):
+        """Test that list-developers command help is displayed correctly."""
         runner = CliRunner()
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write(
-                """
-            repositories:
-              - name: test
-                path: /tmp/test
-                url: https://github.com/test/test.git
-            """
-            )
-            config_path = f.name
-
-        result = runner.invoke(validate, ["--config", config_path])
-
-        # Clean up
-        Path(config_path).unlink()
+        result = runner.invoke(cli, ["list-developers", "--help"])
 
         assert result.exit_code == 0
-        assert "Configuration is valid" in result.output
-
-    @patch("gitflow_analytics.cli.Config")
-    def test_validate_command_invalid_config(self, mock_config_class):
-        """Test validate command with invalid configuration."""
-        mock_config_class.from_file.side_effect = ValueError("Invalid configuration")
-
-        runner = CliRunner()
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write("invalid: yaml: content:")
-            config_path = f.name
-
-        result = runner.invoke(validate, ["--config", config_path])
-
-        # Clean up
-        Path(config_path).unlink()
-
-        assert result.exit_code != 0
-        assert "Invalid configuration" in result.output or "Error" in result.output
+        assert "--config" in result.output
 
 
 class TestVersionDisplay:

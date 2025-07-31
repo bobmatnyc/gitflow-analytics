@@ -1,7 +1,7 @@
 """Base classes for pluggable extractors."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 class ExtractorBase(ABC):
@@ -23,7 +23,7 @@ class StoryPointExtractorBase(ExtractorBase):
 
     @abstractmethod
     def extract_from_pr(
-        self, pr_data: Dict[str, Any], commit_messages: Optional[List[str]] = None
+        self, pr_data: dict[str, Any], commit_messages: Optional[list[str]] = None
     ) -> Optional[int]:
         """Extract story points from pull request."""
         pass
@@ -33,11 +33,11 @@ class TicketExtractorBase(ExtractorBase):
     """Base class for ticket extractors."""
 
     @abstractmethod
-    def extract_from_text(self, text: str) -> List[Dict[str, str]]:
+    def extract_from_text(self, text: str) -> list[dict[str, str]]:
         """Extract ticket references from text."""
         pass
 
     @abstractmethod
-    def extract_by_platform(self, text: str) -> Dict[str, List[str]]:
+    def extract_by_platform(self, text: str) -> dict[str, list[str]]:
         """Extract tickets grouped by platform."""
         pass

@@ -2,13 +2,13 @@
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 
 
 class BranchToProjectMapper:
     """Maps git branches to project keys based on conventions."""
 
-    def __init__(self, mapping_rules: Optional[Dict[str, List[str]]] = None):
+    def __init__(self, mapping_rules: Optional[dict[str, list[str]]] = None):
         """
         Initialize with custom mapping rules.
 
@@ -19,7 +19,7 @@ class BranchToProjectMapper:
         self.mapping_rules = mapping_rules or self._get_default_rules()
         self.compiled_rules = self._compile_patterns()
 
-    def _get_default_rules(self) -> Dict[str, List[str]]:
+    def _get_default_rules(self) -> dict[str, list[str]]:
         """Get default branch mapping rules."""
         return {
             "FRONTEND": [
@@ -97,7 +97,7 @@ class BranchToProjectMapper:
             ],
         }
 
-    def _compile_patterns(self) -> Dict[str, List[re.Pattern]]:
+    def _compile_patterns(self) -> dict[str, list[re.Pattern]]:
         """Compile regex patterns for efficiency."""
         compiled = {}
         for project, patterns in self.mapping_rules.items():
@@ -169,7 +169,7 @@ class BranchToProjectMapper:
                     return prefix_map[prefix]
 
                 # Check if prefix matches any project key
-                for project in self.mapping_rules.keys():
+                for project in self.mapping_rules:
                     if prefix == project or prefix in project:
                         return project
 
@@ -208,7 +208,7 @@ class BranchToProjectMapper:
 
         return "UNKNOWN"
 
-    def add_mapping_rule(self, project: str, patterns: List[str]) -> None:
+    def add_mapping_rule(self, project: str, patterns: list[str]) -> None:
         """Add custom mapping rules for a project."""
         if project not in self.mapping_rules:
             self.mapping_rules[project] = []

@@ -2,13 +2,13 @@
 
 import re
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Optional, cast
 
 
 class TicketExtractor:
     """Extract ticket references from various issue tracking systems."""
 
-    def __init__(self, allowed_platforms: Optional[List[str]] = None) -> None:
+    def __init__(self, allowed_platforms: Optional[list[str]] = None) -> None:
         """Initialize with patterns for different platforms.
 
         Args:
@@ -46,7 +46,7 @@ class TicketExtractor:
                 for pattern in patterns
             ]
 
-    def extract_from_text(self, text: str) -> List[Dict[str, str]]:
+    def extract_from_text(self, text: str) -> list[dict[str, str]]:
         """Extract all ticket references from text."""
         if not text:
             return []
@@ -78,7 +78,7 @@ class TicketExtractor:
 
         return tickets
 
-    def extract_by_platform(self, text: str) -> Dict[str, List[str]]:
+    def extract_by_platform(self, text: str) -> dict[str, list[str]]:
         """Extract tickets grouped by platform."""
         tickets = self.extract_from_text(text)
 
@@ -89,13 +89,13 @@ class TicketExtractor:
         return dict(by_platform)
 
     def analyze_ticket_coverage(
-        self, commits: List[Dict[str, Any]], prs: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, commits: list[dict[str, Any]], prs: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Analyze ticket reference coverage across commits and PRs."""
         ticket_platforms: defaultdict[str, int] = defaultdict(int)
-        untracked_commits: List[Dict[str, Any]] = []
+        untracked_commits: list[dict[str, Any]] = []
         ticket_summary: defaultdict[str, set[str]] = defaultdict(set)
-        
+
         results = {
             "total_commits": len(commits),
             "total_prs": len(prs),
@@ -154,17 +154,13 @@ class TicketExtractor:
         total_commits = cast(int, results["total_commits"])
         commits_with_tickets_count = cast(int, results["commits_with_tickets"])
         results["commit_coverage_pct"] = (
-            commits_with_tickets_count / total_commits * 100
-            if total_commits > 0
-            else 0
+            commits_with_tickets_count / total_commits * 100 if total_commits > 0 else 0
         )
 
         total_prs = cast(int, results["total_prs"])
         prs_with_tickets_count = cast(int, results["prs_with_tickets"])
         results["pr_coverage_pct"] = (
-            prs_with_tickets_count / total_prs * 100
-            if total_prs > 0
-            else 0
+            prs_with_tickets_count / total_prs * 100 if total_prs > 0 else 0
         )
 
         # Convert sets to counts for summary

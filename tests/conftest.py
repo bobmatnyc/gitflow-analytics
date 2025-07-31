@@ -5,16 +5,17 @@ This module provides common test fixtures and configuration that can be shared
 across all test modules.
 """
 
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
+
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from gitflow_analytics.models.database import Base
 from gitflow_analytics.config import Config
+from gitflow_analytics.models.database import Base
 
 
 @pytest.fixture

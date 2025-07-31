@@ -48,6 +48,7 @@ dev = [
     "bandit[toml]>=1.7",
     "safety>=2.0",
     "python-semantic-release>=8.0.0",
+    "types-PyYAML>=6.0",
 ]
 
 github = [
