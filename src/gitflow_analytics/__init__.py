@@ -2,8 +2,8 @@
 
 from ._version import __version__, __version_info__
 
-__author__ = 'Bob Matyas'
-__email__ = 'bobmatnyc@gmail.com'
+__author__ = "Bob Matyas"
+__email__ = "bobmatnyc@gmail.com"
 
 from .core.analyzer import GitAnalyzer
 from .core.cache import GitAnalysisCache
@@ -13,12 +13,12 @@ from .extractors.tickets import TicketExtractor
 from .reports.csv_writer import CSVReportGenerator
 
 __all__ = [
-    '__version__',
-    '__version_info__',
-    'GitAnalyzer',
-    'GitAnalysisCache',
-    'DeveloperIdentityResolver',
-    'StoryPointExtractor',
-    'TicketExtractor',
-    'CSVReportGenerator',
+    "__version__",
+    "__version_info__",
+    "GitAnalyzer",
+    "GitAnalysisCache",
+    "DeveloperIdentityResolver",
+    "StoryPointExtractor",
+    "TicketExtractor",
+    "CSVReportGenerator",
 ]
