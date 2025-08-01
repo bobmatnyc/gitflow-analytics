@@ -1,9 +1,10 @@
 """DORA (DevOps Research and Assessment) metrics calculation."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
+import pytz
 
 
 class DORAMetricsCalculator:
@@ -13,6 +14,28 @@ class DORAMetricsCalculator:
         """Initialize DORA metrics calculator."""
         self.deployment_patterns = ["deploy", "release", "ship", "live", "production", "prod"]
         self.failure_patterns = ["revert", "rollback", "hotfix", "emergency", "incident", "outage"]
+
+    def _normalize_timestamp_to_utc(self, timestamp: Optional[datetime]) -> Optional[datetime]:
+        """Normalize any timestamp to UTC timezone-aware datetime.
+
+        WHY: Ensures all timestamps are timezone-aware UTC to prevent
+        comparison errors when sorting mixed timezone objects.
+
+        Args:
+            timestamp: DateTime object that may be timezone-naive, timezone-aware, or None
+
+        Returns:
+            Timezone-aware datetime in UTC, or None if input is None
+        """
+        if timestamp is None:
+            return None
+
+        if timestamp.tzinfo is None:
+            # Assume naive timestamps are UTC
+            return timestamp.replace(tzinfo=pytz.UTC)
+        else:
+            # Convert timezone-aware timestamps to UTC
+            return timestamp.astimezone(pytz.UTC)
 
     def calculate_dora_metrics(
         self,
@@ -67,7 +90,7 @@ class DORAMetricsCalculator:
                 deployments.append(
                     {
                         "type": "commit",
-                        "timestamp": commit["timestamp"],
+                        "timestamp": self._normalize_timestamp_to_utc(commit["timestamp"]),
                         "identifier": commit["hash"],
                         "message": commit["message"],
                     }
@@ -78,11 +101,12 @@ class DORAMetricsCalculator:
             # Check title
             title_lower = pr.get("title", "").lower()
             if any(pattern in title_lower for pattern in self.deployment_patterns):
+                raw_timestamp = pr.get("merged_at", pr.get("created_at"))
                 deployments.append(
                     {
                         "type": "pr",
-                        "timestamp": pr.get("merged_at", pr.get("created_at")),
-                        "identifier": f"PR#{pr['number']}",
+                        "timestamp": self._normalize_timestamp_to_utc(raw_timestamp),
+                        "identifier": f"PR#{pr.get('number', 'unknown')}",
                         "message": pr["title"],
                     }
                 )
@@ -94,16 +118,20 @@ class DORAMetricsCalculator:
                 any(pattern in label for pattern in self.deployment_patterns)
                 for label in labels_lower
             ):
+                raw_timestamp = pr.get("merged_at", pr.get("created_at"))
                 deployments.append(
                     {
                         "type": "pr",
-                        "timestamp": pr.get("merged_at", pr.get("created_at")),
-                        "identifier": f"PR#{pr['number']}",
+                        "timestamp": self._normalize_timestamp_to_utc(raw_timestamp),
+                        "identifier": f"PR#{pr.get('number', 'unknown')}",
                         "message": pr["title"],
                     }
                 )
 
-        # Remove duplicates and sort by timestamp
+        # Filter out deployments with None timestamps
+        deployments = [d for d in deployments if d["timestamp"] is not None]
+
+        # Remove duplicates and sort by timestamp (now all are timezone-aware UTC)
         seen = set()
         unique_deployments = []
         for dep in sorted(deployments, key=lambda x: x["timestamp"]):
@@ -127,7 +155,7 @@ class DORAMetricsCalculator:
                 failures.append(
                     {
                         "type": "commit",
-                        "timestamp": commit["timestamp"],
+                        "timestamp": self._normalize_timestamp_to_utc(commit["timestamp"]),
                         "identifier": commit["hash"],
                         "message": commit["message"],
                         "is_hotfix": "hotfix" in message_lower or "emergency" in message_lower,
@@ -144,15 +172,19 @@ class DORAMetricsCalculator:
             )
 
             if is_failure:
+                raw_timestamp = pr.get("merged_at", pr.get("created_at"))
                 failures.append(
                     {
                         "type": "pr",
-                        "timestamp": pr.get("merged_at", pr.get("created_at")),
-                        "identifier": f"PR#{pr['number']}",
+                        "timestamp": self._normalize_timestamp_to_utc(raw_timestamp),
+                        "identifier": f"PR#{pr.get('number', 'unknown')}",
                         "message": pr["title"],
                         "is_hotfix": "hotfix" in title_lower or "emergency" in title_lower,
                     }
                 )
+
+        # Filter out failures with None timestamps
+        failures = [f for f in failures if f["timestamp"] is not None]
 
         return failures
 
@@ -163,25 +195,20 @@ class DORAMetricsCalculator:
         if not deployments:
             return {"daily_average": 0, "weekly_average": 0, "category": "Low"}
 
-        # Filter deployments in date range
-        # Ensure all timestamps are timezone-aware for comparison
-        if start_date.tzinfo is None:
-            import pytz
-            start_date = start_date.replace(tzinfo=pytz.UTC)
-        if end_date.tzinfo is None:
-            import pytz
-            end_date = end_date.replace(tzinfo=pytz.UTC)
-            
-        period_deployments = []
-        for d in deployments:
-            dep_time = d["timestamp"]
-            if dep_time.tzinfo is None:
-                import pytz
-                dep_time = dep_time.replace(tzinfo=pytz.UTC)
-            if start_date <= dep_time <= end_date:
-                period_deployments.append(d)
+        # Normalize date range to timezone-aware UTC
+        start_date_utc = self._normalize_timestamp_to_utc(start_date)
+        end_date_utc = self._normalize_timestamp_to_utc(end_date)
 
-        days = (end_date - start_date).days
+        # Handle case where normalization failed
+        if start_date_utc is None or end_date_utc is None:
+            return {"daily_average": 0, "weekly_average": 0, "category": "Low"}
+
+        # Filter deployments in date range (timestamps are already normalized to UTC)
+        period_deployments = [
+            d for d in deployments if start_date_utc <= d["timestamp"] <= end_date_utc
+        ]
+
+        days = (end_date_utc - start_date_utc).days
         weeks = days / 7
 
         daily_avg = len(period_deployments) / days if days > 0 else 0
@@ -213,17 +240,14 @@ class DORAMetricsCalculator:
                 continue
 
             # Calculate time from PR creation to merge
-            # Ensure both timestamps are timezone-aware
-            created_at = pr["created_at"]
-            merged_at = pr["merged_at"]
-            
-            if created_at.tzinfo is None:
-                import pytz
-                created_at = created_at.replace(tzinfo=pytz.UTC)
-            if merged_at.tzinfo is None:
-                import pytz
-                merged_at = merged_at.replace(tzinfo=pytz.UTC)
-                
+            # Normalize both timestamps to UTC
+            created_at = self._normalize_timestamp_to_utc(pr["created_at"])
+            merged_at = self._normalize_timestamp_to_utc(pr["merged_at"])
+
+            # Skip if either timestamp is None after normalization
+            if created_at is None or merged_at is None:
+                continue
+
             lead_time = (merged_at - created_at).total_seconds() / 3600
             lead_times.append(lead_time)
 
@@ -244,22 +268,12 @@ class DORAMetricsCalculator:
         failure_causing_deployments = 0
 
         for deployment in deployments:
-            deploy_time = deployment["timestamp"]
-            
-            # Ensure deployment timestamp is timezone-aware
-            if deploy_time.tzinfo is None:
-                import pytz
-                deploy_time = deploy_time.replace(tzinfo=pytz.UTC)
+            deploy_time = deployment["timestamp"]  # Already normalized to UTC
 
             # Check if any failure occurred within 24 hours
             for failure in failures:
-                failure_time = failure["timestamp"]
-                
-                # Ensure failure timestamp is timezone-aware
-                if failure_time.tzinfo is None:
-                    import pytz
-                    failure_time = failure_time.replace(tzinfo=pytz.UTC)
-                    
+                failure_time = failure["timestamp"]  # Already normalized to UTC
+
                 time_diff = abs((failure_time - deploy_time).total_seconds() / 3600)
 
                 if time_diff <= 24:  # Within 24 hours
@@ -279,25 +293,15 @@ class DORAMetricsCalculator:
 
         # For each failure, find the recovery time
         for _i, failure in enumerate(failures):
-            failure_time = failure["timestamp"]
-            
-            # Ensure failure timestamp is timezone-aware
-            if failure_time.tzinfo is None:
-                import pytz
-                failure_time = failure_time.replace(tzinfo=pytz.UTC)
+            failure_time = failure["timestamp"]  # Already normalized to UTC
 
             # Look for recovery indicators in subsequent commits
             recovery_time = None
 
             # Check subsequent commits for recovery patterns
             for commit in commits:
-                commit_time = commit["timestamp"]
-                
-                # Ensure commit timestamp is timezone-aware
-                if commit_time.tzinfo is None:
-                    import pytz
-                    commit_time = commit_time.replace(tzinfo=pytz.UTC)
-                    
+                commit_time = self._normalize_timestamp_to_utc(commit["timestamp"])
+
                 if commit_time <= failure_time:
                     continue
 
