@@ -5,6 +5,15 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2025-08-01
+
+### Fixed
+- Fixed SQLite index naming conflicts that could cause database errors
+- Fixed PR cache UNIQUE constraint errors with proper upsert logic
+- Fixed timezone comparison errors in report generation
+- Added loading screen to TUI (before abandoning TUI approach)
+- Moved Rich to core dependencies for better CLI output
+
 ## [1.0.1] - 2025-07-31
 
 ### Added
@@ -90,5 +99,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Progress indicators during analysis
 - Detailed logging of operations
 
+[1.0.2]: https://github.com/bobmatnyc/gitflow-analytics/releases/tag/v1.0.2
 [1.0.1]: https://github.com/bobmatnyc/gitflow-analytics/releases/tag/v1.0.1
 [1.0.0]: https://github.com/bobmatnyc/gitflow-analytics/releases/tag/v1.0.0
