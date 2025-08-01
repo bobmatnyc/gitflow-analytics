@@ -1,6 +1,7 @@
 """Git repository analyzer with batch processing support."""
 
 import fnmatch
+import logging
 from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,9 @@ from typing import Any, Optional
 import git
 from git import Repo
 from tqdm import tqdm
+
+# Get logger for this module
+logger = logging.getLogger(__name__)
 
 from ..extractors.story_points import StoryPointExtractor
 from ..extractors.tickets import TicketExtractor
@@ -70,6 +74,8 @@ class GitAnalyzer:
         self, repo: Repo, since: datetime, branch: Optional[str] = None
     ) -> list[git.Commit]:
         """Get commits from repository."""
+        logger.debug(f"Getting commits since: {since} (tzinfo: {getattr(since, 'tzinfo', 'N/A')})")
+        
         if branch:
             try:
                 commits = list(repo.iter_commits(branch, since=since))
@@ -129,13 +135,17 @@ class GitAnalyzer:
 
     def _analyze_commit(self, repo: Repo, commit: git.Commit, repo_path: Path) -> dict[str, Any]:
         """Analyze a single commit."""
+        # Log datetime handling
+        commit_timestamp = commit.committed_datetime
+        logger.debug(f"Analyzing commit {commit.hexsha[:8]}: timestamp={commit_timestamp} (tzinfo: {getattr(commit_timestamp, 'tzinfo', 'N/A')})")
+        
         # Basic commit data
         commit_data = {
             "hash": commit.hexsha,
             "author_name": commit.author.name,
             "author_email": commit.author.email,
             "message": commit.message,
-            "timestamp": commit.committed_datetime,
+            "timestamp": commit_timestamp,
             "is_merge": len(commit.parents) > 1,
         }
 

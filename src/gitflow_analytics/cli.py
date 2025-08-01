@@ -1,5 +1,6 @@
 """Command-line interface for GitFlow Analytics."""
 
+import logging
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -21,6 +22,29 @@ from .metrics.dora import DORAMetricsCalculator
 from .reports.analytics_writer import AnalyticsReportGenerator
 from .reports.csv_writer import CSVReportGenerator
 from .reports.narrative_writer import NarrativeReportGenerator
+
+
+def handle_timezone_error(e: Exception, report_name: str, all_commits: list, logger: logging.Logger) -> None:
+    """Handle timezone comparison errors with detailed logging."""
+    if isinstance(e, TypeError) and ("can't compare" in str(e).lower() or "timezone" in str(e).lower()):
+        logger.error(f"Timezone comparison error in {report_name}:")
+        logger.error(f"  Error: {e}")
+        import traceback
+        logger.error(f"  Full traceback:\n{traceback.format_exc()}")
+        
+        # Log context information
+        sample_commits = all_commits[:5] if all_commits else []
+        for i, commit in enumerate(sample_commits):
+            timestamp = commit.get('timestamp')
+            logger.error(f"  Sample commit {i}: timestamp={timestamp} (tzinfo: {getattr(timestamp, 'tzinfo', 'N/A')})")
+        
+        click.echo(f"   ❌ Timezone comparison error in {report_name}")
+        click.echo(f"   🔍 See logs with --log DEBUG for detailed information")
+        click.echo(f"   💡 This usually indicates mixed timezone-aware and naive datetime objects")
+        raise
+    else:
+        # Re-raise other errors
+        raise
 
 
 @click.group()
@@ -61,6 +85,12 @@ def cli() -> None:
 @click.option("--enable-qualitative", is_flag=True, help="Enable qualitative analysis (requires additional dependencies)")
 @click.option("--qualitative-only", is_flag=True, help="Run only qualitative analysis on existing commits")
 @click.option("--rich", is_flag=True, default=True, help="Use rich terminal output (default: enabled)")
+@click.option(
+    "--log",
+    type=click.Choice(["none", "INFO", "DEBUG"], case_sensitive=False),
+    default="none",
+    help="Enable logging with specified level (default: none)"
+)
 def analyze(
     config: Path,
     weeks: int,
@@ -72,11 +102,32 @@ def analyze(
     enable_qualitative: bool,
     qualitative_only: bool,
     rich: bool,
+    log: str,
 ) -> None:
     """Analyze Git repositories using configuration file."""
 
     # Initialize display - use rich by default, fall back to simple output if needed
     display = create_rich_display() if rich else None
+    
+    # Configure logging based on the --log option
+    if log.upper() != "NONE":
+        # Configure structured logging with detailed formatter
+        log_level = getattr(logging, log.upper())
+        logging.basicConfig(
+            level=log_level,
+            format='[%(levelname)s] %(filename)s:%(lineno)d - %(message)s',
+            handlers=[
+                logging.StreamHandler(sys.stderr)
+            ]
+        )
+        
+        # Create logger for this module
+        logger = logging.getLogger(__name__)
+        logger.info(f"Logging enabled at {log.upper()} level")
+    else:
+        # Disable logging
+        logging.getLogger().setLevel(logging.CRITICAL)
+        logger = logging.getLogger(__name__)
     
     try:
         if display:
@@ -504,6 +555,10 @@ def analyze(
             if not display:
                 click.echo(f"   ✅ Weekly metrics: {weekly_report}")
         except Exception as e:
+            try:
+                handle_timezone_error(e, "weekly metrics report", all_commits, logger)
+            except:
+                pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error generating weekly metrics report: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
@@ -553,6 +608,10 @@ def analyze(
             if not display:
                 click.echo(f"   ✅ Activity distribution: {activity_report}")
         except Exception as e:
+            try:
+                handle_timezone_error(e, "activity distribution report", all_commits, logger)
+            except:
+                pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error generating activity distribution report: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
@@ -570,6 +629,10 @@ def analyze(
             if not display:
                 click.echo(f"   ✅ Developer focus: {focus_report}")
         except Exception as e:
+            try:
+                handle_timezone_error(e, "developer focus report", all_commits, logger)
+            except:
+                pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error generating developer focus report: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
@@ -587,6 +650,10 @@ def analyze(
             if not display:
                 click.echo(f"   ✅ Qualitative insights: {insights_report}")
         except Exception as e:
+            try:
+                handle_timezone_error(e, "qualitative insights report", all_commits, logger)
+            except:
+                pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error generating qualitative insights report: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
