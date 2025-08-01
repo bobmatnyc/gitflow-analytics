@@ -135,9 +135,22 @@ class GitAnalyzer:
 
     def _analyze_commit(self, repo: Repo, commit: git.Commit, repo_path: Path) -> dict[str, Any]:
         """Analyze a single commit."""
-        # Log datetime handling
+        # Normalize timestamp handling
         commit_timestamp = commit.committed_datetime
-        logger.debug(f"Analyzing commit {commit.hexsha[:8]}: timestamp={commit_timestamp} (tzinfo: {getattr(commit_timestamp, 'tzinfo', 'N/A')})")
+        logger.debug(f"Analyzing commit {commit.hexsha[:8]}: original timestamp={commit_timestamp} (tzinfo: {getattr(commit_timestamp, 'tzinfo', 'N/A')})")
+        
+        # Ensure timezone-aware timestamp in UTC
+        from datetime import timezone
+        if commit_timestamp.tzinfo is None:
+            # Convert naive datetime to UTC
+            commit_timestamp = commit_timestamp.replace(tzinfo=timezone.utc)
+            logger.debug(f"  Converted naive timestamp to UTC: {commit_timestamp}")
+        elif commit_timestamp.tzinfo != timezone.utc:
+            # Convert to UTC if in different timezone
+            commit_timestamp = commit_timestamp.astimezone(timezone.utc)
+            logger.debug(f"  Converted timestamp to UTC: {commit_timestamp}")
+        else:
+            logger.debug(f"  Timestamp already in UTC: {commit_timestamp}")
         
         # Basic commit data
         commit_data = {
@@ -145,7 +158,7 @@ class GitAnalyzer:
             "author_name": commit.author.name,
             "author_email": commit.author.email,
             "message": commit.message,
-            "timestamp": commit_timestamp,
+            "timestamp": commit_timestamp,  # Now guaranteed to be UTC timezone-aware
             "is_merge": len(commit.parents) > 1,
         }
 

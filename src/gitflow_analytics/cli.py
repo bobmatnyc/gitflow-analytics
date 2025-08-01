@@ -118,15 +118,24 @@ def analyze(
             format='[%(levelname)s] %(filename)s:%(lineno)d - %(message)s',
             handlers=[
                 logging.StreamHandler(sys.stderr)
-            ]
+            ],
+            force=True  # Ensure reconfiguration of existing loggers
         )
+        
+        # Ensure all GitFlow Analytics loggers are configured properly
+        root_logger = logging.getLogger('gitflow_analytics')
+        root_logger.setLevel(log_level)
         
         # Create logger for this module
         logger = logging.getLogger(__name__)
         logger.info(f"Logging enabled at {log.upper()} level")
+        
+        # Log that logging is properly configured for all modules
+        logger.debug("Logging configuration applied to all gitflow_analytics modules")
     else:
         # Disable logging
         logging.getLogger().setLevel(logging.CRITICAL)
+        logging.getLogger('gitflow_analytics').setLevel(logging.CRITICAL)
         logger = logging.getLogger(__name__)
     
     try:
@@ -539,6 +548,13 @@ def analyze(
             display.print_status("Generating reports...", "info")
         else:
             click.echo("\n📊 Generating reports...")
+        
+        logger.debug(f"Starting report generation with {len(all_commits)} commits")
+        logger.debug(f"Sample commit timestamps (first 3):")
+        for i, commit in enumerate(all_commits[:3]):
+            timestamp = commit.get('timestamp')
+            logger.debug(f"  Commit {i}: {timestamp} (tzinfo: {getattr(timestamp, 'tzinfo', 'N/A')})")
+        
         report_gen = CSVReportGenerator(anonymize=anonymize or cfg.output.anonymize_enabled)
         analytics_gen = AnalyticsReportGenerator(
             anonymize=anonymize or cfg.output.anonymize_enabled
@@ -550,11 +566,14 @@ def analyze(
         # Weekly metrics report
         weekly_report = output / f'weekly_metrics_{datetime.now(timezone.utc).strftime("%Y%m%d")}.csv'
         try:
+            logger.debug("Starting weekly metrics report generation")
             report_gen.generate_weekly_report(all_commits, developer_stats, weekly_report, weeks)
+            logger.debug("Weekly metrics report completed successfully")
             generated_reports.append(weekly_report.name)
             if not display:
                 click.echo(f"   ✅ Weekly metrics: {weekly_report}")
         except Exception as e:
+            logger.error(f"Error in weekly metrics report generation: {e}")
             try:
                 handle_timezone_error(e, "weekly metrics report", all_commits, logger)
             except:
@@ -601,13 +620,16 @@ def analyze(
         # Activity distribution report
         activity_report = output / f'activity_distribution_{datetime.now().strftime("%Y%m%d")}.csv'
         try:
+            logger.debug("Starting activity distribution report generation")
             analytics_gen.generate_activity_distribution_report(
                 all_commits, developer_stats, activity_report
             )
+            logger.debug("Activity distribution report completed successfully")
             generated_reports.append(activity_report.name)
             if not display:
                 click.echo(f"   ✅ Activity distribution: {activity_report}")
         except Exception as e:
+            logger.error(f"Error in activity distribution report generation: {e}")
             try:
                 handle_timezone_error(e, "activity distribution report", all_commits, logger)
             except:
@@ -622,13 +644,16 @@ def analyze(
         # Developer focus report
         focus_report = output / f'developer_focus_{datetime.now().strftime("%Y%m%d")}.csv'
         try:
+            logger.debug("Starting developer focus report generation")
             analytics_gen.generate_developer_focus_report(
                 all_commits, developer_stats, focus_report, weeks
             )
+            logger.debug("Developer focus report completed successfully")
             generated_reports.append(focus_report.name)
             if not display:
                 click.echo(f"   ✅ Developer focus: {focus_report}")
         except Exception as e:
+            logger.error(f"Error in developer focus report generation: {e}")
             try:
                 handle_timezone_error(e, "developer focus report", all_commits, logger)
             except:
@@ -643,13 +668,16 @@ def analyze(
         # Qualitative insights report
         insights_report = output / f'qualitative_insights_{datetime.now().strftime("%Y%m%d")}.csv'
         try:
+            logger.debug("Starting qualitative insights report generation")
             analytics_gen.generate_qualitative_insights_report(
                 all_commits, developer_stats, ticket_analysis, insights_report
             )
+            logger.debug("Qualitative insights report completed successfully")
             generated_reports.append(insights_report.name)
             if not display:
                 click.echo(f"   ✅ Qualitative insights: {insights_report}")
         except Exception as e:
+            logger.error(f"Error in qualitative insights report generation: {e}")
             try:
                 handle_timezone_error(e, "qualitative insights report", all_commits, logger)
             except:
