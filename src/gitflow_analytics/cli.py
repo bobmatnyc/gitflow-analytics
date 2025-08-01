@@ -690,96 +690,184 @@ def analyze(
             raise
 
         # Calculate DORA metrics
-        dora_calculator = DORAMetricsCalculator()
-        dora_metrics = dora_calculator.calculate_dora_metrics(
-            all_commits, all_prs, start_date, end_date
-        )
+        try:
+            logger.debug("Starting DORA metrics calculation")
+            dora_calculator = DORAMetricsCalculator()
+            dora_metrics = dora_calculator.calculate_dora_metrics(
+                all_commits, all_prs, start_date, end_date
+            )
+            logger.debug("DORA metrics calculation completed successfully")
+        except Exception as e:
+            logger.error(f"Error in DORA metrics calculation: {e}")
+            try:
+                handle_timezone_error(e, "DORA metrics calculation", all_commits, logger)
+            except:
+                pass  # Let the original error handling below take over
+            click.echo(f"   ❌ Error calculating DORA metrics: {e}")
+            click.echo(f"   🔍 Error type: {type(e).__name__}")
+            click.echo(f"   📍 Error details: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
 
         # Aggregate PR metrics
-        pr_metrics = {}
-        for enrichment in all_enrichments.values():
-            if enrichment.get("pr_metrics"):
-                # Combine metrics (simplified - in production would properly aggregate)
-                pr_metrics = enrichment["pr_metrics"]
-                break
+        try:
+            logger.debug("Starting PR metrics aggregation")
+            pr_metrics = {}
+            for enrichment in all_enrichments.values():
+                if enrichment.get("pr_metrics"):
+                    # Combine metrics (simplified - in production would properly aggregate)
+                    pr_metrics = enrichment["pr_metrics"]
+                    break
+            logger.debug("PR metrics aggregation completed successfully")
+        except Exception as e:
+            logger.error(f"Error in PR metrics aggregation: {e}")
+            try:
+                handle_timezone_error(e, "PR metrics aggregation", all_commits, logger)
+            except:
+                pass  # Let the original error handling below take over
+            click.echo(f"   ❌ Error aggregating PR metrics: {e}")
+            click.echo(f"   🔍 Error type: {type(e).__name__}")
+            click.echo(f"   📍 Error details: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
 
         # Generate narrative report if markdown format is enabled
         if "markdown" in cfg.output.formats:
-            narrative_gen = NarrativeReportGenerator()
+            try:
+                logger.debug("Starting narrative report generation")
+                narrative_gen = NarrativeReportGenerator()
 
-            # Load activity distribution data
-            activity_df = pd.read_csv(activity_report)
-            activity_data = cast(list[dict[str, Any]], activity_df.to_dict("records"))
+                # Load activity distribution data
+                logger.debug("Loading activity distribution data")
+                activity_df = pd.read_csv(activity_report)
+                activity_data = cast(list[dict[str, Any]], activity_df.to_dict("records"))
 
-            # Load focus data
-            focus_df = pd.read_csv(focus_report)
-            focus_data = cast(list[dict[str, Any]], focus_df.to_dict("records"))
+                # Load focus data
+                logger.debug("Loading focus data")
+                focus_df = pd.read_csv(focus_report)
+                focus_data = cast(list[dict[str, Any]], focus_df.to_dict("records"))
 
-            # Load insights data
-            insights_df = pd.read_csv(insights_report)
-            insights_data = cast(list[dict[str, Any]], insights_df.to_dict("records"))
+                # Load insights data
+                logger.debug("Loading insights data")
+                insights_df = pd.read_csv(insights_report)
+                insights_data = cast(list[dict[str, Any]], insights_df.to_dict("records"))
 
-            narrative_report = output / f'narrative_report_{datetime.now().strftime("%Y%m%d")}.md'
-            narrative_gen.generate_narrative_report(
-                all_commits,
-                all_prs,
-                developer_stats,
-                activity_data,
-                focus_data,
-                insights_data,
-                ticket_analysis,
-                pr_metrics,
-                narrative_report,
-                weeks,
-            )
-            generated_reports.append(narrative_report.name)
-            if not display:
-                click.echo(f"   ✅ Narrative report: {narrative_report}")
+                logger.debug("Generating narrative report")
+                narrative_report = output / f'narrative_report_{datetime.now().strftime("%Y%m%d")}.md'
+                narrative_gen.generate_narrative_report(
+                    all_commits,
+                    all_prs,
+                    developer_stats,
+                    activity_data,
+                    focus_data,
+                    insights_data,
+                    ticket_analysis,
+                    pr_metrics,
+                    narrative_report,
+                    weeks,
+                )
+                generated_reports.append(narrative_report.name)
+                logger.debug("Narrative report generation completed successfully")
+                if not display:
+                    click.echo(f"   ✅ Narrative report: {narrative_report}")
+            except Exception as e:
+                logger.error(f"Error in narrative report generation: {e}")
+                try:
+                    handle_timezone_error(e, "narrative report generation", all_commits, logger)
+                except:
+                    pass  # Let the original error handling below take over
+                click.echo(f"   ❌ Error generating narrative report: {e}")
+                click.echo(f"   🔍 Error type: {type(e).__name__}")
+                click.echo(f"   📍 Error details: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
 
         # Generate JSON export if enabled
         if "json" in cfg.output.formats:
-            json_report = output / f'gitflow_export_{datetime.now().strftime("%Y%m%d")}.json'
+            try:
+                logger.debug("Starting JSON export generation")
+                json_report = output / f'gitflow_export_{datetime.now().strftime("%Y%m%d")}.json'
 
-            project_metrics = {
-                "ticket_analysis": ticket_analysis,
-                "pr_metrics": pr_metrics,
-                "enrichments": all_enrichments,
-            }
+                project_metrics = {
+                    "ticket_analysis": ticket_analysis,
+                    "pr_metrics": pr_metrics,
+                    "enrichments": all_enrichments,
+                }
 
-            orchestrator.export_to_json(
-                all_commits,
-                all_prs,
-                developer_stats,
-                project_metrics,
-                dora_metrics,
-                str(json_report),
-            )
-            generated_reports.append(json_report.name)
-            if not display:
-                click.echo(f"   ✅ JSON export: {json_report}")
+                logger.debug("Calling orchestrator.export_to_json")
+                orchestrator.export_to_json(
+                    all_commits,
+                    all_prs,
+                    developer_stats,
+                    project_metrics,
+                    dora_metrics,
+                    str(json_report),
+                )
+                generated_reports.append(json_report.name)
+                logger.debug("JSON export generation completed successfully")
+                if not display:
+                    click.echo(f"   ✅ JSON export: {json_report}")
+            except Exception as e:
+                logger.error(f"Error in JSON export generation: {e}")
+                try:
+                    handle_timezone_error(e, "JSON export generation", all_commits, logger)
+                except:
+                    pass  # Let the original error handling below take over
+                click.echo(f"   ❌ Error generating JSON export: {e}")
+                click.echo(f"   🔍 Error type: {type(e).__name__}")
+                click.echo(f"   📍 Error details: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
 
-        total_story_points = sum(c.get("story_points", 0) or 0 for c in all_commits)
-        qualitative_count = len(qualitative_results) if qualitative_results else 0
-        
-        # Show results summary
-        if display:
-            display.show_analysis_summary(
-                total_commits=len(all_commits),
-                total_prs=len(all_prs),
-                active_developers=len(developer_stats),
-                ticket_coverage=ticket_analysis['commit_coverage_pct'],
-                story_points=total_story_points,
-                qualitative_analyzed=qualitative_count
-            )
-            
-            # Show DORA metrics
-            if dora_metrics:
-                display.show_dora_metrics(dora_metrics)
-            
-            # Show generated reports
-            display.show_reports_generated(output, generated_reports)
-            
-            display.print_status("Analysis complete!", "success")
+        try:
+            logger.debug("Starting final summary calculations")
+            total_story_points = sum(c.get("story_points", 0) or 0 for c in all_commits)
+            qualitative_count = len(qualitative_results) if qualitative_results else 0
+            logger.debug("Final summary calculations completed successfully")
+
+            # Show results summary
+            if display:
+                logger.debug("Starting display.show_analysis_summary")
+                display.show_analysis_summary(
+                    total_commits=len(all_commits),
+                    total_prs=len(all_prs),
+                    active_developers=len(developer_stats),
+                    ticket_coverage=ticket_analysis['commit_coverage_pct'],
+                    story_points=total_story_points,
+                    qualitative_analyzed=qualitative_count
+                )
+                logger.debug("display.show_analysis_summary completed successfully")
+                
+                # Show DORA metrics
+                if dora_metrics:
+                    logger.debug("Starting display.show_dora_metrics")
+                    display.show_dora_metrics(dora_metrics)
+                    logger.debug("display.show_dora_metrics completed successfully")
+                
+                # Show generated reports
+                logger.debug("Starting display.show_reports_generated")
+                display.show_reports_generated(output, generated_reports)
+                logger.debug("display.show_reports_generated completed successfully")
+                
+                logger.debug("Starting display.print_status")
+                display.print_status("Analysis complete!", "success")
+                logger.debug("display.print_status completed successfully")
+        except Exception as e:
+            logger.error(f"Error in final summary/display: {e}")
+            try:
+                handle_timezone_error(e, "final summary/display", all_commits, logger)
+            except:
+                pass  # Let the original error handling below take over
+            click.echo(f"   ❌ Error in final summary/display: {e}")
+            click.echo(f"   🔍 Error type: {type(e).__name__}")
+            click.echo(f"   📍 Error details: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
         else:
             # Print summary in simple format
             click.echo("\n📈 Analysis Summary:")

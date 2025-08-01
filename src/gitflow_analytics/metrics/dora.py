@@ -164,7 +164,22 @@ class DORAMetricsCalculator:
             return {"daily_average": 0, "weekly_average": 0, "category": "Low"}
 
         # Filter deployments in date range
-        period_deployments = [d for d in deployments if start_date <= d["timestamp"] <= end_date]
+        # Ensure all timestamps are timezone-aware for comparison
+        if start_date.tzinfo is None:
+            import pytz
+            start_date = start_date.replace(tzinfo=pytz.UTC)
+        if end_date.tzinfo is None:
+            import pytz
+            end_date = end_date.replace(tzinfo=pytz.UTC)
+            
+        period_deployments = []
+        for d in deployments:
+            dep_time = d["timestamp"]
+            if dep_time.tzinfo is None:
+                import pytz
+                dep_time = dep_time.replace(tzinfo=pytz.UTC)
+            if start_date <= dep_time <= end_date:
+                period_deployments.append(d)
 
         days = (end_date - start_date).days
         weeks = days / 7
@@ -198,7 +213,18 @@ class DORAMetricsCalculator:
                 continue
 
             # Calculate time from PR creation to merge
-            lead_time = (pr["merged_at"] - pr["created_at"]).total_seconds() / 3600
+            # Ensure both timestamps are timezone-aware
+            created_at = pr["created_at"]
+            merged_at = pr["merged_at"]
+            
+            if created_at.tzinfo is None:
+                import pytz
+                created_at = created_at.replace(tzinfo=pytz.UTC)
+            if merged_at.tzinfo is None:
+                import pytz
+                merged_at = merged_at.replace(tzinfo=pytz.UTC)
+                
+            lead_time = (merged_at - created_at).total_seconds() / 3600
             lead_times.append(lead_time)
 
         if not lead_times:
@@ -219,10 +245,21 @@ class DORAMetricsCalculator:
 
         for deployment in deployments:
             deploy_time = deployment["timestamp"]
+            
+            # Ensure deployment timestamp is timezone-aware
+            if deploy_time.tzinfo is None:
+                import pytz
+                deploy_time = deploy_time.replace(tzinfo=pytz.UTC)
 
             # Check if any failure occurred within 24 hours
             for failure in failures:
                 failure_time = failure["timestamp"]
+                
+                # Ensure failure timestamp is timezone-aware
+                if failure_time.tzinfo is None:
+                    import pytz
+                    failure_time = failure_time.replace(tzinfo=pytz.UTC)
+                    
                 time_diff = abs((failure_time - deploy_time).total_seconds() / 3600)
 
                 if time_diff <= 24:  # Within 24 hours
@@ -243,20 +280,32 @@ class DORAMetricsCalculator:
         # For each failure, find the recovery time
         for _i, failure in enumerate(failures):
             failure_time = failure["timestamp"]
+            
+            # Ensure failure timestamp is timezone-aware
+            if failure_time.tzinfo is None:
+                import pytz
+                failure_time = failure_time.replace(tzinfo=pytz.UTC)
 
             # Look for recovery indicators in subsequent commits
             recovery_time = None
 
             # Check subsequent commits for recovery patterns
             for commit in commits:
-                if commit["timestamp"] <= failure_time:
+                commit_time = commit["timestamp"]
+                
+                # Ensure commit timestamp is timezone-aware
+                if commit_time.tzinfo is None:
+                    import pytz
+                    commit_time = commit_time.replace(tzinfo=pytz.UTC)
+                    
+                if commit_time <= failure_time:
                     continue
 
                 message_lower = commit["message"].lower()
                 recovery_patterns = ["fixed", "resolved", "recovery", "restored"]
 
                 if any(pattern in message_lower for pattern in recovery_patterns):
-                    recovery_time = commit["timestamp"]
+                    recovery_time = commit_time
                     break
 
             # If we found a recovery, calculate MTTR
