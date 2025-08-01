@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -213,6 +213,12 @@ class AnalysisProgressScreen(Screen):
         log.write_line("🔗 Initializing integrations...")
         self.orchestrator = IntegrationOrchestrator(self.config, self.cache)
         
+        # Check if we have pre-loaded NLP engine from startup
+        if hasattr(self.app, 'get_nlp_engine') and self.app.get_nlp_engine():
+            log.write_line("✅ NLP engine already loaded from startup")
+        elif self.enable_qualitative:
+            log.write_line("⚠️ NLP engine will be loaded during qualitative analysis phase")
+        
         # Small delay to show progress
         await asyncio.sleep(0.5)
     
@@ -250,8 +256,8 @@ class AnalysisProgressScreen(Screen):
         all_commits = []
         all_prs = []
         
-        # Analysis period
-        end_date = datetime.now()
+        # Analysis period (timezone-aware to match commit timestamps)
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(weeks=self.weeks)
         
         for i, repo_config in enumerate(repositories):
@@ -306,7 +312,7 @@ class AnalysisProgressScreen(Screen):
         """Enrich data with integration sources."""
         integration_progress = self.query_one("#integration-progress", AnalysisProgressWidget)
         
-        end_date = datetime.now()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(weeks=self.weeks)
         
         for i, repo_config in enumerate(repositories):
@@ -360,18 +366,28 @@ class AnalysisProgressScreen(Screen):
         try:
             log.write_line("🧠 Starting qualitative analysis...")
             
-            # Import qualitative processor
-            from gitflow_analytics.qualitative.core.processor import QualitativeProcessor
+            # Check if NLP engine is pre-loaded from startup
+            nlp_engine = None
+            if hasattr(self.app, 'get_nlp_engine'):
+                nlp_engine = self.app.get_nlp_engine()
             
-            qual_processor = QualitativeProcessor(self.config.qualitative)
-            
-            # Validate setup
-            is_valid, issues = qual_processor.validate_setup()
-            if not is_valid:
-                log.write_line("   ⚠️ Qualitative analysis setup issues:")
-                for issue in issues:
-                    log.write_line(f"      - {issue}")
-                return
+            if nlp_engine:
+                log.write_line("   ✅ Using pre-loaded NLP engine")
+                qual_processor = None  # We'll use the NLP engine directly
+            else:
+                log.write_line("   ⏳ Initializing qualitative processor...")
+                # Import qualitative processor
+                from gitflow_analytics.qualitative.core.processor import QualitativeProcessor
+                
+                qual_processor = QualitativeProcessor(self.config.qualitative)
+                
+                # Validate setup
+                is_valid, issues = qual_processor.validate_setup()
+                if not is_valid:
+                    log.write_line("   ⚠️ Qualitative analysis setup issues:")
+                    for issue in issues:
+                        log.write_line(f"      - {issue}")
+                    return
             
             # Process commits in batches
             batch_size = 100
@@ -404,8 +420,13 @@ class AnalysisProgressScreen(Screen):
                     }
                     qual_batch.append(qual_commit)
                 
-                # Process batch
-                results = qual_processor.process_commits(qual_batch, show_progress=False)
+                # Process batch using pre-loaded NLP engine or processor
+                if nlp_engine:
+                    # Use the pre-loaded NLP engine directly
+                    results = nlp_engine.process_batch(qual_batch)
+                else:
+                    # Use the qualitative processor
+                    results = qual_processor.process_commits(qual_batch, show_progress=False)
                 
                 # Update original commits with qualitative data
                 for original, enhanced in zip(batch, results):

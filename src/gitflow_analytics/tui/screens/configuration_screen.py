@@ -117,23 +117,23 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
             with TabbedContent():
                 # Basic Settings Tab
                 with TabPane("Basic Settings", id="basic"):
-                    yield self._compose_basic_settings()
+                    yield from self._compose_basic_settings()
                 
                 # API Keys Tab
                 with TabPane("API Keys", id="api-keys"):
-                    yield self._compose_api_keys()
+                    yield from self._compose_api_keys()
                 
                 # Analysis Settings Tab
                 with TabPane("Analysis", id="analysis"):
-                    yield self._compose_analysis_settings()
+                    yield from self._compose_analysis_settings()
                 
                 # Cache Settings Tab
                 with TabPane("Cache", id="cache"):
-                    yield self._compose_cache_settings()
+                    yield from self._compose_cache_settings()
                 
                 # Repository Settings Tab
                 with TabPane("Repositories", id="repositories"):
-                    yield self._compose_repository_settings()
+                    yield from self._compose_repository_settings()
             
             # Validation status
             with Container(id="validation-status"):
@@ -145,18 +145,16 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
                 yield Button("Cancel", variant="default", id="cancel-btn")
                 yield Button("Save Configuration", variant="primary", id="save-btn")
     
-    def _compose_basic_settings(self) -> Container:
+    def _compose_basic_settings(self):
         """Compose basic settings tab."""
-        container = Container()
-        
         # Configuration file path
-        container.mount(Label("Configuration File:", classes="section-title"))
-        container.mount(Static(
+        yield Label("Configuration File:", classes="section-title")
+        yield Static(
             "Path where the configuration will be saved",
             classes="help-text"
-        ))
+        )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Config Path:", classes="form-label")
             yield Input(
                 value=str(self.config_path) if self.config_path else "config.yaml",
@@ -166,10 +164,10 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
             )
         
         # Analysis period
-        container.mount(Rule())
-        container.mount(Label("Analysis Settings:", classes="section-title"))
+        yield Rule()
+        yield Label("Analysis Settings:", classes="section-title")
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Analysis Period (weeks):", classes="form-label")
             yield Input(
                 value="12",
@@ -179,29 +177,25 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
                 validators=[Function(self._validate_positive_integer, "Must be a positive integer")]
             )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Enable Qualitative Analysis:", classes="form-label")
             yield Switch(value=True, id="enable-qualitative")
         
-        container.mount(Static(
+        yield Static(
             "Qualitative analysis provides deeper insights into commit patterns and code changes",
             classes="help-text"
-        ))
-        
-        return container
+        )
     
-    def _compose_api_keys(self) -> Container:
+    def _compose_api_keys(self):
         """Compose API keys tab."""
-        container = Container()
-        
         # GitHub
-        container.mount(Label("GitHub Configuration:", classes="section-title"))
-        container.mount(Static(
+        yield Label("GitHub Configuration:", classes="section-title")
+        yield Static(
             "Required for accessing GitHub repositories and pull request data",
             classes="help-text"
-        ))
+        )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Personal Access Token:", classes="form-label")
             yield Input(
                 placeholder="ghp_xxxxxxxxxxxxxxxxxxxx",
@@ -210,7 +204,7 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
                 id="github-token"
             )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Organization (optional):", classes="form-label")
             yield Input(
                 placeholder="your-organization",
@@ -219,14 +213,14 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
             )
         
         # OpenRouter (for qualitative analysis)
-        container.mount(Rule())
-        container.mount(Label("OpenRouter Configuration:", classes="section-title"))
-        container.mount(Static(
+        yield Rule()
+        yield Label("OpenRouter Configuration:", classes="section-title")
+        yield Static(
             "Required for AI-powered qualitative analysis of commit messages",
             classes="help-text"
-        ))
+        )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("API Key:", classes="form-label")
             yield Input(
                 placeholder="sk-or-xxxxxxxxxxxxxxxxxxxx",
@@ -236,14 +230,14 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
             )
         
         # JIRA
-        container.mount(Rule())
-        container.mount(Label("JIRA Configuration (Optional):", classes="section-title"))
-        container.mount(Static(
+        yield Rule()
+        yield Label("JIRA Configuration (Optional):", classes="section-title")
+        yield Static(
             "Optional: Connect to JIRA for enhanced ticket tracking and story point analysis",
             classes="help-text"
-        ))
+        )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Base URL:", classes="form-label")
             yield Input(
                 placeholder="https://company.atlassian.net",
@@ -251,7 +245,7 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
                 id="jira-url"
             )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Username/Email:", classes="form-label")
             yield Input(
                 placeholder="your.email@company.com",
@@ -259,7 +253,7 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
                 id="jira-user"
             )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("API Token:", classes="form-label")
             yield Input(
                 placeholder="ATATT3xFfGF0...",
@@ -267,16 +261,12 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
                 classes="form-input",
                 id="jira-token"
             )
-        
-        return container
     
-    def _compose_analysis_settings(self) -> Container:
+    def _compose_analysis_settings(self):
         """Compose analysis settings tab."""
-        container = Container()
+        yield Label("Developer Identity Resolution:", classes="section-title")
         
-        container.mount(Label("Developer Identity Resolution:", classes="section-title"))
-        
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Similarity Threshold:", classes="form-label")
             yield Input(
                 value="0.85",
@@ -286,15 +276,15 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
                 validators=[Function(self._validate_float_0_1, "Must be between 0.0 and 1.0")]
             )
         
-        container.mount(Static(
+        yield Static(
             "Threshold for fuzzy matching of developer names (0.0 = loose, 1.0 = exact)",
             classes="help-text"
-        ))
+        )
         
-        container.mount(Rule())
-        container.mount(Label("Ticket Platform Settings:", classes="section-title"))
+        yield Rule()
+        yield Label("Ticket Platform Settings:", classes="section-title")
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Allowed Platforms:", classes="form-label")
             yield Input(
                 placeholder="jira,github,linear (comma-separated)",
@@ -302,30 +292,26 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
                 id="ticket-platforms"
             )
         
-        container.mount(Rule())
-        container.mount(Label("Path Exclusions:", classes="section-title"))
+        yield Rule()
+        yield Label("Path Exclusions:", classes="section-title")
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Exclude Paths:", classes="form-label")
             yield Input(
                 placeholder="node_modules,dist,build (comma-separated)",
                 classes="form-input",
                 id="exclude-paths"
             )
-        
-        return container
     
-    def _compose_cache_settings(self) -> Container:
+    def _compose_cache_settings(self):
         """Compose cache settings tab."""
-        container = Container()
-        
-        container.mount(Label("Cache Configuration:", classes="section-title"))
-        container.mount(Static(
+        yield Label("Cache Configuration:", classes="section-title")
+        yield Static(
             "Caching improves performance by storing analyzed data locally",
             classes="help-text"
-        ))
+        )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Cache Directory:", classes="form-label")
             yield Input(
                 value=".gitflow-cache",
@@ -334,7 +320,7 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
                 id="cache-dir"
             )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Cache TTL (hours):", classes="form-label")
             yield Input(
                 value="168",
@@ -344,50 +330,44 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
                 validators=[Function(self._validate_positive_integer, "Must be a positive integer")]
             )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Clear cache on startup:", classes="form-label")
             yield Switch(value=False, id="clear-cache")
         
-        container.mount(Static(
+        yield Static(
             "168 hours = 1 week. Cached data older than this will be refreshed.",
             classes="help-text"
-        ))
-        
-        return container
+        )
     
-    def _compose_repository_settings(self) -> Container:
+    def _compose_repository_settings(self):
         """Compose repository settings tab."""
-        container = Container()
-        
-        container.mount(Label("Repository Discovery:", classes="section-title"))
-        container.mount(Static(
+        yield Label("Repository Discovery:", classes="section-title")
+        yield Static(
             "Configure how repositories are discovered and analyzed",
             classes="help-text"
-        ))
+        )
         
-        with container.mount(Horizontal(classes="form-row")):
+        with Horizontal(classes="form-row"):
             yield Label("Auto-discover from org:", classes="form-label")
             yield Switch(value=True, id="auto-discover")
         
-        container.mount(Static(
+        yield Static(
             "When enabled, automatically discovers all repositories from the GitHub organization",
             classes="help-text"
-        ))
+        )
         
-        container.mount(Rule())
-        container.mount(Label("Manual Repository Configuration:", classes="section-title"))
-        container.mount(Static(
+        yield Rule()
+        yield Label("Manual Repository Configuration:", classes="section-title")
+        yield Static(
             "Add individual repositories manually (overrides organization discovery)",
             classes="help-text"
-        ))
+        )
         
         # TODO: Add dynamic repository list management
-        container.mount(Static(
+        yield Static(
             "Manual repository configuration will be available in a future version",
             classes="help-text"
-        ))
-        
-        return container
+        )
     
     def _validate_positive_integer(self, value: str) -> ValidationResult:
         """Validate positive integer input."""

@@ -11,6 +11,7 @@ from .screens.main_screen import MainScreen
 from .screens.configuration_screen import ConfigurationScreen
 from .screens.analysis_progress_screen import AnalysisProgressScreen
 from .screens.results_screen import ResultsScreen
+from .screens.loading_screen import InitializationLoadingScreen
 from gitflow_analytics.config import ConfigLoader, Config
 
 
@@ -208,6 +209,33 @@ class GitFlowAnalyticsApp(App):
         text-style: italic;
     }
     
+    /* Loading screen styles */
+    #loading-container {
+        height: 100%;
+        align: center middle;
+    }
+    
+    #loading-content {
+        width: 80%;
+        max-width: 100;
+        align: center middle;
+        margin: 2;
+    }
+    
+    #main-spinner {
+        margin: 1;
+        align: center middle;
+    }
+    
+    #loading-steps {
+        margin-top: 1;
+    }
+    
+    #loading-steps > Static {
+        margin: 0 0 0 2;
+        padding: 0;
+    }
+    
     /* Utility classes */
     .hidden {
         display: none;
@@ -249,39 +277,57 @@ class GitFlowAnalyticsApp(App):
         super().__init__()
         self.config: Optional[Config] = None
         self.config_path: Optional[Path] = None
+        self.initialization_complete = False
+        self._nlp_engine = None
         
     def compose(self) -> ComposeResult:
         """
-        Compose the main application with the initial main screen.
+        Compose the main application. We don't yield screens here during startup
+        to avoid screen stack management issues.
         
-        WHY: Starts with the main screen which serves as the primary
-        navigation hub, allowing users to see configuration status
-        and access all major functionality.
+        WHY: Instead of yielding screens in compose, we handle the initial screen
+        setup in on_mount to ensure proper screen stack management and avoid
+        IndexError when transitioning between screens.
         """
-        # Start with main screen
-        yield MainScreen(self.config, self.config_path, id="main-screen")
+        # Don't yield screens here - handle in on_mount for proper screen management
+        # Return empty to avoid NoneType iteration error
+        return iter([])
     
     def on_mount(self) -> None:
         """
-        Handle application startup and auto-load configuration.
+        Handle application startup with loading screen.
         
-        WHY: Attempts to load default configurations automatically to
-        provide a seamless user experience when configurations are
-        available in standard locations.
+        WHY: Shows loading screen immediately while heavy initialization
+        happens in the background, providing better user experience.
+        Using push_screen instead of compose to avoid screen stack issues.
         """
-        # Try to load default configuration
-        self._try_load_default_config()
-        
         # Set up application title
         self.title = "GitFlow Analytics"
         self.sub_title = "Developer Productivity Analysis"
+        
+        # Start with loading screen during initialization
+        if not self.initialization_complete:
+            loading_screen = InitializationLoadingScreen(
+                config_loader_func=self._load_default_config,
+                nlp_init_func=self._initialize_nlp_engine,
+                loading_message="Initializing GitFlow Analytics...",
+                id="loading-screen"
+            )
+            self.push_screen(loading_screen)
+        else:
+            # Show main screen if already initialized
+            main_screen = MainScreen(self.config, self.config_path, id="main-screen")
+            self.push_screen(main_screen)
     
-    def _try_load_default_config(self) -> None:
+    def _load_default_config(self) -> Optional[tuple]:
         """
         Attempt to load configuration from default locations.
         
         WHY: Provides automatic configuration discovery to reduce setup
         friction for users who have configurations in standard locations.
+        This version is designed to be called from the loading screen.
+        
+        @return: Tuple of (config, config_path) if found, None otherwise
         """
         default_config_paths = [
             Path("config.yaml"),
@@ -293,19 +339,113 @@ class GitFlowAnalyticsApp(App):
         for config_path in default_config_paths:
             if config_path.exists():
                 try:
-                    self.config = ConfigLoader.load(config_path)
-                    self.config_path = config_path
-                    
-                    # Update main screen with loaded config
-                    main_screen = self.query_one("#main-screen", MainScreen)
-                    main_screen.update_config(self.config, self.config_path)
-                    
-                    self.notify(f"Loaded configuration from {config_path}", severity="info")
-                    return
+                    config = ConfigLoader.load(config_path)
+                    return (config, config_path)
                     
                 except Exception as e:
-                    self.notify(f"Failed to load {config_path}: {e}", severity="warning")
+                    # Log error but continue trying other paths
                     continue
+        
+        return None
+    
+    def _initialize_nlp_engine(self, config: Optional[Config] = None) -> Optional[object]:
+        """
+        Initialize the NLP engine for qualitative analysis.
+        
+        WHY: spaCy model loading can be slow and should happen during
+        the loading screen to provide user feedback. This method handles
+        the heavy NLP initialization work.
+        
+        @param config: Configuration object with qualitative settings
+        @return: Initialized NLP engine object or None if not needed/failed
+        """
+        if not config or not getattr(config, 'qualitative', None):
+            return None
+            
+        if not config.qualitative.enabled:
+            return None
+            
+        try:
+            # Import here to avoid slow imports at module level
+            from gitflow_analytics.qualitative.core.nlp_engine import NLPEngine
+            
+            # Initialize the NLP engine (this loads spaCy models)
+            nlp_engine = NLPEngine(config.qualitative.nlp)
+            
+            # Validate the setup
+            is_valid, issues = nlp_engine.validate_setup()
+            if not is_valid:
+                # Return None if validation fails, but don't raise exception
+                return None
+            
+            return nlp_engine
+            
+        except ImportError:
+            # Qualitative analysis dependencies not available
+            return None
+        except Exception:
+            # Other initialization errors
+            return None
+    
+    def on_initialization_loading_screen_initialization_complete(
+        self, message: InitializationLoadingScreen.InitializationComplete
+    ) -> None:
+        """
+        Handle completion of initialization loading.
+        
+        WHY: When the loading screen completes initialization, we need to
+        update the app state and transition to the main screen. Using pop_screen
+        and push_screen for proper screen stack management.
+        """
+        initialization_data = message.data
+        
+        # Update app state with loaded configuration
+        config_result = initialization_data.get('config')
+        if config_result:
+            self.config, self.config_path = config_result
+        
+        # Store NLP engine for later use
+        self._nlp_engine = initialization_data.get('nlp')
+        
+        # Mark initialization as complete
+        self.initialization_complete = True
+        
+        # Transition to main screen by popping loading screen and pushing main screen
+        try:
+            self.pop_screen()  # Remove loading screen
+        except:
+            pass  # Ignore if no screen to pop
+        
+        main_screen = MainScreen(self.config, self.config_path, id="main-screen")
+        self.push_screen(main_screen)
+        
+        # Show success notification if config was loaded
+        if self.config and self.config_path:
+            self.notify(f"Loaded configuration from {self.config_path}", severity="info")
+    
+    def on_initialization_loading_screen_loading_cancelled(
+        self, message: InitializationLoadingScreen.LoadingCancelled
+    ) -> None:
+        """
+        Handle cancellation of initialization loading.
+        
+        WHY: If user cancels loading, we should still show the main screen
+        but without the loaded configuration. Using pop_screen and push_screen
+        for proper screen stack management.
+        """
+        # Mark initialization as complete (even if cancelled)
+        self.initialization_complete = True
+        
+        # Transition to main screen without configuration
+        try:
+            self.pop_screen()  # Remove loading screen
+        except:
+            pass  # Ignore if no screen to pop
+        
+        main_screen = MainScreen(None, None, id="main-screen")
+        self.push_screen(main_screen)
+        
+        self.notify("Initialization cancelled. You can load configuration manually.", severity="warning")
     
     def on_main_screen_new_analysis_requested(self, message: MainScreen.NewAnalysisRequested) -> None:
         """Handle new analysis request from main screen."""
@@ -507,6 +647,17 @@ For more information: https://github.com/bobmatnyc/gitflow-analytics"""
     def get_current_config_path(self) -> Optional[Path]:
         """Get the path of the currently loaded configuration."""
         return self.config_path
+    
+    def get_nlp_engine(self) -> Optional[object]:
+        """
+        Get the initialized NLP engine for qualitative analysis.
+        
+        WHY: Provides access to the pre-loaded NLP engine to avoid
+        re-initialization overhead during analysis operations.
+        
+        @return: Initialized NLP engine or None if not available
+        """
+        return self._nlp_engine
     
     def update_config(self, config: Config, config_path: Optional[Path] = None) -> None:
         """

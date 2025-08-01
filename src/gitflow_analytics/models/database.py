@@ -201,7 +201,7 @@ class QualitativeCommitData(Base):
         Index('idx_change_type', 'change_type'),
         Index('idx_business_domain', 'business_domain'),
         Index('idx_risk_level', 'risk_level'),
-        Index('idx_confidence', 'confidence_score'),
+        Index('idx_qualitative_confidence', 'confidence_score'),
         Index('idx_processing_method', 'processing_method'),
         Index('idx_analyzed_at', 'analyzed_at'),
     )
@@ -240,7 +240,7 @@ class PatternCache(Base):
     # Indexes for pattern matching and cleanup
     __table_args__ = (
         Index('idx_semantic_fingerprint', 'semantic_fingerprint'),
-        Index('idx_confidence', 'confidence_score'),
+        Index('idx_pattern_confidence', 'confidence_score'),
         Index('idx_hit_count', 'hit_count'),
         Index('idx_last_used', 'last_used'),
         Index('idx_source_method', 'source_method'),
@@ -283,7 +283,7 @@ class LLMUsageStats(Base):
     # Indexes for analysis and monitoring
     __table_args__ = (
         Index('idx_model_timestamp', 'model_name', 'timestamp'),
-        Index('idx_timestamp', 'timestamp'),
+        Index('idx_llm_timestamp', 'timestamp'),
         Index('idx_batch_id', 'batch_id'),
         Index('idx_success', 'success'),
     )

@@ -20,7 +20,7 @@ class GitAnalysisCache:
         self.db = Database(cache_dir / "gitflow_cache.db")
 
     @contextmanager
-    def get_session(self):
+    def get_session(self) -> Any:
         """Get database session context manager."""
         session = self.db.get_session()
         try:
@@ -50,7 +50,7 @@ class GitAnalysisCache:
 
             return None
 
-    def cache_commit(self, repo_path: str, commit_data: dict[str, Any]):
+    def cache_commit(self, repo_path: str, commit_data: dict[str, Any]) -> None:
         """Cache commit analysis results."""
         with self.get_session() as session:
             # Check if already exists
@@ -91,7 +91,7 @@ class GitAnalysisCache:
                 )
                 session.add(cached_commit)
 
-    def cache_commits_batch(self, repo_path: str, commits: list[dict[str, Any]]):
+    def cache_commits_batch(self, repo_path: str, commits: list[dict[str, Any]]) -> None:
         """Cache multiple commits in a single transaction."""
         with self.get_session() as session:
             for commit_data in commits:
@@ -152,42 +152,95 @@ class GitAnalysisCache:
 
             return None
 
-    def cache_pr(self, repo_path: str, pr_data: dict[str, Any]):
+    def cache_pr(self, repo_path: str, pr_data: dict[str, Any]) -> None:
         """Cache pull request data."""
         with self.get_session() as session:
-            cached_pr = PullRequestCache(
-                repo_path=repo_path,
-                pr_number=pr_data["number"],
-                title=pr_data.get("title"),
-                description=pr_data.get("description"),
-                author=pr_data.get("author"),
-                created_at=pr_data.get("created_at"),
-                merged_at=pr_data.get("merged_at"),
-                story_points=pr_data.get("story_points"),
-                labels=pr_data.get("labels", []),
-                commit_hashes=pr_data.get("commit_hashes", []),
+            # Check if already exists
+            existing = (
+                session.query(PullRequestCache)
+                .filter(
+                    and_(
+                        PullRequestCache.repo_path == repo_path,
+                        PullRequestCache.pr_number == pr_data["number"],
+                    )
+                )
+                .first()
             )
-            session.merge(cached_pr)
 
-    def cache_issue(self, platform: str, issue_data: dict[str, Any]):
+            if existing:
+                # Update existing
+                existing.title = pr_data.get("title")
+                existing.description = pr_data.get("description")
+                existing.author = pr_data.get("author")
+                existing.created_at = pr_data.get("created_at")
+                existing.merged_at = pr_data.get("merged_at")
+                existing.story_points = pr_data.get("story_points")
+                existing.labels = pr_data.get("labels", [])
+                existing.commit_hashes = pr_data.get("commit_hashes", [])
+                existing.cached_at = datetime.utcnow()
+            else:
+                # Create new
+                cached_pr = PullRequestCache(
+                    repo_path=repo_path,
+                    pr_number=pr_data["number"],
+                    title=pr_data.get("title"),
+                    description=pr_data.get("description"),
+                    author=pr_data.get("author"),
+                    created_at=pr_data.get("created_at"),
+                    merged_at=pr_data.get("merged_at"),
+                    story_points=pr_data.get("story_points"),
+                    labels=pr_data.get("labels", []),
+                    commit_hashes=pr_data.get("commit_hashes", []),
+                )
+                session.add(cached_pr)
+
+    def cache_issue(self, platform: str, issue_data: dict[str, Any]) -> None:
         """Cache issue data from various platforms."""
         with self.get_session() as session:
-            cached_issue = IssueCache(
-                platform=platform,
-                issue_id=str(issue_data["id"]),
-                project_key=issue_data["project_key"],
-                title=issue_data.get("title"),
-                description=issue_data.get("description"),
-                status=issue_data.get("status"),
-                assignee=issue_data.get("assignee"),
-                created_at=issue_data.get("created_at"),
-                updated_at=issue_data.get("updated_at"),
-                resolved_at=issue_data.get("resolved_at"),
-                story_points=issue_data.get("story_points"),
-                labels=issue_data.get("labels", []),
-                platform_data=issue_data.get("platform_data", {}),
+            # Check if already exists
+            existing = (
+                session.query(IssueCache)
+                .filter(
+                    and_(
+                        IssueCache.platform == platform,
+                        IssueCache.issue_id == str(issue_data["id"]),
+                    )
+                )
+                .first()
             )
-            session.merge(cached_issue)
+
+            if existing:
+                # Update existing
+                existing.project_key = issue_data["project_key"]
+                existing.title = issue_data.get("title")
+                existing.description = issue_data.get("description")
+                existing.status = issue_data.get("status")
+                existing.assignee = issue_data.get("assignee")
+                existing.created_at = issue_data.get("created_at")
+                existing.updated_at = issue_data.get("updated_at")
+                existing.resolved_at = issue_data.get("resolved_at")
+                existing.story_points = issue_data.get("story_points")
+                existing.labels = issue_data.get("labels", [])
+                existing.platform_data = issue_data.get("platform_data", {})
+                existing.cached_at = datetime.utcnow()
+            else:
+                # Create new
+                cached_issue = IssueCache(
+                    platform=platform,
+                    issue_id=str(issue_data["id"]),
+                    project_key=issue_data["project_key"],
+                    title=issue_data.get("title"),
+                    description=issue_data.get("description"),
+                    status=issue_data.get("status"),
+                    assignee=issue_data.get("assignee"),
+                    created_at=issue_data.get("created_at"),
+                    updated_at=issue_data.get("updated_at"),
+                    resolved_at=issue_data.get("resolved_at"),
+                    story_points=issue_data.get("story_points"),
+                    labels=issue_data.get("labels", []),
+                    platform_data=issue_data.get("platform_data", {}),
+                )
+                session.add(cached_issue)
 
     def get_cached_issues(self, platform: str, project_key: str) -> list[dict[str, Any]]:
         """Get all cached issues for a platform and project."""
@@ -206,7 +259,7 @@ class GitAnalysisCache:
                 if not self._is_stale(issue.cached_at)
             ]
 
-    def clear_stale_cache(self):
+    def clear_stale_cache(self) -> None:
         """Remove stale cache entries."""
         cutoff_time = datetime.utcnow() - timedelta(hours=self.ttl_hours)
 

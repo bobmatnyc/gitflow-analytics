@@ -36,23 +36,28 @@ class MainScreen(Screen):
     
     class NewAnalysisRequested(Message):
         """Message sent when new analysis is requested."""
-        pass
+        def __init__(self) -> None:
+            super().__init__()
     
     class ConfigurationRequested(Message):
         """Message sent when configuration is requested."""
-        pass
+        def __init__(self) -> None:
+            super().__init__()
     
     class CacheStatusRequested(Message):
         """Message sent when cache status is requested."""
-        pass
+        def __init__(self) -> None:
+            super().__init__()
     
     class IdentityManagementRequested(Message):
         """Message sent when identity management is requested."""
-        pass
+        def __init__(self) -> None:
+            super().__init__()
     
     class HelpRequested(Message):
         """Message sent when help is requested."""
-        pass
+        def __init__(self) -> None:
+            super().__init__()
     
     def __init__(
         self,

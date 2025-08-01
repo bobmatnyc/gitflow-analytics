@@ -142,6 +142,57 @@ class TestGitAnalysisCache:
         assert cached["story_points"] == 5
         assert cached["labels"] == ["enhancement", "frontend"]
 
+    def test_cache_pull_request_upsert(self, temp_dir):
+        """Test that caching the same PR twice doesn't cause UNIQUE constraint errors."""
+        cache_dir = temp_dir / ".gitflow-cache"
+        cache = GitAnalysisCache(cache_dir)
+
+        repo_path = "/path/to/repo"
+        original_pr_data = {
+            "number": 123,
+            "title": "Add new feature",
+            "description": "This PR adds a new feature",
+            "author": "john@example.com",
+            "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+            "merged_at": datetime(2024, 1, 3, tzinfo=timezone.utc),
+            "story_points": 5,
+            "labels": ["enhancement", "frontend"],
+            "commit_hashes": ["abc123", "def456"]
+        }
+
+        # Cache the PR first time
+        cache.cache_pr(repo_path, original_pr_data)
+
+        # Retrieve and verify
+        cached = cache.get_cached_pr(repo_path, 123)
+        assert cached is not None
+        assert cached["title"] == "Add new feature"
+        assert cached["story_points"] == 5
+
+        # Update the PR data
+        updated_pr_data = {
+            "number": 123,
+            "title": "Add new feature (updated)",
+            "description": "This PR adds a new feature with improvements",
+            "author": "john@example.com",
+            "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+            "merged_at": datetime(2024, 1, 4, tzinfo=timezone.utc),  # Different merge time
+            "story_points": 8,  # Updated story points
+            "labels": ["enhancement", "frontend", "high-priority"],  # Added label
+            "commit_hashes": ["abc123", "def456", "ghi789"]  # Added commit
+        }
+
+        # Cache the PR again - this should update, not insert
+        cache.cache_pr(repo_path, updated_pr_data)
+
+        # Retrieve and verify the updates took effect
+        cached_updated = cache.get_cached_pr(repo_path, 123)
+        assert cached_updated is not None
+        assert cached_updated["title"] == "Add new feature (updated)"
+        assert cached_updated["story_points"] == 8
+        assert cached_updated["labels"] == ["enhancement", "frontend", "high-priority"]
+        assert len(cached_updated["commit_hashes"]) == 3
+
     def test_cache_issue(self, temp_dir):
         """Test caching issue data."""
         cache_dir = temp_dir / ".gitflow-cache"
@@ -170,6 +221,63 @@ class TestGitAnalysisCache:
         assert len(cached_issues) == 1
         assert cached_issues[0]["id"] == "PROJ-123"
         assert cached_issues[0]["story_points"] == 8
+
+    def test_cache_issue_upsert(self, temp_dir):
+        """Test that caching the same issue twice doesn't cause UNIQUE constraint errors."""
+        cache_dir = temp_dir / ".gitflow-cache"
+        cache = GitAnalysisCache(cache_dir)
+
+        original_issue_data = {
+            "id": "PROJ-123",
+            "project_key": "PROJ",
+            "title": "Implement user authentication",
+            "description": "Add OAuth2 authentication",
+            "status": "In Progress",
+            "assignee": "john@example.com",
+            "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+            "updated_at": datetime(2024, 1, 2, tzinfo=timezone.utc),
+            "story_points": 8,
+            "labels": ["backend", "security"],
+            "platform_data": {"custom_field": "value"}
+        }
+
+        # Cache the issue first time
+        cache.cache_issue("jira", original_issue_data)
+
+        # Retrieve and verify
+        cached_issues = cache.get_cached_issues("jira", "PROJ")
+        assert len(cached_issues) == 1
+        assert cached_issues[0]["status"] == "In Progress"
+        assert cached_issues[0]["story_points"] == 8
+
+        # Update the issue data
+        updated_issue_data = {
+            "id": "PROJ-123",
+            "project_key": "PROJ",
+            "title": "Implement user authentication (completed)",
+            "description": "Add OAuth2 authentication - completed implementation",
+            "status": "Done",  # Updated status
+            "assignee": "john@example.com",
+            "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+            "updated_at": datetime(2024, 1, 5, tzinfo=timezone.utc),  # Updated time
+            "resolved_at": datetime(2024, 1, 5, tzinfo=timezone.utc),  # New field
+            "story_points": 10,  # Updated story points
+            "labels": ["backend", "security", "completed"],  # Added label
+            "platform_data": {"custom_field": "updated_value", "new_field": "new"}
+        }
+
+        # Cache the issue again - this should update, not insert
+        cache.cache_issue("jira", updated_issue_data)
+
+        # Retrieve and verify the updates took effect
+        cached_issues_updated = cache.get_cached_issues("jira", "PROJ")
+        assert len(cached_issues_updated) == 1  # Should still be just one issue
+        issue = cached_issues_updated[0]
+        assert issue["title"] == "Implement user authentication (completed)"
+        assert issue["status"] == "Done"
+        assert issue["story_points"] == 10
+        assert issue["labels"] == ["backend", "security", "completed"]
+        assert issue["resolved_at"] is not None
 
     def test_cache_expiration(self, temp_dir):
         """Test cache TTL expiration."""
