@@ -97,8 +97,8 @@ class DeveloperIdentityResolver:
                         primary_email=canonical_email,
                         first_seen=datetime.now(timezone.utc),
                         last_seen=datetime.now(timezone.utc),
-                        commit_count=0,
-                        active_days_count=0,
+                        total_commits=0,
+                        total_story_points=0,
                     )
                     session.add(canonical_identity)
                     session.commit()
