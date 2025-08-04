@@ -3,10 +3,13 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import yaml
 from dotenv import load_dotenv
+
+if TYPE_CHECKING:
+    from .qualitative.models.schemas import QualitativeConfig
 
 
 @dataclass
@@ -46,6 +49,21 @@ class GitHubConfig:
 
 
 @dataclass
+class MLCategorization:
+    """ML-based commit categorization configuration."""
+    
+    enabled: bool = True
+    min_confidence: float = 0.6
+    semantic_weight: float = 0.7
+    file_pattern_weight: float = 0.3
+    hybrid_threshold: float = 0.5  # Confidence threshold for using ML vs rule-based
+    cache_duration_days: int = 30
+    batch_size: int = 100
+    enable_caching: bool = True
+    spacy_model: str = "en_core_web_sm"  # Preferred spaCy model
+
+
+@dataclass
 class AnalysisConfig:
     """Analysis-specific configuration."""
 
@@ -58,6 +76,8 @@ class AnalysisConfig:
     default_ticket_platform: Optional[str] = None
     branch_mapping_rules: dict[str, list[str]] = field(default_factory=dict)
     ticket_platforms: Optional[list[str]] = None
+    auto_identity_analysis: bool = True  # Enable automatic identity analysis by default
+    ml_categorization: MLCategorization = field(default_factory=MLCategorization)
 
 
 @dataclass
@@ -104,6 +124,25 @@ class JIRAIntegrationConfig:
 
 
 @dataclass
+class PMPlatformConfig:
+    """Base PM platform configuration."""
+
+    enabled: bool = True
+    platform_type: str = ""
+    config: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PMIntegrationConfig:
+    """PM framework integration configuration."""
+
+    enabled: bool = False
+    primary_platform: Optional[str] = None
+    correlation: dict[str, Any] = field(default_factory=dict)
+    platforms: dict[str, PMPlatformConfig] = field(default_factory=dict)
+
+
+@dataclass
 class Config:
     """Main configuration container."""
 
@@ -114,7 +153,8 @@ class Config:
     cache: CacheConfig
     jira: Optional[JIRAConfig] = None
     jira_integration: Optional[JIRAIntegrationConfig] = None
-    qualitative: Optional['QualitativeConfig'] = None
+    pm_integration: Optional[PMIntegrationConfig] = None
+    qualitative: Optional["QualitativeConfig"] = None
 
     def discover_organization_repositories(
         self, clone_base_path: Optional[Path] = None
@@ -180,8 +220,44 @@ class ConfigLoader:
             load_dotenv(env_file, override=True)
             print(f"📋 Loaded environment variables from {env_file}")
 
-        with open(config_path) as f:
-            data = yaml.safe_load(f)
+        try:
+            with open(config_path) as f:
+                data = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            cls._handle_yaml_error(e, config_path)
+        except FileNotFoundError as e:
+            raise ValueError(f"Configuration file not found: {config_path}") from e
+        except PermissionError as e:
+            raise ValueError(f"Permission denied reading configuration file: {config_path}") from e
+        except Exception as e:
+            raise ValueError(f"Failed to read configuration file {config_path}: {e}") from e
+
+        # Handle empty or null YAML files
+        if data is None:
+            raise ValueError(
+                f"❌ Configuration file is empty or contains only null values: {config_path.name}\n\n"
+                f"💡 Fix: Add proper YAML configuration content to the file.\n"
+                f"   Example minimal configuration:\n"
+                f"   ```yaml\n"
+                f"   version: \"1.0\"\n"
+                f"   github:\n"
+                f"     token: \"${{GITHUB_TOKEN}}\"\n"
+                f"     owner: \"your-username\"\n"
+                f"   repositories:\n"
+                f"     - name: \"your-repo\"\n"
+                f"       path: \"/path/to/repo\"\n"
+                f"   ```\n\n"
+                f"📁 File: {config_path}"
+            )
+
+        # Validate that data is a dictionary
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"❌ Configuration file must contain a YAML object (key-value pairs): {config_path.name}\n\n"
+                f"💡 Fix: Ensure the file contains proper YAML structure with keys and values.\n"
+                f"   Current content type: {type(data).__name__}\n\n"
+                f"📁 File: {config_path}"
+            )
 
         # Validate version
         version = data.get("version", "1.0")
@@ -216,7 +292,36 @@ class ConfigLoader:
             pass
         else:
             # Process explicitly defined repositories
-            for repo_data in data.get("repositories", []):
+            for i, repo_data in enumerate(data.get("repositories", [])):
+                # Validate required repository fields
+                if not isinstance(repo_data, dict):
+                    raise ValueError(
+                        f"❌ Repository entry {i+1} must be a YAML object with name and path: {config_path.name}\n\n"
+                        f"💡 Fix: Ensure each repository entry has proper structure:\n"
+                        f"   repositories:\n"
+                        f"     - name: \"repo-name\"\n"
+                        f"       path: \"/path/to/repo\"\n\n"
+                        f"📁 File: {config_path}"
+                    )
+                
+                if "name" not in repo_data or repo_data["name"] is None:
+                    raise ValueError(
+                        f"❌ Repository entry {i+1} missing required 'name' field: {config_path.name}\n\n"
+                        f"💡 Fix: Add a name field to the repository entry:\n"
+                        f"   - name: \"your-repo-name\"\n"
+                        f"     path: \"/path/to/repo\"\n\n"
+                        f"📁 File: {config_path}"
+                    )
+                
+                if "path" not in repo_data or repo_data["path"] is None:
+                    raise ValueError(
+                        f"❌ Repository entry {i+1} ('{repo_data['name']}') missing required 'path' field: {config_path.name}\n\n"
+                        f"💡 Fix: Add a path field to the repository entry:\n"
+                        f"   - name: \"{repo_data['name']}\"\n"
+                        f"     path: \"/path/to/repo\"\n\n"
+                        f"📁 File: {config_path}"
+                    )
+
                 # Handle github_repo with owner/organization fallback
                 github_repo = repo_data.get("github_repo")
                 if github_repo and "/" not in github_repo:
@@ -267,11 +372,170 @@ class ConfigLoader:
             "**/.coverage/**",
             "**/htmlcov/**",
             "**/*.map",
+            # Additional framework/boilerplate patterns
+            "**/public/assets/**",
+            "**/public/css/**",
+            "**/public/js/**",
+            "**/public/fonts/**",
+            "**/public/build/**",
+            "**/storage/framework/**",
+            "**/bootstrap/cache/**",
+            "**/.nuxt/**",
+            "**/.cache/**",
+            "**/cache/**",
+            "**/*.lock",
+            "**/*.log",
+            "**/logs/**",
+            "**/tmp/**",
+            "**/temp/**",
+            "**/.sass-cache/**",
+            "**/bower_components/**",
+            # Database migrations and seeds (often auto-generated)
+            "**/migrations/*.php",
+            "**/database/migrations/**",
+            "**/db/migrate/**",
+            # Compiled assets
+            "**/public/mix-manifest.json",
+            "**/public/hot",
+            "**/*.map.js",
+            "**/webpack.mix.js",
+            # IDE and OS files
+            "**/.idea/**",
+            "**/.vscode/**",
+            "**/.DS_Store",
+            "**/Thumbs.db",
+            # Generated documentation (but not source docs)
+            "**/docs/build/**",
+            "**/docs/_build/**",
+            "**/documentation/build/**",
+            "**/site/**",  # For mkdocs generated sites
+            # Test coverage
+            "**/test-results/**",
+            "**/.nyc_output/**",
+            # Framework-specific
+            "**/artisan",
+            "**/spark",
+            "**/.env",
+            "**/.env.*",
+            "**/storage/logs/**",
+            "**/storage/debugbar/**",
+            # CMS-specific patterns
+            "**/wp-content/uploads/**",
+            "**/wp-content/cache/**",
+            "**/uploads/**",
+            "**/media/**",
+            "**/static/**",
+            "**/staticfiles/**",
+            # More aggressive filtering for generated content
+            "**/*.sql",
+            "**/*.dump",
+            "**/backups/**",
+            "**/backup/**",
+            "**/*.bak",
+            # Compiled/concatenated files (only in build/dist directories)
+            "**/dist/**/all.js",
+            "**/dist/**/all.css",
+            "**/build/**/all.js", 
+            "**/build/**/all.css",
+            "**/public/**/app.js",
+            "**/public/**/app.css",
+            "**/dist/**/app.js",
+            "**/dist/**/app.css",
+            "**/build/**/app.js",
+            "**/build/**/app.css",
+            "**/public/**/main.js",
+            "**/public/**/main.css",
+            "**/dist/**/main.js",
+            "**/dist/**/main.css",
+            "**/build/**/main.js",
+            "**/build/**/main.css",
+            "**/bundle.*",
+            "**/chunk.*",
+            "**/*-chunk-*",
+            "**/*.chunk.*",
+            # Framework scaffolding
+            "**/scaffolding/**",
+            "**/stubs/**",
+            "**/templates/**",
+            "**/views/vendor/**",
+            "**/resources/views/vendor/**",
+            # Package managers
+            "**/packages/**",
+            "**/node_modules/**",
+            "**/.pnpm/**",
+            "**/.yarn/**",
+            # Build artifacts
+            "**/out/**",
+            "**/output/**",
+            "**/.parcel-cache/**",
+            "**/parcel-cache/**",
+            # Large data files (only in specific directories)
+            "**/data/*.csv",
+            "**/data/*.json",
+            "**/fixtures/*.json",
+            "**/seeds/*.json",
+            "**/*.geojson",
+            "**/package.json.bak",
+            "**/composer.json.bak",
+            # Exclude large framework upgrades
+            "**/upgrade/**",
+            "**/upgrades/**",
+            # Common CMS patterns (specific to avoid excluding legitimate source)
+            "**/wordpress/wp-core/**",
+            "**/drupal/core/**", 
+            "**/joomla/libraries/cms/**",
+            "**/modules/**/tests/**",
+            "**/plugins/**/vendor/**",
+            "**/themes/**/vendor/**",
+            "**/themes/**/node_modules/**",
+            # Framework-specific third-party directories (not generic lib/libs)
+            "**/vendor/**",
+            "**/vendors/**",
+            "**/bower_components/**",
+            # Only exclude specific known third-party package directories
+            "**/third-party/packages/**",
+            "**/third_party/packages/**",
+            "**/external/vendor/**",
+            "**/external/packages/**",
+            # Generated assets
+            "**/*.min.js",
+            "**/*.min.css",
+            "**/dist/**",
+            "**/build/**",
+            "**/compiled/**",
+            # Package lock files
+            "**/composer.lock",
+            "**/package-lock.json",
+            "**/yarn.lock",
+            "**/pnpm-lock.yaml",
+            # Documentation/assets
+            "**/*.pdf",
+            "**/*.doc",
+            "**/*.docx",
+            "**/fonts/**",
+            "**/font/**",
+            # Database/migrations (auto-generated files)
+            "**/migrations/*.php",
+            "**/database/migrations/**",
         ]
 
         # Merge user-provided paths with defaults (user paths take precedence)
         user_exclude_paths = analysis_data.get("exclude", {}).get("paths", [])
         exclude_paths = user_exclude_paths if user_exclude_paths else default_exclude_paths
+
+        # Process ML categorization settings
+        ml_data = analysis_data.get("ml_categorization", {})
+        ml_categorization_config = MLCategorization(
+            enabled=ml_data.get("enabled", True),
+            min_confidence=ml_data.get("min_confidence", 0.6),
+            semantic_weight=ml_data.get("semantic_weight", 0.7),
+            file_pattern_weight=ml_data.get("file_pattern_weight", 0.3),
+            hybrid_threshold=ml_data.get("hybrid_threshold", 0.5),
+            cache_duration_days=ml_data.get("cache_duration_days", 30),
+            batch_size=ml_data.get("batch_size", 100),
+            enable_caching=ml_data.get("enable_caching", True),
+            spacy_model=ml_data.get("spacy_model", "en_core_web_sm"),
+        )
 
         analysis_config = AnalysisConfig(
             story_point_patterns=analysis_data.get(
@@ -294,6 +558,10 @@ class ConfigLoader:
             default_ticket_platform=analysis_data.get("default_ticket_platform"),
             branch_mapping_rules=analysis_data.get("branch_mapping_rules", {}),
             ticket_platforms=analysis_data.get("ticket_platforms"),
+            auto_identity_analysis=analysis_data.get("identity", {}).get(
+                "auto_analysis", True
+            ),
+            ml_categorization=ml_categorization_config,
         )
 
         # Process output settings
@@ -377,8 +645,16 @@ class ConfigLoader:
             # Import here to avoid circular imports
             try:
                 from .qualitative.models.schemas import (
-                    QualitativeConfig, NLPConfig, LLMConfig, CacheConfig as QualitativeCacheConfig,
-                    ChangeTypeConfig, IntentConfig, DomainConfig, RiskConfig
+                    CacheConfig as QualitativeCacheConfig,
+                )
+                from .qualitative.models.schemas import (
+                    ChangeTypeConfig,
+                    DomainConfig,
+                    IntentConfig,
+                    LLMConfig,
+                    NLPConfig,
+                    QualitativeConfig,
+                    RiskConfig,
                 )
                 
                 # Parse NLP configuration
@@ -451,6 +727,36 @@ class ConfigLoader:
                 print(f"⚠️  Error parsing qualitative configuration: {e}")
                 qualitative_config = None
 
+        # Process PM integration settings
+        pm_integration_config = None
+        pm_integration_data = data.get("pm_integration", {})
+        if pm_integration_data:
+            # Parse platform configurations
+            platforms_config = {}
+            platforms_data = pm_integration_data.get("platforms", {})
+            
+            for platform_name, platform_data in platforms_data.items():
+                platforms_config[platform_name] = PMPlatformConfig(
+                    enabled=platform_data.get("enabled", True),
+                    platform_type=platform_data.get("platform_type", platform_name),
+                    config=platform_data.get("config", {})
+                )
+            
+            # Parse correlation settings with defaults
+            correlation_defaults = {
+                "fuzzy_matching": True,
+                "temporal_window_hours": 72,
+                "confidence_threshold": 0.8
+            }
+            correlation_config = {**correlation_defaults, **pm_integration_data.get("correlation", {})}
+            
+            pm_integration_config = PMIntegrationConfig(
+                enabled=pm_integration_data.get("enabled", False),
+                primary_platform=pm_integration_data.get("primary_platform"),
+                correlation=correlation_config,
+                platforms=platforms_config
+            )
+
         return Config(
             repositories=repositories,
             github=github_config,
@@ -459,6 +765,7 @@ class ConfigLoader:
             cache=cache_config,
             jira=jira_config,
             jira_integration=jira_integration_config,
+            pm_integration=pm_integration_config,
             qualitative=qualitative_config,
         )
 
@@ -476,6 +783,106 @@ class ConfigLoader:
             return resolved
 
         return value
+
+    @staticmethod
+    def _handle_yaml_error(error: yaml.YAMLError, config_path: Path) -> None:
+        """Handle YAML parsing errors with user-friendly messages."""
+        file_name = config_path.name
+        
+        # Extract error details if available
+        line_number = getattr(error, 'problem_mark', None)
+        context_mark = getattr(error, 'context_mark', None)
+        problem = getattr(error, 'problem', str(error))
+        context = getattr(error, 'context', None)
+        
+        # Build error message parts
+        location_info = ""
+        if line_number:
+            location_info = f" at line {line_number.line + 1}, column {line_number.column + 1}"
+        elif context_mark:
+            location_info = f" at line {context_mark.line + 1}, column {context_mark.column + 1}"
+        
+        # Create user-friendly error message
+        error_msg = f"❌ YAML configuration error in {file_name}{location_info}:\n\n"
+        
+        # Detect common YAML issues and provide specific guidance
+        problem_lower = problem.lower()
+        
+        if "found character '\\t'" in problem_lower.replace("'", "'"):
+            error_msg += "🚫 Tab characters are not allowed in YAML files!\n\n"
+            error_msg += "💡 Fix: Replace all tab characters with spaces (usually 2 or 4 spaces).\n"
+            error_msg += "   Most editors can show whitespace characters and convert tabs to spaces.\n"
+            error_msg += "   In VS Code: View → Render Whitespace, then Edit → Convert Indentation to Spaces"
+            
+        elif "mapping values are not allowed here" in problem_lower:
+            error_msg += "🚫 Invalid YAML syntax - missing colon or incorrect indentation!\n\n"
+            error_msg += "💡 Common fixes:\n"
+            error_msg += "   • Add a colon (:) after the key name\n"
+            error_msg += "   • Check that all lines are properly indented with spaces\n"
+            error_msg += "   • Ensure nested items are indented consistently"
+            
+        elif "could not find expected" in problem_lower and ":" in problem_lower:
+            error_msg += "🚫 Missing colon (:) after a key name!\n\n"
+            error_msg += "💡 Fix: Add a colon and space after the key name.\n"
+            error_msg += "   Example: 'key_name: value' not 'key_name value'"
+            
+        elif "found undefined alias" in problem_lower:
+            error_msg += "🚫 YAML alias reference not found!\n\n"
+            error_msg += "💡 Fix: Check that the referenced alias (&name) is defined before using it (*name)"
+            
+        elif "expected <block end>" in problem_lower:
+            error_msg += "🚫 Incorrect indentation or missing content!\n\n"
+            error_msg += "💡 Common fixes:\n"
+            error_msg += "   • Check that all nested items are properly indented\n"
+            error_msg += "   • Ensure list items start with '- ' (dash and space)\n"
+            error_msg += "   • Make sure there's content after colons"
+            
+        elif "while scanning a quoted scalar" in problem_lower:
+            error_msg += "🚫 Unclosed or incorrectly quoted string!\n\n"
+            error_msg += "💡 Fix: Check that all quotes are properly closed.\n"
+            error_msg += "   • Use matching quotes: 'text' or \"text\"\n"
+            error_msg += "   • Escape quotes inside strings: 'don\\'t' or \"say \\\"hello\\\"\""
+            
+        elif "found unexpected end of stream" in problem_lower:
+            error_msg += "🚫 Incomplete YAML structure!\n\n"
+            error_msg += "💡 Fix: The file appears to end unexpectedly.\n"
+            error_msg += "   • Check that all sections are complete\n"
+            error_msg += "   • Ensure there are no missing closing brackets or braces"
+            
+        elif "found unknown escape character" in problem_lower:
+            error_msg += "🚫 Invalid escape sequence in quoted string!\n\n"
+            error_msg += "💡 Fix: Use proper YAML escape sequences or raw strings.\n"
+            error_msg += "   • For regex patterns: Use double quotes and double backslashes (\"\\\\d+\")\n"
+            error_msg += "   • For file paths: Use forward slashes or double backslashes\n"
+            error_msg += "   • Or use single quotes for literal strings: 'C:\\path\\to\\file'"
+            
+        elif "scanner" in problem_lower and "character" in problem_lower:
+            error_msg += "🚫 Invalid character in YAML file!\n\n"
+            error_msg += "💡 Fix: Check for special characters that need to be quoted.\n"
+            error_msg += "   • Wrap values containing special characters in quotes\n"
+            error_msg += "   • Common problematic characters: @, `, |, >, [, ], {, }"
+            
+        else:
+            error_msg += f"🚫 YAML parsing error: {problem}\n\n"
+            error_msg += "💡 Common YAML issues to check:\n"
+            error_msg += "   • Use spaces for indentation, not tabs\n"
+            error_msg += "   • Add colons (:) after key names\n"
+            error_msg += "   • Ensure consistent indentation (usually 2 or 4 spaces)\n"
+            error_msg += "   • Quote strings containing special characters\n"
+            error_msg += "   • Use '- ' (dash and space) for list items"
+        
+        # Add context information if available
+        if context and context != problem:
+            error_msg += f"\n\n📍 Context: {context}"
+        
+        # Add file location reminder
+        error_msg += f"\n\n📁 File: {config_path}"
+        
+        # Add helpful resources
+        error_msg += "\n\n🔗 For YAML syntax help, visit: https://yaml.org/spec/1.2/spec.html"
+        error_msg += "\n   Or use an online YAML validator to check your syntax."
+        
+        raise ValueError(error_msg)
 
     @staticmethod
     def validate_config(config: Config) -> list[str]:

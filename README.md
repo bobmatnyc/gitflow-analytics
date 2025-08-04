@@ -10,10 +10,11 @@ A Python package for analyzing Git repositories to generate comprehensive develo
 
 - 🚀 **Multi-repository analysis** with project grouping
 - 🏢 **Organization-based repository discovery** from GitHub
-- 👥 **Developer identity resolution** and normalization
+- 👥 **Interactive developer identity resolution** with automatic suggestions
 - 📊 **Work volume analysis** (absolute vs relative effort)
 - 🎯 **Story point extraction** from commit messages and PR descriptions
 - 🎫 **Multi-platform ticket tracking** (JIRA, GitHub Issues, ClickUp, Linear)
+- 🧠 **ML-enhanced commit categorization** with confidence scoring and semantic analysis
 - 📈 **Weekly CSV reports** with productivity metrics
 - 🔒 **Data anonymization** for external sharing
 - ⚡ **Smart caching** for fast repeated analyses
@@ -29,13 +30,23 @@ A Python package for analyzing Git repositories to generate comprehensive develo
 pip install gitflow-analytics
 ```
 
+**With ML Features (Recommended for enhanced categorization):**
+
+```bash
+pip install gitflow-analytics
+python -m spacy download en_core_web_sm
+```
+
 **From Source (Development):**
 
 ```bash
 git clone https://github.com/bobmatnyc/gitflow-analytics.git
 cd gitflow-analytics
 pip install -e ".[dev]"
+python -m spacy download en_core_web_sm
 ```
+
+> **Note**: The spaCy English model is required for ML-enhanced commit categorization. If not available, the system will gracefully fall back to rule-based categorization.
 
 ### Basic Usage
 
@@ -53,6 +64,21 @@ analysis:
   story_point_patterns:
     - "(?:story\\s*points?|sp|pts?)\\s*[:=]\\s*(\\d+)"
     - "\\[(\\d+)\\s*(?:sp|pts?)\\]"
+  
+  # Enhanced untracked commit analysis settings
+  untracked_analysis:
+    file_threshold: 1  # Minimum files changed to include commit (default: 1)
+    # Categories that are acceptable to be untracked
+    acceptable_categories:
+      - "maintenance" 
+      - "style"
+      - "documentation"
+  
+  # ML-enhanced commit categorization (optional)
+  ml_categorization:
+    enabled: true  # Enable ML categorization (default: true)
+    min_confidence: 0.6  # Minimum confidence for ML predictions
+    hybrid_threshold: 0.5  # Threshold for ML vs rule-based fallback
 ```
 
 **Option B: Repository-based (Manual Configuration)**
@@ -91,6 +117,10 @@ GITHUB_OWNER=your_github_org  # Only for repository-based setup
 3. Run the analysis:
 
 ```bash
+# Default behavior - analyze command runs automatically
+gitflow-analytics -c config.yaml
+
+# Explicit analyze command (backward compatibility)
 gitflow-analytics analyze -c config.yaml
 ```
 
@@ -245,7 +275,10 @@ Example directory structure:
 ### Main Commands
 
 ```bash
-# Analyze repositories
+# Analyze repositories (default command)
+gitflow-analytics -c config.yaml --weeks 12 --output ./reports
+
+# Explicit analyze command (backward compatibility)
 gitflow-analytics analyze -c config.yaml --weeks 12 --output ./reports
 
 # Show cache statistics
@@ -253,6 +286,9 @@ gitflow-analytics cache-stats -c config.yaml
 
 # List known developers
 gitflow-analytics list-developers -c config.yaml
+
+# Analyze developer identities
+gitflow-analytics identities -c config.yaml
 
 # Merge developer identities
 gitflow-analytics merge-identity -c config.yaml dev1_id dev2_id
@@ -269,6 +305,8 @@ gitflow-analytics discover-jira-fields -c config.yaml
 - `--no-cache`: Disable caching for fresh analysis
 - `--clear-cache`: Clear cache before analysis
 - `--validate-only`: Validate configuration without running
+- `--skip-identity-analysis`: Skip automatic identity analysis
+- `--apply-identity-suggestions`: Apply identity suggestions without prompting
 
 ## Complete Configuration Example
 
@@ -331,7 +369,8 @@ analysis:
   identity:
     similarity_threshold: 0.85
     manual_mappings:
-      - primary_email: "john.doe@company.com"
+      - name: "John Doe"
+        primary_email: "john.doe@company.com"
         aliases:
           - "jdoe@oldcompany.com"
           - "john@personal.com"
@@ -346,7 +385,9 @@ output:
 
 ## Output Reports
 
-The tool generates three CSV reports:
+The tool generates comprehensive CSV reports and markdown summaries:
+
+### CSV Reports
 
 1. **Weekly Metrics** (`weekly_metrics_YYYYMMDD.csv`)
    - Week-by-week developer productivity
@@ -363,6 +404,222 @@ The tool generates three CSV reports:
    - Complete developer profiles
    - Total contributions
    - Identity aliases
+
+4. **Untracked Commits Report** (`untracked_commits_YYYYMMDD.csv`)
+   - Detailed analysis of commits without ticket references
+   - Commit categorization (bug_fix, feature, refactor, documentation, maintenance, test, style, build)
+   - Enhanced metadata: commit hash, author, timestamp, project, message, file/line changes
+   - Configurable file change threshold for filtering significant commits
+
+### Enhanced Untracked Commit Analysis
+
+The untracked commits report provides deep insights into work that bypasses ticket tracking:
+
+**CSV Columns:**
+- `commit_hash` / `short_hash`: Full and abbreviated commit identifiers
+- `author` / `author_email` / `canonical_id`: Developer identification (with anonymization support)
+- `date`: Commit timestamp
+- `project`: Project key for multi-repository analysis
+- `message`: Commit message (truncated for readability)
+- `category`: Automated categorization of work type
+- `files_changed` / `lines_added` / `lines_removed` / `lines_changed`: Change metrics
+- `is_merge`: Boolean flag for merge commits
+
+**Automatic Categorization:**
+- **Feature**: New functionality development (`add`, `new`, `implement`, `create`)
+- **Bug Fix**: Error corrections (`fix`, `bug`, `error`, `resolve`, `hotfix`)
+- **Refactor**: Code restructuring (`refactor`, `optimize`, `improve`, `cleanup`)
+- **Documentation**: Documentation updates (`doc`, `readme`, `comment`, `guide`)
+- **Maintenance**: Routine upkeep (`update`, `upgrade`, `dependency`, `config`)
+- **Test**: Testing-related changes (`test`, `spec`, `mock`, `fixture`)
+- **Style**: Formatting changes (`format`, `lint`, `prettier`, `whitespace`)
+- **Build**: Build system changes (`build`, `compile`, `ci`, `docker`)
+
+### Markdown Reports
+
+5. **Narrative Summary** (`narrative_summary_YYYYMMDD.md`)
+   - **Executive Summary**: High-level metrics and team overview
+   - **Team Composition**: Developer profiles with project percentages and work patterns
+   - **Project Activity**: Detailed breakdown by project with contributor percentages
+   - **Development Patterns**: Key insights from productivity and collaboration analysis
+   - **Pull Request Analysis**: PR metrics including size, lifetime, and review activity
+   - **Issue Tracking**: Platform usage and coverage analysis with simplified display
+   - **Enhanced Untracked Work Analysis**: Comprehensive categorization with dual percentage metrics
+   - **PM Platform Integration**: Story point tracking and correlation insights (when available)
+   - **Recommendations**: Actionable insights based on analysis patterns
+
+### Enhanced Narrative Report Sections
+
+The narrative report provides comprehensive insights through multiple detailed sections:
+
+#### Team Composition Section
+- **Developer Profiles**: Individual developer statistics with commit counts
+- **Project Distribution**: Shows ALL projects each developer works on with precise percentages
+- **Work Style Classification**: Categorizes developers as "Focused", "Multi-project", or "Highly Focused"
+- **Activity Patterns**: Identifies time patterns like "Standard Hours" or "Extended Hours"
+
+**Example developer profile:**
+```markdown
+**John Developer**
+- Commits: 15
+- Projects: FRONTEND (85.0%), SERVICE_TS (15.0%)
+- Work Style: Focused
+- Active Pattern: Standard Hours
+```
+
+#### Project Activity Section
+- **Activity by Project**: Commits and percentage of total activity per project
+- **Contributor Breakdown**: Shows each developer's contribution percentage within each project
+- **Lines Changed**: Quantifies the scale of changes per project
+
+#### Issue Tracking with Simplified Display
+- **Platform Usage**: Clean display of ticket platform distribution (JIRA, GitHub, etc.)
+- **Coverage Analysis**: Percentage of commits that reference tickets
+- **Enhanced Untracked Work Analysis**: Detailed categorization and recommendations
+
+### Interpreting Dual Percentage Metrics
+
+The enhanced untracked work analysis provides two key percentage metrics for better context:
+
+1. **Percentage of Total Untracked Work**: Shows how much each developer contributes to the overall untracked work pool
+2. **Percentage of Developer's Individual Work**: Shows what proportion of a specific developer's commits are untracked
+
+**Example interpretation:**
+```
+- John Doe: 25 commits (40% of untracked, 15% of their work) - maintenance, style
+```
+
+This means:
+- John contributed 25 untracked commits
+- These represent 40% of all untracked commits in the analysis period  
+- Only 15% of John's total work was untracked (85% was properly tracked)
+- Most untracked work was maintenance and style changes (acceptable categories)
+
+**Process Insights:**
+- High "% of untracked" + low "% of their work" = Developer doing most of the acceptable maintenance work
+- Low "% of untracked" + high "% of their work" = Developer needs process guidance
+- High percentages in feature/bug_fix categories = Process improvement opportunity
+
+### Example Report Outputs
+
+#### Untracked Commits CSV Sample
+```csv
+commit_hash,short_hash,author,author_email,canonical_id,date,project,message,category,files_changed,lines_added,lines_removed,lines_changed,is_merge
+a1b2c3d4e5f6...,a1b2c3d,John Doe,john@company.com,ID0001,2024-01-15 14:30:22,FRONTEND,Update dependency versions for security patches,maintenance,2,45,12,57,false
+f6e5d4c3b2a1...,f6e5d4c,Jane Smith,jane@company.com,ID0002,2024-01-15 09:15:10,BACKEND,Fix typo in error message,bug_fix,1,1,1,2,false
+9876543210ab...,9876543,Bob Wilson,bob@company.com,ID0003,2024-01-14 16:45:33,FRONTEND,Add JSDoc comments to utility functions,documentation,3,28,0,28,false
+```
+
+#### Complete Narrative Report Sample
+```markdown
+# GitFlow Analytics Report
+
+**Generated**: 2025-08-04 14:27:47
+**Analysis Period**: Last 4 weeks
+
+## Executive Summary
+
+- **Total Commits**: 35
+- **Active Developers**: 3
+- **Lines Changed**: 910
+- **Ticket Coverage**: 71.4%
+- **Active Projects**: FRONTEND, SERVICE_TS, SERVICES
+- **Top Contributor**: John Developer with 15 commits
+
+## Team Composition
+
+### Developer Profiles
+
+**John Developer**
+- Commits: 15
+- Projects: FRONTEND (85.0%), SERVICE_TS (15.0%)
+- Work Style: Focused
+- Active Pattern: Standard Hours
+
+**Jane Smith**
+- Commits: 12
+- Projects: SERVICE_TS (70.0%), FRONTEND (30.0%)
+- Work Style: Multi-project
+- Active Pattern: Extended Hours
+
+## Project Activity
+
+### Activity by Project
+
+**FRONTEND**
+- Commits: 14 (50.0% of total)
+- Lines Changed: 450
+- Contributors: John Developer (71.4%), Jane Smith (28.6%)
+
+**SERVICE_TS**
+- Commits: 8 (28.6% of total)
+- Lines Changed: 280
+- Contributors: Jane Smith (100.0%)
+
+## Issue Tracking
+
+### Platform Usage
+
+- **Jira**: 15 tickets (60.0%)
+- **Github**: 8 tickets (32.0%)
+- **Clickup**: 2 tickets (8.0%)
+
+### Untracked Work Analysis
+
+**Summary**: 10 commits (28.6% of total) lack ticket references.
+
+#### Work Categories
+
+- **Maintenance**: 4 commits (40.0%), avg 23 lines *(acceptable untracked)*
+- **Bug Fix**: 3 commits (30.0%), avg 15 lines *(should be tracked)*
+- **Documentation**: 2 commits (20.0%), avg 12 lines *(acceptable untracked)*
+
+#### Top Contributors (Untracked Work)
+
+- **John Developer**: 1 commits (50.0% of untracked, 6.7% of their work) - *refactor*
+- **Jane Smith**: 1 commits (50.0% of untracked, 8.3% of their work) - *style*
+
+#### Recommendations for Untracked Work
+
+🎯 **Excellent tracking**: Less than 20% of commits are untracked - the team shows strong process adherence.
+
+## Recommendations
+
+✅ The team shows healthy development patterns. Continue current practices while monitoring for changes.
+```
+
+### Configuration for Enhanced Narrative Reports
+
+The narrative reports automatically include all available sections based on your configuration and data availability:
+
+**Always Generated:**
+- Executive Summary, Team Composition, Project Activity, Development Patterns, Issue Tracking, Recommendations
+
+**Conditionally Generated:**
+- **Pull Request Analysis**: Requires GitHub integration with PR data
+- **PM Platform Integration**: Requires JIRA or other PM platform configuration
+- **Qualitative Analysis**: Requires ChatGPT integration setup
+
+**Customizing Report Content:**
+```yaml
+# config.yaml
+output:
+  formats:
+    - csv
+    - markdown  # Enables narrative report generation
+  
+# Optional: Enhance narrative reports with additional data
+jira:
+  access_user: "${JIRA_ACCESS_USER}"
+  access_token: "${JIRA_ACCESS_TOKEN}"
+  base_url: "https://company.atlassian.net"
+
+# Optional: Add qualitative insights
+analysis:
+  chatgpt:
+    enabled: true
+    api_key: "${OPENAI_API_KEY}"
+```
 
 ## Story Point Patterns
 
@@ -416,12 +673,305 @@ Cache is automatically managed with configurable TTL.
 
 ## Developer Identity Resolution
 
-Intelligently merges developer identities across:
-- Different email addresses
-- Name variations
-- GitHub usernames
+GitFlow Analytics intelligently consolidates developer identities across different email addresses and name variations:
 
-Manual overrides supported in configuration.
+### Automatic Identity Analysis (New!)
+
+Identity analysis now runs **automatically by default** when no manual mappings exist. The system will:
+
+1. **Analyze all developer identities** in your commits
+2. **Show suggested consolidations** with a clear preview
+3. **Prompt for approval** with a simple Y/n
+4. **Update your configuration** automatically
+5. **Continue analysis** with consolidated identities
+
+Example of the interactive prompt:
+```
+🔍 Analyzing developer identities...
+
+⚠️  Found 3 potential identity clusters:
+
+📋 Suggested identity mappings:
+   john.doe@company.com
+     → 123456+johndoe@users.noreply.github.com
+     → jdoe@personal.email.com
+
+🤖 Found 2 bot accounts to exclude:
+   - dependabot[bot]
+   - renovate[bot]
+
+────────────────────────────────────────────────────────────
+Apply these identity mappings to your configuration? [Y/n]: 
+```
+
+This prompt appears at most once every 7 days. 
+
+To skip automatic identity analysis:
+```bash
+# Simplified syntax (default)
+gitflow-analytics -c config.yaml --skip-identity-analysis
+
+# Explicit analyze command
+gitflow-analytics analyze -c config.yaml --skip-identity-analysis
+```
+
+To manually run identity analysis:
+```bash
+gitflow-analytics identities -c config.yaml
+```
+
+### Smart Identity Matching
+
+The system automatically detects:
+- **GitHub noreply emails** (e.g., `150280367+username@users.noreply.github.com`)
+- **Name variations** (e.g., "John Doe" vs "John D" vs "jdoe")
+- **Common email patterns** across domains
+- **Bot accounts** for automatic exclusion
+
+### Manual Configuration
+
+You can also manually configure identity mappings in your YAML:
+
+```yaml
+analysis:
+  identity:
+    manual_mappings:
+      - name: "John Doe"  # Optional: preferred display name for reports
+        primary_email: john.doe@company.com
+        aliases:
+          - jdoe@personal.email.com
+          - 123456+johndoe@users.noreply.github.com
+      - name: "Sarah Smith"
+        primary_email: sarah.smith@company.com
+        aliases:
+          - s.smith@oldcompany.com
+```
+
+### Display Name Control
+
+The optional `name` field in manual mappings allows you to control how developer names appear in reports. This is particularly useful for:
+
+- **Standardizing display names** across different email formats
+- **Resolving duplicates** when the same person appears with slight name variations
+- **Using preferred names** instead of technical email formats
+
+**Example use cases:**
+```yaml
+analysis:
+  identity:
+    manual_mappings:
+      # Consolidate Austin Zach identities
+      - name: "Austin Zach"
+        primary_email: "azach@ewtn.com"
+        aliases:
+          - "150280367+azach-ewtn@users.noreply.github.com"
+          - "azach-ewtn@users.noreply.github.com"
+      
+      # Standardize name variations
+      - name: "John Doe"  # Consistent display across all reports
+        primary_email: "john.doe@company.com"
+        aliases:
+          - "johndoe@company.com"
+          - "j.doe@company.com"
+```
+
+Without the `name` field, the system uses the canonical email's associated name, which might not be ideal for reporting.
+
+### Disabling Automatic Analysis
+
+To disable the automatic identity prompt:
+```yaml
+analysis:
+  identity:
+    auto_analysis: false
+```
+
+## ML-Enhanced Commit Categorization
+
+GitFlow Analytics includes sophisticated machine learning capabilities for categorizing commits with high accuracy and confidence scoring.
+
+### How It Works
+
+The ML categorization system uses a **hybrid approach** combining:
+
+1. **Semantic Analysis**: Uses spaCy NLP models to understand commit message meaning
+2. **File Pattern Recognition**: Analyzes changed files for additional context signals  
+3. **Rule-based Fallback**: Falls back to traditional regex patterns when ML confidence is low
+4. **Confidence Scoring**: Provides confidence metrics for all categorizations
+
+### Categories Detected
+
+The system automatically categorizes commits into:
+
+- **Feature**: New functionality development (`add`, `implement`, `create`)
+- **Bug Fix**: Error corrections (`fix`, `resolve`, `correct`)
+- **Refactor**: Code restructuring (`refactor`, `optimize`, `improve`) 
+- **Documentation**: Documentation updates (`docs`, `readme`, `comment`)
+- **Maintenance**: Routine upkeep (`update`, `upgrade`, `dependency`)
+- **Test**: Testing-related changes (`test`, `spec`, `coverage`)
+- **Style**: Formatting changes (`format`, `lint`, `prettier`)
+- **Build**: Build system changes (`build`, `ci`, `docker`)
+- **Security**: Security-related fixes (`security`, `vulnerability`)
+- **Hotfix**: Urgent production fixes (`hotfix`, `critical`, `emergency`)
+- **Config**: Configuration changes (`config`, `settings`, `environment`)
+
+### Configuration
+
+```yaml
+analysis:
+  ml_categorization:
+    # Enable/disable ML categorization (default: true)
+    enabled: true
+    
+    # Minimum confidence for ML predictions (0.0-1.0, default: 0.6)
+    min_confidence: 0.6
+    
+    # Semantic vs file pattern weighting (default: 0.7 vs 0.3)
+    semantic_weight: 0.7
+    file_pattern_weight: 0.3
+    
+    # Confidence threshold for ML vs rule-based (default: 0.5)
+    hybrid_threshold: 0.5
+    
+    # Caching for performance
+    enable_caching: true
+    cache_duration_days: 30
+    
+    # Processing settings
+    batch_size: 100
+```
+
+### Installation Requirements
+
+For ML categorization, install the spaCy English model:
+
+```bash
+python -m spacy download en_core_web_sm
+```
+
+**Alternative models** (if the default is unavailable):
+```bash
+# Medium model (more accurate, larger)
+python -m spacy download en_core_web_md
+
+# Large model (most accurate, largest) 
+python -m spacy download en_core_web_lg
+```
+
+### Performance Expectations
+
+- **Accuracy**: 85-95% accuracy on typical commit messages
+- **Speed**: ~50-100 commits/second with caching enabled
+- **Fallback**: Graceful degradation to rule-based when ML unavailable
+- **Memory**: ~200MB additional memory usage for spaCy models
+
+### Enhanced Reports
+
+With ML categorization enabled, reports include:
+
+- **Confidence scores** for each categorization
+- **Method indicators** (ML, rules, or cached)
+- **Alternative predictions** for uncertain cases
+- **ML performance statistics** in analysis summaries
+
+### Example Enhanced Output
+
+```csv
+commit_hash,category,ml_confidence,ml_method,message
+a1b2c3d,feature,0.89,ml,"Add user authentication system"  
+f6e5d4c,bug_fix,0.92,ml,"Fix memory leak in cache cleanup"
+9876543,maintenance,0.74,rules,"Update dependency versions"
+```
+
+## Troubleshooting
+
+### YAML Configuration Errors
+
+GitFlow Analytics provides helpful error messages when YAML configuration issues are encountered. Here are common errors and their solutions:
+
+#### Tab Characters Not Allowed
+```
+❌ YAML configuration error at line 3, column 1:
+🚫 Tab characters are not allowed in YAML files!
+```
+**Fix**: Replace all tabs with spaces (use 2 or 4 spaces for indentation)
+- Most editors can show whitespace characters and convert tabs to spaces
+- In VS Code: View → Render Whitespace, then Edit → Convert Indentation to Spaces
+
+#### Missing Colons
+```
+❌ YAML configuration error at line 5, column 10:
+🚫 Missing colon (:) after a key name!
+```
+**Fix**: Add a colon and space after each key name
+```yaml
+# Correct:
+repositories:
+  - name: my-repo
+    
+# Incorrect:
+repositories
+  - name my-repo
+```
+
+#### Unclosed Quotes
+```
+❌ YAML configuration error at line 8, column 15:
+🚫 Unclosed quoted string!
+```
+**Fix**: Ensure all quotes are properly closed
+```yaml
+# Correct:
+token: "my-token-value"
+
+# Incorrect:
+token: "my-token-value
+```
+
+#### Invalid Indentation
+```
+❌ YAML configuration error:
+🚫 Indentation error or invalid structure!
+```
+**Fix**: Use consistent indentation (either 2 or 4 spaces)
+```yaml
+# Correct:
+analysis:
+  exclude:
+    paths:
+      - "vendor/**"
+      
+# Incorrect:
+analysis:
+  exclude:
+     paths:  # 3 spaces - inconsistent!
+      - "vendor/**"
+```
+
+### Tips for Valid YAML
+
+1. **Use a YAML validator**: Check your configuration with online YAML validators before using
+2. **Enable whitespace display**: Make tabs and spaces visible in your editor
+3. **Use quotes for special characters**: Wrap values containing `:`, `#`, `@`, etc. in quotes
+4. **Consistent indentation**: Pick 2 or 4 spaces and stick to it throughout the file
+5. **Check the sample config**: Reference `config-sample.yaml` for proper structure
+
+### Configuration Validation
+
+Beyond YAML syntax, GitFlow Analytics validates:
+- Required fields (`repositories` must have `name` and `path`)
+- Environment variable resolution
+- File path existence
+- Valid configuration structure
+
+If you encounter persistent issues, run with `--debug` for detailed error information:
+```bash
+# Simplified syntax (default)
+gitflow-analytics -c config.yaml --debug
+
+# Explicit analyze command
+gitflow-analytics analyze -c config.yaml --debug
+```
 
 ## Contributing
 

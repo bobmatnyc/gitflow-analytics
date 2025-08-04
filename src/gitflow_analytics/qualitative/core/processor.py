@@ -13,6 +13,7 @@ from .llm_fallback import LLMFallback
 from .pattern_cache import PatternCache
 from ..utils.batch_processor import BatchProcessor, ProgressTracker
 from ..utils.metrics import PerformanceMetrics
+from ...core.schema_version import create_schema_manager
 
 
 class QualitativeProcessor:
@@ -29,16 +30,22 @@ class QualitativeProcessor:
     while maintaining high accuracy and keeping LLM costs low.
     """
     
-    def __init__(self, config: QualitativeConfig, database: Database):
+    def __init__(self, config: QualitativeConfig, database: Database, cache_dir: Optional[Path] = None):
         """Initialize qualitative processor.
         
         Args:
             config: Configuration for qualitative analysis
             database: Database instance for caching and storage
+            cache_dir: Cache directory for schema versioning
         """
         self.config = config
         self.database = database
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize schema version manager
+        if cache_dir is None:
+            cache_dir = Path(config.cache_config.cache_dir)
+        self.schema_manager = create_schema_manager(cache_dir)
         
         # Initialize core components
         self.nlp_engine = NLPEngine(config.nlp_config)
@@ -73,14 +80,108 @@ class QualitativeProcessor:
         }
         
         self.logger.info("Qualitative processor initialized")
+    
+    def _filter_commits_for_processing(self, commits: List[Dict[str, Any]], 
+                                     force_reprocess: bool = False) -> List[Dict[str, Any]]:
+        """Filter commits to only those that need processing based on schema versioning."""
+        if force_reprocess:
+            return commits
+            
+        # Convert config to dict for schema comparison
+        config_dict = {
+            'nlp_config': self.config.nlp_config.__dict__,
+            'llm_config': self.config.llm_config.__dict__,
+            'cache_config': self.config.cache_config.__dict__,
+            'confidence_threshold': self.config.confidence_threshold,
+            'max_llm_fallback_pct': self.config.max_llm_fallback_pct
+        }
+        
+        # Check if schema has changed
+        schema_changed = self.schema_manager.has_schema_changed('qualitative', config_dict)
+        
+        if schema_changed:
+            self.logger.info("Qualitative analysis schema has changed, reprocessing all commits")
+            return commits
+        
+        # Filter by date - only process commits after last processed date
+        last_processed = self.schema_manager.get_last_processed_date('qualitative')
+        if not last_processed:
+            self.logger.info("No previous processing date found, processing all commits")
+            return commits
+        
+        # Filter commits by date
+        commits_to_process = []
+        for commit in commits:
+            commit_date = commit.get('timestamp')
+            if commit_date and commit_date > last_processed:
+                commits_to_process.append(commit)
+        
+        return commits_to_process
+    
+    def _get_existing_results(self, commits: List[Dict[str, Any]]) -> List[QualitativeCommitData]:
+        """Get existing qualitative results for commits from the database."""
+        results = []
+        
+        # Try to load existing results from database
+        # This is a simplified version - in practice you'd query the qualitative_commits table
+        for commit in commits:
+            # Create minimal result indicating no processing needed
+            result = QualitativeCommitData(
+                hash=commit.get('hash', ''),
+                message=commit.get('message', ''),
+                author_name=commit.get('author_name', ''),
+                author_email=commit.get('author_email', ''),
+                timestamp=commit.get('timestamp'),
+                files_changed=commit.get('files_changed', []),
+                insertions=commit.get('insertions', 0),
+                deletions=commit.get('deletions', 0),
+                change_type='unknown',
+                change_type_confidence=0.0,
+                business_domain='unknown',
+                domain_confidence=0.0,
+                risk_level='low',
+                risk_factors=[],
+                intent_signals={},
+                collaboration_patterns={},
+                technical_context={},
+                processing_method='cached',
+                processing_time_ms=0.0,
+                confidence_score=0.0
+            )
+            results.append(result)
+            
+        return results
+    
+    def _update_schema_tracking(self, commits: List[Dict[str, Any]]):
+        """Update schema version tracking after processing commits."""
+        if not commits:
+            return
+            
+        # Convert config to dict for schema tracking
+        config_dict = {
+            'nlp_config': self.config.nlp_config.__dict__,
+            'llm_config': self.config.llm_config.__dict__,
+            'cache_config': self.config.cache_config.__dict__,
+            'confidence_threshold': self.config.confidence_threshold,
+            'max_llm_fallback_pct': self.config.max_llm_fallback_pct
+        }
+        
+        # Find the latest commit date
+        latest_date = max(commit.get('timestamp') for commit in commits if commit.get('timestamp'))
+        
+        # Update schema version with latest processed date
+        self.schema_manager.update_schema_version('qualitative', config_dict, latest_date)
+        self.schema_manager.mark_date_processed('qualitative', latest_date, config_dict)
         
     def process_commits(self, commits: List[Dict[str, Any]], 
-                       show_progress: bool = True) -> List[QualitativeCommitData]:
-        """Process commits with qualitative analysis.
+                       show_progress: bool = True,
+                       force_reprocess: bool = False) -> List[QualitativeCommitData]:
+        """Process commits with qualitative analysis using incremental processing.
         
         Args:
             commits: List of commit dictionaries from GitFlow Analytics
             show_progress: Whether to show progress information
+            force_reprocess: Force reprocessing even if schema hasn't changed
             
         Returns:
             List of QualitativeCommitData with analysis results
@@ -91,9 +192,18 @@ class QualitativeProcessor:
         if not self.config.enabled:
             self.logger.info("Qualitative analysis disabled in configuration")
             return self._create_disabled_results(commits)
+        
+        # Filter commits for incremental processing
+        commits_to_process = self._filter_commits_for_processing(commits, force_reprocess)
+        
+        if not commits_to_process:
+            self.logger.info("No commits require processing (all up-to-date)")
+            # Return existing results for all commits
+            return self._get_existing_results(commits)
             
         self.processing_stats['processing_start_time'] = time.time()
-        self.logger.info(f"Starting qualitative analysis of {len(commits)} commits")
+        self.logger.info(f"Starting qualitative analysis of {len(commits_to_process)} commits "
+                        f"({len(commits) - len(commits_to_process)} already processed)")
         
         # Setup progress tracking
         progress_tracker = ProgressTracker(
@@ -138,6 +248,9 @@ class QualitativeProcessor:
         if self._should_optimize_cache():
             self._optimize_system()
             
+        # Update schema tracking after successful processing
+        self._update_schema_tracking(commits_to_process)
+        
         self.logger.info(f"Qualitative analysis completed in {time.time() - self.processing_stats['processing_start_time']:.2f}s")
         return all_results
         

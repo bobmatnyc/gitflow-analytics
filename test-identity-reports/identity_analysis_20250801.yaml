@@ -1,0 +1,10 @@
+analysis_metadata:
+  total_identities: 1
+  total_clusters: 0
+  analysis_method: llm
+identity_clusters: []
+unresolved_identities:
+- name: Robert (Masa) Matsuoka
+  email: bobmatnyc@users.noreply.github.com
+  commit_count: 18
+  repositories: []

@@ -1,6 +1,7 @@
 """Command-line interface for GitFlow Analytics."""
 
 import logging
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any, Optional, cast
 import click
 import git
 import pandas as pd
+import yaml
 
 from ._version import __version__
 from .cli_rich import create_rich_display
@@ -22,6 +24,7 @@ from .metrics.dora import DORAMetricsCalculator
 from .reports.analytics_writer import AnalyticsReportGenerator
 from .reports.csv_writer import CSVReportGenerator
 from .reports.narrative_writer import NarrativeReportGenerator
+from .reports.json_exporter import ComprehensiveJSONExporter
 
 
 def handle_timezone_error(e: Exception, report_name: str, all_commits: list, logger: logging.Logger) -> None:
@@ -47,18 +50,64 @@ def handle_timezone_error(e: Exception, report_name: str, all_commits: list, log
         raise
 
 
-@click.group()
+class AnalyzeAsDefaultGroup(click.Group):
+    """
+    Custom Click group that treats unrecognized options as analyze command arguments.
+    This allows 'gitflow-analytics -c config.yaml' to work like 'gitflow-analytics analyze -c config.yaml'
+    """
+    
+    def parse_args(self, ctx, args):
+        """Override parse_args to redirect unrecognized patterns to analyze command."""
+        # Check if the first argument is a known subcommand
+        if args and args[0] in self.list_commands(ctx):
+            return super().parse_args(ctx, args)
+        
+        # Check for global options that should NOT be routed to analyze
+        global_options = {'--version', '--help', '-h'}
+        if args and args[0] in global_options:
+            return super().parse_args(ctx, args)
+        
+        # Check if we have arguments that look like analyze options
+        analyze_indicators = {'-c', '--config', '-w', '--weeks', '--output', '-o', 
+                            '--anonymize', '--no-cache', '--validate-only', '--clear-cache',
+                            '--enable-qualitative', '--qualitative-only', '--enable-pm',
+                            '--pm-platform', '--disable-pm', '--rich', '--log',
+                            '--skip-identity-analysis', '--apply-identity-suggestions'}
+        
+        # If first arg starts with - and looks like an analyze option, prepend 'analyze'
+        if args and args[0].startswith('-'):
+            # Check if any of the args are analyze indicators
+            has_analyze_indicators = any(arg in analyze_indicators for arg in args)
+            if has_analyze_indicators:
+                # This looks like it should be an analyze command
+                new_args = ['analyze'] + args
+                return super().parse_args(ctx, new_args)
+        
+        # Otherwise, use default behavior
+        return super().parse_args(ctx, args)
+
+
+@click.group(cls=AnalyzeAsDefaultGroup, invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="GitFlow Analytics")
-def cli() -> None:
-    """GitFlow Analytics - Analyze Git repositories for productivity insights."""
-    pass
+@click.help_option('-h', '--help')
+@click.pass_context
+def cli(ctx: click.Context) -> None:
+    """GitFlow Analytics - Analyze Git repositories for productivity insights.
+    
+    If no subcommand is provided, the analyze command will be executed by default.
+    You can use analysis options directly: gitflow-analytics -c config.yaml --weeks 2
+    """
+    # If no subcommand was invoked, show help
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+        ctx.exit(0)
 
 
 # TUI command removed - replaced with rich CLI output
 # Legacy TUI code preserved but not exposed
 
 
-@cli.command()
+@cli.command(name="analyze")
 @click.option(
     "--config",
     "-c",
@@ -84,6 +133,9 @@ def cli() -> None:
 @click.option("--clear-cache", is_flag=True, help="Clear cache before running analysis")
 @click.option("--enable-qualitative", is_flag=True, help="Enable qualitative analysis (requires additional dependencies)")
 @click.option("--qualitative-only", is_flag=True, help="Run only qualitative analysis on existing commits")
+@click.option("--enable-pm", is_flag=True, help="Enable PM platform integration (overrides config setting)")
+@click.option("--pm-platform", multiple=True, help="Enable specific PM platforms (e.g., --pm-platform jira --pm-platform azure)")
+@click.option("--disable-pm", is_flag=True, help="Disable PM platform integration (overrides config setting)")
 @click.option("--rich", is_flag=True, default=True, help="Use rich terminal output (default: enabled)")
 @click.option(
     "--log",
@@ -91,6 +143,48 @@ def cli() -> None:
     default="none",
     help="Enable logging with specified level (default: none)"
 )
+@click.option("--skip-identity-analysis", is_flag=True, help="Skip automatic identity analysis")
+@click.option("--apply-identity-suggestions", is_flag=True, help="Apply identity analysis suggestions without prompting")
+def analyze_subcommand(
+    config: Path,
+    weeks: int,
+    output: Optional[Path],
+    anonymize: bool,
+    no_cache: bool,
+    validate_only: bool,
+    clear_cache: bool,
+    enable_qualitative: bool,
+    qualitative_only: bool,
+    enable_pm: bool,
+    pm_platform: tuple[str, ...],
+    disable_pm: bool,
+    rich: bool,
+    log: str,
+    skip_identity_analysis: bool,
+    apply_identity_suggestions: bool,
+) -> None:
+    """Analyze Git repositories using configuration file (explicit command)."""
+    # Call the main analyze function
+    analyze(
+        config=config,
+        weeks=weeks,
+        output=output,
+        anonymize=anonymize,
+        no_cache=no_cache,
+        validate_only=validate_only,
+        clear_cache=clear_cache,
+        enable_qualitative=enable_qualitative,
+        qualitative_only=qualitative_only,
+        enable_pm=enable_pm,
+        pm_platform=pm_platform,
+        disable_pm=disable_pm,
+        rich=rich,
+        log=log,
+        skip_identity_analysis=skip_identity_analysis,
+        apply_identity_suggestions=apply_identity_suggestions,
+    )
+
+
 def analyze(
     config: Path,
     weeks: int,
@@ -101,8 +195,13 @@ def analyze(
     clear_cache: bool,
     enable_qualitative: bool,
     qualitative_only: bool,
+    enable_pm: bool,
+    pm_platform: tuple[str, ...],
+    disable_pm: bool,
     rich: bool,
     log: str,
+    skip_identity_analysis: bool,
+    apply_identity_suggestions: bool,
 ) -> None:
     """Analyze Git repositories using configuration file."""
 
@@ -149,6 +248,39 @@ def analyze(
             click.echo(f"📋 Loading configuration from {config}...")
             
         cfg = ConfigLoader.load(config)
+
+        # Apply CLI overrides for PM integration
+        if disable_pm:
+            # Disable PM integration if explicitly requested
+            if cfg.pm_integration:
+                cfg.pm_integration.enabled = False
+            if display:
+                display.print_status("PM integration disabled via CLI flag", "info")
+            else:
+                click.echo("🚫 PM integration disabled via CLI flag")
+        elif enable_pm:
+            # Enable PM integration if explicitly requested
+            if not cfg.pm_integration:
+                from .config import PMIntegrationConfig
+                cfg.pm_integration = PMIntegrationConfig(enabled=True)
+            else:
+                cfg.pm_integration.enabled = True
+            if display:
+                display.print_status("PM integration enabled via CLI flag", "info")
+            else:
+                click.echo("📋 PM integration enabled via CLI flag")
+        
+        # Filter PM platforms if specific ones are requested
+        if pm_platform and cfg.pm_integration:
+            requested_platforms = set(pm_platform)
+            # Disable platforms not requested
+            for platform_name in list(cfg.pm_integration.platforms.keys()):
+                if platform_name not in requested_platforms:
+                    cfg.pm_integration.platforms[platform_name].enabled = False
+            if display:
+                display.print_status(f"PM integration limited to platforms: {', '.join(pm_platform)}", "info")
+            else:
+                click.echo(f"📋 PM integration limited to platforms: {', '.join(pm_platform)}")
 
         # Validate configuration
         warnings = ConfigLoader.validate_config(cfg)
@@ -217,11 +349,27 @@ def analyze(
             manual_mappings=cfg.analysis.manual_identity_mappings,
         )
 
+        # Prepare ML categorization config for analyzer
+        ml_config = None
+        if hasattr(cfg.analysis, 'ml_categorization'):
+            ml_config = {
+                'enabled': cfg.analysis.ml_categorization.enabled,
+                'min_confidence': cfg.analysis.ml_categorization.min_confidence,
+                'semantic_weight': cfg.analysis.ml_categorization.semantic_weight,
+                'file_pattern_weight': cfg.analysis.ml_categorization.file_pattern_weight,
+                'hybrid_threshold': cfg.analysis.ml_categorization.hybrid_threshold,
+                'cache_duration_days': cfg.analysis.ml_categorization.cache_duration_days,
+                'batch_size': cfg.analysis.ml_categorization.batch_size,
+                'enable_caching': cfg.analysis.ml_categorization.enable_caching,
+                'spacy_model': cfg.analysis.ml_categorization.spacy_model,
+            }
+
         analyzer = GitAnalyzer(
             cache,
             branch_mapping_rules=cfg.analysis.branch_mapping_rules,
             allowed_ticket_platforms=getattr(cfg.analysis, "ticket_platforms", None),
             exclude_paths=cfg.analysis.exclude_paths,
+            ml_categorization_config=ml_config,
         )
         orchestrator = IntegrationOrchestrator(cfg, cache)
 
@@ -379,6 +527,50 @@ def analyze(
                 click.echo("\n❌ No commits found in the specified period!")
             return
 
+        # Filter out excluded authors (bots)
+        if cfg.analysis.exclude_authors:
+            original_count = len(all_commits)
+            excluded_authors_lower = [author.lower() for author in cfg.analysis.exclude_authors]
+            all_commits = [
+                commit for commit in all_commits 
+                if commit["author_email"].lower() not in excluded_authors_lower and
+                   commit["author_name"].lower() not in excluded_authors_lower
+            ]
+            filtered_count = original_count - len(all_commits)
+            if filtered_count > 0:
+                if display:
+                    display.print_status(f"Filtered out {filtered_count} commits from excluded authors", "info")
+                else:
+                    click.echo(f"\n🤖 Filtered out {filtered_count} commits from excluded authors")
+                    
+            # Also filter PRs from excluded authors
+            if all_prs:
+                original_pr_count = len(all_prs)
+                filtered_prs = []
+                for pr in all_prs:
+                    # Skip non-dict PR entries (probably an error in data)
+                    if not isinstance(pr, dict):
+                        logger.warning(f"Skipping non-dict PR entry: {type(pr)} = {pr}")
+                        continue
+                    
+                    # Check if PR author is in excluded list
+                    author_info = pr.get("author", {})
+                    if isinstance(author_info, dict):
+                        author_login = author_info.get("login", "")
+                        if author_login.lower() not in excluded_authors_lower:
+                            filtered_prs.append(pr)
+                    else:
+                        # Keep PRs without proper author info
+                        filtered_prs.append(pr)
+                
+                all_prs = filtered_prs
+                filtered_pr_count = original_pr_count - len(all_prs)
+                if filtered_pr_count > 0:
+                    if display:
+                        display.print_status(f"Filtered out {filtered_pr_count} PRs from excluded authors", "info")
+                    else:
+                        click.echo(f"   🤖 Filtered out {filtered_pr_count} PRs from excluded authors")
+
         # Update developer statistics
         if display:
             display.print_status("Resolving developer identities...", "info")
@@ -392,6 +584,186 @@ def analyze(
             display.print_status(f"Identified {len(developer_stats)} unique developers", "success")
         else:
             click.echo(f"   ✅ Identified {len(developer_stats)} unique developers")
+        
+        # Check if we should run identity analysis
+        should_check_identities = (
+            not skip_identity_analysis and  # Not explicitly skipped
+            cfg.analysis.auto_identity_analysis and  # Auto analysis is enabled
+            not cfg.analysis.manual_identity_mappings and  # No manual mappings
+            len(developer_stats) > 1  # Multiple developers to analyze
+        )
+        
+        # Debug identity analysis decision
+        if not should_check_identities:
+            reasons = []
+            if skip_identity_analysis:
+                reasons.append("--skip-identity-analysis flag used")
+            if not cfg.analysis.auto_identity_analysis:
+                reasons.append("auto_identity_analysis disabled in config")
+            if cfg.analysis.manual_identity_mappings:
+                reasons.append(f"manual identity mappings already exist ({len(cfg.analysis.manual_identity_mappings)} mappings)")
+            if len(developer_stats) <= 1:
+                reasons.append(f"only {len(developer_stats)} developer(s) detected")
+            
+            if reasons and not skip_identity_analysis:
+                if display:
+                    display.print_status(f"Identity analysis skipped: {', '.join(reasons)}", "info")
+                else:
+                    click.echo(f"   ℹ️  Identity analysis skipped: {', '.join(reasons)}")
+        
+        if should_check_identities:
+            from .identity_llm.analysis_pass import IdentityAnalysisPass
+            
+            try:
+                # Check when we last prompted for identity suggestions
+                last_prompt_file = cache_dir / ".identity_last_prompt"
+                should_prompt = True
+                
+                if last_prompt_file.exists():
+                    import os
+                    last_prompt_age = datetime.now() - datetime.fromtimestamp(os.path.getmtime(last_prompt_file))
+                    if last_prompt_age < timedelta(days=7):
+                        should_prompt = False
+                
+                if should_prompt:
+                    if display:
+                        display.print_status("Analyzing developer identities...", "info")
+                    else:
+                        click.echo("\n🔍 Analyzing developer identities...")
+                    
+                    analysis_pass = IdentityAnalysisPass(config)
+                    
+                    # Run analysis
+                    identity_cache_file = cache_dir / "identity_analysis_cache.yaml"
+                    identity_result = analysis_pass.run_analysis(
+                        all_commits,
+                        output_path=identity_cache_file,
+                        apply_to_config=False
+                    )
+                    
+                    if identity_result.clusters:
+                        # Generate suggested configuration
+                        suggested_config = analysis_pass.generate_suggested_config(identity_result)
+                        
+                        # Show suggestions
+                        if display:
+                            display.print_status(f"Found {len(identity_result.clusters)} potential identity clusters", "warning")
+                        else:
+                            click.echo(f"\n⚠️  Found {len(identity_result.clusters)} potential identity clusters:")
+                        
+                        # Display all mappings
+                        if suggested_config.get('analysis', {}).get('manual_identity_mappings'):
+                            click.echo("\n📋 Suggested identity mappings:")
+                            for mapping in suggested_config['analysis']['manual_identity_mappings']:
+                                canonical = mapping['canonical_email']
+                                aliases = mapping.get('aliases', [])
+                                if aliases:
+                                    click.echo(f"   {canonical}")
+                                    for alias in aliases:
+                                        click.echo(f"     → {alias}")
+                        
+                        # Check for bot exclusions
+                        if suggested_config.get('exclude', {}).get('authors'):
+                            bot_count = len(suggested_config['exclude']['authors'])
+                            click.echo(f"\n🤖 Found {bot_count} bot accounts to exclude:")
+                            for bot in suggested_config['exclude']['authors'][:5]:  # Show first 5
+                                click.echo(f"   - {bot}")
+                            if bot_count > 5:
+                                click.echo(f"   ... and {bot_count - 5} more")
+                        
+                        # Prompt user
+                        click.echo("\n" + "─" * 60)
+                        if click.confirm("Apply these identity mappings to your configuration?", default=True):
+                            # Apply mappings to config
+                            try:
+                                # Reload config to ensure we have latest
+                                with open(config, 'r') as f:
+                                    config_data = yaml.safe_load(f)
+                                
+                                # Update analysis section
+                                if 'analysis' not in config_data:
+                                    config_data['analysis'] = {}
+                                if 'identity' not in config_data['analysis']:
+                                    config_data['analysis']['identity'] = {}
+                                
+                                # Apply manual mappings
+                                existing_mappings = config_data['analysis']['identity'].get('manual_mappings', [])
+                                new_mappings = suggested_config.get('analysis', {}).get('manual_identity_mappings', [])
+                                
+                                # Merge mappings
+                                existing_emails = {m.get('canonical_email', '').lower() for m in existing_mappings}
+                                for new_mapping in new_mappings:
+                                    if new_mapping['canonical_email'].lower() not in existing_emails:
+                                        existing_mappings.append(new_mapping)
+                                
+                                config_data['analysis']['identity']['manual_mappings'] = existing_mappings
+                                
+                                # Apply bot exclusions
+                                if suggested_config.get('exclude', {}).get('authors'):
+                                    if 'exclude' not in config_data['analysis']:
+                                        config_data['analysis']['exclude'] = {}
+                                    if 'authors' not in config_data['analysis']['exclude']:
+                                        config_data['analysis']['exclude']['authors'] = []
+                                    
+                                    existing_excludes = set(config_data['analysis']['exclude']['authors'])
+                                    for bot in suggested_config['exclude']['authors']:
+                                        if bot not in existing_excludes:
+                                            config_data['analysis']['exclude']['authors'].append(bot)
+                                
+                                # Write updated config
+                                with open(config, 'w') as f:
+                                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+                                
+                                if display:
+                                    display.print_status("Applied identity mappings to configuration", "success")
+                                else:
+                                    click.echo("✅ Applied identity mappings to configuration")
+                                
+                                # Reload configuration with new mappings
+                                cfg = ConfigLoader.load(config)
+                                
+                                # Re-initialize identity resolver with new mappings
+                                identity_resolver = DeveloperIdentityResolver(
+                                    cache_dir / "identities.db",
+                                    similarity_threshold=cfg.analysis.similarity_threshold,
+                                    manual_mappings=cfg.analysis.manual_identity_mappings,
+                                )
+                                
+                                # Re-resolve identities with new mappings
+                                click.echo("\n🔄 Re-resolving developer identities with new mappings...")
+                                identity_resolver.update_commit_stats(all_commits)
+                                developer_stats = identity_resolver.get_developer_stats()
+                                
+                                if display:
+                                    display.print_status(f"Consolidated to {len(developer_stats)} unique developers", "success")
+                                else:
+                                    click.echo(f"✅ Consolidated to {len(developer_stats)} unique developers")
+                                
+                            except Exception as e:
+                                logger.error(f"Failed to apply identity mappings: {e}")
+                                click.echo(f"❌ Failed to apply identity mappings: {e}")
+                        else:
+                            click.echo("⏭️  Skipping identity mapping suggestions")
+                            click.echo("💡 Run with --analyze-identities to see suggestions again")
+                        
+                        # Update last prompt timestamp
+                        last_prompt_file.touch()
+                        
+                    else:
+                        if display:
+                            display.print_status("No identity clusters found - all developers appear unique", "success")
+                        else:
+                            click.echo("✅ No identity clusters found - all developers appear unique")
+                        
+                        # Still update timestamp so we don't check again for 7 days
+                        last_prompt_file.touch()
+                            
+            except Exception as e:
+                if display:
+                    display.print_status(f"Identity analysis failed: {e}", "warning")
+                else:
+                    click.echo(f"⚠️  Identity analysis failed: {e}")
+                logger.debug(f"Identity analysis error: {e}", exc_info=True)
 
         # Analyze tickets
         if display:
@@ -543,6 +915,44 @@ def analyze(
                 click.echo("\n✅ Qualitative-only analysis completed!")
             return
 
+        # Aggregate PM platform data BEFORE report generation
+        if not disable_pm and cfg.pm_integration and cfg.pm_integration.enabled:
+            try:
+                logger.debug("Starting PM data aggregation")
+                aggregated_pm_data = {
+                    "issues": {},
+                    "correlations": [],
+                    "metrics": {}
+                }
+                
+                for repo_name, enrichment in all_enrichments.items():
+                    pm_data = enrichment.get("pm_data", {})
+                    if pm_data:
+                        # Aggregate issues by platform
+                        for platform, issues in pm_data.get("issues", {}).items():
+                            if platform not in aggregated_pm_data["issues"]:
+                                aggregated_pm_data["issues"][platform] = []
+                            aggregated_pm_data["issues"][platform].extend(issues)
+                        
+                        # Aggregate correlations
+                        aggregated_pm_data["correlations"].extend(pm_data.get("correlations", []))
+                        
+                        # Use metrics from last repository with PM data (could be enhanced to merge)
+                        if pm_data.get("metrics"):
+                            aggregated_pm_data["metrics"] = pm_data["metrics"]
+                
+                # Only keep PM data if we actually have some
+                if not aggregated_pm_data["correlations"] and not aggregated_pm_data["issues"]:
+                    aggregated_pm_data = None
+                
+                logger.debug("PM data aggregation completed successfully")
+            except Exception as e:
+                logger.error(f"Error in PM data aggregation: {e}")
+                click.echo(f"   ⚠️ Warning: PM data aggregation failed: {e}")
+                aggregated_pm_data = None
+        else:
+            aggregated_pm_data = None
+
         # Generate reports
         if display:
             display.print_status("Generating reports...", "info")
@@ -550,10 +960,6 @@ def analyze(
             click.echo("\n📊 Generating reports...")
         
         logger.debug(f"Starting report generation with {len(all_commits)} commits")
-        logger.debug(f"Sample commit timestamps (first 3):")
-        for i, commit in enumerate(all_commits[:3]):
-            timestamp = commit.get('timestamp')
-            logger.debug(f"  Commit {i}: {timestamp} (tzinfo: {getattr(timestamp, 'tzinfo', 'N/A')})")
         
         report_gen = CSVReportGenerator(anonymize=anonymize or cfg.output.anonymize_enabled)
         analytics_gen = AnalyticsReportGenerator(
@@ -589,7 +995,7 @@ def analyze(
         summary_report = output / f'summary_{datetime.now().strftime("%Y%m%d")}.csv'
         try:
             report_gen.generate_summary_report(
-                all_commits, all_prs, developer_stats, ticket_analysis, summary_report
+                all_commits, all_prs, developer_stats, ticket_analysis, summary_report, aggregated_pm_data
             )
             generated_reports.append(summary_report.name)
             if not display:
@@ -616,6 +1022,32 @@ def analyze(
             import traceback
             traceback.print_exc()
             raise
+
+        # Untracked commits report  
+        untracked_commits_report = output / f'untracked_commits_{datetime.now().strftime("%Y%m%d")}.csv'
+        try:
+            report_gen.generate_untracked_commits_report(ticket_analysis, untracked_commits_report)
+            generated_reports.append(untracked_commits_report.name)
+            if not display:
+                click.echo(f"   ✅ Untracked commits: {untracked_commits_report}")
+        except Exception as e:
+            click.echo(f"   ❌ Error generating untracked commits report: {e}")
+            click.echo(f"   🔍 Error type: {type(e).__name__}")
+            click.echo(f"   📍 Error details: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+        # PM Correlations report (if PM data is available)
+        if aggregated_pm_data:
+            pm_correlations_report = output / f'pm_correlations_{datetime.now().strftime("%Y%m%d")}.csv'
+            try:
+                report_gen.generate_pm_correlations_report(aggregated_pm_data, pm_correlations_report)
+                generated_reports.append(pm_correlations_report.name)
+                if not display:
+                    click.echo(f"   ✅ PM correlations: {pm_correlations_report}")
+            except Exception as e:
+                click.echo(f"   ⚠️ Warning: PM correlations report failed: {e}")
 
         # Activity distribution report
         activity_report = output / f'activity_distribution_{datetime.now().strftime("%Y%m%d")}.csv'
@@ -688,6 +1120,38 @@ def analyze(
             import traceback
             traceback.print_exc()
             raise
+        
+        # Weekly trends report (includes developer and project trends)
+        trends_report = output / f'weekly_trends_{datetime.now().strftime("%Y%m%d")}.csv'
+        try:
+            logger.debug("Starting weekly trends report generation")
+            analytics_gen.generate_weekly_trends_report(
+                all_commits, developer_stats, trends_report, weeks
+            )
+            logger.debug("Weekly trends report completed successfully")
+            generated_reports.append(trends_report.name)
+            
+            # Check for additional trend files generated
+            timestamp = trends_report.stem.split("_")[-1]
+            dev_trends_file = output / f'developer_trends_{timestamp}.csv'
+            proj_trends_file = output / f'project_trends_{timestamp}.csv'
+            
+            if dev_trends_file.exists():
+                generated_reports.append(dev_trends_file.name)
+            if proj_trends_file.exists():
+                generated_reports.append(proj_trends_file.name)
+                
+            if not display:
+                click.echo(f"   ✅ Weekly trends: {trends_report}")
+                if dev_trends_file.exists():
+                    click.echo(f"   ✅ Developer trends: {dev_trends_file}")
+                if proj_trends_file.exists():
+                    click.echo(f"   ✅ Project trends: {proj_trends_file}")
+        except Exception as e:
+            logger.error(f"Error in weekly trends report generation: {e}")
+            handle_timezone_error(e, "weekly trends report", all_commits, logger)
+            click.echo(f"   ❌ Error generating weekly trends report: {e}")
+            raise
 
         # Calculate DORA metrics
         try:
@@ -733,6 +1197,7 @@ def analyze(
             traceback.print_exc()
             raise
 
+
         # Generate narrative report if markdown format is enabled
         if "markdown" in cfg.output.formats:
             try:
@@ -756,6 +1221,66 @@ def analyze(
 
                 logger.debug("Generating narrative report")
                 narrative_report = output / f'narrative_report_{datetime.now().strftime("%Y%m%d")}.md'
+                
+                # Try to generate ChatGPT summary
+                chatgpt_summary = None
+                import os as os_module
+                openai_key = os_module.getenv("OPENROUTER_API_KEY") or os_module.getenv("OPENAI_API_KEY")
+                if openai_key:
+                    try:
+                        # Create temporary comprehensive data for ChatGPT
+                        from .qualitative.chatgpt_analyzer import ChatGPTQualitativeAnalyzer
+                        
+                        logger.debug("Preparing data for ChatGPT analysis")
+                        
+                        # Create minimal comprehensive data structure
+                        comprehensive_data = {
+                            "metadata": {
+                                "analysis_weeks": weeks,
+                                "generated_at": datetime.now(timezone.utc).isoformat()
+                            },
+                            "executive_summary": {
+                                "key_metrics": {
+                                    "commits": {"total": len(all_commits)},
+                                    "developers": {"total": len(developer_stats)},
+                                    "lines_changed": {"total": sum(
+                                        c.get('filtered_insertions', c.get('insertions', 0)) + 
+                                        c.get('filtered_deletions', c.get('deletions', 0)) 
+                                        for c in all_commits
+                                    )},
+                                    "story_points": {"total": sum(c.get('story_points', 0) or 0 for c in all_commits)},
+                                    "ticket_coverage": {"percentage": ticket_analysis.get('commit_coverage_pct', 0)}
+                                },
+                                "health_score": {"overall": 75, "rating": "good"},  # Placeholder
+                                "trends": {"velocity": {"direction": "stable"}},
+                                "wins": [],
+                                "concerns": []
+                            },
+                            "developers": {},
+                            "projects": {}
+                        }
+                        
+                        # Add developer data
+                        for dev in developer_stats[:10]:  # Top 10 developers
+                            dev_id = dev.get('canonical_id', dev.get('primary_email', 'unknown'))
+                            comprehensive_data["developers"][dev_id] = {
+                                "identity": {"name": dev.get('primary_name', 'Unknown')},
+                                "summary": {
+                                    "total_commits": dev.get('total_commits', 0),
+                                    "total_story_points": dev.get('total_story_points', 0)
+                                },
+                                "projects": {}
+                            }
+                        
+                        analyzer = ChatGPTQualitativeAnalyzer(openai_key)
+                        logger.debug("Generating ChatGPT qualitative summary")
+                        chatgpt_summary = analyzer.generate_executive_summary(comprehensive_data)
+                        logger.debug("ChatGPT summary generated successfully")
+                        
+                    except Exception as e:
+                        logger.warning(f"ChatGPT summary generation failed: {e}")
+                        click.echo(f"   ⚠️ ChatGPT analysis skipped: {str(e)[:100]}")
+                
                 narrative_gen.generate_narrative_report(
                     all_commits,
                     all_prs,
@@ -767,6 +1292,8 @@ def analyze(
                     pr_metrics,
                     narrative_report,
                     weeks,
+                    aggregated_pm_data,
+                    chatgpt_summary
                 )
                 generated_reports.append(narrative_report.name)
                 logger.debug("Narrative report generation completed successfully")
@@ -785,38 +1312,105 @@ def analyze(
                 traceback.print_exc()
                 raise
 
-        # Generate JSON export if enabled
+        # Generate comprehensive JSON export if enabled
         if "json" in cfg.output.formats:
             try:
-                logger.debug("Starting JSON export generation")
-                json_report = output / f'gitflow_export_{datetime.now().strftime("%Y%m%d")}.json'
+                logger.debug("Starting comprehensive JSON export generation")
+                click.echo("   🔄 Generating comprehensive JSON export...")
+                json_report = output / f'comprehensive_export_{datetime.now().strftime("%Y%m%d")}.json'
 
+                # Initialize comprehensive JSON exporter
+                json_exporter = ComprehensiveJSONExporter(anonymize=anonymize)
+
+                # Enhanced qualitative analysis if available
+                enhanced_analysis = None
+                if qualitative_results:
+                    try:
+                        from .qualitative.enhanced_analyzer import EnhancedQualitativeAnalyzer
+                        logger.debug("Running enhanced qualitative analysis")
+                        enhanced_analyzer = EnhancedQualitativeAnalyzer()
+                        enhanced_analysis = enhanced_analyzer.analyze_comprehensive(
+                            commits=all_commits,
+                            developer_stats=developer_stats,
+                            project_metrics={
+                                "ticket_analysis": ticket_analysis,
+                                "pr_metrics": pr_metrics,
+                                "enrichments": all_enrichments,
+                            },
+                            pm_data=aggregated_pm_data,
+                            weeks_analyzed=weeks
+                        )
+                        logger.debug("Enhanced qualitative analysis completed")
+                    except Exception as e:
+                        logger.warning(f"Enhanced qualitative analysis failed: {e}")
+                        enhanced_analysis = None
+
+                # Prepare project metrics
                 project_metrics = {
                     "ticket_analysis": ticket_analysis,
                     "pr_metrics": pr_metrics,
                     "enrichments": all_enrichments,
                 }
 
-                logger.debug("Calling orchestrator.export_to_json")
-                orchestrator.export_to_json(
-                    all_commits,
-                    all_prs,
-                    developer_stats,
-                    project_metrics,
-                    dora_metrics,
-                    str(json_report),
+                # Generate comprehensive export
+                logger.debug("Calling comprehensive JSON exporter")
+                json_exporter.export_comprehensive_data(
+                    commits=all_commits,
+                    prs=all_prs,
+                    developer_stats=developer_stats,
+                    project_metrics=project_metrics,
+                    dora_metrics=dora_metrics,
+                    output_path=json_report,
+                    weeks=weeks,
+                    pm_data=aggregated_pm_data if aggregated_pm_data else None,
+                    qualitative_data=qualitative_results if qualitative_results else None,
+                    enhanced_qualitative_analysis=enhanced_analysis
                 )
                 generated_reports.append(json_report.name)
-                logger.debug("JSON export generation completed successfully")
+                logger.debug("Comprehensive JSON export generation completed successfully")
                 if not display:
-                    click.echo(f"   ✅ JSON export: {json_report}")
+                    click.echo(f"   ✅ Comprehensive JSON export: {json_report}")
+                
+                # Generate HTML report from JSON if requested
+                if "html" in cfg.output.formats:
+                    try:
+                        click.echo("   🔄 Generating HTML report...")
+                        from .reports.html_generator import HTMLReportGenerator
+                        html_report = output / f'gitflow_report_{datetime.now().strftime("%Y%m%d")}.html'
+                        logger.debug("Generating HTML report from JSON data")
+                        
+                        # Read the JSON data we just wrote
+                        if not json_report.exists():
+                            # Check for alternative JSON file name
+                            alt_json = output / f'gitflow_export_{datetime.now().strftime("%Y%m%d")}.json'
+                            if alt_json.exists():
+                                click.echo(f"   ⚠️ Using alternative JSON file: {alt_json.name}")
+                                json_report = alt_json
+                        
+                        with open(json_report, 'r') as f:
+                            import json
+                            json_data = json.load(f)
+                        
+                        html_generator = HTMLReportGenerator()
+                        html_generator.generate_report(
+                            json_data=json_data,
+                            output_path=html_report,
+                            title=f"GitFlow Analytics Report - {datetime.now().strftime('%B %Y')}"
+                        )
+                        generated_reports.append(html_report.name)
+                        if not display:
+                            click.echo(f"   ✅ HTML report: {html_report}")
+                        logger.debug("HTML report generation completed successfully")
+                    except Exception as e:
+                        logger.error(f"Error generating HTML report: {e}")
+                        click.echo(f"   ⚠️ Warning: HTML report generation failed: {e}")
             except Exception as e:
-                logger.error(f"Error in JSON export generation: {e}")
+                logger.error(f"Error in comprehensive JSON export generation: {e}")
                 try:
-                    handle_timezone_error(e, "JSON export generation", all_commits, logger)
+                    handle_timezone_error(e, "comprehensive JSON export generation", all_commits, logger)
                 except:
                     pass  # Let the original error handling below take over
-                click.echo(f"   ❌ Error generating JSON export: {e}")
+                click.echo(f"   ❌ Error generating comprehensive JSON export: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
                 import traceback
@@ -890,10 +1484,21 @@ def analyze(
             click.echo(f"\n✅ Analysis complete! Reports saved to {output}")
 
     except Exception as e:
-        if display:
-            display.show_error(str(e), show_debug_hint=True)
+        error_msg = str(e)
+        
+        # Check if this is already a formatted YAML configuration error
+        if "❌ YAML configuration error" in error_msg or "❌ Configuration file" in error_msg:
+            # This is already a user-friendly error, display it as-is
+            if display:
+                display.show_error(error_msg, show_debug_hint=False)
+            else:
+                click.echo(f"\n{error_msg}", err=True)
         else:
-            click.echo(f"\n❌ Error: {e}", err=True)
+            # This is a generic error, add the standard error formatting
+            if display:
+                display.show_error(error_msg, show_debug_hint=True)
+            else:
+                click.echo(f"\n❌ Error: {error_msg}", err=True)
         
         if "--debug" in sys.argv:
             raise
@@ -1017,6 +1622,122 @@ def discover_jira_fields(config: Path) -> None:
                 click.echo(f'    - "{field_id}"  # {field_info["name"]}')
             click.echo("```")
 
+    except Exception as e:
+        click.echo(f"❌ Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to YAML configuration file",
+)
+@click.option(
+    "--weeks", "-w", type=int, default=12, help="Number of weeks to analyze (default: 12)"
+)
+@click.option("--apply", is_flag=True, help="Apply suggestions to configuration")
+def identities(config: Path, weeks: int, apply: bool) -> None:
+    """Analyze and manage developer identities."""
+    try:
+        cfg = ConfigLoader.load(config)
+        cache = GitAnalysisCache(cfg.cache.directory)
+        
+        # Get recent commits
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(weeks=weeks)
+        
+        # Prepare ML categorization config for analyzer
+        ml_config = None
+        if hasattr(cfg.analysis, 'ml_categorization'):
+            ml_config = {
+                'enabled': cfg.analysis.ml_categorization.enabled,
+                'min_confidence': cfg.analysis.ml_categorization.min_confidence,
+                'semantic_weight': cfg.analysis.ml_categorization.semantic_weight,
+                'file_pattern_weight': cfg.analysis.ml_categorization.file_pattern_weight,
+                'hybrid_threshold': cfg.analysis.ml_categorization.hybrid_threshold,
+                'cache_duration_days': cfg.analysis.ml_categorization.cache_duration_days,
+                'batch_size': cfg.analysis.ml_categorization.batch_size,
+                'enable_caching': cfg.analysis.ml_categorization.enable_caching,
+                'spacy_model': cfg.analysis.ml_categorization.spacy_model,
+            }
+
+        analyzer = GitAnalyzer(
+            cache,
+            branch_mapping_rules=cfg.analysis.branch_mapping_rules,
+            allowed_ticket_platforms=getattr(cfg.analysis, "ticket_platforms", None),
+            exclude_paths=cfg.analysis.exclude_paths,
+            ml_categorization_config=ml_config,
+        )
+        
+        click.echo("🔍 Analyzing repositories for developer identities...")
+        
+        all_commits = []
+        for repo_config in cfg.repositories:
+            if repo_config.path.exists():
+                commits = analyzer.analyze_repository(
+                    repo_config.path, start_date, repo_config.branch
+                )
+                all_commits.extend(commits)
+        
+        if not all_commits:
+            click.echo("❌ No commits found in the specified period!")
+            return
+            
+        click.echo(f"✅ Found {len(all_commits)} commits")
+        
+        from .identity_llm.analysis_pass import IdentityAnalysisPass
+        
+        analysis_pass = IdentityAnalysisPass(config)
+        
+        # Run analysis
+        identity_report_path = cfg.cache.directory / f'identity_analysis_{datetime.now().strftime("%Y%m%d")}.yaml'
+        identity_result = analysis_pass.run_analysis(
+            all_commits,
+            output_path=identity_report_path,
+            apply_to_config=False
+        )
+        
+        click.echo(f"\n📄 Analysis report saved to: {identity_report_path}")
+        
+        if identity_result.clusters:
+            # Generate suggested configuration
+            suggested_config = analysis_pass.generate_suggested_config(identity_result)
+            
+            # Show suggestions
+            click.echo(f"\n⚠️  Found {len(identity_result.clusters)} potential identity clusters:")
+            
+            # Display all mappings
+            if suggested_config.get('analysis', {}).get('manual_identity_mappings'):
+                click.echo("\n📋 Suggested identity mappings:")
+                for mapping in suggested_config['analysis']['manual_identity_mappings']:
+                    canonical = mapping['canonical_email']
+                    aliases = mapping.get('aliases', [])
+                    if aliases:
+                        click.echo(f"   {canonical}")
+                        for alias in aliases:
+                            click.echo(f"     → {alias}")
+            
+            # Check for bot exclusions
+            if suggested_config.get('exclude', {}).get('authors'):
+                bot_count = len(suggested_config['exclude']['authors'])
+                click.echo(f"\n🤖 Found {bot_count} bot accounts to exclude:")
+                for bot in suggested_config['exclude']['authors']:
+                    click.echo(f"   - {bot}")
+            
+            # Apply if requested
+            if apply or click.confirm("\nApply these identity mappings to your configuration?", default=True):
+                analysis_pass._apply_to_config(identity_result)
+                click.echo("✅ Applied identity mappings to configuration")
+                
+                # Clear the prompt timestamp
+                last_prompt_file = cfg.cache.directory / ".identity_last_prompt"
+                last_prompt_file.unlink(missing_ok=True)
+        else:
+            click.echo("✅ No identity clusters found - all developers appear unique")
+            
     except Exception as e:
         click.echo(f"❌ Error: {e}", err=True)
         sys.exit(1)

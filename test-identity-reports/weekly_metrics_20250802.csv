@@ -1,0 +1,2 @@
+week_start,developer_id,developer_name,developer_email,project,commits,story_points,lines_added,lines_removed,files_changed,complexity_delta,ticket_coverage_pct,avg_commit_size,unique_tickets,prs_involved
+2025-07-28,1ae6f814-aacb-4f64-9fea-7bf3b19176af,Robert (Masa) Matsuoka,bobmatnyc@users.noreply.github.com,GFA,18,0,0,0,236,-62.88,0.0,0.0,0,0

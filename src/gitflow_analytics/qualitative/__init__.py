@@ -6,12 +6,14 @@ file changes.
 
 Key Components:
 - QualitativeProcessor: Main orchestrator for qualitative analysis
+- EnhancedQualitativeAnalyzer: Advanced multi-dimensional analysis for executives, projects, developers, and workflows
 - NLPEngine: spaCy-based fast processing for most commits  
 - LLMFallback: Strategic use of LLMs for uncertain cases
 - Various classifiers for change type, domain, risk, and intent analysis
 """
 
 from .core.processor import QualitativeProcessor
+# from .enhanced_analyzer import EnhancedQualitativeAnalyzer  # Commented out - missing dependencies
 from .models.schemas import (
     QualitativeCommitData,
     QualitativeConfig,
@@ -22,6 +24,7 @@ from .models.schemas import (
 
 __all__ = [
     "QualitativeProcessor",
+    # "EnhancedQualitativeAnalyzer",  # Commented out - missing dependencies
     "QualitativeCommitData", 
     "QualitativeConfig",
     "NLPConfig",

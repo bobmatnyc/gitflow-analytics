@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Union
 
 from ..core.cache import GitAnalysisCache
+from ..pm_framework.orchestrator import PMFrameworkOrchestrator
 from .github_integration import GitHubIntegration
 from .jira_integration import JIRAIntegration
 
@@ -43,11 +44,42 @@ class IntegrationOrchestrator:
                         story_point_fields=getattr(jira_settings, "story_point_fields", None),
                     )
 
+        # Initialize PM framework orchestrator
+        self.pm_orchestrator = None
+        if hasattr(config, 'pm_integration') and config.pm_integration and config.pm_integration.enabled:
+            try:
+                # Create PM platform configuration for the orchestrator
+                pm_config = {
+                    'pm_platforms': {},
+                    'analysis': {
+                        'pm_integration': {
+                            'enabled': config.pm_integration.enabled,
+                            'primary_platform': config.pm_integration.primary_platform,
+                            'correlation': config.pm_integration.correlation
+                        }
+                    }
+                }
+                
+                # Convert PM platform configs to expected format
+                for platform_name, platform_config in config.pm_integration.platforms.items():
+                    if platform_config.enabled:
+                        pm_config['pm_platforms'][platform_name] = {
+                            'enabled': True,
+                            **platform_config.config
+                        }
+                
+                self.pm_orchestrator = PMFrameworkOrchestrator(pm_config)
+                print(f"📋 PM Framework initialized with {len(self.pm_orchestrator.get_active_platforms())} platforms")
+                
+            except Exception as e:
+                print(f"⚠️  Failed to initialize PM framework: {e}")
+                self.pm_orchestrator = None
+
     def enrich_repository_data(
         self, repo_config: Any, commits: list[dict[str, Any]], since: datetime
     ) -> dict[str, Any]:
         """Enrich repository data from all available integrations."""
-        enrichment: dict[str, Any] = {"prs": [], "issues": [], "pr_metrics": {}}
+        enrichment: dict[str, Any] = {"prs": [], "issues": [], "pr_metrics": {}, "pm_data": {}}
 
         # GitHub enrichment
         if "github" in self.integrations and repo_config.github_repo:
@@ -81,6 +113,31 @@ class IntegrationOrchestrator:
 
                 except Exception as e:
                     print(f"   ⚠️  JIRA enrichment failed: {e}")
+
+        # PM Framework enrichment
+        if self.pm_orchestrator and self.pm_orchestrator.is_enabled():
+            try:
+                print(f"   📋 Collecting PM platform data...")
+                
+                # Get all issues from PM platforms
+                pm_issues = self.pm_orchestrator.get_all_issues(since=since)
+                enrichment["pm_data"]["issues"] = pm_issues
+                
+                # Correlate issues with commits
+                correlations = self.pm_orchestrator.correlate_issues_with_commits(pm_issues, commits)
+                enrichment["pm_data"]["correlations"] = correlations
+                
+                # Calculate enhanced metrics
+                enhanced_metrics = self.pm_orchestrator.calculate_enhanced_metrics(
+                    commits, enrichment["prs"], pm_issues, correlations
+                )
+                enrichment["pm_data"]["metrics"] = enhanced_metrics
+                
+                print(f"   ✅ PM data collected: {enhanced_metrics.get('total_pm_issues', 0)} issues, {len(correlations)} correlations")
+                
+            except Exception as e:
+                print(f"   ⚠️  PM framework enrichment failed: {e}")
+                enrichment["pm_data"] = {"error": str(e)}
 
         return enrichment
 

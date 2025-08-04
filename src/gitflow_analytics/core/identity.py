@@ -69,8 +69,13 @@ class DeveloperIdentityResolver:
 
         with self.get_session() as session:
             for mapping in manual_mappings:
-                canonical_email = mapping.get("canonical_email", "").lower().strip()
+                # Support both canonical_email and primary_email for backward compatibility
+                canonical_email = (
+                    mapping.get("primary_email", "") or 
+                    mapping.get("canonical_email", "")
+                ).lower().strip()
                 aliases = mapping.get("aliases", [])
+                preferred_name = mapping.get("name")  # Optional display name
 
                 if not canonical_email or not aliases:
                     continue
@@ -86,6 +91,11 @@ class DeveloperIdentityResolver:
                     # Skip if canonical identity doesn't exist yet
                     print(f"Warning: Canonical identity not found for email: {canonical_email}")
                     continue
+
+                # Update the preferred name if provided
+                if preferred_name and preferred_name != canonical_identity.primary_name:
+                    print(f"Updating display name: {canonical_identity.primary_name} → {preferred_name}")
+                    canonical_identity.primary_name = preferred_name
 
                 # Process each alias
                 for alias_email in aliases:
@@ -409,6 +419,11 @@ class DeveloperIdentityResolver:
         stats_by_dev = defaultdict(lambda: {"commits": 0, "story_points": 0})
 
         for commit in commits:
+            # Debug: check if commit is actually a dictionary
+            if not isinstance(commit, dict):
+                logger.error(f"Expected commit to be dict, got {type(commit)}: {commit}")
+                continue
+                
             canonical_id = self.resolve_developer(commit["author_name"], commit["author_email"])
 
             stats_by_dev[canonical_id]["commits"] += 1
