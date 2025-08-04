@@ -222,12 +222,18 @@ class SchemaVersionManager:
 
             if stored_version:
                 # Update to the latest processed date
-                if (
-                    not stored_version.last_processed_date
-                    or date > stored_version.last_processed_date
-                ):
+                if not stored_version.last_processed_date:
                     stored_version.last_processed_date = date
                     session.commit()
+                else:
+                    # Ensure stored date is timezone-aware for comparison
+                    stored_date = stored_version.last_processed_date
+                    if stored_date.tzinfo is None:
+                        stored_date = stored_date.replace(tzinfo=timezone.utc)
+
+                    if date > stored_date:
+                        stored_version.last_processed_date = date
+                        session.commit()
             else:
                 # Create new entry
                 self.update_schema_version(component, config, date)

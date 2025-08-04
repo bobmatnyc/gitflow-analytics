@@ -678,6 +678,9 @@ All YAML error messages follow this structure:
 # Install in development mode
 pip install -e ".[dev]"
 
+# IMPORTANT: After making code changes, reinstall locally to test
+pipx uninstall gitflow-analytics && pipx install /Users/masa/Projects/managed/gitflow-analytics
+
 # Run analysis on test repos (simplified syntax - default behavior)
 gitflow-analytics --config config-recess.yaml --weeks 8
 
