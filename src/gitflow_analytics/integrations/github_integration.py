@@ -28,32 +28,43 @@ class GitHubIntegration:
         self.rate_limit_retries = rate_limit_retries
         self.backoff_factor = backoff_factor
         self.allowed_ticket_platforms = allowed_ticket_platforms
-        
+
         # Initialize schema version manager for incremental API data fetching
         self.schema_manager = create_schema_manager(cache.cache_dir)
-    
-    def _get_incremental_fetch_date(self, component: str, requested_since: datetime, 
-                                  config: dict[str, Any]) -> datetime:
+
+    def _get_incremental_fetch_date(
+        self, component: str, requested_since: datetime, config: dict[str, Any]
+    ) -> datetime:
         """Determine the actual fetch date based on schema versioning."""
+        # Ensure requested_since is timezone-aware
+        if requested_since.tzinfo is None:
+            requested_since = requested_since.replace(tzinfo=timezone.utc)
+
         # Check if schema has changed
         if self.schema_manager.has_schema_changed(component, config):
-            print(f"   🔄 {component.title()} API schema changed, fetching all data since {requested_since}")
+            print(
+                f"   🔄 {component.title()} API schema changed, fetching all data since {requested_since}"
+            )
             return requested_since
-        
+
         # Get last processed date
         last_processed = self.schema_manager.get_last_processed_date(component)
         if not last_processed:
             print(f"   📥 First {component} API fetch, getting data since {requested_since}")
             return requested_since
-        
+
+        # Ensure last_processed is timezone-aware
+        if last_processed.tzinfo is None:
+            last_processed = last_processed.replace(tzinfo=timezone.utc)
+
         # Use the later of the two dates (don't go backwards)
         fetch_since = max(last_processed, requested_since)
-        
+
         if fetch_since > requested_since:
             print(f"   ⚡ {component.title()} incremental fetch since {fetch_since}")
         else:
             print(f"   📥 {component.title()} full fetch since {requested_since}")
-            
+
         return fetch_since
 
     def enrich_repository_with_prs(
@@ -68,20 +79,20 @@ class GitHubIntegration:
 
         # Check if we need to fetch new PR data
         github_config = {
-            'rate_limit_retries': self.rate_limit_retries,
-            'backoff_factor': self.backoff_factor,
-            'allowed_ticket_platforms': self.allowed_ticket_platforms
+            "rate_limit_retries": self.rate_limit_retries,
+            "backoff_factor": self.backoff_factor,
+            "allowed_ticket_platforms": self.allowed_ticket_platforms,
         }
-        
+
         # Determine the actual start date for fetching
-        fetch_since = self._get_incremental_fetch_date('github', since, github_config)
-        
+        fetch_since = self._get_incremental_fetch_date("github", since, github_config)
+
         # Get PRs for the time period (may be incremental)
         prs = self._get_pull_requests(repo, fetch_since)
-        
+
         # Update schema tracking after successful fetch
         if prs:
-            self.schema_manager.mark_date_processed('github', since, github_config)
+            self.schema_manager.mark_date_processed("github", since, github_config)
 
         # Build commit to PR mapping
         commit_to_pr = {}

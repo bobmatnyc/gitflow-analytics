@@ -643,7 +643,7 @@ All YAML error messages follow this structure:
 
 ## Common Gotchas
 
-1. **Timezone issues**: GitHub API returns timezone-aware timestamps
+1. **Timezone issues**: GitHub API returns timezone-aware timestamps, while database-stored datetimes may be timezone-naive. The system now ensures all datetime comparisons use UTC-aware timestamps
 2. **Branch detection**: Simplified branch detection may not work for all workflows
 3. **Memory usage**: Large repositories can consume significant memory
 4. **Identity resolution**: Manual mappings must be applied after initial analysis
