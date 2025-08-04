@@ -4,7 +4,7 @@ import difflib
 import uuid
 from collections import defaultdict
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy import and_
@@ -71,16 +71,17 @@ class DeveloperIdentityResolver:
             for mapping in manual_mappings:
                 # Support both canonical_email and primary_email for backward compatibility
                 canonical_email = (
-                    mapping.get("primary_email", "") or 
-                    mapping.get("canonical_email", "")
-                ).lower().strip()
+                    (mapping.get("primary_email", "") or mapping.get("canonical_email", ""))
+                    .lower()
+                    .strip()
+                )
                 aliases = mapping.get("aliases", [])
                 preferred_name = mapping.get("name")  # Optional display name
 
                 if not canonical_email or not aliases:
                     continue
 
-                # Find the canonical identity
+                # Find or create the canonical identity
                 canonical_identity = (
                     session.query(DeveloperIdentity)
                     .filter(DeveloperIdentity.primary_email == canonical_email)
@@ -88,13 +89,28 @@ class DeveloperIdentityResolver:
                 )
 
                 if not canonical_identity:
-                    # Skip if canonical identity doesn't exist yet
-                    print(f"Warning: Canonical identity not found for email: {canonical_email}")
-                    continue
+                    # Create the canonical identity if it doesn't exist
+                    canonical_id = str(uuid.uuid4())
+                    canonical_identity = DeveloperIdentity(
+                        canonical_id=canonical_id,
+                        primary_name=preferred_name or canonical_email.split("@")[0],
+                        primary_email=canonical_email,
+                        first_seen=datetime.now(timezone.utc),
+                        last_seen=datetime.now(timezone.utc),
+                        commit_count=0,
+                        active_days_count=0,
+                    )
+                    session.add(canonical_identity)
+                    session.commit()
+                    print(
+                        f"Created canonical identity: {canonical_identity.primary_name} ({canonical_email})"
+                    )
 
                 # Update the preferred name if provided
                 if preferred_name and preferred_name != canonical_identity.primary_name:
-                    print(f"Updating display name: {canonical_identity.primary_name} → {preferred_name}")
+                    print(
+                        f"Updating display name: {canonical_identity.primary_name} → {preferred_name}"
+                    )
                     canonical_identity.primary_name = preferred_name
 
                 # Process each alias
@@ -421,9 +437,9 @@ class DeveloperIdentityResolver:
         for commit in commits:
             # Debug: check if commit is actually a dictionary
             if not isinstance(commit, dict):
-                logger.error(f"Expected commit to be dict, got {type(commit)}: {commit}")
+                print(f"Error: Expected commit to be dict, got {type(commit)}: {commit}")
                 continue
-                
+
             canonical_id = self.resolve_developer(commit["author_name"], commit["author_email"])
 
             stats_by_dev[canonical_id]["commits"] += 1
