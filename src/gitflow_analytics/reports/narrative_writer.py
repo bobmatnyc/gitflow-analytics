@@ -219,7 +219,10 @@ class NarrativeReportGenerator:
                     metrics["files_changed"].update(files)
                 elif isinstance(files, int):
                     # If it's already aggregated, just add the count
-                    metrics["files_changed"] = len(metrics["files_changed"]) + files
+                    if isinstance(metrics["files_changed"], set):
+                        metrics["files_changed"] = len(metrics["files_changed"]) + files
+                    else:
+                        metrics["files_changed"] += files
 
             # Count PRs per developer
             if prs:
