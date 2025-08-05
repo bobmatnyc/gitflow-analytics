@@ -4,20 +4,21 @@ import asyncio
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
-from textual.widgets import Header, Footer, Label, Log, Static
-from textual.containers import Container, Vertical, Horizontal
-from textual.screen import Screen
-from textual.binding import Binding
 from rich.pretty import Pretty
+from textual.binding import Binding
+from textual.containers import Container, Vertical
+from textual.screen import Screen
+from textual.widgets import Footer, Header, Label, Log
 
-from ..widgets.progress_widget import AnalysisProgressWidget
 from gitflow_analytics.config import Config
-from gitflow_analytics.core.cache import GitAnalysisCache
 from gitflow_analytics.core.analyzer import GitAnalyzer
+from gitflow_analytics.core.cache import GitAnalysisCache
 from gitflow_analytics.core.identity import DeveloperIdentityResolver
 from gitflow_analytics.integrations.orchestrator import IntegrationOrchestrator
+
+from ..widgets.progress_widget import AnalysisProgressWidget
 
 
 class AnalysisProgressScreen(Screen):
@@ -459,7 +460,11 @@ class AnalysisProgressScreen(Screen):
             if self.config.github.token:
                 clone_url = f"https://{self.config.github.token}@github.com/{repo_config.github_repo}.git"
             
-            git.Repo.clone_from(clone_url, repo_config.path, branch=repo_config.branch)
+            # Don't specify branch if None - let git use the default branch
+            if repo_config.branch:
+                git.Repo.clone_from(clone_url, repo_config.path, branch=repo_config.branch)
+            else:
+                git.Repo.clone_from(clone_url, repo_config.path)
             log.write_line(f"   ✅ Successfully cloned {repo_config.github_repo}")
             
         except Exception as e:

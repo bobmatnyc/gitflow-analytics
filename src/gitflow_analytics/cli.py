@@ -1,7 +1,6 @@
 """Command-line interface for GitFlow Analytics."""
 
 import logging
-import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,8 +22,8 @@ from .integrations.orchestrator import IntegrationOrchestrator
 from .metrics.dora import DORAMetricsCalculator
 from .reports.analytics_writer import AnalyticsReportGenerator
 from .reports.csv_writer import CSVReportGenerator
-from .reports.narrative_writer import NarrativeReportGenerator
 from .reports.json_exporter import ComprehensiveJSONExporter
+from .reports.narrative_writer import NarrativeReportGenerator
 
 
 def handle_timezone_error(e: Exception, report_name: str, all_commits: list, logger: logging.Logger) -> None:
@@ -42,8 +41,8 @@ def handle_timezone_error(e: Exception, report_name: str, all_commits: list, log
             logger.error(f"  Sample commit {i}: timestamp={timestamp} (tzinfo: {getattr(timestamp, 'tzinfo', 'N/A')})")
         
         click.echo(f"   ❌ Timezone comparison error in {report_name}")
-        click.echo(f"   🔍 See logs with --log DEBUG for detailed information")
-        click.echo(f"   💡 This usually indicates mixed timezone-aware and naive datetime objects")
+        click.echo("   🔍 See logs with --log DEBUG for detailed information")
+        click.echo("   💡 This usually indicates mixed timezone-aware and naive datetime objects")
         raise
     else:
         # Re-raise other errors
@@ -452,7 +451,11 @@ def analyze(
                             # Use token for authentication
                             clone_url = f"https://{cfg.github.token}@github.com/{repo_config.github_repo}.git"
 
-                        git.Repo.clone_from(clone_url, repo_config.path, branch=repo_config.branch)
+                        # Don't specify branch if None - let git use the default branch
+                        if repo_config.branch:
+                            git.Repo.clone_from(clone_url, repo_config.path, branch=repo_config.branch)
+                        else:
+                            git.Repo.clone_from(clone_url, repo_config.path)
                         if display:
                             display.print_status(f"Successfully cloned {repo_config.github_repo}", "success")
                         else:
@@ -677,7 +680,7 @@ def analyze(
                             # Apply mappings to config
                             try:
                                 # Reload config to ensure we have latest
-                                with open(config, 'r') as f:
+                                with open(config) as f:
                                     config_data = yaml.safe_load(f)
                                 
                                 # Update analysis section
@@ -791,8 +794,8 @@ def analyze(
                 click.echo("\n🧠 Performing qualitative analysis...")
             
             try:
-                from .qualitative import QualitativeProcessor
                 from .models.database import Database
+                from .qualitative import QualitativeProcessor
                 
                 # Initialize qualitative analysis components
                 qual_db = Database(cfg.cache.directory / "qualitative.db")
@@ -1387,7 +1390,7 @@ def analyze(
                                 click.echo(f"   ⚠️ Using alternative JSON file: {alt_json.name}")
                                 json_report = alt_json
                         
-                        with open(json_report, 'r') as f:
+                        with open(json_report) as f:
                             import json
                             json_data = json.load(f)
                         
