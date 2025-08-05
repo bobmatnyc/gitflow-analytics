@@ -40,6 +40,7 @@ class NarrativeReportGenerator:
         weeks: int,
         pm_data: dict[str, Any] = None,
         chatgpt_summary: str = None,
+        branch_health_metrics: dict[str, dict[str, Any]] = None,
     ) -> Path:
         """Generate comprehensive narrative report."""
         report = StringIO()
@@ -93,6 +94,14 @@ class NarrativeReportGenerator:
         if pm_data and "metrics" in pm_data:
             report.write("\n## PM Platform Integration\n\n")
             self._write_pm_insights(report, pm_data)
+
+        # Branch Health Analysis
+        if branch_health_metrics:
+            from ..reports.branch_health_writer import BranchHealthReportGenerator
+            branch_gen = BranchHealthReportGenerator()
+            branch_section = branch_gen.generate_markdown_section(branch_health_metrics)
+            if branch_section:
+                report.write(branch_section)
 
         # Recommendations
         report.write("\n## Recommendations\n\n")

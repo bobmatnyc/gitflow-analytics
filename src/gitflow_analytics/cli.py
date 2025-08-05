@@ -426,6 +426,7 @@ def analyze(
         all_commits = []
         all_prs = []
         all_enrichments = {}
+        branch_health_metrics = {}  # Store branch health metrics per repository
 
         for repo_config in repositories_to_analyze:
             if display:
@@ -496,6 +497,29 @@ def analyze(
                     display.print_status(f"Found {len(commits)} commits", "success")
                 else:
                     click.echo(f"   ✅ Found {len(commits)} commits")
+                
+                # Analyze branch health
+                from .metrics.branch_health import BranchHealthAnalyzer
+                branch_analyzer = BranchHealthAnalyzer()
+                branch_metrics = branch_analyzer.analyze_repository_branches(str(repo_config.path))
+                branch_health_metrics[repo_config.name] = branch_metrics
+                
+                # Log branch health summary
+                health_summary = branch_metrics.get("summary", {})
+                health_indicators = branch_metrics.get("health_indicators", {})
+                if display:
+                    display.print_status(
+                        f"Branch health: {health_indicators.get('overall_health', 'unknown')} "
+                        f"({health_summary.get('total_branches', 0)} branches, "
+                        f"{health_summary.get('stale_branches', 0)} stale)",
+                        "info"
+                    )
+                else:
+                    click.echo(
+                        f"   📊 Branch health: {health_indicators.get('overall_health', 'unknown')} "
+                        f"({health_summary.get('total_branches', 0)} branches, "
+                        f"{health_summary.get('stale_branches', 0)} stale)"
+                    )
 
                 # Enrich with integration data
                 enrichment = orchestrator.enrich_repository_data(repo_config, commits, start_date)
@@ -1113,6 +1137,33 @@ def analyze(
                 click.echo(f"   ✅ Qualitative insights: {insights_report}")
         except Exception as e:
             logger.error(f"Error in qualitative insights report generation: {e}")
+            
+        # Branch health report
+        if branch_health_metrics:
+            from .reports.branch_health_writer import BranchHealthReportGenerator
+            branch_health_gen = BranchHealthReportGenerator()
+            
+            branch_health_report = output / f'branch_health_{datetime.now().strftime("%Y%m%d")}.csv'
+            try:
+                logger.debug("Starting branch health report generation")
+                branch_health_gen.generate_csv_report(branch_health_metrics, branch_health_report)
+                logger.debug("Branch health report completed successfully")
+                generated_reports.append(branch_health_report.name)
+                if not display:
+                    click.echo(f"   ✅ Branch health: {branch_health_report}")
+            except Exception as e:
+                logger.error(f"Error in branch health report generation: {e}")
+                click.echo(f"   ❌ Error generating branch health report: {e}")
+                
+            # Detailed branch report
+            detailed_branch_report = output / f'branch_details_{datetime.now().strftime("%Y%m%d")}.csv'
+            try:
+                branch_health_gen.generate_detailed_branch_report(branch_health_metrics, detailed_branch_report)
+                generated_reports.append(detailed_branch_report.name)
+                if not display:
+                    click.echo(f"   ✅ Branch details: {detailed_branch_report}")
+            except Exception as e:
+                logger.error(f"Error in detailed branch report generation: {e}")
             try:
                 handle_timezone_error(e, "qualitative insights report", all_commits, logger)
             except:
@@ -1296,7 +1347,8 @@ def analyze(
                     narrative_report,
                     weeks,
                     aggregated_pm_data,
-                    chatgpt_summary
+                    chatgpt_summary,
+                    branch_health_metrics
                 )
                 generated_reports.append(narrative_report.name)
                 logger.debug("Narrative report generation completed successfully")
