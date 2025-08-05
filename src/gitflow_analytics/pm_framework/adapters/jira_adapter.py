@@ -13,7 +13,11 @@ from typing import Any, Optional
 
 import requests
 from requests.adapters import HTTPAdapter
-from requests.exceptions import RequestException
+from requests.exceptions import (
+    ConnectionError,
+    RequestException,
+    Timeout,
+)
 from urllib3.util.retry import Retry
 
 from ..base import BasePlatformAdapter, PlatformCapabilities
@@ -208,6 +212,16 @@ class JIRAAdapter(BasePlatformAdapter):
             self.logger.info(f"Successfully authenticated as: {user_info.get('displayName', 'Unknown')}")
             return True
             
+        except ConnectionError as e:
+            self.logger.error(f"JIRA DNS/connection error: {self._format_network_error(e)}")
+            self.logger.error("Troubleshooting: Check network connectivity and DNS resolution")
+            self._authenticated = False
+            return False
+        except Timeout as e:
+            self.logger.error(f"JIRA authentication timeout: {e}")
+            self.logger.error("Consider increasing timeout settings or checking network latency")
+            self._authenticated = False
+            return False
         except RequestException as e:
             self.logger.error(f"JIRA authentication failed: {e}")
             if hasattr(e, 'response') and e.response is not None:
@@ -282,6 +296,16 @@ class JIRAAdapter(BasePlatformAdapter):
             result['status'] = 'connected'
             self.logger.info("JIRA connection test successful")
             
+        except ConnectionError as e:
+            error_msg = f"DNS/connection error: {self._format_network_error(e)}"
+            result['error'] = error_msg
+            self.logger.error(error_msg)
+            self.logger.error("Troubleshooting: Check network connectivity and DNS resolution")
+        except Timeout as e:
+            error_msg = f"Connection timeout: {e}"
+            result['error'] = error_msg
+            self.logger.error(error_msg)  
+            self.logger.error("Consider increasing timeout settings or checking network latency")
         except RequestException as e:
             error_msg = f"Connection test failed: {e}"
             if hasattr(e, 'response') and e.response is not None:
@@ -1015,3 +1039,27 @@ class JIRAAdapter(BasePlatformAdapter):
             Time in hours, or None if seconds is None.
         """
         return seconds / 3600.0 if seconds is not None else None
+
+    def _format_network_error(self, error: Exception) -> str:
+        """Format network errors with helpful context.
+        
+        Args:
+            error: The network exception that occurred.
+            
+        Returns:
+            Formatted error message with troubleshooting context.
+        """
+        error_str = str(error)
+        
+        if "nodename nor servname provided" in error_str or "[Errno 8]" in error_str:
+            return f"DNS resolution failed - hostname not found ({error_str})"
+        elif "Name or service not known" in error_str or "[Errno -2]" in error_str:
+            return f"DNS resolution failed - service not known ({error_str})"
+        elif "Connection refused" in error_str or "[Errno 111]" in error_str:
+            return f"Connection refused - service not running ({error_str})"
+        elif "Network is unreachable" in error_str or "[Errno 101]" in error_str:
+            return f"Network unreachable - check internet connection ({error_str})"
+        elif "timeout" in error_str.lower():
+            return f"Network timeout - slow connection or high latency ({error_str})"
+        else:
+            return f"Network error ({error_str})"

@@ -1,6 +1,7 @@
 """Developer identity resolution with persistence."""
 
 import difflib
+import logging
 import uuid
 from collections import defaultdict
 from contextlib import contextmanager
@@ -10,6 +11,8 @@ from typing import Any, Optional
 from sqlalchemy import and_
 
 from ..models.database import Database, DeveloperAlias, DeveloperIdentity
+
+logger = logging.getLogger(__name__)
 
 
 class DeveloperIdentityResolver:
@@ -190,6 +193,7 @@ class DeveloperIdentityResolver:
             canonical_id = self._cache[cache_key]
             # Update stats
             self._update_developer_stats(canonical_id)
+            logger.debug(f"Resolved {name} <{email}> from cache to {canonical_id}")
             return canonical_id
 
         # Check exact email match in database
@@ -198,8 +202,14 @@ class DeveloperIdentityResolver:
             alias = session.query(DeveloperAlias).filter(DeveloperAlias.email == email).first()
 
             if alias:
+                # Found an alias with this email - add this name variant to cache and DB
                 self._cache[cache_key] = alias.canonical_id
                 self._update_developer_stats(alias.canonical_id)
+                logger.debug(f"Found alias for {email}, resolving {name} to {alias.canonical_id}")
+                # Add this name variant as an alias if it's different
+                if alias.name.lower() != name.lower():
+                    logger.debug(f"Adding name variant '{name}' as alias for {email}")
+                    self._add_alias(alias.canonical_id, name, email)
                 return alias.canonical_id
 
             # Check primary identities
@@ -226,6 +236,7 @@ class DeveloperIdentityResolver:
             return canonical_id
 
         # Create new identity
+        logger.info(f"Creating new identity for {name} <{email}> - no matches found")
         canonical_id = self._create_identity(name, email, github_username)
         self._cache[cache_key] = canonical_id
         return canonical_id
@@ -328,6 +339,9 @@ class DeveloperIdentityResolver:
             if not existing:
                 alias = DeveloperAlias(canonical_id=canonical_id, name=name, email=email.lower())
                 session.add(alias)
+                # Update cache with the new alias
+                cache_key = f"{email.lower()}:{name.lower()}"
+                self._cache[cache_key] = canonical_id
 
     def _update_developer_stats(self, canonical_id: str):
         """Update developer statistics."""

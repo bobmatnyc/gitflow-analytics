@@ -1021,6 +1021,24 @@ def analyze(
             try:
                 handle_timezone_error(e, "weekly metrics report", all_commits, logger)
             except:
+                pass
+                
+        # Developer activity summary with curve normalization
+        activity_summary_report = output / f'developer_activity_summary_{datetime.now(timezone.utc).strftime("%Y%m%d")}.csv'
+        try:
+            logger.debug("Starting developer activity summary report generation")
+            report_gen.generate_developer_activity_summary(
+                all_commits, developer_stats, all_prs, activity_summary_report, weeks
+            )
+            logger.debug("Developer activity summary report completed successfully")
+            generated_reports.append(activity_summary_report.name)
+            if not display:
+                click.echo(f"   ✅ Developer activity summary: {activity_summary_report}")
+        except Exception as e:
+            logger.error(f"Error in developer activity summary report generation: {e}")
+            try:
+                handle_timezone_error(e, "developer activity summary report", all_commits, logger)
+            except:
                 pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error generating weekly metrics report: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")

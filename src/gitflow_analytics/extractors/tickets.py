@@ -1,8 +1,12 @@
 """Ticket reference extraction for multiple platforms."""
 
+import logging
 import re
 from collections import defaultdict
+from datetime import timezone
 from typing import Any, Optional, cast
+
+logger = logging.getLogger(__name__)
 
 
 class TicketExtractor:
@@ -253,7 +257,19 @@ class TicketExtractor:
         }
 
         # Sort untracked commits by timestamp (most recent first)
-        untracked_commits.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        # Handle timezone-aware and timezone-naive datetimes
+        def safe_timestamp_key(commit):
+            ts = commit.get("timestamp")
+            if ts is None:
+                return ""
+            # If it's a datetime object, handle timezone issues
+            if hasattr(ts, "tzinfo"):
+                # Make timezone-naive datetime UTC-aware for consistent comparison
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+            return ts
+        
+        untracked_commits.sort(key=safe_timestamp_key, reverse=True)
         
         return results
 

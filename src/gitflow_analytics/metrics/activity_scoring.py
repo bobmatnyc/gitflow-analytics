@@ -216,3 +216,84 @@ class ActivityScorer:
             "team_position": position,
             "team_average": round(team_avg, 1),
         }
+
+    def normalize_scores_on_curve(
+        self, developer_scores: dict[str, float], curve_mean: float = 50.0, curve_std: float = 15.0
+    ) -> dict[str, dict[str, Any]]:
+        """Normalize activity scores on a bell curve with quintile grouping.
+        
+        Args:
+            developer_scores: Dictionary mapping developer IDs to raw scores
+            curve_mean: Target mean for the normalized distribution (default: 50)
+            curve_std: Target standard deviation for the distribution (default: 15)
+            
+        Returns:
+            Dictionary with normalized scores and quintile groupings
+        """
+        if not developer_scores:
+            return {}
+        
+        # Get all scores
+        scores = list(developer_scores.values())
+        
+        # Calculate current statistics
+        current_mean = sum(scores) / len(scores)
+        variance = sum((x - current_mean) ** 2 for x in scores) / len(scores)
+        current_std = math.sqrt(variance) if variance > 0 else 1.0
+        
+        # Normalize to bell curve
+        normalized_scores = {}
+        for dev_id, raw_score in developer_scores.items():
+            # Z-score normalization
+            z_score = (raw_score - current_mean) / current_std if current_std > 0 else 0
+            
+            # Transform to target distribution
+            curved_score = curve_mean + (z_score * curve_std)
+            
+            # Ensure scores stay in reasonable range (0-100)
+            curved_score = max(0, min(100, curved_score))
+            
+            normalized_scores[dev_id] = curved_score
+        
+        # Sort developers by normalized score for quintile assignment
+        sorted_devs = sorted(normalized_scores.items(), key=lambda x: x[1])
+        
+        # Assign quintiles
+        results = {}
+        quintile_size = len(sorted_devs) / 5
+        
+        for idx, (dev_id, curved_score) in enumerate(sorted_devs):
+            # Determine quintile (1-5)
+            quintile = min(5, int(idx / quintile_size) + 1)
+            
+            # Determine activity level based on quintile
+            if quintile == 5:
+                activity_level = "exceptional"
+                level_description = "Top 20%"
+            elif quintile == 4:
+                activity_level = "high"
+                level_description = "60-80th percentile"
+            elif quintile == 3:
+                activity_level = "moderate"
+                level_description = "40-60th percentile"
+            elif quintile == 2:
+                activity_level = "low"
+                level_description = "20-40th percentile"
+            else:  # quintile == 1
+                activity_level = "minimal"
+                level_description = "Bottom 20%"
+            
+            # Calculate exact percentile
+            percentile = ((idx + 0.5) / len(sorted_devs)) * 100
+            
+            results[dev_id] = {
+                "raw_score": developer_scores[dev_id],
+                "curved_score": round(curved_score, 1),
+                "quintile": quintile,
+                "activity_level": activity_level,
+                "level_description": level_description,
+                "percentile": round(percentile, 0),
+                "z_score": round((developer_scores[dev_id] - current_mean) / current_std, 2) if current_std > 0 else 0,
+            }
+        
+        return results

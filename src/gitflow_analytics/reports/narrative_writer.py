@@ -1,7 +1,7 @@
 """Narrative report generation in Markdown format."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -61,7 +61,7 @@ class NarrativeReportGenerator:
 
         # Executive Summary
         report.write("## Executive Summary\n\n")
-        self._write_executive_summary(report, commits, developer_stats, ticket_analysis, prs)
+        self._write_executive_summary(report, commits, developer_stats, ticket_analysis, prs, branch_health_metrics)
 
         # Add ChatGPT qualitative insights if available
         if chatgpt_summary:
@@ -75,7 +75,7 @@ class NarrativeReportGenerator:
 
         # Project Activity
         report.write("\n## Project Activity\n\n")
-        self._write_project_activity(report, activity_dist, commits)
+        self._write_project_activity(report, activity_dist, commits, branch_health_metrics)
 
         # Development Patterns
         report.write("\n## Development Patterns\n\n")
@@ -95,14 +95,6 @@ class NarrativeReportGenerator:
             report.write("\n## PM Platform Integration\n\n")
             self._write_pm_insights(report, pm_data)
 
-        # Branch Health Analysis
-        if branch_health_metrics:
-            from ..reports.branch_health_writer import BranchHealthReportGenerator
-            branch_gen = BranchHealthReportGenerator()
-            branch_section = branch_gen.generate_markdown_section(branch_health_metrics)
-            if branch_section:
-                report.write(branch_section)
-
         # Recommendations
         report.write("\n## Recommendations\n\n")
         self._write_recommendations(report, insights, ticket_analysis, focus_data)
@@ -120,6 +112,7 @@ class NarrativeReportGenerator:
         developer_stats: list[dict[str, Any]],
         ticket_analysis: dict[str, Any],
         prs: list[dict[str, Any]],
+        branch_health_metrics: dict[str, dict[str, Any]] = None,
     ) -> None:
         """Write executive summary section."""
         total_commits = len(commits)
@@ -134,6 +127,39 @@ class NarrativeReportGenerator:
         report.write(f"- **Active Developers**: {total_developers}\n")
         report.write(f"- **Lines Changed**: {total_lines:,}\n")
         report.write(f"- **Ticket Coverage**: {ticket_analysis['commit_coverage_pct']:.1f}%\n")
+        
+        # Add repository branch health summary
+        if branch_health_metrics:
+            # Aggregate branch health across all repositories
+            total_branches = 0
+            total_stale = 0
+            overall_health_scores = []
+            
+            for repo_name, metrics in branch_health_metrics.items():
+                summary = metrics.get("summary", {})
+                health_indicators = metrics.get("health_indicators", {})
+                
+                total_branches += summary.get("total_branches", 0)
+                total_stale += summary.get("stale_branches", 0)
+                
+                if health_indicators.get("overall_health_score") is not None:
+                    overall_health_scores.append(health_indicators["overall_health_score"])
+            
+            # Calculate average health score
+            avg_health_score = sum(overall_health_scores) / len(overall_health_scores) if overall_health_scores else 0
+            
+            # Determine health status
+            if avg_health_score >= 80:
+                health_status = "Excellent"
+            elif avg_health_score >= 60:
+                health_status = "Good"
+            elif avg_health_score >= 40:
+                health_status = "Fair"
+            else:
+                health_status = "Needs Attention"
+            
+            report.write(f"- **Branch Health**: {health_status} ({avg_health_score:.0f}/100) - "
+                        f"{total_branches} branches, {total_stale} stale\n")
 
         # Projects worked on - show full list instead of just count
         projects = set(c.get("project_key", "UNKNOWN") for c in commits)
@@ -240,6 +266,7 @@ class NarrativeReportGenerator:
                             break
 
             # Calculate scores
+            raw_scores_for_curve = {}
             for canonical_id, metrics in dev_metrics.items():
                 # Convert set to count
                 if isinstance(metrics["files_changed"], set):
@@ -247,6 +274,15 @@ class NarrativeReportGenerator:
 
                 score_result = self.activity_scorer.calculate_activity_score(metrics)
                 activity_scores[canonical_id] = score_result
+                raw_scores_for_curve[canonical_id] = score_result["raw_score"]
+            
+            # Apply curve normalization
+            curve_normalized = self.activity_scorer.normalize_scores_on_curve(raw_scores_for_curve)
+            
+            # Update activity scores with curve data
+            for canonical_id, curve_data in curve_normalized.items():
+                if canonical_id in activity_scores:
+                    activity_scores[canonical_id]["curve_data"] = curve_data
 
         # Calculate team scores for relative ranking
         all_scores = [score["raw_score"] for score in activity_scores.values()]
@@ -263,14 +299,22 @@ class NarrativeReportGenerator:
             # Add activity score if available
             if canonical_id and canonical_id in activity_scores:
                 score_data = activity_scores[canonical_id]
-                relative_data = self.activity_scorer.calculate_team_relative_score(
-                    score_data["raw_score"], all_scores
-                )
-
-                report.write(
-                    f"- Activity Score: {score_data['normalized_score']:.1f}/100 "
-                    f"({score_data['activity_level']}, {relative_data['percentile']:.0f}th percentile)\n"
-                )
+                
+                # Use curve data if available, otherwise fall back to relative scoring
+                if "curve_data" in score_data:
+                    curve_data = score_data["curve_data"]
+                    report.write(
+                        f"- Activity Score: {curve_data['curved_score']:.1f}/100 "
+                        f"({curve_data['activity_level']}, {curve_data['level_description']})\n"
+                    )
+                else:
+                    relative_data = self.activity_scorer.calculate_team_relative_score(
+                        score_data["raw_score"], all_scores
+                    )
+                    report.write(
+                        f"- Activity Score: {score_data['normalized_score']:.1f}/100 "
+                        f"({score_data['activity_level']}, {relative_data['percentile']:.0f}th percentile)\n"
+                    )
 
             # Add focus data if available
             if name in focus_lookup:
@@ -321,7 +365,8 @@ class NarrativeReportGenerator:
             report.write("\n")
 
     def _write_project_activity(
-        self, report: StringIO, activity_dist: list[dict[str, Any]], commits: list[dict[str, Any]]
+        self, report: StringIO, activity_dist: list[dict[str, Any]], commits: list[dict[str, Any]],
+        branch_health_metrics: dict[str, dict[str, Any]] = None
     ) -> None:
         """Write project activity breakdown."""
         # Aggregate by project with developer details
@@ -378,7 +423,72 @@ class NarrativeReportGenerator:
                 contributors.append(f"{dev_name} ({dev_pct:.1f}%)")
 
             contributors_str = ", ".join(contributors)
-            report.write(f"- Contributors: {contributors_str}\n\n")
+            report.write(f"- Contributors: {contributors_str}\n")
+            
+            # Add branch health for this project/repository if available
+            if branch_health_metrics and project in branch_health_metrics:
+                repo_health = branch_health_metrics[project]
+                summary = repo_health.get("summary", {})
+                health_indicators = repo_health.get("health_indicators", {})
+                branches = repo_health.get("branches", [])
+                
+                health_score = health_indicators.get("overall_health_score", 0)
+                total_branches = summary.get("total_branches", 0)
+                stale_branches = summary.get("stale_branches", 0)
+                active_branches = summary.get("active_branches", 0)
+                long_lived_branches = summary.get("long_lived_branches", 0)
+                
+                # Determine health status
+                if health_score >= 80:
+                    status_emoji = "🟢"
+                    status_text = "Excellent"
+                elif health_score >= 60:
+                    status_emoji = "🟡"
+                    status_text = "Good"
+                elif health_score >= 40:
+                    status_emoji = "🟠"
+                    status_text = "Fair"
+                else:
+                    status_emoji = "🔴"
+                    status_text = "Needs Attention"
+                
+                report.write(f"\n**Branch Management**\n")
+                report.write(f"- Overall Health: {status_emoji} {status_text} ({health_score:.0f}/100)\n")
+                report.write(f"- Total Branches: {total_branches}\n")
+                report.write(f"  - Active: {active_branches} branches\n")
+                report.write(f"  - Long-lived: {long_lived_branches} branches (>30 days)\n")
+                report.write(f"  - Stale: {stale_branches} branches (>90 days)\n")
+                
+                # Show top problematic branches if any
+                if branches:
+                    # Sort branches by health score (ascending) to get worst first
+                    problem_branches = [b for b in branches if b.get("health_score", 100) < 60 and not b.get("is_merged", False)]
+                    problem_branches.sort(key=lambda x: x.get("health_score", 100))
+                    
+                    if problem_branches:
+                        report.write(f"\n**Branches Needing Attention**:\n")
+                        for i, branch in enumerate(problem_branches[:3]):  # Show top 3
+                            name = branch.get("name", "unknown")
+                            age = branch.get("age_days", 0)
+                            behind = branch.get("behind_main", 0)
+                            ahead = branch.get("ahead_of_main", 0)
+                            score = branch.get("health_score", 0)
+                            
+                            report.write(f"  {i+1}. `{name}` (score: {score:.0f}/100)\n")
+                            report.write(f"     - Age: {age} days\n")
+                            if behind > 0:
+                                report.write(f"     - Behind main: {behind} commits\n")
+                            if ahead > 0:
+                                report.write(f"     - Ahead of main: {ahead} commits\n")
+                
+                # Add recommendations
+                recommendations = repo_health.get("recommendations", [])
+                if recommendations:
+                    report.write(f"\n**Recommended Actions**:\n")
+                    for rec in recommendations[:3]:  # Show top 3 recommendations
+                        report.write(f"- {rec}\n")
+            
+            report.write("\n")
 
     def _write_development_patterns(
         self, report: StringIO, insights: list[dict[str, Any]], focus_data: list[dict[str, Any]]
@@ -632,8 +742,23 @@ class NarrativeReportGenerator:
 
             # Show configurable number of recent commits (increased from 10 to 15)
             max_recent_commits = 15
+            
+            # Safe timestamp sorting that handles mixed timezone types
+            def safe_timestamp_key(commit):
+                ts = commit.get("timestamp")
+                if ts is None:
+                    return datetime.min.replace(tzinfo=timezone.utc)
+                # If it's a datetime object, handle timezone issues
+                if hasattr(ts, "tzinfo"):
+                    # Make timezone-naive datetime UTC-aware for consistent comparison
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    return ts
+                # If it's a string or other type, try to parse or use as-is
+                return ts
+            
             recent_commits = sorted(
-                untracked_commits, key=lambda x: x.get("timestamp", ""), reverse=True
+                untracked_commits, key=safe_timestamp_key, reverse=True
             )[:max_recent_commits]
 
             if len(untracked_commits) > max_recent_commits:

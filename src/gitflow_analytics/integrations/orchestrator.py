@@ -36,12 +36,19 @@ class IntegrationOrchestrator:
             if hasattr(jira_settings, "enabled") and jira_settings.enabled:
                 base_url = getattr(config.jira, "base_url", None)
                 if base_url:
+                    # Extract network and proxy settings from jira_settings
                     self.integrations["jira"] = JIRAIntegration(
                         base_url,
                         config.jira.access_user,
                         config.jira.access_token,
                         cache,
                         story_point_fields=getattr(jira_settings, "story_point_fields", None),
+                        dns_timeout=getattr(jira_settings, "dns_timeout", 10),
+                        connection_timeout=getattr(jira_settings, "connection_timeout", 30),
+                        max_retries=getattr(jira_settings, "max_retries", 3),
+                        backoff_factor=getattr(jira_settings, "backoff_factor", 1.0),
+                        enable_proxy=getattr(jira_settings, "enable_proxy", False),
+                        proxy_url=getattr(jira_settings, "proxy_url", None),
                     )
 
         # Initialize PM framework orchestrator

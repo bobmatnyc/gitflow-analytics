@@ -1,10 +1,18 @@
 """JIRA API integration for story point and ticket enrichment."""
 
 import base64
+import socket
+import time
 from typing import Any, Optional
 
 import requests
-from requests.exceptions import RequestException
+from requests.adapters import HTTPAdapter
+from requests.exceptions import (
+    ConnectionError,
+    RequestException,
+    Timeout,
+)
+from urllib3.util.retry import Retry
 
 from ..core.cache import GitAnalysisCache
 
@@ -19,6 +27,12 @@ class JIRAIntegration:
         api_token: str,
         cache: GitAnalysisCache,
         story_point_fields: Optional[list[str]] = None,
+        dns_timeout: int = 10,
+        connection_timeout: int = 30,
+        max_retries: int = 3,
+        backoff_factor: float = 1.0,
+        enable_proxy: bool = False,
+        proxy_url: Optional[str] = None,
     ):
         """Initialize JIRA integration.
 
@@ -28,9 +42,26 @@ class JIRAIntegration:
             api_token: JIRA API token
             cache: Git analysis cache for storing JIRA data
             story_point_fields: List of custom field IDs for story points
+            dns_timeout: DNS resolution timeout in seconds (default: 10)
+            connection_timeout: HTTP connection timeout in seconds (default: 30)
+            max_retries: Maximum number of retry attempts (default: 3)
+            backoff_factor: Exponential backoff factor for retries (default: 1.0)
+            enable_proxy: Whether to use proxy settings (default: False)
+            proxy_url: Proxy URL if proxy is enabled (default: None)
         """
         self.base_url = base_url.rstrip("/")
         self.cache = cache
+        self.dns_timeout = dns_timeout
+        self.connection_timeout = connection_timeout
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
+        self.enable_proxy = enable_proxy
+        self.proxy_url = proxy_url
+        
+        # Network connectivity status
+        self._connection_validated = False
+        self._last_dns_check = 0
+        self._dns_check_interval = 300  # 5 minutes
 
         # Set up authentication
         credentials = base64.b64encode(f"{username}:{api_token}".encode()).decode()
@@ -38,6 +69,7 @@ class JIRAIntegration:
             "Authorization": f"Basic {credentials}",
             "Accept": "application/json",
             "Content-Type": "application/json",
+            "User-Agent": "GitFlow-Analytics-JIRA/1.0",
         }
 
         # Default story point field names/IDs
@@ -51,6 +83,9 @@ class JIRAIntegration:
 
         # Cache for field mapping
         self._field_mapping = None
+        
+        # Initialize HTTP session with enhanced error handling
+        self._session = self._create_resilient_session()
 
     def enrich_commits_with_jira_data(self, commits: list[dict[str, Any]]) -> None:
         """Enrich commits with JIRA story points by looking up ticket references.
@@ -58,6 +93,11 @@ class JIRAIntegration:
         Args:
             commits: List of commit dictionaries to enrich
         """
+        # Validate network connectivity before attempting JIRA operations
+        if not self._validate_network_connectivity():
+            print("   ⚠️  JIRA network connectivity issues detected, skipping commit enrichment")
+            return
+            
         # Collect all unique JIRA tickets from commits
         jira_tickets = set()
         for commit in commits:
@@ -71,7 +111,7 @@ class JIRAIntegration:
         if not jira_tickets:
             return
 
-        # Fetch ticket data from JIRA
+        # Fetch ticket data from JIRA with enhanced error handling
         ticket_data = self._fetch_tickets_batch(list(jira_tickets))
 
         # Enrich commits with story points
@@ -100,6 +140,11 @@ class JIRAIntegration:
         Args:
             prs: List of PR dictionaries to enrich
         """
+        # Validate network connectivity before attempting JIRA operations
+        if not self._validate_network_connectivity():
+            print("   ⚠️  JIRA network connectivity issues detected, skipping PR enrichment")
+            return
+            
         # Similar to commits, extract JIRA tickets from PR titles/descriptions
         for pr in prs:
             pr_text = f"{pr.get('title', '')} {pr.get('description', '')}"
@@ -167,6 +212,13 @@ class JIRAIntegration:
                         cached_tickets[ticket_data["id"]] = ticket_data
                         self._cache_ticket(ticket_data["id"], ticket_data)
 
+                except ConnectionError as e:
+                    print(f"   ❌ JIRA DNS/connection error: {self._format_network_error(e)}")
+                    print(f"      Troubleshooting: Check network connectivity and DNS resolution for {self.base_url}")
+                    break  # Stop processing batches on network errors
+                except Timeout as e:
+                    print(f"   ⏱️  JIRA request timeout: {e}")
+                    print(f"      Consider increasing timeout settings or checking network latency")
                 except RequestException as e:
                     print(f"   ⚠️  Failed to fetch JIRA tickets: {e}")
 
@@ -237,9 +289,22 @@ class JIRAIntegration:
             True if connection is valid
         """
         try:
-            response = requests.get(f"{self.base_url}/rest/api/3/myself", headers=self.headers)
+            # First validate network connectivity
+            if not self._validate_network_connectivity():
+                return False
+                
+            response = self._session.get(f"{self.base_url}/rest/api/3/myself", timeout=self.connection_timeout)
             response.raise_for_status()
+            self._connection_validated = True
             return True
+        except ConnectionError as e:
+            print(f"   ❌ JIRA DNS/connection error: {self._format_network_error(e)}")
+            print(f"      Troubleshooting: Check network connectivity and DNS resolution for {self.base_url}")
+            return False
+        except Timeout as e:
+            print(f"   ⏱️  JIRA connection timeout: {e}")
+            print(f"      Consider increasing timeout settings or checking network latency")
+            return False
         except RequestException as e:
             print(f"   ❌ JIRA connection failed: {e}")
             return False
@@ -251,7 +316,11 @@ class JIRAIntegration:
             Dictionary mapping field IDs to their names and types
         """
         try:
-            response = requests.get(f"{self.base_url}/rest/api/3/field", headers=self.headers)
+            # Validate network connectivity first
+            if not self._validate_network_connectivity():
+                return {}
+                
+            response = self._session.get(f"{self.base_url}/rest/api/3/field", timeout=self.connection_timeout)
             response.raise_for_status()
 
             fields = {}
@@ -279,6 +348,174 @@ class JIRAIntegration:
 
             return fields
 
+        except ConnectionError as e:
+            print(f"   ❌ JIRA DNS/connection error during field discovery: {self._format_network_error(e)}")
+            print(f"      Troubleshooting: Check network connectivity and DNS resolution for {self.base_url}")
+            return {}
+        except Timeout as e:
+            print(f"   ⏱️  JIRA field discovery timeout: {e}")
+            print(f"      Consider increasing timeout settings or checking network latency")
+            return {}
         except RequestException as e:
             print(f"   ⚠️  Failed to discover JIRA fields: {e}")
             return {}
+
+    def _create_resilient_session(self) -> requests.Session:
+        """Create HTTP session with enhanced retry logic and DNS error handling.
+        
+        WHY: DNS resolution failures and network issues are common when connecting
+        to external JIRA instances. This session provides resilient connections
+        with exponential backoff and comprehensive error handling.
+        
+        Returns:
+            Configured requests session with retry strategy and network resilience.
+        """
+        session = requests.Session()
+        
+        # Configure retry strategy for network resilience
+        retry_strategy = Retry(
+            total=self.max_retries,
+            backoff_factor=self.backoff_factor,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
+            raise_on_status=False,  # Let us handle status codes
+        )
+        
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        
+        # Set default headers
+        session.headers.update(self.headers)
+        
+        # Configure proxy if enabled
+        if self.enable_proxy and self.proxy_url:
+            session.proxies = {
+                "http": self.proxy_url,
+                "https": self.proxy_url,
+            }
+            print(f"   🌐 Using proxy: {self.proxy_url}")
+        
+        # Set default timeout
+        session.timeout = self.connection_timeout
+        
+        return session
+
+    def _validate_network_connectivity(self) -> bool:
+        """Validate network connectivity to JIRA instance.
+        
+        WHY: DNS resolution errors are a common cause of JIRA integration failures.
+        This method performs proactive network validation to detect issues early
+        and provide better error messages for troubleshooting.
+        
+        Returns:
+            True if network connectivity is available, False otherwise.
+        """
+        current_time = time.time()
+        
+        # Skip check if recently validated (within interval)
+        if (self._connection_validated and 
+            current_time - self._last_dns_check < self._dns_check_interval):
+            return True
+        
+        try:
+            # Extract hostname from base URL
+            from urllib.parse import urlparse
+            parsed_url = urlparse(self.base_url)
+            hostname = parsed_url.hostname
+            port = parsed_url.port or (443 if parsed_url.scheme == 'https' else 80)
+            
+            if not hostname:
+                print(f"   ❌ Invalid JIRA URL format: {self.base_url}")
+                return False
+            
+            # Test DNS resolution
+            print(f"   🔍 Validating DNS resolution for {hostname}...")
+            socket.setdefaulttimeout(self.dns_timeout)
+            
+            # Attempt to resolve hostname
+            addr_info = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            if not addr_info:
+                print(f"   ❌ DNS resolution failed: No addresses found for {hostname}")
+                return False
+            
+            # Test basic connectivity
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.dns_timeout)
+            try:
+                result = sock.connect_ex((addr_info[0][4][0], port))
+                if result == 0:
+                    print(f"   ✅ Network connectivity confirmed to {hostname}:{port}")
+                    self._connection_validated = True
+                    self._last_dns_check = current_time
+                    return True
+                else:
+                    print(f"   ❌ Connection failed to {hostname}:{port} (error code: {result})")
+                    return False
+            finally:
+                sock.close()
+                
+        except socket.gaierror as e:
+            print(f"   ❌ DNS resolution error: {self._format_dns_error(e)}")
+            print(f"      Hostname: {hostname}")
+            print(f"      Troubleshooting:")
+            print(f"        1. Verify the hostname is correct: {hostname}")
+            print(f"        2. Check your internet connection")
+            print(f"        3. Verify DNS settings (try: nslookup {hostname})")
+            print(f"        4. Check if behind corporate firewall/proxy")
+            print(f"        5. Verify JIRA instance is accessible externally")
+            return False
+        except socket.timeout:
+            print(f"   ⏱️  DNS resolution timeout for {hostname} (>{self.dns_timeout}s)")
+            print(f"      Consider increasing dns_timeout or checking network latency")
+            return False
+        except Exception as e:
+            print(f"   ❌ Network validation error: {e}")
+            return False
+        finally:
+            socket.setdefaulttimeout(None)  # Reset to default
+
+    def _format_network_error(self, error: Exception) -> str:
+        """Format network errors with helpful context.
+        
+        Args:
+            error: The network exception that occurred.
+            
+        Returns:
+            Formatted error message with troubleshooting context.
+        """
+        error_str = str(error)
+        
+        if "nodename nor servname provided" in error_str or "[Errno 8]" in error_str:
+            return f"DNS resolution failed - hostname not found ({error_str})"
+        elif "Name or service not known" in error_str or "[Errno -2]" in error_str:
+            return f"DNS resolution failed - service not known ({error_str})"
+        elif "Connection refused" in error_str or "[Errno 111]" in error_str:
+            return f"Connection refused - service not running ({error_str})"
+        elif "Network is unreachable" in error_str or "[Errno 101]" in error_str:
+            return f"Network unreachable - check internet connection ({error_str})"
+        elif "timeout" in error_str.lower():
+            return f"Network timeout - slow connection or high latency ({error_str})"
+        else:
+            return f"Network error ({error_str})"
+
+    def _format_dns_error(self, error: socket.gaierror) -> str:
+        """Format DNS resolution errors with specific guidance.
+        
+        Args:
+            error: The DNS resolution error that occurred.
+            
+        Returns:
+            Formatted DNS error message with troubleshooting guidance.
+        """
+        error_code = error.errno if hasattr(error, 'errno') else 'unknown'
+        error_msg = str(error)
+        
+        if error_code == 8 or "nodename nor servname provided" in error_msg:
+            return f"Hostname not found in DNS (error code: {error_code})"
+        elif error_code == -2 or "Name or service not known" in error_msg:
+            return f"DNS name resolution failed (error code: {error_code})"
+        elif error_code == -3 or "Temporary failure in name resolution" in error_msg:
+            return f"Temporary DNS failure - try again later (error code: {error_code})"
+        else:
+            return f"DNS error (code: {error_code}, message: {error_msg})"
