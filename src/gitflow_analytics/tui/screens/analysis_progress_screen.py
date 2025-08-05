@@ -460,11 +460,19 @@ class AnalysisProgressScreen(Screen):
             if self.config.github.token:
                 clone_url = f"https://{self.config.github.token}@github.com/{repo_config.github_repo}.git"
             
-            # Don't specify branch if None - let git use the default branch
-            if repo_config.branch:
-                git.Repo.clone_from(clone_url, repo_config.path, branch=repo_config.branch)
-            else:
-                git.Repo.clone_from(clone_url, repo_config.path)
+            # Try to clone with specified branch, fall back to default if it fails
+            try:
+                if repo_config.branch:
+                    git.Repo.clone_from(clone_url, repo_config.path, branch=repo_config.branch)
+                else:
+                    git.Repo.clone_from(clone_url, repo_config.path)
+            except git.GitCommandError as e:
+                if repo_config.branch and "Remote branch" in str(e) and "not found" in str(e):
+                    # Branch doesn't exist, try cloning without specifying branch
+                    log.write_line(f"   ⚠️  Branch '{repo_config.branch}' not found, using repository default")
+                    git.Repo.clone_from(clone_url, repo_config.path)
+                else:
+                    raise
             log.write_line(f"   ✅ Successfully cloned {repo_config.github_repo}")
             
         except Exception as e:

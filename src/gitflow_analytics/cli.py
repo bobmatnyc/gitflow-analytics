@@ -452,11 +452,22 @@ def analyze(
                             # Use token for authentication
                             clone_url = f"https://{cfg.github.token}@github.com/{repo_config.github_repo}.git"
 
-                        # Don't specify branch if None - let git use the default branch
-                        if repo_config.branch:
-                            git.Repo.clone_from(clone_url, repo_config.path, branch=repo_config.branch)
-                        else:
-                            git.Repo.clone_from(clone_url, repo_config.path)
+                        # Try to clone with specified branch, fall back to default if it fails
+                        try:
+                            if repo_config.branch:
+                                git.Repo.clone_from(clone_url, repo_config.path, branch=repo_config.branch)
+                            else:
+                                git.Repo.clone_from(clone_url, repo_config.path)
+                        except git.GitCommandError as e:
+                            if repo_config.branch and "Remote branch" in str(e) and "not found" in str(e):
+                                # Branch doesn't exist, try cloning without specifying branch
+                                if display:
+                                    display.print_status(f"Branch '{repo_config.branch}' not found, using repository default", "warning")
+                                else:
+                                    click.echo(f"   ⚠️  Branch '{repo_config.branch}' not found, using repository default")
+                                git.Repo.clone_from(clone_url, repo_config.path)
+                            else:
+                                raise
                         if display:
                             display.print_status(f"Successfully cloned {repo_config.github_repo}", "success")
                         else:
