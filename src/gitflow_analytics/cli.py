@@ -1164,16 +1164,7 @@ def analyze(
                     click.echo(f"   ✅ Branch details: {detailed_branch_report}")
             except Exception as e:
                 logger.error(f"Error in detailed branch report generation: {e}")
-            try:
-                handle_timezone_error(e, "qualitative insights report", all_commits, logger)
-            except:
-                pass  # Let the original error handling below take over
-            click.echo(f"   ❌ Error generating qualitative insights report: {e}")
-            click.echo(f"   🔍 Error type: {type(e).__name__}")
-            click.echo(f"   📍 Error details: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise
+                click.echo(f"   ❌ Error generating detailed branch report: {e}")
         
         # Weekly trends report (includes developer and project trends)
         trends_report = output / f'weekly_trends_{datetime.now().strftime("%Y%m%d")}.csv'
