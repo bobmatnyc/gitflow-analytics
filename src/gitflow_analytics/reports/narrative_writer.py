@@ -507,9 +507,10 @@ class NarrativeReportGenerator:
         showing how work type distribution changes over time, providing granular insights
         into development patterns and workload shifts.
         
-        DESIGN DECISION: Break down the analysis period into individual weeks and show
-        classification percentages for each week, with change indicators from previous week.
-        Only show categories that represent >5% of work to avoid noise.
+        DESIGN DECISION: Use a consistent analysis period across ALL developers and projects.
+        Week 1 is always the first week of the analysis period, regardless of when individual
+        developers had activity. Show "No activity" for weeks with no commits to maintain
+        consistent week numbering across the entire team.
         
         Args:
             commits: List of all commits with timestamps and classifications
@@ -524,7 +525,8 @@ class NarrativeReportGenerator:
                     'week_start': datetime,
                     'week_display': 'Jul 7-13',
                     'classifications': {'Features': 45.0, 'Bug Fixes': 30.0, 'Maintenance': 25.0},
-                    'changes': {'Features': 5.0, 'Bug Fixes': -5.0, 'Maintenance': 0.0}
+                    'changes': {'Features': 5.0, 'Bug Fixes': -5.0, 'Maintenance': 0.0},
+                    'has_activity': True
                 },
                 ...
             ]
@@ -541,11 +543,40 @@ class NarrativeReportGenerator:
                 continue
             filtered_commits.append(commit)
         
-        if len(filtered_commits) < 2:
+        # Calculate the analysis period based on ALL commits (not just filtered ones)
+        # This ensures consistent week numbering across all developers and projects
+        all_timestamps = []
+        for commit in commits:
+            timestamp = commit.get('timestamp')
+            if timestamp:
+                # Ensure timezone consistency
+                if hasattr(timestamp, 'tzinfo'):
+                    if timestamp.tzinfo is None:
+                        timestamp = timestamp.replace(tzinfo=timezone.utc)
+                    elif timestamp.tzinfo != timezone.utc:
+                        timestamp = timestamp.astimezone(timezone.utc)
+                all_timestamps.append(timestamp)
+        
+        if not all_timestamps:
             return []
         
-        # Group commits by week
+        # Find the analysis period start (most recent commit minus weeks)
+        latest_timestamp = max(all_timestamps)
+        analysis_start = latest_timestamp - timedelta(weeks=weeks)
+        
+        # Get the Monday of the week containing the analysis start
+        analysis_week_start = self._get_week_start(analysis_start)
+        
+        # Generate all weeks in the analysis period
+        analysis_weeks = []
+        for week_offset in range(weeks):
+            week_start = analysis_week_start + timedelta(weeks=week_offset)
+            analysis_weeks.append(week_start)
+        
+        # Group commits by week within the analysis period
         weekly_commits = {}
+        for week_start in analysis_weeks:
+            weekly_commits[week_start] = []
         
         for commit in filtered_commits:
             timestamp = commit.get('timestamp')
@@ -559,18 +590,12 @@ class NarrativeReportGenerator:
                 elif timestamp.tzinfo != timezone.utc:
                     timestamp = timestamp.astimezone(timezone.utc)
             
-            # Get week start (Monday)
-            week_start = self._get_week_start(timestamp)
+            # Get week start (Monday) for this commit
+            commit_week_start = self._get_week_start(timestamp)
             
-            if week_start not in weekly_commits:
-                weekly_commits[week_start] = []
-            weekly_commits[week_start].append(commit)
-        
-        if len(weekly_commits) < 2:
-            return []
-        
-        # Sort weeks chronologically
-        sorted_weeks = sorted(weekly_commits.keys())
+            # Only include commits within the analysis period
+            if commit_week_start in weekly_commits:
+                weekly_commits[commit_week_start].append(commit)
         
         # Import classifiers
         try:
@@ -580,52 +605,53 @@ class NarrativeReportGenerator:
             from ..extractors.tickets import TicketExtractor
             extractor = TicketExtractor()
         
-        # Calculate classifications for each week
+        # Calculate classifications for each week in the analysis period
         weekly_data = []
         previous_percentages = {}
         
-        for week_start in sorted_weeks:
+        for week_start in analysis_weeks:
             week_commits = weekly_commits[week_start]
+            has_activity = len(week_commits) > 0
             
             # Classify commits for this week
             week_classifications = {}
-            for commit in week_commits:
-                message = commit.get('message', '')
-                files_changed = commit.get('files_changed', [])
-                if isinstance(files_changed, int) or not isinstance(files_changed, list):
-                    files_changed = []
-                
-                ticket_refs = commit.get('ticket_references', [])
-                
-                if ticket_refs and hasattr(extractor, 'categorize_commit_with_confidence'):
-                    try:
-                        result = extractor.categorize_commit_with_confidence(message, files_changed)
-                        category = result['category']
-                        category = self._enhance_category_with_ticket_info(category, ticket_refs, message)
-                    except Exception:
-                        category = extractor.categorize_commit(message)
-                else:
-                    category = extractor.categorize_commit(message)
-                
-                if category not in week_classifications:
-                    week_classifications[category] = 0
-                week_classifications[category] += 1
-            
-            # Calculate percentages
-            total_commits = sum(week_classifications.values())
-            if total_commits == 0:
-                continue
-            
             week_percentages = {}
-            for category, count in week_classifications.items():
-                percentage = (count / total_commits) * 100
-                if percentage >= 5.0:  # Only include significant categories
-                    display_name = self._format_category_name(category)
-                    week_percentages[display_name] = percentage
+            
+            if has_activity:
+                for commit in week_commits:
+                    message = commit.get('message', '')
+                    files_changed = commit.get('files_changed', [])
+                    if isinstance(files_changed, int) or not isinstance(files_changed, list):
+                        files_changed = []
+                    
+                    ticket_refs = commit.get('ticket_references', [])
+                    
+                    if ticket_refs and hasattr(extractor, 'categorize_commit_with_confidence'):
+                        try:
+                            result = extractor.categorize_commit_with_confidence(message, files_changed)
+                            category = result['category']
+                            category = self._enhance_category_with_ticket_info(category, ticket_refs, message)
+                        except Exception:
+                            category = extractor.categorize_commit(message)
+                    else:
+                        category = extractor.categorize_commit(message)
+                    
+                    if category not in week_classifications:
+                        week_classifications[category] = 0
+                    week_classifications[category] += 1
+                
+                # Calculate percentages for weeks with activity
+                total_commits = sum(week_classifications.values())
+                if total_commits > 0:
+                    for category, count in week_classifications.items():
+                        percentage = (count / total_commits) * 100
+                        if percentage >= 5.0:  # Only include significant categories
+                            display_name = self._format_category_name(category)
+                            week_percentages[display_name] = percentage
             
             # Calculate changes from previous week
             changes = {}
-            if previous_percentages:
+            if previous_percentages and week_percentages:
                 for category in set(week_percentages.keys()) | set(previous_percentages.keys()):
                     current_pct = week_percentages.get(category, 0.0)
                     prev_pct = previous_percentages.get(category, 0.0)
@@ -641,10 +667,13 @@ class NarrativeReportGenerator:
                 'week_start': week_start,
                 'week_display': week_display,
                 'classifications': week_percentages,
-                'changes': changes
+                'changes': changes,
+                'has_activity': has_activity
             })
             
-            previous_percentages = week_percentages.copy()
+            # Update previous percentages only if there was activity
+            if has_activity and week_percentages:
+                previous_percentages = week_percentages.copy()
         
         return weekly_data
     
@@ -840,7 +869,8 @@ class NarrativeReportGenerator:
         
         WHY: This method provides detailed weekly breakdown of work patterns,
         showing how development focus shifts over time with specific percentages
-        and change indicators from previous weeks.
+        and change indicators from previous weeks. Shows consistent week numbering
+        across all developers with "No activity" for inactive weeks.
         
         Args:
             report: StringIO buffer to write to
@@ -856,8 +886,11 @@ class NarrativeReportGenerator:
             week_display = week_data['week_display']
             classifications = week_data['classifications']
             changes = week_data['changes']
+            has_activity = week_data.get('has_activity', True)
             
-            if not classifications:
+            # Show all weeks, even those without activity, to maintain consistent numbering
+            if not has_activity or not classifications:
+                report.write(f"  - Week {i+1} ({week_display}): No activity\n")
                 continue
             
             # Format classifications with percentages
@@ -871,15 +904,15 @@ class NarrativeReportGenerator:
                     classification_parts.append(f"{category} {percentage:.0f}%")
                 else:
                     # Show change from previous week
-                    if change > 0:
-                        change_indicator = f"(+{change:.0f}%)"
-                    else:
-                        change_indicator = f"({change:.0f}%)"
+                    change_indicator = f"(+{change:.0f}%)" if change > 0 else f"({change:.0f}%)"
                     classification_parts.append(f"{category} {percentage:.0f}% {change_indicator}")
             
             if classification_parts:
                 classifications_text = ", ".join(classification_parts)
                 report.write(f"  - Week {i+1} ({week_display}): {classifications_text}\n")
+            else:
+                # Fallback in case classifications exist but are empty
+                report.write(f"  - Week {i+1} ({week_display}): No significant activity\n")
         
         # Add a blank line after trend lines for spacing
         # (Note: Don't add extra newline here as the caller will handle spacing)
