@@ -124,7 +124,7 @@ class StoryPointExtractor:
                     results["total_story_points"] += commit_points
 
                 # Track significant orphan commits
-                files_changed = commit.get("files_changed", 0)
+                files_changed = commit.get("files_changed_count", commit.get("files_changed", 0) if isinstance(commit.get("files_changed"), int) else len(commit.get("files_changed", [])))
                 insertions = commit.get("insertions", 0)
                 if files_changed > 5 or insertions > 100:
                     orphan_commits.append(

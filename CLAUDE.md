@@ -69,12 +69,12 @@ Manual identity mappings now support an optional `name` field to control display
 analysis:
   identity:
     manual_mappings:
-      # Consolidate Austin Zach identities
-      - name: "Austin Zach"  # Controls how name appears in reports
-        primary_email: "azach@ewtn.com"
+      # Consolidate John Smith identities  
+      - name: "John Smith"  # Controls how name appears in reports
+        primary_email: "john.smith@company.com"
         aliases:
-          - "150280367+azach-ewtn@users.noreply.github.com"
-          - "azach-ewtn@users.noreply.github.com"
+          - "150280367+jsmith@users.noreply.github.com"
+          - "jsmith-company@users.noreply.github.com"
 ```
 
 This feature resolves duplicate entries when the same developer appears with different name formats. The structure supports both `primary_email` (preferred) and `canonical_email` (backward compatibility).

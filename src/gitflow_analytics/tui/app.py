@@ -1,18 +1,17 @@
 """Main TUI application for GitFlow Analytics."""
 
-import asyncio
 from pathlib import Path
 from typing import Optional
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 
-from .screens.main_screen import MainScreen
-from .screens.configuration_screen import ConfigurationScreen
+from gitflow_analytics.config import Config, ConfigLoader
+
 from .screens.analysis_progress_screen import AnalysisProgressScreen
-from .screens.results_screen import ResultsScreen
+from .screens.configuration_screen import ConfigurationScreen
 from .screens.loading_screen import InitializationLoadingScreen
-from gitflow_analytics.config import ConfigLoader, Config
+from .screens.main_screen import MainScreen
 
 
 class GitFlowAnalyticsApp(App):
@@ -342,7 +341,7 @@ class GitFlowAnalyticsApp(App):
                     config = ConfigLoader.load(config_path)
                     return (config, config_path)
                     
-                except Exception as e:
+                except Exception:
                     # Log error but continue trying other paths
                     continue
         
@@ -695,7 +694,7 @@ For more information: https://github.com/bobmatnyc/gitflow-analytics"""
             raise ValueError("No configuration loaded")
         
         # Create analysis screen
-        analysis_screen = AnalysisProgressScreen(
+        AnalysisProgressScreen(
             config=self.config,
             weeks=weeks,
             enable_qualitative=enable_qualitative

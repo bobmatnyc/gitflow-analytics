@@ -2,12 +2,10 @@
 
 import time
 from typing import Optional
-from datetime import datetime, timedelta
 
-from textual.widgets import ProgressBar, Label
-from textual.containers import Container, Vertical
+from textual.containers import Container
 from textual.reactive import reactive
-from rich.text import Text
+from textual.widgets import Label, ProgressBar
 
 
 class AnalysisProgressWidget(Container):

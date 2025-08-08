@@ -1,8 +1,8 @@
 """Data models for LLM-based identity analysis."""
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Set
 from datetime import datetime
+from typing import Optional
 
 
 @dataclass
@@ -13,7 +13,7 @@ class DeveloperAlias:
     commit_count: int
     first_seen: datetime
     last_seen: datetime
-    repositories: Set[str]
+    repositories: set[str]
     
     
 @dataclass
@@ -21,7 +21,7 @@ class DeveloperCluster:
     """Represents a cluster of related developer identities."""
     canonical_name: str
     canonical_email: str
-    aliases: List[DeveloperAlias]
+    aliases: list[DeveloperAlias]
     confidence: float  # 0.0 to 1.0
     reasoning: str
     total_commits: int
@@ -29,14 +29,14 @@ class DeveloperCluster:
     preferred_display_name: Optional[str] = None  # Optional preferred name for reports
     
     @property
-    def all_emails(self) -> Set[str]:
+    def all_emails(self) -> set[str]:
         """Get all emails in this cluster."""
         emails = {self.canonical_email}
         emails.update(alias.email for alias in self.aliases)
         return emails
     
     @property
-    def all_names(self) -> Set[str]:
+    def all_names(self) -> set[str]:
         """Get all names in this cluster."""
         names = {self.canonical_name}
         names.update(alias.name for alias in self.aliases)
@@ -46,11 +46,11 @@ class DeveloperCluster:
 @dataclass
 class IdentityAnalysisResult:
     """Result of LLM identity analysis."""
-    clusters: List[DeveloperCluster]
-    unresolved_identities: List[DeveloperAlias]
-    analysis_metadata: Dict[str, any] = field(default_factory=dict)
+    clusters: list[DeveloperCluster]
+    unresolved_identities: list[DeveloperAlias]
+    analysis_metadata: dict[str, any] = field(default_factory=dict)
     
-    def get_manual_mappings(self) -> List[Dict[str, any]]:
+    def get_manual_mappings(self) -> list[dict[str, any]]:
         """Convert to manual mappings format for config."""
         mappings = []
         for cluster in self.clusters:

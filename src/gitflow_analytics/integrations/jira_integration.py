@@ -3,6 +3,7 @@
 import base64
 import socket
 import time
+from datetime import datetime
 from typing import Any, Optional
 
 import requests
@@ -164,7 +165,11 @@ class JIRAIntegration:
                     pr["story_points"] = max_points
 
     def _fetch_tickets_batch(self, ticket_ids: list[str]) -> dict[str, dict[str, Any]]:
-        """Fetch multiple tickets from JIRA API.
+        """Fetch multiple tickets from JIRA API with optimized caching.
+
+        WHY: This method implements comprehensive caching to minimize JIRA API calls,
+        which are often the slowest part of the analysis. It uses bulk cache lookups
+        and provides detailed cache hit/miss metrics.
 
         Args:
             ticket_ids: List of JIRA ticket IDs
@@ -175,34 +180,37 @@ class JIRAIntegration:
         if not ticket_ids:
             return {}
 
-        # Check cache first
-        cached_tickets = {}
-        tickets_to_fetch = []
-
-        for ticket_id in ticket_ids:
-            cached = self._get_cached_ticket(ticket_id)
-            if cached:
-                cached_tickets[ticket_id] = cached
-            else:
-                tickets_to_fetch.append(ticket_id)
+        # Bulk cache lookup for better performance
+        cached_tickets = self._get_cached_tickets_bulk(ticket_ids)
+        tickets_to_fetch = [tid for tid in ticket_ids if tid not in cached_tickets]
+        
+        # Track cache performance
+        cache_hits = len(cached_tickets)
+        cache_misses = len(tickets_to_fetch)
+        
+        if cache_hits > 0 or cache_misses > 0:
+            print(f"   📊 JIRA cache: {cache_hits} hits, {cache_misses} misses ({cache_hits/(cache_hits+cache_misses)*100:.1f}% hit rate)")
 
         # Fetch missing tickets from JIRA
         if tickets_to_fetch:
             # JIRA JQL has a limit, so batch the requests
             batch_size = 50
+            new_tickets = []  # Collect new tickets for bulk caching
+            
             for i in range(0, len(tickets_to_fetch), batch_size):
                 batch = tickets_to_fetch[i : i + batch_size]
                 jql = f"key in ({','.join(batch)})"
 
                 try:
-                    response = requests.get(
+                    print(f"   🔍 Fetching {len(batch)} JIRA tickets from API...")
+                    response = self._session.get(
                         f"{self.base_url}/rest/api/3/search",
-                        headers=self.headers,
                         params={
                             "jql": jql,
                             "fields": "*all",  # Get all fields to find story points
                             "maxResults": batch_size,
                         },
+                        timeout=self.connection_timeout
                     )
                     response.raise_for_status()
 
@@ -210,7 +218,7 @@ class JIRAIntegration:
                     for issue in data.get("issues", []):
                         ticket_data = self._extract_ticket_data(issue)
                         cached_tickets[ticket_data["id"]] = ticket_data
-                        self._cache_ticket(ticket_data["id"], ticket_data)
+                        new_tickets.append(ticket_data)
 
                 except ConnectionError as e:
                     print(f"   ❌ JIRA DNS/connection error: {self._format_network_error(e)}")
@@ -218,9 +226,14 @@ class JIRAIntegration:
                     break  # Stop processing batches on network errors
                 except Timeout as e:
                     print(f"   ⏱️  JIRA request timeout: {e}")
-                    print(f"      Consider increasing timeout settings or checking network latency")
+                    print("      Consider increasing timeout settings or checking network latency")
                 except RequestException as e:
                     print(f"   ⚠️  Failed to fetch JIRA tickets: {e}")
+                    
+            # Bulk cache all new tickets
+            if new_tickets:
+                self._cache_tickets_bulk(new_tickets)
+                print(f"   💾 Cached {len(new_tickets)} new JIRA tickets")
 
         return cached_tickets
 
@@ -272,15 +285,189 @@ class JIRAIntegration:
         return set(matches)
 
     def _get_cached_ticket(self, ticket_id: str) -> Optional[dict[str, Any]]:
-        """Get ticket data from cache."""
-        # TODO: Implement cache lookup using self.cache
-        # For now, return None to always fetch from API
-        return None
+        """Get ticket data from cache.
+        
+        WHY: JIRA API calls are expensive and slow. Caching ticket data
+        significantly improves performance on repeated runs over the same
+        time period, especially when analyzing multiple repositories.
+        
+        Args:
+            ticket_id: JIRA ticket ID (e.g., "PROJ-123")
+            
+        Returns:
+            Cached ticket data or None if not found/stale
+        """
+        with self.cache.get_session() as session:
+            from ..models.database import IssueCache
+            cached_ticket = (
+                session.query(IssueCache)
+                .filter(
+                    IssueCache.platform == "jira",
+                    IssueCache.issue_id == ticket_id
+                )
+                .first()
+            )
+            
+            if cached_ticket and not self._is_ticket_stale(cached_ticket.cached_at):
+                self.cache.cache_hits += 1
+                if self.cache.debug_mode:
+                    print(f"DEBUG: JIRA cache HIT for ticket {ticket_id}")
+                
+                return {
+                    "id": cached_ticket.issue_id,
+                    "summary": cached_ticket.title or "",
+                    "status": cached_ticket.status or "",
+                    "story_points": cached_ticket.story_points or 0,
+                    "assignee": cached_ticket.assignee or "",
+                    "created": cached_ticket.created_at.isoformat() if cached_ticket.created_at else "",
+                    "updated": cached_ticket.updated_at.isoformat() if cached_ticket.updated_at else "",
+                    "platform_data": cached_ticket.platform_data or {}
+                }
+            
+            self.cache.cache_misses += 1
+            if self.cache.debug_mode:
+                print(f"DEBUG: JIRA cache MISS for ticket {ticket_id}")
+            return None
 
     def _cache_ticket(self, ticket_id: str, ticket_data: dict[str, Any]) -> None:
-        """Cache ticket data."""
-        # TODO: Implement cache storage using self.cache
-        pass
+        """Cache ticket data.
+        
+        WHY: Caching JIRA ticket data prevents redundant API calls and 
+        significantly improves performance on subsequent runs. The cache
+        respects TTL settings to ensure data freshness.
+        
+        Args:
+            ticket_id: JIRA ticket ID 
+            ticket_data: Ticket data from JIRA API
+        """
+        # Use the existing cache_issue method which handles JIRA tickets
+        cache_data = {
+            "id": ticket_id,
+            "project_key": self._extract_project_key(ticket_id),
+            "title": ticket_data.get("summary", ""),
+            "description": "",  # Not typically needed for analytics
+            "status": ticket_data.get("status", ""),
+            "assignee": ticket_data.get("assignee", ""),
+            "created_at": self._parse_jira_date(ticket_data.get("created")),
+            "updated_at": self._parse_jira_date(ticket_data.get("updated")),
+            "story_points": ticket_data.get("story_points", 0),
+            "labels": [],  # Could extract from JIRA data if needed
+            "platform_data": ticket_data  # Store full JIRA response for future use
+        }
+        
+        self.cache.cache_issue("jira", cache_data)
+    
+    def _is_ticket_stale(self, cached_at: datetime) -> bool:
+        """Check if cached ticket data is stale based on cache TTL.
+        
+        Args:
+            cached_at: When the ticket was cached
+            
+        Returns:
+            True if stale and should be refreshed, False if still fresh
+        """
+        from datetime import timedelta
+        
+        if self.cache.ttl_hours == 0:  # No expiration
+            return False
+        
+        stale_threshold = datetime.utcnow() - timedelta(hours=self.cache.ttl_hours)
+        return cached_at < stale_threshold
+    
+    def _extract_project_key(self, ticket_id: str) -> str:
+        """Extract project key from JIRA ticket ID.
+        
+        Args:
+            ticket_id: JIRA ticket ID (e.g., "PROJ-123")
+            
+        Returns:
+            Project key (e.g., "PROJ")
+        """
+        return ticket_id.split('-')[0] if '-' in ticket_id else ticket_id
+    
+    def _parse_jira_date(self, date_str: Optional[str]) -> Optional[datetime]:
+        """Parse JIRA date string to datetime object.
+        
+        Args:
+            date_str: JIRA date string or None
+            
+        Returns:
+            Parsed datetime object or None
+        """
+        if not date_str:
+            return None
+            
+        try:
+            # JIRA typically returns ISO format dates
+            from dateutil import parser
+            return parser.parse(date_str).replace(tzinfo=None)  # Store as naive UTC
+        except (ValueError, ImportError):
+            # Fallback for basic ISO format
+            try:
+                return datetime.fromisoformat(date_str.replace('Z', '+00:00')).replace(tzinfo=None)
+            except ValueError:
+                return None
+    
+    def _get_cached_tickets_bulk(self, ticket_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Get multiple tickets from cache in a single query.
+        
+        WHY: Bulk cache lookups are much more efficient than individual lookups
+        when checking many tickets, reducing database overhead significantly.
+        
+        Args:
+            ticket_ids: List of JIRA ticket IDs to look up
+            
+        Returns:
+            Dictionary mapping ticket ID to cached data (only non-stale entries)
+        """
+        if not ticket_ids:
+            return {}
+            
+        cached_tickets = {}
+        with self.cache.get_session() as session:
+            from ..models.database import IssueCache
+            
+            cached_results = (
+                session.query(IssueCache)
+                .filter(
+                    IssueCache.platform == "jira",
+                    IssueCache.issue_id.in_(ticket_ids)
+                )
+                .all()
+            )
+            
+            for cached in cached_results:
+                if not self._is_ticket_stale(cached.cached_at):
+                    ticket_data = {
+                        "id": cached.issue_id,
+                        "summary": cached.title or "",
+                        "status": cached.status or "",
+                        "story_points": cached.story_points or 0,
+                        "assignee": cached.assignee or "",
+                        "created": cached.created_at.isoformat() if cached.created_at else "",
+                        "updated": cached.updated_at.isoformat() if cached.updated_at else "",
+                        "platform_data": cached.platform_data or {}
+                    }
+                    cached_tickets[cached.issue_id] = ticket_data
+        
+        return cached_tickets
+    
+    def _cache_tickets_bulk(self, tickets: list[dict[str, Any]]) -> None:
+        """Cache multiple tickets in a single transaction.
+        
+        WHY: Bulk caching is more efficient than individual cache operations,
+        reducing database overhead and improving performance when caching
+        many tickets from JIRA API responses.
+        
+        Args:
+            tickets: List of ticket data dictionaries to cache
+        """
+        if not tickets:
+            return
+            
+        for ticket_data in tickets:
+            # Use individual cache method which handles upserts properly
+            self._cache_ticket(ticket_data["id"], ticket_data)
 
     def validate_connection(self) -> bool:
         """Validate JIRA connection and credentials.
@@ -303,7 +490,7 @@ class JIRAIntegration:
             return False
         except Timeout as e:
             print(f"   ⏱️  JIRA connection timeout: {e}")
-            print(f"      Consider increasing timeout settings or checking network latency")
+            print("      Consider increasing timeout settings or checking network latency")
             return False
         except RequestException as e:
             print(f"   ❌ JIRA connection failed: {e}")
@@ -354,7 +541,7 @@ class JIRAIntegration:
             return {}
         except Timeout as e:
             print(f"   ⏱️  JIRA field discovery timeout: {e}")
-            print(f"      Consider increasing timeout settings or checking network latency")
+            print("      Consider increasing timeout settings or checking network latency")
             return {}
         except RequestException as e:
             print(f"   ⚠️  Failed to discover JIRA fields: {e}")
@@ -458,16 +645,16 @@ class JIRAIntegration:
         except socket.gaierror as e:
             print(f"   ❌ DNS resolution error: {self._format_dns_error(e)}")
             print(f"      Hostname: {hostname}")
-            print(f"      Troubleshooting:")
+            print("      Troubleshooting:")
             print(f"        1. Verify the hostname is correct: {hostname}")
-            print(f"        2. Check your internet connection")
+            print("        2. Check your internet connection")
             print(f"        3. Verify DNS settings (try: nslookup {hostname})")
-            print(f"        4. Check if behind corporate firewall/proxy")
-            print(f"        5. Verify JIRA instance is accessible externally")
+            print("        4. Check if behind corporate firewall/proxy")
+            print("        5. Verify JIRA instance is accessible externally")
             return False
         except socket.timeout:
             print(f"   ⏱️  DNS resolution timeout for {hostname} (>{self.dns_timeout}s)")
-            print(f"      Consider increasing dns_timeout or checking network latency")
+            print("      Consider increasing dns_timeout or checking network latency")
             return False
         except Exception as e:
             print(f"   ❌ Network validation error: {e}")

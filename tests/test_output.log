@@ -1,0 +1,61 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ GitFlow Analytics v1.2.0                                                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+ℹ Loading configuration from test_config_minimal.yaml...
+Configuration Status
+├── ✓ Config: test_config_minimal.yaml
+└── Analysis Period: 2 weeks
+
+ℹ Clearing cache...
+   🔍 IntegrationOrchestrator.__init__ called
+ℹ Analyzing 1 repositories...
+ℹ Period: 2025-07-24 to 2025-08-07
+ℹ Using two-step process: fetch then classify...
+ℹ Step 1: Fetching raw data...
+   🔍 IntegrationOrchestrator.__init__ called
+✓    ✅ GFA: 32 commits, 0 tickets
+✓ Step 1 complete: 32 commits, 0 tickets fetched
+ℹ Step 2: Batch classification...
+✓ ✅ Batch classification completed: 5 batches, 32 commits
+ℹ Loading classified commits from database...
+✓ Loaded 32 classified commits from database
+ℹ Processing developer identities...
+✓ Identified 1 unique developers
+ℹ Analyzing ticket references...
+  Repository analysis complete ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/1 0:00:04ℹ Resolving developer identities...
+✓ Identified 1 unique developers
+ℹ Identity analysis skipped: only 1 developer(s) detected
+ℹ Analyzing ticket references...
+ℹ Storing daily metrics for database-backed reporting...
+✓ Stored 5 daily metric records
+ℹ Generating narrative report (CSV generation disabled)...
+   ❌ Error generating narrative report: No columns to parse from file
+   🔍 Error type: EmptyDataError
+   📍 Error details: No columns to parse from file
+Traceback (most recent call last):
+  File "/Users/masa/Projects/managed/gitflow-analytics/src/gitflow_analytics/cli.py", line 1842, in analyze
+    handle_timezone_error(e, "narrative report generation", all_commits, logger)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/masa/Projects/managed/gitflow-analytics/src/gitflow_analytics/cli.py", line 1750, in analyze
+    focus_df = pd.read_csv(focus_report)
+  File "/Users/masa/Projects/claude-mpm/venv/lib/python3.13/site-packages/pandas/io/parsers/readers.py", line 1026, in read_csv
+    return _read(filepath_or_buffer, kwds)
+  File "/Users/masa/Projects/claude-mpm/venv/lib/python3.13/site-packages/pandas/io/parsers/readers.py", line 620, in _read
+    parser = TextFileReader(filepath_or_buffer, **kwds)
+  File "/Users/masa/Projects/claude-mpm/venv/lib/python3.13/site-packages/pandas/io/parsers/readers.py", line 1620, in __init__
+    self._engine = self._make_engine(f, self.engine)
+                   ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Users/masa/Projects/claude-mpm/venv/lib/python3.13/site-packages/pandas/io/parsers/readers.py", line 1898, in _make_engine
+    return mapping[engine](f, **self.options)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/masa/Projects/claude-mpm/venv/lib/python3.13/site-packages/pandas/io/parsers/c_parser_wrapper.py", line 93, in __init__
+    self._reader = parsers.TextReader(src, **kwds)
+                   ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "pandas/_libs/parsers.pyx", line 581, in pandas._libs.parsers.TextReader.__cinit__
+pandas.errors.EmptyDataError: No columns to parse from file
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Error ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ No columns to parse from file                                                ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+💡 Run with --debug for detailed error information

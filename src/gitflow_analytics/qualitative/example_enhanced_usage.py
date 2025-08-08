@@ -13,15 +13,14 @@ and actionable recommendations for different stakeholder levels.
 """
 
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any
 
 from .enhanced_analyzer import EnhancedQualitativeAnalyzer
-from ..models.schemas import QualitativeCommitData
 
 
-def create_sample_commits() -> List[Dict[str, Any]]:
+def create_sample_commits() -> list[dict[str, Any]]:
     """Create sample commit data for demonstration."""
     
     base_time = datetime.now(timezone.utc) - timedelta(weeks=8)
@@ -113,7 +112,7 @@ def create_sample_commits() -> List[Dict[str, Any]]:
     return sample_commits
 
 
-def create_sample_developer_stats() -> List[Dict[str, Any]]:
+def create_sample_developer_stats() -> list[dict[str, Any]]:
     """Create sample developer statistics."""
     
     base_time = datetime.now(timezone.utc)
@@ -155,7 +154,7 @@ def create_sample_developer_stats() -> List[Dict[str, Any]]:
     ]
 
 
-def create_sample_project_metrics() -> Dict[str, Any]:
+def create_sample_project_metrics() -> dict[str, Any]:
     """Create sample project metrics."""
     
     return {
@@ -171,7 +170,7 @@ def create_sample_project_metrics() -> Dict[str, Any]:
     }
 
 
-def create_sample_pm_data() -> Dict[str, Any]:
+def create_sample_pm_data() -> dict[str, Any]:
     """Create sample PM platform integration data."""
     
     return {
@@ -217,7 +216,7 @@ def demonstrate_enhanced_analysis():
     project_metrics = create_sample_project_metrics()
     pm_data = create_sample_pm_data()
     
-    print(f"📊 Sample data created:")
+    print("📊 Sample data created:")
     print(f"  - {len(commits)} commits")
     print(f"  - {len(developer_stats)} developers") 
     print(f"  - {len(project_metrics.get('ticket_analysis', {}))} ticket metrics")

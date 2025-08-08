@@ -1,8 +1,7 @@
 """Rich CLI components for GitFlow Analytics with beautiful terminal output."""
 
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from rich import box
 from rich.console import Console
@@ -18,7 +17,6 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from rich.table import Table
-from rich.text import Text
 from rich.tree import Tree
 
 from ._version import __version__
@@ -51,7 +49,7 @@ class RichProgressDisplay:
             console=self.console,
         )
         self.live: Optional[Live] = None
-        self._tasks: Dict[str, TaskID] = {}
+        self._tasks: dict[str, TaskID] = {}
 
     def show_header(self) -> None:
         """Display the application header."""
@@ -135,7 +133,7 @@ class RichProgressDisplay:
             if description:
                 self.progress.update(self._tasks[name], description=description)
 
-    def show_repository_discovery(self, repos: List[Dict[str, Any]]) -> None:
+    def show_repository_discovery(self, repos: list[dict[str, Any]]) -> None:
         """
         Display repository discovery results.
         
@@ -192,7 +190,7 @@ class RichProgressDisplay:
         
         self.console.print(summary_table)
 
-    def show_dora_metrics(self, dora_metrics: Dict[str, Any]) -> None:
+    def show_dora_metrics(self, dora_metrics: dict[str, Any]) -> None:
         """
         Display DORA metrics in a structured format.
         
@@ -230,7 +228,7 @@ class RichProgressDisplay:
         
         self.console.print(dora_table)
 
-    def show_qualitative_stats(self, qual_stats: Dict[str, Any]) -> None:
+    def show_qualitative_stats(self, qual_stats: dict[str, Any]) -> None:
         """
         Display qualitative analysis statistics.
         
@@ -271,7 +269,151 @@ class RichProgressDisplay:
         
         self.console.print(qual_table)
 
-    def show_reports_generated(self, output_dir: Path, report_files: List[str]) -> None:
+    def show_llm_cost_summary(self, cost_stats: dict[str, Any], identity_costs: Optional[dict[str, Any]] = None) -> None:
+        """
+        Display comprehensive LLM usage and cost summary.
+        
+        WHY: LLM usage can be expensive and users need visibility into:
+        - Token consumption by component (identity analysis, qualitative analysis)
+        - Cost breakdown and budget utilization
+        - Optimization suggestions to reduce costs
+        
+        DESIGN DECISION: Separate method from qualitative stats because:
+        - Cost tracking spans multiple components (identity + qualitative)
+        - Users need this summary even when qualitative analysis is disabled
+        - Provides actionable cost optimization suggestions
+        
+        Args:
+            cost_stats: Cost statistics from qualitative analysis
+            identity_costs: Optional cost statistics from identity analysis
+        """
+        # Check if we have any cost data to display
+        has_qual_costs = cost_stats and cost_stats.get("total_cost", 0) > 0
+        has_identity_costs = identity_costs and identity_costs.get("total_cost", 0) > 0
+        
+        if not (has_qual_costs or has_identity_costs):
+            return
+        
+        self.console.print()
+        
+        # Create main cost summary table
+        cost_table = Table(title="[bold]🤖 LLM Usage Summary[/bold]", box=box.ROUNDED)
+        cost_table.add_column("Component", style="cyan", width=20)
+        cost_table.add_column("Calls", style="yellow", width=8)
+        cost_table.add_column("Tokens", style="green", width=12)
+        cost_table.add_column("Cost", style="magenta", width=12)
+        
+        total_calls = 0
+        total_tokens = 0
+        total_cost = 0.0
+        budget_info = {}
+        
+        # Add identity analysis costs if available
+        if has_identity_costs:
+            identity_calls = identity_costs.get("total_calls", 0)
+            identity_tokens = identity_costs.get("total_tokens", 0)
+            identity_cost = identity_costs.get("total_cost", 0)
+            
+            cost_table.add_row(
+                "Identity Analysis",
+                f"{identity_calls:,}",
+                f"{identity_tokens:,}",
+                f"${identity_cost:.4f}"
+            )
+            
+            total_calls += identity_calls
+            total_tokens += identity_tokens
+            total_cost += identity_cost
+        
+        # Add qualitative analysis costs if available
+        if has_qual_costs:
+            qual_calls = cost_stats.get("total_calls", 0)
+            qual_tokens = cost_stats.get("total_tokens", 0)
+            qual_cost = cost_stats.get("total_cost", 0)
+            
+            cost_table.add_row(
+                "Qualitative Analysis",
+                f"{qual_calls:,}",
+                f"{qual_tokens:,}",
+                f"${qual_cost:.4f}"
+            )
+            
+            total_calls += qual_calls
+            total_tokens += qual_tokens
+            total_cost += qual_cost
+            
+            # Extract budget information (assuming it's in qualitative cost stats)
+            budget_info = {
+                "daily_budget": cost_stats.get("daily_budget", 5.0),
+                "daily_spend": cost_stats.get("daily_spend", total_cost),
+                "remaining_budget": cost_stats.get("remaining_budget", 5.0 - total_cost)
+            }
+        
+        # Add total row
+        if total_calls > 0:
+            cost_table.add_row(
+                "[bold]Total[/bold]",
+                f"[bold]{total_calls:,}[/bold]",
+                f"[bold]{total_tokens:,}[/bold]",
+                f"[bold]${total_cost:.4f}[/bold]"
+            )
+        
+        self.console.print(cost_table)
+        
+        # Display budget information if available
+        if budget_info:
+            daily_budget = budget_info.get("daily_budget", 5.0)
+            remaining = budget_info.get("remaining_budget", daily_budget - total_cost)
+            utilization = (total_cost / daily_budget) * 100 if daily_budget > 0 else 0
+            
+            budget_text = f"Budget: ${daily_budget:.2f}, Remaining: ${remaining:.2f}, Utilization: {utilization:.1f}%"
+            
+            # Color code based on utilization
+            if utilization >= 90:
+                budget_color = "red"
+            elif utilization >= 70:
+                budget_color = "yellow"
+            else:
+                budget_color = "green"
+            
+            self.console.print(f"   [{budget_color}]💰 {budget_text}[/{budget_color}]")
+        
+        # Display cost optimization suggestions if we have detailed stats
+        suggestions = []
+        if has_qual_costs and "model_usage" in cost_stats:
+            model_usage = cost_stats.get("model_usage", {})
+            
+            # Check for expensive model usage
+            expensive_models = ['anthropic/claude-3-opus', 'openai/gpt-4']
+            expensive_cost = sum(
+                model_usage.get(model, {}).get("cost", 0) 
+                for model in expensive_models
+            )
+            
+            if expensive_cost > total_cost * 0.3:
+                suggestions.append("Consider using cheaper models (Claude Haiku, GPT-3.5) for routine tasks (save ~40%)")
+            
+            # Check for free model opportunities
+            free_usage = model_usage.get('meta-llama/llama-3.1-8b-instruct:free', {}).get('cost', -1)
+            if free_usage == 0 and total_cost > 0.01:  # If free models available but not used much
+                suggestions.append("Increase usage of free Llama models for simple classification tasks")
+        
+        # Budget-based suggestions
+        if budget_info:
+            utilization = (total_cost / budget_info.get("daily_budget", 5.0)) * 100
+            if utilization > 80:
+                suggestions.append("Approaching daily budget limit - consider increasing NLP confidence threshold")
+        
+        # Display suggestions
+        if suggestions:
+            self.console.print()
+            self.console.print("[bold]💡 Cost Optimization Suggestions:[/bold]")
+            for suggestion in suggestions:
+                self.console.print(f"   • {suggestion}")
+        
+        self.console.print()
+
+    def show_reports_generated(self, output_dir: Path, report_files: list[str]) -> None:
         """
         Display generated reports with file paths.
         

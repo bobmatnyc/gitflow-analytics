@@ -1,0 +1,2 @@
+developer_id,developer_name,commits,prs,story_points,lines_added,lines_removed,files_changed,unique_tickets,raw_activity_score,normalized_activity_score,activity_level,curved_score,percentile,quintile,curved_activity_level,level_description,commit_score,pr_score,code_impact_score,complexity_score
+8659e109-1449-4a87-bec0-da013b5237bd,Robert (Masa) Matsuoka,31,0,0,38988,4500,243,0,840.4,100,exceptional,50.0,50.0,1,minimal,Bottom 20%,167.1,0,184.5,4955.4

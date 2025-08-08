@@ -1,16 +1,16 @@
 """Export modal dialog for GitFlow Analytics TUI."""
 
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Callable
+from typing import Any, Optional
 
-from textual.widgets import Button, Input, Label, Select, Switch, Static
-from textual.containers import Container, Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.binding import Binding
+from textual.containers import Container, Horizontal
 from textual.message import Message
+from textual.screen import ModalScreen
+from textual.widgets import Button, Input, Label, Select, Static, Switch
 
 
-class ExportModal(ModalScreen[Optional[Dict[str, Any]]]):
+class ExportModal(ModalScreen[Optional[dict[str, Any]]]):
     """
     Modal dialog for configuring and executing data exports.
     
@@ -74,15 +74,15 @@ class ExportModal(ModalScreen[Optional[Dict[str, Any]]]):
     class ExportRequested(Message):
         """Message sent when export is requested."""
         
-        def __init__(self, config: Dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
             super().__init__()
             self.config = config
     
     def __init__(
         self,
-        available_formats: Optional[List[str]] = None,
+        available_formats: Optional[list[str]] = None,
         default_path: Optional[Path] = None,
-        data_info: Optional[Dict[str, Any]] = None
+        data_info: Optional[dict[str, Any]] = None
     ) -> None:
         super().__init__()
         self.available_formats = available_formats or ["CSV", "JSON", "Markdown"]

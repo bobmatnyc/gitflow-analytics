@@ -293,7 +293,7 @@ class TestNarrativeReportGenerator:
         
         result_path = generator.generate_narrative_report(
             commits, prs, developer_stats, activity_dist, focus_data,
-            insights, ticket_analysis, pr_metrics, output_path, dora_metrics
+            insights, ticket_analysis, pr_metrics, output_path, weeks=8
         )
         
         assert result_path == output_path

@@ -1,11 +1,11 @@
 """Cost tracking utilities for LLM usage monitoring."""
 
-import logging
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-from dataclasses import dataclass
-from pathlib import Path
 import json
+import logging
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Optional
 
 
 @dataclass
@@ -64,7 +64,7 @@ class CostTracker:
         self.cache_dir.mkdir(exist_ok=True)
         
         self.cost_file = self.cache_dir / "llm_costs.json"
-        self.calls: List[LLMCall] = []
+        self.calls: list[LLMCall] = []
         self.logger = logging.getLogger(__name__)
         
         # Load existing cost data
@@ -158,7 +158,7 @@ class CostTracker:
         
         return remaining_budget >= estimated_cost
         
-    def get_usage_stats(self, days: int = 7) -> Dict[str, any]:
+    def get_usage_stats(self, days: int = 7) -> dict[str, any]:
         """Get usage statistics for the last N days.
         
         Args:
@@ -206,7 +206,7 @@ class CostTracker:
             'daily_average_cost': total_cost / days,
         }
         
-    def suggest_cost_optimizations(self) -> List[str]:
+    def suggest_cost_optimizations(self) -> list[str]:
         """Suggest ways to optimize costs based on usage patterns.
         
         Returns:
@@ -291,7 +291,7 @@ class CostTracker:
             return
             
         try:
-            with open(self.cost_file, 'r') as f:
+            with open(self.cost_file) as f:
                 data = json.load(f)
                 
             self.calls = []

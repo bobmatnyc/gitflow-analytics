@@ -25,7 +25,7 @@ import logging
 import statistics
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Optional
 
 import numpy as np
 
@@ -43,7 +43,7 @@ class EnhancedQualitativeAnalyzer:
     confidence scores, risk assessments, and actionable recommendations.
     """
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[dict[str, Any]] = None):
         """Initialize the enhanced analyzer.
         
         Args:
@@ -77,13 +77,13 @@ class EnhancedQualitativeAnalyzer:
         
     def analyze_comprehensive(
         self,
-        commits: List[Dict[str, Any]],
-        qualitative_data: Optional[List[QualitativeCommitData]] = None,
-        developer_stats: Optional[List[Dict[str, Any]]] = None,
-        project_metrics: Optional[Dict[str, Any]] = None,
-        pm_data: Optional[Dict[str, Any]] = None,
+        commits: list[dict[str, Any]],
+        qualitative_data: Optional[list[QualitativeCommitData]] = None,
+        developer_stats: Optional[list[dict[str, Any]]] = None,
+        project_metrics: Optional[dict[str, Any]] = None,
+        pm_data: Optional[dict[str, Any]] = None,
         weeks_analyzed: int = 12
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Perform comprehensive enhanced qualitative analysis.
         
         Args:
@@ -132,13 +132,13 @@ class EnhancedQualitativeAnalyzer:
     
     def _prepare_analysis_context(
         self,
-        commits: List[Dict[str, Any]],
-        qualitative_data: Optional[List[QualitativeCommitData]],
-        developer_stats: Optional[List[Dict[str, Any]]],
-        project_metrics: Optional[Dict[str, Any]],
-        pm_data: Optional[Dict[str, Any]],
+        commits: list[dict[str, Any]],
+        qualitative_data: Optional[list[QualitativeCommitData]],
+        developer_stats: Optional[list[dict[str, Any]]],
+        project_metrics: Optional[dict[str, Any]],
+        pm_data: Optional[dict[str, Any]],
         weeks_analyzed: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Prepare unified analysis context with all available data."""
         
         # Process commits data
@@ -179,16 +179,16 @@ class EnhancedQualitativeAnalyzer:
             'unique_developers': len(commits_by_developer)
         }
     
-    def _analyze_executive_summary(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_executive_summary(self, context: dict[str, Any]) -> dict[str, Any]:
         """Generate executive-level analysis with strategic insights.
         
         WHY: Executives need high-level health assessment, trend analysis, and risk indicators
         without getting lost in technical details. This analysis focuses on team productivity,
         velocity trends, and strategic recommendations.
         """
-        commits = context['commits']
-        total_commits = context['total_commits']
-        weeks = context['weeks_analyzed']
+        context['commits']
+        context['total_commits']
+        context['weeks_analyzed']
         
         # Overall team health assessment
         health_assessment, health_confidence = self._assess_team_health(context)
@@ -228,7 +228,7 @@ class EnhancedQualitativeAnalyzer:
             )
         }
     
-    def _analyze_projects(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_projects(self, context: dict[str, Any]) -> dict[str, Any]:
         """Analyze project-level momentum and health indicators.
         
         WHY: Project managers need to understand individual project health, momentum,
@@ -275,7 +275,7 @@ class EnhancedQualitativeAnalyzer:
         
         return projects_analysis
     
-    def _analyze_developers(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_developers(self, context: dict[str, Any]) -> dict[str, Any]:
         """Analyze individual developer patterns and career development insights.
         
         WHY: Developers and their managers need insights into contribution patterns,
@@ -332,7 +332,7 @@ class EnhancedQualitativeAnalyzer:
         
         return developers_analysis
     
-    def _analyze_workflow(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_workflow(self, context: dict[str, Any]) -> dict[str, Any]:
         """Analyze workflow effectiveness and Git-PM correlation.
         
         WHY: Team leads need to understand process effectiveness, identify bottlenecks,
@@ -376,7 +376,7 @@ class EnhancedQualitativeAnalyzer:
     
     # Executive Analysis Helper Methods
     
-    def _assess_team_health(self, context: Dict[str, Any]) -> Tuple[str, float]:
+    def _assess_team_health(self, context: dict[str, Any]) -> tuple[str, float]:
         """Assess overall team health with confidence score."""
         
         commits = context['commits']
@@ -418,7 +418,7 @@ class EnhancedQualitativeAnalyzer:
         
         return "insufficient_data", 0.2
     
-    def _analyze_velocity_trends(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_velocity_trends(self, context: dict[str, Any]) -> dict[str, Any]:
         """Analyze velocity trends over the analysis period."""
         
         commits = context['commits']
@@ -440,10 +440,7 @@ class EnhancedQualitativeAnalyzer:
         first_avg = statistics.mean(first_quarter)
         last_avg = statistics.mean(last_quarter)
         
-        if first_avg > 0:
-            trend_percentage = ((last_avg - first_avg) / first_avg) * 100
-        else:
-            trend_percentage = 0
+        trend_percentage = (last_avg - first_avg) / first_avg * 100 if first_avg > 0 else 0
         
         # Determine trend direction
         if abs(trend_percentage) < self.thresholds['velocity_trend_threshold'] * 100:
@@ -466,12 +463,12 @@ class EnhancedQualitativeAnalyzer:
             'confidence': round(confidence, 2)
         }
     
-    def _identify_key_achievements(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _identify_key_achievements(self, context: dict[str, Any]) -> list[dict[str, Any]]:
         """Identify key achievements during the analysis period."""
         
         achievements = []
         commits = context['commits']
-        developer_stats = context['developer_stats']
+        context['developer_stats']
         project_metrics = context['project_metrics']
         
         # High productivity achievement
@@ -531,11 +528,11 @@ class EnhancedQualitativeAnalyzer:
         
         return achievements
     
-    def _identify_major_concerns(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _identify_major_concerns(self, context: dict[str, Any]) -> list[dict[str, Any]]:
         """Identify major concerns that need executive attention."""
         
         concerns = []
-        commits = context['commits']
+        context['commits']
         developer_stats = context['developer_stats']
         project_metrics = context['project_metrics']
         
@@ -603,7 +600,7 @@ class EnhancedQualitativeAnalyzer:
         
         return concerns
     
-    def _assess_risk_indicators(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _assess_risk_indicators(self, context: dict[str, Any]) -> list[dict[str, Any]]:
         """Assess various risk indicators for the team and projects."""
         
         risk_indicators = []
@@ -646,10 +643,10 @@ class EnhancedQualitativeAnalyzer:
     def _generate_executive_recommendations(
         self,
         health_assessment: str,
-        velocity_trends: Dict[str, Any],
-        concerns: List[Dict[str, Any]],
-        risk_indicators: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        velocity_trends: dict[str, Any],
+        concerns: list[dict[str, Any]],
+        risk_indicators: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Generate strategic recommendations for executive leadership."""
         
         recommendations = []
@@ -704,9 +701,9 @@ class EnhancedQualitativeAnalyzer:
     def _generate_executive_narrative(
         self,
         health_assessment: str,
-        velocity_trends: Dict[str, Any],
-        achievements: List[Dict[str, Any]],
-        concerns: List[Dict[str, Any]]
+        velocity_trends: dict[str, Any],
+        achievements: list[dict[str, Any]],
+        concerns: list[dict[str, Any]]
     ) -> str:
         """Generate executive narrative summary."""
         
@@ -747,7 +744,7 @@ class EnhancedQualitativeAnalyzer:
     
     # Project Analysis Helper Methods
     
-    def _classify_project_momentum(self, project_commits: List[Dict[str, Any]], context: Dict[str, Any]) -> Dict[str, Any]:
+    def _classify_project_momentum(self, project_commits: list[dict[str, Any]], context: dict[str, Any]) -> dict[str, Any]:
         """Classify project momentum as growing, stable, or declining."""
         
         if len(project_commits) < 4:
@@ -795,7 +792,7 @@ class EnhancedQualitativeAnalyzer:
             "description": description
         }
     
-    def _calculate_project_health_indicators(self, project_commits: List[Dict[str, Any]], context: Dict[str, Any]) -> Dict[str, Any]:
+    def _calculate_project_health_indicators(self, project_commits: list[dict[str, Any]], context: dict[str, Any]) -> dict[str, Any]:
         """Calculate various health indicators for a project."""
         
         # Activity level
@@ -851,7 +848,7 @@ class EnhancedQualitativeAnalyzer:
         
         return indicators
     
-    def _detect_technical_debt_signals(self, project_commits: List[Dict[str, Any]], context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _detect_technical_debt_signals(self, project_commits: list[dict[str, Any]], context: dict[str, Any]) -> list[dict[str, Any]]:
         """Detect signals of technical debt accumulation."""
         
         signals = []
@@ -892,7 +889,7 @@ class EnhancedQualitativeAnalyzer:
         
         return signals
     
-    def _assess_delivery_predictability(self, project_commits: List[Dict[str, Any]], context: Dict[str, Any]) -> Dict[str, Any]:
+    def _assess_delivery_predictability(self, project_commits: list[dict[str, Any]], context: dict[str, Any]) -> dict[str, Any]:
         """Assess how predictable project delivery patterns are."""
         
         if len(project_commits) < 7:
@@ -934,7 +931,7 @@ class EnhancedQualitativeAnalyzer:
             "description": f"Delivery shows {status.replace('_', ' ')} patterns"
         }
     
-    def _assess_project_risks(self, project_commits: List[Dict[str, Any]], context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _assess_project_risks(self, project_commits: list[dict[str, Any]], context: dict[str, Any]) -> list[dict[str, Any]]:
         """Assess various risks for the project."""
         
         risks = []
@@ -984,11 +981,11 @@ class EnhancedQualitativeAnalyzer:
     
     def _generate_project_recommendations(
         self,
-        momentum: Dict[str, Any],
-        health_indicators: Dict[str, Any],
-        tech_debt_signals: List[Dict[str, Any]],
-        risk_assessment: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        momentum: dict[str, Any],
+        health_indicators: dict[str, Any],
+        tech_debt_signals: list[dict[str, Any]],
+        risk_assessment: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Generate project-specific recommendations."""
         
         recommendations = []
@@ -1041,9 +1038,9 @@ class EnhancedQualitativeAnalyzer:
     def _generate_project_narrative(
         self,
         project_key: str,
-        momentum: Dict[str, Any],
-        health_indicators: Dict[str, Any],
-        risk_assessment: List[Dict[str, Any]]
+        momentum: dict[str, Any],
+        health_indicators: dict[str, Any],
+        risk_assessment: list[dict[str, Any]]
     ) -> str:
         """Generate narrative summary for a project."""
         
@@ -1083,7 +1080,7 @@ class EnhancedQualitativeAnalyzer:
     
     # Developer Analysis Helper Methods
     
-    def _analyze_contribution_patterns(self, dev_commits: List[Dict[str, Any]], context: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_contribution_patterns(self, dev_commits: list[dict[str, Any]], context: dict[str, Any]) -> dict[str, Any]:
         """Analyze individual developer contribution patterns."""
         
         if not dev_commits:
@@ -1149,7 +1146,7 @@ class EnhancedQualitativeAnalyzer:
         
         return descriptions.get(pattern, "Unknown contribution pattern")
     
-    def _calculate_collaboration_score(self, dev_commits: List[Dict[str, Any]], context: Dict[str, Any]) -> Dict[str, Any]:
+    def _calculate_collaboration_score(self, dev_commits: list[dict[str, Any]], context: dict[str, Any]) -> dict[str, Any]:
         """Calculate collaboration metrics for a developer."""
         
         # Project diversity
@@ -1193,7 +1190,7 @@ class EnhancedQualitativeAnalyzer:
             "description": f"{level.replace('_', ' ').title()} - active in {len(projects_worked)} projects"
         }
     
-    def _identify_expertise_domains(self, dev_commits: List[Dict[str, Any]], context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _identify_expertise_domains(self, dev_commits: list[dict[str, Any]], context: dict[str, Any]) -> list[dict[str, Any]]:
         """Identify developer expertise domains based on file patterns and projects."""
         
         domains = []
@@ -1230,7 +1227,7 @@ class EnhancedQualitativeAnalyzer:
         
         return domains[:5]  # Top 5 domains
     
-    def _analyze_growth_trajectory(self, dev_commits: List[Dict[str, Any]], context: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_growth_trajectory(self, dev_commits: list[dict[str, Any]], context: dict[str, Any]) -> dict[str, Any]:
         """Analyze developer growth trajectory over time."""
         
         if len(dev_commits) < 4:
@@ -1305,7 +1302,7 @@ class EnhancedQualitativeAnalyzer:
             "project_expansion": project_trend if 'project_trend' in locals() else 0
         }
     
-    def _detect_burnout_indicators(self, dev_commits: List[Dict[str, Any]], context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _detect_burnout_indicators(self, dev_commits: list[dict[str, Any]], context: dict[str, Any]) -> list[dict[str, Any]]:
         """Detect potential burnout indicators for a developer."""
         
         indicators = []
@@ -1365,12 +1362,12 @@ class EnhancedQualitativeAnalyzer:
     
     def _generate_career_recommendations(
         self,
-        contribution_pattern: Dict[str, Any],
-        collaboration_score: Dict[str, Any],
-        expertise_domains: List[Dict[str, Any]],
-        growth_trajectory: Dict[str, Any],
-        burnout_indicators: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        contribution_pattern: dict[str, Any],
+        collaboration_score: dict[str, Any],
+        expertise_domains: list[dict[str, Any]],
+        growth_trajectory: dict[str, Any],
+        burnout_indicators: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Generate career development recommendations for a developer."""
         
         recommendations = []
@@ -1449,9 +1446,9 @@ class EnhancedQualitativeAnalyzer:
     def _generate_developer_narrative(
         self,
         developer_name: str,
-        contribution_pattern: Dict[str, Any],
-        expertise_domains: List[Dict[str, Any]],
-        growth_trajectory: Dict[str, Any]
+        contribution_pattern: dict[str, Any],
+        expertise_domains: list[dict[str, Any]],
+        growth_trajectory: dict[str, Any]
     ) -> str:
         """Generate narrative summary for a developer."""
         
@@ -1485,10 +1482,10 @@ class EnhancedQualitativeAnalyzer:
     
     def _assess_git_pm_correlation(
         self,
-        commits: List[Dict[str, Any]],
-        pm_data: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        commits: list[dict[str, Any]],
+        pm_data: dict[str, Any],
+        context: dict[str, Any]
+    ) -> dict[str, Any]:
         """Assess effectiveness of Git-PM platform correlation."""
         
         if not pm_data or not pm_data.get('correlations'):
@@ -1535,7 +1532,7 @@ class EnhancedQualitativeAnalyzer:
             }
         }
     
-    def _identify_process_bottlenecks(self, commits: List[Dict[str, Any]], context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _identify_process_bottlenecks(self, commits: list[dict[str, Any]], context: dict[str, Any]) -> list[dict[str, Any]]:
         """Identify potential process bottlenecks."""
         
         bottlenecks = []
@@ -1589,7 +1586,7 @@ class EnhancedQualitativeAnalyzer:
         
         return bottlenecks
     
-    def _identify_automation_opportunities(self, commits: List[Dict[str, Any]], context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _identify_automation_opportunities(self, commits: list[dict[str, Any]], context: dict[str, Any]) -> list[dict[str, Any]]:
         """Identify opportunities for process automation."""
         
         opportunities = []
@@ -1654,10 +1651,10 @@ class EnhancedQualitativeAnalyzer:
     
     def _calculate_compliance_metrics(
         self,
-        commits: List[Dict[str, Any]],
-        project_metrics: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        commits: list[dict[str, Any]],
+        project_metrics: dict[str, Any],
+        context: dict[str, Any]
+    ) -> dict[str, Any]:
         """Calculate various compliance and process adherence metrics."""
         
         total_commits = len(commits)
@@ -1704,7 +1701,7 @@ class EnhancedQualitativeAnalyzer:
             }
         }
     
-    def _analyze_team_collaboration_patterns(self, commits: List[Dict[str, Any]], context: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_team_collaboration_patterns(self, commits: list[dict[str, Any]], context: dict[str, Any]) -> dict[str, Any]:
         """Analyze team collaboration patterns."""
         
         # Cross-project collaboration analysis
@@ -1751,11 +1748,11 @@ class EnhancedQualitativeAnalyzer:
     
     def _generate_process_recommendations(
         self,
-        git_pm_effectiveness: Dict[str, Any],
-        bottlenecks: List[Dict[str, Any]],
-        automation_opportunities: List[Dict[str, Any]],
-        compliance_metrics: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        git_pm_effectiveness: dict[str, Any],
+        bottlenecks: list[dict[str, Any]],
+        automation_opportunities: list[dict[str, Any]],
+        compliance_metrics: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Generate process improvement recommendations."""
         
         recommendations = []
@@ -1814,16 +1811,16 @@ class EnhancedQualitativeAnalyzer:
     
     def _generate_workflow_narrative(
         self,
-        git_pm_effectiveness: Dict[str, Any],
-        bottlenecks: List[Dict[str, Any]],
-        compliance_metrics: Dict[str, Any]
+        git_pm_effectiveness: dict[str, Any],
+        bottlenecks: list[dict[str, Any]],
+        compliance_metrics: dict[str, Any]
     ) -> str:
         """Generate workflow analysis narrative."""
         
         narrative_parts = []
         
         # Git-PM effectiveness
-        effectiveness = git_pm_effectiveness.get('effectiveness', 'unknown')
+        git_pm_effectiveness.get('effectiveness', 'unknown')
         effectiveness_desc = git_pm_effectiveness.get('description', 'integration status unclear')
         narrative_parts.append(f"Git-PM platform integration is {effectiveness_desc.lower()}.")
         
@@ -1849,11 +1846,11 @@ class EnhancedQualitativeAnalyzer:
     
     def _generate_cross_insights(
         self,
-        executive_analysis: Dict[str, Any],
-        project_analysis: Dict[str, Any],
-        developer_analysis: Dict[str, Any],
-        workflow_analysis: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        executive_analysis: dict[str, Any],
+        project_analysis: dict[str, Any],
+        developer_analysis: dict[str, Any],
+        workflow_analysis: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Generate insights that span multiple analysis dimensions."""
         
         cross_insights = []
@@ -1914,7 +1911,7 @@ class EnhancedQualitativeAnalyzer:
     
     # Utility Helper Methods
     
-    def _get_weekly_commit_counts(self, commits: List[Dict[str, Any]]) -> List[int]:
+    def _get_weekly_commit_counts(self, commits: list[dict[str, Any]]) -> list[int]:
         """Get commit counts grouped by week."""
         
         if not commits:
@@ -1944,7 +1941,7 @@ class EnhancedQualitativeAnalyzer:
         monday = date - timedelta(days=days_since_monday)
         return monday.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    def _calculate_gini_coefficient(self, values: List[float]) -> float:
+    def _calculate_gini_coefficient(self, values: list[float]) -> float:
         """Calculate Gini coefficient for measuring inequality."""
         
         if not values or len(values) == 1:

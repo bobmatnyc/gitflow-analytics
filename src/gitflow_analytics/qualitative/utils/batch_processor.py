@@ -1,10 +1,11 @@
 """Batch processing utilities for efficient commit analysis."""
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable, Dict, Iterator, List, Optional, TypeVar
-from threading import Lock
 import time
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
+from typing import Any, Callable, Optional, TypeVar
 
 T = TypeVar('T')
 R = TypeVar('R')
@@ -35,7 +36,7 @@ class BatchProcessor:
             'start_time': None
         }
         
-    def create_batches(self, items: List[T], batch_size: Optional[int] = None) -> Iterator[List[T]]:
+    def create_batches(self, items: list[T], batch_size: Optional[int] = None) -> Iterator[list[T]]:
         """Split items into batches for processing.
         
         Args:
@@ -50,8 +51,8 @@ class BatchProcessor:
         for i in range(0, len(items), batch_size):
             yield items[i:i + batch_size]
             
-    def process_batches(self, items: List[T], processor_func: Callable[[List[T]], List[R]], 
-                       parallel: bool = True) -> List[R]:
+    def process_batches(self, items: list[T], processor_func: Callable[[list[T]], list[R]], 
+                       parallel: bool = True) -> list[R]:
         """Process items in batches with optional parallelization.
         
         Args:
@@ -81,8 +82,8 @@ class BatchProcessor:
         self._log_final_stats(len(items))
         return all_results
         
-    def process_with_callback(self, items: List[T], processor_func: Callable[[List[T]], List[R]],
-                            progress_callback: Optional[Callable[[int, int], None]] = None) -> List[R]:
+    def process_with_callback(self, items: list[T], processor_func: Callable[[list[T]], list[R]],
+                            progress_callback: Optional[Callable[[int, int], None]] = None) -> list[R]:
         """Process batches with progress callback.
         
         Args:
@@ -124,8 +125,8 @@ class BatchProcessor:
                 
         return all_results
         
-    def _process_parallel(self, batches: List[List[T]], 
-                         processor_func: Callable[[List[T]], List[R]]) -> List[R]:
+    def _process_parallel(self, batches: list[list[T]], 
+                         processor_func: Callable[[list[T]], list[R]]) -> list[R]:
         """Process batches in parallel using ThreadPoolExecutor.
         
         Args:
@@ -163,8 +164,8 @@ class BatchProcessor:
                         
         return all_results
         
-    def _process_sequential(self, batches: List[List[T]], 
-                           processor_func: Callable[[List[T]], List[R]]) -> List[R]:
+    def _process_sequential(self, batches: list[list[T]], 
+                           processor_func: Callable[[list[T]], list[R]]) -> list[R]:
         """Process batches sequentially.
         
         Args:
@@ -190,8 +191,8 @@ class BatchProcessor:
                 
         return all_results
         
-    def _process_batch_with_timing(self, batch: List[T], 
-                                  processor_func: Callable[[List[T]], List[R]]) -> tuple[List[R], float]:
+    def _process_batch_with_timing(self, batch: list[T], 
+                                  processor_func: Callable[[list[T]], list[R]]) -> tuple[list[R], float]:
         """Process a single batch with timing.
         
         Args:
@@ -239,7 +240,7 @@ class BatchProcessor:
             f"{stats['total_errors']} errors, avg batch time: {avg_batch_time:.2f}s"
         )
         
-    def get_processing_stats(self) -> Dict[str, Any]:
+    def get_processing_stats(self) -> dict[str, Any]:
         """Get current processing statistics.
         
         Returns:

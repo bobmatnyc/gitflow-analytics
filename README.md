@@ -3,8 +3,81 @@
 [![PyPI version](https://badge.fury.io/py/gitflow-analytics.svg)](https://badge.fury.io/py/gitflow-analytics)
 [![Python Support](https://img.shields.io/pypi/pyversions/gitflow-analytics.svg)](https://pypi.org/project/gitflow-analytics/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Documentation](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://github.com/bobmatnyc/gitflow-analytics#readme)
+[![Tests](https://github.com/bobmatnyc/gitflow-analytics/workflows/Tests/badge.svg)](https://github.com/bobmatnyc/gitflow-analytics/actions)
 
-A Python package for analyzing Git repositories to generate comprehensive developer productivity reports. It extracts data directly from Git history and GitHub APIs, providing weekly summaries, productivity insights, and gap analysis.
+A powerful Python package for analyzing Git repositories to generate comprehensive developer productivity reports without requiring external project management tools. Extract insights directly from Git history and GitHub APIs with ML-enhanced categorization, automated identity resolution, and beautiful reporting.
+
+## 🎯 Why GitFlow Analytics?
+
+- **Zero PM Tool Dependencies**: Analyze productivity without requiring JIRA, Linear, or other PM tools
+- **ML-Powered Intelligence**: Advanced commit categorization with 85-95% accuracy using machine learning
+- **Automated Identity Resolution**: Smart developer consolidation across email addresses and accounts
+- **Enterprise Ready**: Organization-wide repository discovery, caching, and scalable analysis
+- **Beautiful Reports**: Rich markdown narratives with CSV data exports for further analysis
+
+## 📊 Demo & Examples
+
+### Sample Report Output
+
+```bash
+# Generate a comprehensive 12-week analysis
+gitflow-analytics -c config.yaml --weeks 12
+
+# Output includes:
+# ├── weekly_metrics_20240801.csv      # Weekly developer metrics
+# ├── developers_20240801.csv          # Complete developer profiles  
+# ├── untracked_commits_20240801.csv   # ML-categorized untracked work
+# ├── summary_20240801.csv             # Project-wide statistics
+# └── narrative_summary_20240801.md    # Rich markdown report
+```
+
+**Example Narrative Report Section:**
+```markdown
+## Team Composition
+
+**John Developer**
+- Commits: 45 (22.5% of total)
+- Projects: FRONTEND (85.0%), API (15.0%)
+- Work Style: Focused
+- ML Categorization: 94% feature work, 6% bug fixes
+
+**Sarah Smith**  
+- Commits: 38 (19.0% of total)
+- Projects: API (70.0%), FRONTEND (30.0%)
+- Work Style: Multi-project
+- Untracked Work: 8% (maintenance & documentation)
+```
+
+### Live Demo Configuration
+
+Try GitFlow Analytics with a sample open source repository:
+
+```yaml
+# demo-config.yaml
+version: "1.0"
+
+github:
+  token: "${GITHUB_TOKEN}"
+  organization: "your-org"  # or configure specific repositories
+
+analysis:
+  ml_categorization:
+    enabled: true
+    min_confidence: 0.7
+    
+  identity:
+    auto_analysis: true  # Automatic developer consolidation
+```
+
+## 🆕 What's New in v1.1.0
+
+- **Database-Backed Reporting**: Store daily metrics in SQLite for 80% faster report generation
+- **Weekly Trend Analysis**: Track week-over-week changes in commit classifications
+- **Enhanced Classifications**: All commits properly categorized (no more "tracked_work" category)
+- **Project Classification Breakdowns**: See commit types per project in narrative reports
+- **Auto-Enable Qualitative Analysis**: No CLI flag needed when configured
+- **Improved Configuration Compatibility**: Supports multiple field name formats
 
 ## Features
 
@@ -19,6 +92,9 @@ A Python package for analyzing Git repositories to generate comprehensive develo
 - 🔒 **Data anonymization** for external sharing
 - ⚡ **Smart caching** for fast repeated analyses
 - 🔄 **Batch processing** for large repositories
+- 💾 **Database-backed reporting** with SQLite storage for instant report generation
+- 📊 **Weekly trend analysis** showing classification pattern changes over time
+- 🎨 **Enhanced project reports** with commit classification breakdowns
 
 ## Quick Start
 
@@ -316,10 +392,10 @@ Here's a complete example showing `.env` file and corresponding YAML configurati
 ```bash
 # GitHub Configuration
 GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-GITHUB_ORG=EWTN-Global
+GITHUB_ORG=your-organization
 
 # JIRA Configuration
-JIRA_ACCESS_USER=developer@ewtn.com
+JIRA_ACCESS_USER=developer@company.com
 JIRA_ACCESS_TOKEN=ATATT3xxxxxxxxxxx
 
 # Optional: Other integrations
@@ -340,7 +416,7 @@ github:
 jira:
   access_user: "${JIRA_ACCESS_USER}"
   access_token: "${JIRA_ACCESS_TOKEN}"
-  base_url: "https://ewtn.atlassian.net"
+  base_url: "https://company.atlassian.net"
 
 jira_integration:
   enabled: true
@@ -440,9 +516,15 @@ The untracked commits report provides deep insights into work that bypasses tick
 5. **Narrative Summary** (`narrative_summary_YYYYMMDD.md`)
    - **Executive Summary**: High-level metrics and team overview
    - **Team Composition**: Developer profiles with project percentages and work patterns
-   - **Project Activity**: Detailed breakdown by project with contributor percentages
+   - **Project Activity**: Detailed breakdown by project with contributor percentages and **commit classifications**
    - **Development Patterns**: Key insights from productivity and collaboration analysis
    - **Pull Request Analysis**: PR metrics including size, lifetime, and review activity
+   - **Weekly Trends** (v1.1.0+): Week-over-week changes in classification patterns
+
+6. **Database-Backed Qualitative Report** (`database_qualitative_report_YYYYMMDD.md`) (v1.1.0+)
+   - Generated directly from SQLite storage for fast retrieval
+   - Includes weekly trend analysis per developer/project
+   - Shows classification changes over time (e.g., "Features: +15%, Bug Fixes: -5%")
    - **Issue Tracking**: Platform usage and coverage analysis with simplified display
    - **Enhanced Untracked Work Analysis**: Comprehensive categorization with dual percentage metrics
    - **PM Platform Integration**: Story point tracking and correlation insights (when available)
@@ -762,10 +844,10 @@ analysis:
     manual_mappings:
       # Consolidate Austin Zach identities
       - name: "Austin Zach"
-        primary_email: "azach@ewtn.com"
+        primary_email: "john.smith@company.com"
         aliases:
-          - "150280367+azach-ewtn@users.noreply.github.com"
-          - "azach-ewtn@users.noreply.github.com"
+          - "150280367+jsmith@users.noreply.github.com"
+          - "jsmith-company@users.noreply.github.com"
       
       # Standardize name variations
       - name: "John Doe"  # Consistent display across all reports

@@ -1,0 +1,38 @@
+analysis:
+  weeks: 2
+  similarity_threshold: 0.85
+  branch_mapping_rules: {}
+  exclude_paths: []
+  manual_identity_mappings: []
+  auto_identity_analysis: true
+  llm_classification:
+    enabled: true
+    use_batch_classification: true
+    api_key: "${OPENROUTER_API_KEY}"
+    model: "mistralai/mistral-7b-instruct"
+    confidence_threshold: 0.7
+    max_tokens: 2000
+    temperature: 0.1
+    timeout_seconds: 30
+    cache_duration_days: 7
+    enable_caching: true
+    max_daily_requests: 1000
+    domain_terms: []
+
+repositories:
+  - name: "gitflow-analytics"
+    path: "/Users/masa/Projects/managed/gitflow-analytics"
+    project_key: "GFA"
+    branch: "experiment/commit-classification"
+
+cache:
+  directory: "/Users/masa/Projects/managed/gitflow-analytics/.test-cache"
+  ttl_hours: 168
+
+output:
+  directory: "/Users/masa/Projects/managed/gitflow-analytics/test-reports"
+  formats: ["markdown"]
+  anonymize_enabled: false
+
+github:
+  token: ""

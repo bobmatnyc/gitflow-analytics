@@ -5,6 +5,92 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2025-01-07
+
+### Fixed
+- Fixed repositories not being updated from remote before analysis
+- Added automatic git fetch/pull before analyzing repositories
+- Impact: Ensures latest commits are included in analysis (fixes EWTN missing commits issue)
+
+## [1.2.1] - 2025-01-07
+
+### Fixed
+- Fixed commits not being stored in CachedCommit table during fetch step
+- Fixed narrative report generation when CSV generation is disabled (now default)
+- Fixed canonical_id not being set on commits loaded from database
+- Fixed timezone comparison issues in batch classification
+- Fixed missing `classify_commits_batch` method in LLMCommitClassifier
+- Fixed complexity_delta None value handling in narrative reports
+- Fixed LLM classification to properly use API keys from .env files
+
+### Added
+- Added token tracking and cost display for LLM classification
+- Added LLM usage statistics display after batch classification
+- Shows model, API calls, total tokens, cost, and cache hits
+- Improved error handling in commit storage with detailed logging
+
+### Changed
+- Commits are now properly stored in CachedCommit table during data fetch
+- Identity resolver now updates canonical_id on commits for proper attribution
+- Batch classifier now correctly queries commits with timezone-aware filtering
+
+## [1.2.0] - 2025-01-07
+
+### Added
+- Two-step process (fetch then classify) is now the default behavior for better performance and cost efficiency
+- Automatic data fetching when using batch classification mode
+- New `--use-legacy-classification` flag to use the old single-step process if needed
+
+### Changed
+- `analyze` command now uses two-step process by default (fetch raw data, then classify)
+- `--use-batch-classification` is now enabled by default (was previously opt-in)
+- Improved messaging to clearly indicate Step 1 (fetch) and Step 2 (classify) operations
+- Better integration between fetch and analyze operations for seamless user experience
+
+### Fixed
+- Fixed JIRA integration error: "'IntegrationOrchestrator' object has no attribute 'jira'"
+- Corrected attribute access to use `orchestrator.integrations.get('jira')` instead of `orchestrator.jira`
+- Fixed batch classification mode to automatically perform data fetching when needed
+
+### Performance
+- Two-step process reduces LLM costs by batching classification requests
+- Faster subsequent runs when data is already fetched and cached
+- More efficient processing of large repositories with many commits
+
+## [1.1.0] - 2025-01-06
+
+### Added
+- Database-backed reporting system with SQLite storage for daily metrics
+- Weekly trend analysis showing week-over-week changes in classification patterns
+- Commit classification breakdown in project activity sections of narrative reports
+- Support for flexible configuration field names (api_key/openrouter_api_key, model/primary_model)
+- Auto-enable qualitative analysis when configured (no CLI flag needed)
+- New `DailyMetrics` and `WeeklyTrends` database tables
+- Database report generator that pulls directly from SQLite
+- Per-developer and per-project classification metrics
+- Cost tracking configuration mapping from cost_tracking.daily_budget_usd
+
+### Changed
+- All commits now properly classified into meaningful categories (feature, bug_fix, refactor, etc.)
+- Tracked commits no longer use "tracked_work" as a category - properly classified instead
+- Ticket information now enhances classification accuracy
+- Ticket coverage displayed separately from classifications as a process metric
+- HTML report temporarily disabled pending redesign (code preserved)
+- Improved configuration field mapping for better compatibility
+
+### Fixed
+- Ticket platform filtering now properly respects configuration (e.g., JIRA-only)
+- DateTime import scope issues in CLI module
+- Classification data structure in narrative reports
+- Identity resolution for developer mappings
+- Qualitative analysis auto-enablement from configuration
+
+### Performance
+- Database caching reduces report generation time by up to 80%
+- Batch processing for daily metrics storage
+- Optimized queries with proper indexing
+- Pre-calculated weekly trends for instant retrieval
+
 ## [1.0.7] - 2025-08-01
 
 ### Fixed

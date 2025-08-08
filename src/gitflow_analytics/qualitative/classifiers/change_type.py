@@ -2,8 +2,7 @@
 
 import logging
 import re
-from typing import Dict, List, Tuple, Set, Any, Optional
-from pathlib import Path
+from typing import Any, Optional
 
 from ..models.schemas import ChangeTypeConfig
 
@@ -43,56 +42,62 @@ class ChangeTypeClassifier:
             'feature': {
                 'action_words': {
                     'add', 'implement', 'create', 'build', 'introduce', 'develop',
-                    'enable', 'support', 'allow', 'provide', 'include'
+                    'enable', 'support', 'allow', 'provide', 'include', 'addition',
+                    'initialize', 'prepare', 'extend'
                 },
                 'object_words': {
                     'feature', 'functionality', 'capability', 'component', 'module',
-                    'endpoint', 'api', 'service', 'interface', 'system'
+                    'endpoint', 'api', 'service', 'interface', 'system', 'integration',
+                    'column', 'field', 'property'
                 },
                 'context_words': {
                     'new', 'initial', 'first', 'user', 'client', 'support',
-                    'enhancement', 'improvement'
+                    'enhancement', 'improvement', 'missing', 'space', 'sticky'
                 }
             },
             'bugfix': {
                 'action_words': {
                     'fix', 'resolve', 'correct', 'repair', 'patch', 'address',
-                    'handle', 'solve', 'debug', 'prevent'
+                    'handle', 'solve', 'debug', 'prevent', 'corrected'
                 },
                 'object_words': {
                     'bug', 'issue', 'problem', 'error', 'defect', 'exception',
-                    'crash', 'failure', 'leak', 'regression'
+                    'crash', 'failure', 'leak', 'regression', 'beacon', 'beacons'
                 },
                 'context_words': {
                     'broken', 'failing', 'incorrect', 'wrong', 'invalid',
-                    'missing', 'null', 'undefined'
+                    'missing', 'null', 'undefined', 'not', 'allowing'
                 }
             },
             'refactor': {
                 'action_words': {
                     'refactor', 'restructure', 'reorganize', 'cleanup', 'simplify',
-                    'optimize', 'improve', 'enhance', 'streamline', 'consolidate'
+                    'optimize', 'improve', 'enhance', 'streamline', 'consolidate',
+                    'refine', 'ensure', 'replace', 'improves'
                 },
                 'object_words': {
                     'code', 'structure', 'architecture', 'design', 'logic',
-                    'method', 'function', 'class', 'module'
+                    'method', 'function', 'class', 'module', 'combo', 'behavior',
+                    'focus'
                 },
                 'context_words': {
                     'better', 'cleaner', 'simpler', 'efficient', 'maintainable',
-                    'readable', 'performance'
+                    'readable', 'performance', 'box', 'hacking'
                 }
             },
             'docs': {
                 'action_words': {
                     'update', 'add', 'improve', 'write', 'document', 'clarify',
-                    'explain', 'describe', 'detail'
+                    'explain', 'describe', 'detail', 'added'
                 },
                 'object_words': {
                     'documentation', 'readme', 'docs', 'comment', 'docstring',
-                    'guide', 'tutorial', 'example', 'specification'
+                    'guide', 'tutorial', 'example', 'specification', 'translations',
+                    'spanish', 'label'
                 },
                 'context_words': {
-                    'explain', 'clarify', 'describe', 'instruction', 'help'
+                    'explain', 'clarify', 'describe', 'instruction', 'help',
+                    'change', 'dynamically', 'language'
                 }
             },
             'test': {
@@ -112,15 +117,16 @@ class ChangeTypeClassifier:
             'chore': {
                 'action_words': {
                     'update', 'bump', 'upgrade', 'configure', 'setup', 'install',
-                    'remove', 'delete', 'clean'
+                    'remove', 'delete', 'clean', 'sync', 'merge'
                 },
                 'object_words': {
                     'dependency', 'package', 'config', 'configuration', 'build',
-                    'version', 'tool', 'script', 'workflow'
+                    'version', 'tool', 'script', 'workflow', 'console', 'log',
+                    'main'
                 },
                 'context_words': {
                     'maintenance', 'housekeeping', 'routine', 'automated',
-                    'ci', 'cd', 'pipeline'
+                    'ci', 'cd', 'pipeline', 'auto', 'removal'
                 }
             },
             'security': {
@@ -153,15 +159,30 @@ class ChangeTypeClassifier:
             'config': {
                 'action_words': {
                     'configure', 'setup', 'adjust', 'modify', 'change',
-                    'update', 'tweak'
+                    'update', 'tweak', 'changing'
                 },
                 'object_words': {
                     'config', 'configuration', 'settings', 'environment',
-                    'parameter', 'option', 'flag', 'variable'
+                    'parameter', 'option', 'flag', 'variable', 'roles', 'user',
+                    'schema', 'access', 'levels'
                 },
                 'context_words': {
                     'environment', 'production', 'development', 'staging',
-                    'deployment', 'setup'
+                    'deployment', 'setup', 'roles', 'permission', 'api'
+                }
+            },
+            'integration': {
+                'action_words': {
+                    'integrate', 'add', 'implement', 'connect', 'setup',
+                    'remove', 'extend', 'removing'
+                },
+                'object_words': {
+                    'integration', 'posthog', 'iubenda', 'auth0', 'oauth',
+                    'api', 'service', 'third-party', 'external', 'mena'
+                },
+                'context_words': {
+                    'collection', 'data', 'privacy', 'policy', 'implementation',
+                    'access', 'redirect'
                 }
             }
         }
@@ -203,6 +224,8 @@ class ChangeTypeClassifier:
             'security': 'security',
             'hotfix': 'hotfix',
             'config': 'config',
+            'integration': 'integration',
+            'integrate': 'integration',
             'style': 'chore',  # Style changes are usually chores
             'perf': 'refactor',  # Performance improvements are refactoring
             'build': 'chore',
@@ -217,7 +240,7 @@ class ChangeTypeClassifier:
                 re.compile(pattern, re.IGNORECASE) for pattern in patterns
             ]
             
-    def classify(self, message: str, doc: Doc, files: List[str]) -> Tuple[str, float]:
+    def classify(self, message: str, doc: Doc, files: list[str]) -> tuple[str, float]:
         """Classify commit change type with confidence score.
         
         Args:
@@ -260,7 +283,7 @@ class ChangeTypeClassifier:
             
         return best_type, confidence
         
-    def _check_conventional_prefix(self, message: str) -> Optional[Tuple[str, float]]:
+    def _check_conventional_prefix(self, message: str) -> Optional[tuple[str, float]]:
         """Check for conventional commit message prefixes.
         
         Args:
@@ -287,7 +310,7 @@ class ChangeTypeClassifier:
                 
         return None
         
-    def _analyze_semantic_content(self, message: str, doc: Doc) -> Dict[str, float]:
+    def _analyze_semantic_content(self, message: str, doc: Doc) -> dict[str, float]:
         """Analyze semantic content of commit message.
         
         Args:
@@ -313,7 +336,7 @@ class ChangeTypeClassifier:
                 
         return scores
         
-    def _extract_semantic_features(self, doc: Doc) -> Dict[str, Set[str]]:
+    def _extract_semantic_features(self, doc: Doc) -> dict[str, set[str]]:
         """Extract semantic features from spaCy document.
         
         Args:
@@ -350,8 +373,8 @@ class ChangeTypeClassifier:
             
         return features
         
-    def _calculate_semantic_similarity(self, features: Dict[str, Set[str]], 
-                                     patterns: Dict[str, Set[str]]) -> float:
+    def _calculate_semantic_similarity(self, features: dict[str, set[str]], 
+                                     patterns: dict[str, set[str]]) -> float:
         """Calculate semantic similarity between features and patterns.
         
         Args:
@@ -386,7 +409,7 @@ class ChangeTypeClassifier:
                       
         return min(1.0, similarity_score / max_possible) if max_possible > 0 else 0.0
         
-    def _simple_keyword_analysis(self, message: str) -> Dict[str, float]:
+    def _simple_keyword_analysis(self, message: str) -> dict[str, float]:
         """Simple keyword-based analysis fallback.
         
         Args:
@@ -408,7 +431,7 @@ class ChangeTypeClassifier:
                 
         return scores
         
-    def _analyze_file_patterns(self, files: List[str]) -> Dict[str, float]:
+    def _analyze_file_patterns(self, files: list[str]) -> dict[str, float]:
         """Analyze file patterns for change type signals.
         
         Args:
@@ -438,8 +461,8 @@ class ChangeTypeClassifier:
                 
         return scores
         
-    def _combine_scores(self, semantic_scores: Dict[str, float], 
-                       file_scores: Dict[str, float]) -> Dict[str, float]:
+    def _combine_scores(self, semantic_scores: dict[str, float], 
+                       file_scores: dict[str, float]) -> dict[str, float]:
         """Combine semantic and file pattern scores.
         
         Args:

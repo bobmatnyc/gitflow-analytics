@@ -1,7 +1,10 @@
 """Command-line interface for GitFlow Analytics."""
 
+import builtins
+import contextlib
 import logging
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional, cast
@@ -17,13 +20,14 @@ from .config import ConfigLoader
 from .core.analyzer import GitAnalyzer
 from .core.cache import GitAnalysisCache
 from .core.identity import DeveloperIdentityResolver
-from .extractors.tickets import TicketExtractor
 from .integrations.orchestrator import IntegrationOrchestrator
 from .metrics.dora import DORAMetricsCalculator
 from .reports.analytics_writer import AnalyticsReportGenerator
 from .reports.csv_writer import CSVReportGenerator
 from .reports.json_exporter import ComprehensiveJSONExporter
 from .reports.narrative_writer import NarrativeReportGenerator
+from .reports.weekly_trends_writer import WeeklyTrendsWriter
+from .training.pipeline import CommitClassificationTrainer
 
 
 def handle_timezone_error(e: Exception, report_name: str, all_commits: list, logger: logging.Logger) -> None:
@@ -71,7 +75,8 @@ class AnalyzeAsDefaultGroup(click.Group):
                             '--anonymize', '--no-cache', '--validate-only', '--clear-cache',
                             '--enable-qualitative', '--qualitative-only', '--enable-pm',
                             '--pm-platform', '--disable-pm', '--rich', '--log',
-                            '--skip-identity-analysis', '--apply-identity-suggestions'}
+                            '--skip-identity-analysis', '--apply-identity-suggestions',
+                            '--warm-cache', '--validate-cache', '--generate-csv'}
         
         # If first arg starts with - and looks like an analyze option, prepend 'analyze'
         if args and args[0].startswith('-'):
@@ -144,6 +149,11 @@ def cli(ctx: click.Context) -> None:
 )
 @click.option("--skip-identity-analysis", is_flag=True, help="Skip automatic identity analysis")
 @click.option("--apply-identity-suggestions", is_flag=True, help="Apply identity analysis suggestions without prompting")
+@click.option("--warm-cache", is_flag=True, help="Pre-warm cache with all commits for faster subsequent runs")
+@click.option("--validate-cache", is_flag=True, help="Validate cache integrity and consistency")
+@click.option("--generate-csv", is_flag=True, help="Generate CSV reports (disabled by default, only narrative report is generated)")
+@click.option("--use-batch-classification/--use-legacy-classification", default=True, help="Use batch LLM classification on pre-fetched data (Step 2 of 2) - now the default behavior")
+@click.option("--force-fetch", is_flag=True, help="Force fetch fresh data even if cached data exists")
 def analyze_subcommand(
     config: Path,
     weeks: int,
@@ -161,6 +171,11 @@ def analyze_subcommand(
     log: str,
     skip_identity_analysis: bool,
     apply_identity_suggestions: bool,
+    warm_cache: bool,
+    validate_cache: bool,
+    generate_csv: bool,
+    use_batch_classification: bool,
+    force_fetch: bool,
 ) -> None:
     """Analyze Git repositories using configuration file (explicit command)."""
     # Call the main analyze function
@@ -181,6 +196,11 @@ def analyze_subcommand(
         log=log,
         skip_identity_analysis=skip_identity_analysis,
         apply_identity_suggestions=apply_identity_suggestions,
+        warm_cache=warm_cache,
+        validate_cache=validate_cache,
+        generate_csv=generate_csv,
+        use_batch_classification=use_batch_classification,
+        force_fetch=force_fetch,
     )
 
 
@@ -201,6 +221,11 @@ def analyze(
     log: str,
     skip_identity_analysis: bool,
     apply_identity_suggestions: bool,
+    warm_cache: bool = False,
+    validate_cache: bool = False,
+    generate_csv: bool = False,
+    use_batch_classification: bool = True,
+    force_fetch: bool = False,
 ) -> None:
     """Analyze Git repositories using configuration file."""
 
@@ -342,11 +367,129 @@ def analyze(
 
         cache = GitAnalysisCache(cache_dir, ttl_hours=0 if no_cache else cfg.cache.ttl_hours)
 
-        identity_resolver = DeveloperIdentityResolver(
-            cache_dir / "identities.db",
-            similarity_threshold=cfg.analysis.similarity_threshold,
-            manual_mappings=cfg.analysis.manual_identity_mappings,
-        )
+        # Handle cache validation if requested
+        if validate_cache:
+            if display:
+                display.print_status("Validating cache integrity...", "info")
+            validation_result = cache.validate_cache()
+            
+            if display:
+                if validation_result["is_valid"]:
+                    display.print_status("✅ Cache validation passed", "success")
+                else:
+                    display.print_status("❌ Cache validation failed", "error")
+                    for issue in validation_result["issues"]:
+                        display.print_status(f"  Issue: {issue}", "error")
+                
+                if validation_result["warnings"]:
+                    for warning in validation_result["warnings"]:
+                        display.print_status(f"  Warning: {warning}", "warning")
+                        
+                # Show validation statistics
+                stats = validation_result["stats"]
+                display.print_status(f"Cache contains {stats['total_commits']} commits", "info")
+                if stats["duplicates"] > 0:
+                    display.print_status(f"Found {stats['duplicates']} duplicate entries", "warning")
+            else:
+                # Simple output when not using rich display
+                if validation_result["is_valid"]:
+                    click.echo("✅ Cache validation passed")
+                else:
+                    click.echo("❌ Cache validation failed:")
+                    for issue in validation_result["issues"]:
+                        click.echo(f"  Issue: {issue}")
+                
+                if validation_result["warnings"]:
+                    click.echo("Warnings:")
+                    for warning in validation_result["warnings"]:
+                        click.echo(f"  {warning}")
+            
+            # Exit after validation if no other action requested
+            if not warm_cache:
+                return
+
+        # Handle cache warming if requested  
+        if warm_cache:
+            if display:
+                display.print_status("Warming cache with all repository commits...", "info")
+            
+            # Get all repository paths from configuration
+            repo_paths = []
+            for repo_config in cfg.repositories:
+                repo_paths.append(repo_config.path)
+            
+            warming_result = cache.warm_cache(repo_paths, weeks=weeks)
+            
+            if display:
+                display.print_status(f"✅ Cache warming completed", "success")
+                display.print_status(f"  Repositories processed: {warming_result['repos_processed']}", "info")
+                display.print_status(f"  Total commits found: {warming_result['total_commits_found']}", "info")
+                display.print_status(f"  Commits cached: {warming_result['commits_cached']}", "info")
+                display.print_status(f"  Already cached: {warming_result['commits_already_cached']}", "info")
+                display.print_status(f"  Duration: {warming_result['duration_seconds']:.1f}s", "info")
+                
+                if warming_result["errors"]:
+                    for error in warming_result["errors"]:
+                        display.print_status(f"  Error: {error}", "error")
+            else:
+                # Simple output when not using rich display
+                click.echo(f"✅ Cache warming completed in {warming_result['duration_seconds']:.1f}s")
+                click.echo(f"  Repositories: {warming_result['repos_processed']}")
+                click.echo(f"  Commits found: {warming_result['total_commits_found']}")
+                click.echo(f"  Newly cached: {warming_result['commits_cached']}")
+                click.echo(f"  Already cached: {warming_result['commits_already_cached']}")
+                
+                if warming_result["errors"]:
+                    click.echo("Errors encountered:")
+                    for error in warming_result["errors"]:
+                        click.echo(f"  {error}")
+            
+            # Exit after warming unless we're also doing normal analysis
+            if validate_only:
+                return
+
+        # Initialize identity resolver with comprehensive error handling
+        identity_db_path = cache_dir / "identities.db"
+        try:
+            identity_resolver = DeveloperIdentityResolver(
+                identity_db_path,
+                similarity_threshold=cfg.analysis.similarity_threshold,
+                manual_mappings=cfg.analysis.manual_identity_mappings,
+            )
+            
+            # Check if we're using fallback and inform user
+            if hasattr(identity_resolver, '_database_available') and not identity_resolver._database_available:
+                click.echo(
+                    click.style("⚠️  Warning: ", fg="yellow", bold=True) +
+                    "Identity database unavailable. Using in-memory fallback."
+                )
+                click.echo("   Identity mappings will not persist between runs.")
+                click.echo(f"   Check permissions on: {identity_db_path.parent}")
+                
+            elif hasattr(identity_resolver.db, 'is_readonly_fallback') and identity_resolver.db.is_readonly_fallback:
+                click.echo(
+                    click.style("⚠️  Warning: ", fg="yellow", bold=True) +
+                    "Using temporary database for identity resolution."
+                )
+                click.echo("   Identity mappings will not persist between runs.")
+                click.echo(f"   Check permissions on: {identity_db_path.parent}")
+                
+        except Exception as e:
+            click.echo(
+                click.style("❌ Error: ", fg="red", bold=True) +
+                f"Failed to initialize identity resolver: {e}"
+            )
+            click.echo(
+                click.style("💡 Fix: ", fg="blue", bold=True) +
+                "Try one of these solutions:"
+            )
+            click.echo(f"   • Check directory permissions: {cache_dir}")
+            click.echo(f"   • Check available disk space: {cache_dir}")
+            click.echo("   • Run with different cache directory:")
+            click.echo(f"     export GITFLOW_CACHE_DIR=/tmp/gitflow-cache")
+            click.echo("   • Run in readonly mode (analysis will work, no persistence):")
+            click.echo(f"     chmod -w {cache_dir}")
+            raise click.ClickException(f"Identity resolver initialization failed: {e}")
 
         # Prepare ML categorization config for analyzer
         ml_config = None
@@ -362,6 +505,33 @@ def analyze(
                 'enable_caching': cfg.analysis.ml_categorization.enable_caching,
                 'spacy_model': cfg.analysis.ml_categorization.spacy_model,
             }
+        
+        # LLM classification configuration
+        llm_config = {
+            'enabled': cfg.analysis.llm_classification.enabled,
+            'api_key': cfg.analysis.llm_classification.api_key,
+            'model': cfg.analysis.llm_classification.model,
+            'confidence_threshold': cfg.analysis.llm_classification.confidence_threshold,
+            'max_tokens': cfg.analysis.llm_classification.max_tokens,
+            'temperature': cfg.analysis.llm_classification.temperature,
+            'timeout_seconds': cfg.analysis.llm_classification.timeout_seconds,
+            'cache_duration_days': cfg.analysis.llm_classification.cache_duration_days,
+            'enable_caching': cfg.analysis.llm_classification.enable_caching,
+            'max_daily_requests': cfg.analysis.llm_classification.max_daily_requests,
+            'domain_terms': cfg.analysis.llm_classification.domain_terms,
+        }
+
+        # Configure branch analysis
+        branch_analysis_config = {
+            'strategy': cfg.analysis.branch_analysis.strategy,
+            'max_branches_per_repo': cfg.analysis.branch_analysis.max_branches_per_repo,
+            'active_days_threshold': cfg.analysis.branch_analysis.active_days_threshold,
+            'include_main_branches': cfg.analysis.branch_analysis.include_main_branches,
+            'always_include_patterns': cfg.analysis.branch_analysis.always_include_patterns,
+            'always_exclude_patterns': cfg.analysis.branch_analysis.always_exclude_patterns,
+            'enable_progress_logging': cfg.analysis.branch_analysis.enable_progress_logging,
+            'branch_commit_limit': cfg.analysis.branch_analysis.branch_commit_limit,
+        }
 
         analyzer = GitAnalyzer(
             cache,
@@ -369,6 +539,8 @@ def analyze(
             allowed_ticket_platforms=getattr(cfg.analysis, "ticket_platforms", None),
             exclude_paths=cfg.analysis.exclude_paths,
             ml_categorization_config=ml_config,
+            llm_config=llm_config,
+            branch_analysis_config=branch_analysis_config,
         )
         orchestrator = IntegrationOrchestrator(cfg, cache)
 
@@ -422,61 +594,302 @@ def analyze(
                 f"   Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
             )
 
-        # Analyze repositories
-        all_commits = []
-        all_prs = []
-        all_enrichments = {}
-        branch_health_metrics = {}  # Store branch health metrics per repository
-
-        for repo_config in repositories_to_analyze:
+        # Initialize variables for both batch and non-batch modes
+        developer_stats = None
+        ticket_analysis = None
+        
+        # Check if we should use batch classification (two-step process)
+        if use_batch_classification:
             if display:
-                display.update_progress_task("repos", description=f"Analyzing {repo_config.name}...")
+                display.print_status("Using two-step process: fetch then classify...", "info")
             else:
-                click.echo(f"\n📁 Analyzing {repo_config.name}...")
-
-            # Check if repo exists, clone if needed
-            if not repo_config.path.exists():
-                # Try to clone if we have a github_repo configured
-                if repo_config.github_repo and cfg.github.organization:
+                click.echo("🔄 Using two-step process: fetch then classify...")
+            
+            # Step 1: Always fetch data (repository updates are critical)
+            if display:
+                display.print_status("Step 1: Fetching raw data...", "info")
+            else:
+                click.echo("📥 Step 1: Fetching raw data...")
+            
+            # Perform data fetch for all repositories
+            from .core.data_fetcher import GitDataFetcher
+            
+            data_fetcher = GitDataFetcher(
+                cache=cache,
+                branch_mapping_rules=getattr(cfg.analysis, 'branch_mapping_rules', {}),
+                allowed_ticket_platforms=getattr(cfg.analysis, 'ticket_platforms', ['jira', 'github', 'clickup', 'linear']),
+                exclude_paths=getattr(cfg.analysis, 'exclude_paths', None)
+            )
+            
+            # Initialize integrations for ticket fetching
+            orchestrator = IntegrationOrchestrator(cfg, cache)
+            jira_integration = orchestrator.integrations.get('jira')
+            
+            # Fetch data for each repository
+            total_commits = 0
+            total_tickets = 0
+            
+            for repo_config in repositories_to_analyze:
+                try:
+                    repo_path = Path(repo_config.path)
+                    project_key = repo_config.project_key or repo_path.name
+                    
+                    # Progress callback for fetch
+                    def progress_callback(message: str):
+                        if display:
+                            display.print_status(f"   {message}", "info")
+                    
+                    # Fetch repository data
+                    result = data_fetcher.fetch_repository_data(
+                        repo_path=repo_path,
+                        project_key=project_key,
+                        weeks_back=weeks,
+                        branch_patterns=getattr(repo_config, 'branch_patterns', None),
+                        jira_integration=jira_integration,
+                        progress_callback=progress_callback
+                    )
+                    
+                    total_commits += result['stats']['total_commits']
+                    total_tickets += result['stats']['unique_tickets']
+                    
                     if display:
-                        display.print_status("Cloning repository from GitHub...", "info")
+                        display.print_status(
+                            f"   ✅ {project_key}: {result['stats']['total_commits']} commits, "
+                            f"{result['stats']['unique_tickets']} tickets", 
+                            "success"
+                        )
+                    
+                except Exception as e:
+                    if display:
+                        display.print_status(f"   ❌ Error fetching {project_key}: {e}", "error")
                     else:
-                        click.echo("   📥 Cloning repository from GitHub...")
-                    try:
-                        # Ensure parent directory exists
-                        repo_config.path.parent.mkdir(parents=True, exist_ok=True)
+                        click.echo(f"   ❌ Error fetching {project_key}: {e}")
+                    continue
+            
+            if display:
+                display.print_status(f"Step 1 complete: {total_commits} commits, {total_tickets} tickets fetched", "success")
+            else:
+                    click.echo(f"📥 Step 1 complete: {total_commits} commits, {total_tickets} tickets fetched")
+            
+            # Step 2: Batch classification
+            if display:
+                display.print_status("Step 2: Batch classification...", "info")
+            else:
+                click.echo("🧠 Step 2: Batch classification...")
+            
+            # Use batch classifier instead of regular analyzer
+            from .classification.batch_classifier import BatchCommitClassifier
+            
+            # Extract LLM config for batch classifier
+            llm_config = {
+                'enabled': cfg.analysis.llm_classification.enabled,
+                'api_key': cfg.analysis.llm_classification.api_key,
+                'model': cfg.analysis.llm_classification.model,
+                'confidence_threshold': cfg.analysis.llm_classification.confidence_threshold,
+                'max_tokens': cfg.analysis.llm_classification.max_tokens,
+                'temperature': cfg.analysis.llm_classification.temperature,
+                'timeout_seconds': cfg.analysis.llm_classification.timeout_seconds,
+                'cache_duration_days': cfg.analysis.llm_classification.cache_duration_days,
+                'enable_caching': cfg.analysis.llm_classification.enable_caching,
+                'max_daily_requests': cfg.analysis.llm_classification.max_daily_requests,
+            }
+            
+            batch_classifier = BatchCommitClassifier(
+                cache_dir=cfg.cache.directory,
+                llm_config=llm_config,
+                batch_size=50,
+                confidence_threshold=cfg.analysis.llm_classification.confidence_threshold,
+                fallback_enabled=True,
+            )
+            
+            # Get project keys from repositories
+            project_keys = []
+            for repo_config in repositories_to_analyze:
+                project_key = repo_config.project_key or repo_config.name
+                project_keys.append(project_key)
+            
+            # Run batch classification
+            classification_result = batch_classifier.classify_date_range(
+                start_date=start_date,
+                end_date=end_date,
+                project_keys=project_keys,
+                force_reclassify=clear_cache
+            )
+            
+            if display:
+                display.print_status(
+                    f"✅ Batch classification completed: {classification_result['processed_batches']} batches, "
+                    f"{classification_result['total_commits']} commits",
+                    "success"
+                )
+            else:
+                click.echo(f"   ✅ Batch classification completed:")
+                click.echo(f"      - Processed batches: {classification_result['processed_batches']}")
+                click.echo(f"      - Total commits: {classification_result['total_commits']}")
+            
+            # Display LLM usage statistics if available
+            if hasattr(batch_classifier, 'llm_classifier'):
+                llm_stats = batch_classifier.llm_classifier.get_statistics()
+                if llm_stats.get('api_calls_made', 0) > 0:
+                    click.echo(f"\n📊 LLM Classification Statistics:")
+                    click.echo(f"   - Model: {llm_stats.get('model', 'Unknown')}")
+                    click.echo(f"   - API calls: {llm_stats.get('api_calls_made', 0)}")
+                    click.echo(f"   - Total tokens: {llm_stats.get('total_tokens_used', 0):,}")
+                    click.echo(f"   - Total cost: ${llm_stats.get('total_cost', 0):.4f}")
+                    click.echo(f"   - Avg tokens/call: {llm_stats.get('average_tokens_per_call', 0):.0f}")
+                    
+                    # Show cache statistics if available
+                    cache_stats = llm_stats.get('cache_statistics', {})
+                    if cache_stats.get('active_entries', 0) > 0:
+                        click.echo(f"   - Cache hits: {cache_stats.get('active_entries', 0)} cached predictions")
+            
+            # Skip to report generation by setting empty collections but continue with the flow
+            # The reports will read from the database instead of memory
+            all_commits = []
+            all_prs = []
+            all_enrichments = {}
+            branch_health_metrics = {}
+            
+            # Skip repository analysis loop by setting a flag
+            skip_repository_analysis = True
+            
+            # Load classified commits from database for report generation
+            if display:
+                display.print_status("Loading classified commits from database...", "info")
+            else:
+                click.echo("📊 Loading classified commits from database...")
+            
+            # Load commits from cache for the analysis period
+            with cache.get_session() as session:
+                from sqlalchemy import and_
+                from .models.database import CachedCommit
+                
+                # Query commits for the analysis period across all repositories
+                cached_commits = (
+                    session.query(CachedCommit)
+                    .filter(
+                        and_(
+                            CachedCommit.timestamp >= start_date,
+                            CachedCommit.timestamp <= end_date,
+                            # Filter by project repositories if needed
+                            CachedCommit.repo_path.in_([str(repo.path) for repo in repositories_to_analyze])
+                        )
+                    )
+                    .order_by(CachedCommit.timestamp.desc())
+                    .all()
+                )
+                
+                # Convert cached commits to the format expected by reports
+                all_commits = []
+                for cached_commit in cached_commits:
+                    commit_dict = cache._commit_to_dict(cached_commit)
+                    # Ensure required fields for report generation
+                    if 'project_key' not in commit_dict:
+                        # Infer project key from repo path
+                        repo_path = Path(cached_commit.repo_path)
+                        # Find matching repository config
+                        for repo_config in repositories_to_analyze:
+                            if repo_config.path == repo_path:
+                                commit_dict['project_key'] = repo_config.project_key or repo_config.name
+                                break
+                        else:
+                            commit_dict['project_key'] = repo_path.name
+                    
+                    # Add canonical_id field needed for reports
+                    # This will be properly resolved by identity_resolver later
+                    commit_dict['canonical_id'] = cached_commit.author_email or 'unknown'
+                    
+                    all_commits.append(commit_dict)
+                
+                if display:
+                    display.print_status(f"Loaded {len(all_commits)} classified commits from database", "success")
+                else:
+                    click.echo(f"✅ Loaded {len(all_commits)} classified commits from database")
+            
+            # Process the loaded commits to generate required statistics
+            # Update developer identities
+            if display:
+                display.print_status("Processing developer identities...", "info")
+            else:
+                click.echo("👥 Processing developer identities...")
+                
+            identity_resolver.update_commit_stats(all_commits)
+            developer_stats = identity_resolver.get_developer_stats()
+            
+            if display:
+                display.print_status(f"Identified {len(developer_stats)} unique developers", "success")
+            else:
+                click.echo(f"   ✅ Identified {len(developer_stats)} unique developers")
+            
+            # Analyze ticket references using loaded commits
+            if display:
+                display.print_status("Analyzing ticket references...", "info")
+            else:
+                click.echo("🎫 Analyzing ticket references...")
+                
+            ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(all_commits, all_prs)
+            
+        else:
+            skip_repository_analysis = False
+            # Initialize collections for traditional mode
+            all_commits = []
+            all_prs = []
+            all_enrichments = {}
+            branch_health_metrics = {}  # Store branch health metrics per repository
 
-                        # Clone the repository
-                        clone_url = f"https://github.com/{repo_config.github_repo}.git"
-                        if cfg.github.token:
-                            # Use token for authentication
-                            clone_url = f"https://{cfg.github.token}@github.com/{repo_config.github_repo}.git"
+        # Analyze repositories (traditional mode or forced fetch)
+        # Note: In batch mode, these are already populated from database
+        
+        if not skip_repository_analysis:
+            for repo_config in repositories_to_analyze:
+                if display:
+                    display.update_progress_task("repos", description=f"Analyzing {repo_config.name}...")
+                else:
+                    click.echo(f"\n📁 Analyzing {repo_config.name}...")
 
-                        # Try to clone with specified branch, fall back to default if it fails
+                # Check if repo exists, clone if needed
+                if not repo_config.path.exists():
+                    # Try to clone if we have a github_repo configured
+                    if repo_config.github_repo and cfg.github.organization:
+                        if display:
+                            display.print_status("Cloning repository from GitHub...", "info")
+                        else:
+                            click.echo("   📥 Cloning repository from GitHub...")
                         try:
-                            if repo_config.branch:
-                                git.Repo.clone_from(clone_url, repo_config.path, branch=repo_config.branch)
-                            else:
-                                git.Repo.clone_from(clone_url, repo_config.path)
-                        except git.GitCommandError as e:
-                            if repo_config.branch and "Remote branch" in str(e) and "not found" in str(e):
-                                # Branch doesn't exist, try cloning without specifying branch
-                                if display:
-                                    display.print_status(f"Branch '{repo_config.branch}' not found, using repository default", "warning")
+                            # Ensure parent directory exists
+                            repo_config.path.parent.mkdir(parents=True, exist_ok=True)
+
+                            # Clone the repository
+                            clone_url = f"https://github.com/{repo_config.github_repo}.git"
+                            if cfg.github.token:
+                                # Use token for authentication
+                                clone_url = f"https://{cfg.github.token}@github.com/{repo_config.github_repo}.git"
+
+                            # Try to clone with specified branch, fall back to default if it fails
+                            try:
+                                if repo_config.branch:
+                                    git.Repo.clone_from(clone_url, repo_config.path, branch=repo_config.branch)
                                 else:
-                                    click.echo(f"   ⚠️  Branch '{repo_config.branch}' not found, using repository default")
-                                git.Repo.clone_from(clone_url, repo_config.path)
+                                    git.Repo.clone_from(clone_url, repo_config.path)
+                            except git.GitCommandError as e:
+                                if repo_config.branch and "Remote branch" in str(e) and "not found" in str(e):
+                                    # Branch doesn't exist, try cloning without specifying branch
+                                    if display:
+                                        display.print_status(f"Branch '{repo_config.branch}' not found, using repository default", "warning")
+                                    else:
+                                        click.echo(f"   ⚠️  Branch '{repo_config.branch}' not found, using repository default")
+                                    git.Repo.clone_from(clone_url, repo_config.path)
+                                else:
+                                    raise
+                            if display:
+                                display.print_status(f"Successfully cloned {repo_config.github_repo}", "success")
                             else:
-                                raise
-                        if display:
-                            display.print_status(f"Successfully cloned {repo_config.github_repo}", "success")
-                        else:
-                            click.echo(f"   ✅ Successfully cloned {repo_config.github_repo}")
-                    except Exception as e:
-                        if display:
-                            display.print_status(f"Failed to clone repository: {e}", "error")
-                        else:
-                            click.echo(f"   ❌ Failed to clone repository: {e}")
+                                click.echo(f"   ✅ Successfully cloned {repo_config.github_repo}")
+                        except Exception as e:
+                            if display:
+                                display.print_status(f"Failed to clone repository: {e}", "error")
+                            else:
+                                click.echo(f"   ❌ Failed to clone repository: {e}")
                         continue
                 else:
                     if display:
@@ -548,7 +961,6 @@ def analyze(
                     display.print_status(f"Error: {e}", "error")
                 else:
                     click.echo(f"   ❌ Error: {e}")
-                continue
             finally:
                 if display:
                     display.update_progress_task("repos", advance=1)
@@ -809,10 +1221,8 @@ def analyze(
         else:
             click.echo("\n🎫 Analyzing ticket references...")
             
-        ticket_extractor = TicketExtractor(
-            allowed_platforms=getattr(cfg.analysis, "ticket_platforms", None)
-        )
-        ticket_analysis = ticket_extractor.analyze_ticket_coverage(all_commits, all_prs)
+        # Use the analyzer's ticket extractor which may be ML-enhanced
+        ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(all_commits, all_prs)
 
         for platform, count in ticket_analysis["ticket_summary"].items():
             if display:
@@ -820,9 +1230,74 @@ def analyze(
             else:
                 click.echo(f"   - {platform.title()}: {count} unique tickets")
 
+        # Store daily metrics in database for reporting
+        if display:
+            display.print_status("Storing daily metrics for database-backed reporting...", "info")
+        else:
+            click.echo("\n💾 Storing daily metrics for database-backed reporting...")
+        
+        try:
+            from .core.metrics_storage import DailyMetricsStorage
+            
+            # Initialize daily metrics storage
+            metrics_db_path = cfg.cache.directory / "daily_metrics.db"
+            metrics_storage = DailyMetricsStorage(metrics_db_path)
+            
+            # Get developer identities for storage
+            developer_identities = {}
+            for commit in all_commits:
+                email = commit.get('author_email', '')
+                canonical_id = commit.get('canonical_id', email)
+                name = commit.get('author_name', 'Unknown')
+                developer_identities[email] = {
+                    'canonical_id': canonical_id,
+                    'name': name,
+                    'email': email
+                }
+            
+            # Store metrics for each day in the analysis period
+            from datetime import date
+            current_date = start_date.date() if hasattr(start_date, 'date') else start_date
+            end_date_obj = (start_date + timedelta(weeks=weeks)).date() if hasattr(start_date, 'date') else (start_date + timedelta(weeks=weeks))
+            
+            daily_commits = {}
+            for commit in all_commits:
+                commit_date = commit.get('timestamp')
+                if commit_date:
+                    if hasattr(commit_date, 'date'):
+                        commit_date = commit_date.date()
+                    elif isinstance(commit_date, str):
+                        from datetime import datetime as dt
+                        commit_date = dt.fromisoformat(commit_date.replace('Z', '+00:00')).date()
+                    
+                    if commit_date not in daily_commits:
+                        daily_commits[commit_date] = []
+                    daily_commits[commit_date].append(commit)
+            
+            total_records = 0
+            for analysis_date, day_commits in daily_commits.items():
+                if current_date <= analysis_date <= end_date_obj:
+                    records = metrics_storage.store_daily_metrics(
+                        analysis_date, day_commits, developer_identities
+                    )
+                    total_records += records
+            
+            if display:
+                display.print_status(f"Stored {total_records} daily metric records", "success")
+            else:
+                click.echo(f"   ✅ Stored {total_records} daily metric records")
+                
+        except Exception as e:
+            logger.error(f"Failed to store daily metrics: {e}")
+            if display:
+                display.print_status(f"Failed to store daily metrics: {e}", "warning")
+            else:
+                click.echo(f"   ⚠️  Failed to store daily metrics: {e}")
+
         # Perform qualitative analysis if enabled
         qualitative_results = []
-        if (enable_qualitative or qualitative_only) and cfg.qualitative and cfg.qualitative.enabled:
+        qual_cost_stats = None
+        if (enable_qualitative or qualitative_only or (cfg.qualitative and cfg.qualitative.enabled)) and cfg.qualitative:
             if display:
                 display.print_status("Performing qualitative analysis...", "info")
             else:
@@ -886,6 +1361,13 @@ def analyze(
                 
                 # Get processing statistics and show them
                 qual_stats = qual_processor.get_processing_statistics()
+                
+                # Extract cost statistics for later display
+                if qual_stats and 'llm_statistics' in qual_stats:
+                    llm_stats = qual_stats['llm_statistics']
+                    if llm_stats.get('model_usage') == 'available':
+                        qual_cost_stats = llm_stats.get('cost_tracking', {})
+                
                 if display:
                     display.show_qualitative_stats(qual_stats)
                 else:
@@ -963,7 +1445,7 @@ def analyze(
                     "metrics": {}
                 }
                 
-                for repo_name, enrichment in all_enrichments.items():
+                for _repo_name, enrichment in all_enrichments.items():
                     pm_data = enrichment.get("pm_data", {})
                     if pm_data:
                         # Aggregate issues by platform
@@ -993,9 +1475,15 @@ def analyze(
 
         # Generate reports
         if display:
-            display.print_status("Generating reports...", "info")
+            if generate_csv:
+                display.print_status("Generating reports...", "info")
+            else:
+                display.print_status("Generating narrative report (CSV generation disabled)...", "info")
         else:
-            click.echo("\n📊 Generating reports...")
+            if generate_csv:
+                click.echo("\n📊 Generating reports...")
+            else:
+                click.echo("\n📊 Generating narrative report (CSV generation disabled)...")
         
         logger.debug(f"Starting report generation with {len(all_commits)} commits")
         
@@ -1007,95 +1495,98 @@ def analyze(
         # Collect generated report files for display
         generated_reports = []
         
-        # Weekly metrics report
-        weekly_report = output / f'weekly_metrics_{datetime.now(timezone.utc).strftime("%Y%m%d")}.csv'
-        try:
-            logger.debug("Starting weekly metrics report generation")
-            report_gen.generate_weekly_report(all_commits, developer_stats, weekly_report, weeks)
-            logger.debug("Weekly metrics report completed successfully")
-            generated_reports.append(weekly_report.name)
-            if not display:
-                click.echo(f"   ✅ Weekly metrics: {weekly_report}")
-        except Exception as e:
-            logger.error(f"Error in weekly metrics report generation: {e}")
+        # Weekly metrics report (only if CSV generation is enabled)
+        if generate_csv:
+            weekly_report = output / f'weekly_metrics_{datetime.now(timezone.utc).strftime("%Y%m%d")}.csv'
             try:
-                handle_timezone_error(e, "weekly metrics report", all_commits, logger)
-            except:
-                pass
+                logger.debug("Starting weekly metrics report generation")
+                report_gen.generate_weekly_report(all_commits, developer_stats, weekly_report, weeks)
+                logger.debug("Weekly metrics report completed successfully")
+                generated_reports.append(weekly_report.name)
+                if not display:
+                    click.echo(f"   ✅ Weekly metrics: {weekly_report}")
+            except Exception as e:
+                logger.error(f"Error in weekly metrics report generation: {e}")
+                with contextlib.suppress(builtins.BaseException):
+                    handle_timezone_error(e, "weekly metrics report", all_commits, logger)
                 
-        # Developer activity summary with curve normalization
-        activity_summary_report = output / f'developer_activity_summary_{datetime.now(timezone.utc).strftime("%Y%m%d")}.csv'
-        try:
-            logger.debug("Starting developer activity summary report generation")
-            report_gen.generate_developer_activity_summary(
-                all_commits, developer_stats, all_prs, activity_summary_report, weeks
-            )
-            logger.debug("Developer activity summary report completed successfully")
-            generated_reports.append(activity_summary_report.name)
-            if not display:
-                click.echo(f"   ✅ Developer activity summary: {activity_summary_report}")
-        except Exception as e:
-            logger.error(f"Error in developer activity summary report generation: {e}")
+        # Developer activity summary with curve normalization (only if CSV generation is enabled)
+        if generate_csv:
+            activity_summary_report = output / f'developer_activity_summary_{datetime.now(timezone.utc).strftime("%Y%m%d")}.csv'
             try:
-                handle_timezone_error(e, "developer activity summary report", all_commits, logger)
-            except:
-                pass  # Let the original error handling below take over
-            click.echo(f"   ❌ Error generating weekly metrics report: {e}")
-            click.echo(f"   🔍 Error type: {type(e).__name__}")
-            click.echo(f"   📍 Error details: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise
+                logger.debug("Starting developer activity summary report generation")
+                report_gen.generate_developer_activity_summary(
+                    all_commits, developer_stats, all_prs, activity_summary_report, weeks
+                )
+                logger.debug("Developer activity summary report completed successfully")
+                generated_reports.append(activity_summary_report.name)
+                if not display:
+                    click.echo(f"   ✅ Developer activity summary: {activity_summary_report}")
+            except Exception as e:
+                logger.error(f"Error in developer activity summary report generation: {e}")
+                try:
+                    handle_timezone_error(e, "developer activity summary report", all_commits, logger)
+                except:
+                    pass  # Let the original error handling below take over
+                click.echo(f"   ❌ Error generating weekly metrics report: {e}")
+                click.echo(f"   🔍 Error type: {type(e).__name__}")
+                click.echo(f"   📍 Error details: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
 
-        # Summary report
-        summary_report = output / f'summary_{datetime.now().strftime("%Y%m%d")}.csv'
-        try:
-            report_gen.generate_summary_report(
-                all_commits, all_prs, developer_stats, ticket_analysis, summary_report, aggregated_pm_data
-            )
-            generated_reports.append(summary_report.name)
-            if not display:
-                click.echo(f"   ✅ Summary stats: {summary_report}")
-        except Exception as e:
-            click.echo(f"   ❌ Error generating summary report: {e}")
-            click.echo(f"   🔍 Error type: {type(e).__name__}")
-            click.echo(f"   📍 Error details: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise
+        # Summary report (only if CSV generation is enabled)
+        if generate_csv:
+            summary_report = output / f'summary_{datetime.now().strftime("%Y%m%d")}.csv'
+            try:
+                report_gen.generate_summary_report(
+                    all_commits, all_prs, developer_stats, ticket_analysis, summary_report, aggregated_pm_data
+                )
+                generated_reports.append(summary_report.name)
+                if not display:
+                    click.echo(f"   ✅ Summary stats: {summary_report}")
+            except Exception as e:
+                click.echo(f"   ❌ Error generating summary report: {e}")
+                click.echo(f"   🔍 Error type: {type(e).__name__}")
+                click.echo(f"   📍 Error details: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
 
-        # Developer report
-        developer_report = output / f'developers_{datetime.now().strftime("%Y%m%d")}.csv'
-        try:
-            report_gen.generate_developer_report(developer_stats, developer_report)
-            generated_reports.append(developer_report.name)
-            if not display:
-                click.echo(f"   ✅ Developer stats: {developer_report}")
-        except Exception as e:
-            click.echo(f"   ❌ Error generating developer report: {e}")
-            click.echo(f"   🔍 Error type: {type(e).__name__}")
-            click.echo(f"   📍 Error details: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise
+        # Developer report (only if CSV generation is enabled)
+        if generate_csv:
+            developer_report = output / f'developers_{datetime.now().strftime("%Y%m%d")}.csv'
+            try:
+                report_gen.generate_developer_report(developer_stats, developer_report)
+                generated_reports.append(developer_report.name)
+                if not display:
+                    click.echo(f"   ✅ Developer stats: {developer_report}")
+            except Exception as e:
+                click.echo(f"   ❌ Error generating developer report: {e}")
+                click.echo(f"   🔍 Error type: {type(e).__name__}")
+                click.echo(f"   📍 Error details: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
 
-        # Untracked commits report  
-        untracked_commits_report = output / f'untracked_commits_{datetime.now().strftime("%Y%m%d")}.csv'
-        try:
-            report_gen.generate_untracked_commits_report(ticket_analysis, untracked_commits_report)
-            generated_reports.append(untracked_commits_report.name)
-            if not display:
-                click.echo(f"   ✅ Untracked commits: {untracked_commits_report}")
-        except Exception as e:
-            click.echo(f"   ❌ Error generating untracked commits report: {e}")
-            click.echo(f"   🔍 Error type: {type(e).__name__}")
-            click.echo(f"   📍 Error details: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise
+        # Untracked commits report (only if CSV generation is enabled)
+        if generate_csv:
+            untracked_commits_report = output / f'untracked_commits_{datetime.now().strftime("%Y%m%d")}.csv'
+            try:
+                report_gen.generate_untracked_commits_report(ticket_analysis, untracked_commits_report)
+                generated_reports.append(untracked_commits_report.name)
+                if not display:
+                    click.echo(f"   ✅ Untracked commits: {untracked_commits_report}")
+            except Exception as e:
+                click.echo(f"   ❌ Error generating untracked commits report: {e}")
+                click.echo(f"   🔍 Error type: {type(e).__name__}")
+                click.echo(f"   📍 Error details: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
 
-        # PM Correlations report (if PM data is available)
-        if aggregated_pm_data:
+        # PM Correlations report (if PM data is available and CSV generation is enabled)
+        if aggregated_pm_data and generate_csv:
             pm_correlations_report = output / f'pm_correlations_{datetime.now().strftime("%Y%m%d")}.csv'
             try:
                 report_gen.generate_pm_correlations_report(aggregated_pm_data, pm_correlations_report)
@@ -1105,7 +1596,7 @@ def analyze(
             except Exception as e:
                 click.echo(f"   ⚠️ Warning: PM correlations report failed: {e}")
 
-        # Activity distribution report
+        # Activity distribution report (always generate data, optionally write CSV)
         activity_report = output / f'activity_distribution_{datetime.now().strftime("%Y%m%d")}.csv'
         try:
             logger.debug("Starting activity distribution report generation")
@@ -1113,9 +1604,10 @@ def analyze(
                 all_commits, developer_stats, activity_report
             )
             logger.debug("Activity distribution report completed successfully")
-            generated_reports.append(activity_report.name)
-            if not display:
-                click.echo(f"   ✅ Activity distribution: {activity_report}")
+            if generate_csv:
+                generated_reports.append(activity_report.name)
+                if not display:
+                    click.echo(f"   ✅ Activity distribution: {activity_report}")
         except Exception as e:
             logger.error(f"Error in activity distribution report generation: {e}")
             try:
@@ -1129,7 +1621,7 @@ def analyze(
             traceback.print_exc()
             raise
 
-        # Developer focus report
+        # Developer focus report (always generate data, optionally write CSV)
         focus_report = output / f'developer_focus_{datetime.now().strftime("%Y%m%d")}.csv'
         try:
             logger.debug("Starting developer focus report generation")
@@ -1137,9 +1629,10 @@ def analyze(
                 all_commits, developer_stats, focus_report, weeks
             )
             logger.debug("Developer focus report completed successfully")
-            generated_reports.append(focus_report.name)
-            if not display:
-                click.echo(f"   ✅ Developer focus: {focus_report}")
+            if generate_csv:
+                generated_reports.append(focus_report.name)
+                if not display:
+                    click.echo(f"   ✅ Developer focus: {focus_report}")
         except Exception as e:
             logger.error(f"Error in developer focus report generation: {e}")
             try:
@@ -1153,7 +1646,7 @@ def analyze(
             traceback.print_exc()
             raise
 
-        # Qualitative insights report
+        # Qualitative insights report (always generate data, optionally write CSV)
         insights_report = output / f'qualitative_insights_{datetime.now().strftime("%Y%m%d")}.csv'
         try:
             logger.debug("Starting qualitative insights report generation")
@@ -1161,14 +1654,15 @@ def analyze(
                 all_commits, developer_stats, ticket_analysis, insights_report
             )
             logger.debug("Qualitative insights report completed successfully")
-            generated_reports.append(insights_report.name)
-            if not display:
-                click.echo(f"   ✅ Qualitative insights: {insights_report}")
+            if generate_csv:
+                generated_reports.append(insights_report.name)
+                if not display:
+                    click.echo(f"   ✅ Qualitative insights: {insights_report}")
         except Exception as e:
             logger.error(f"Error in qualitative insights report generation: {e}")
             
-        # Branch health report
-        if branch_health_metrics:
+        # Branch health report (only if CSV generation is enabled)
+        if branch_health_metrics and generate_csv:
             from .reports.branch_health_writer import BranchHealthReportGenerator
             branch_health_gen = BranchHealthReportGenerator()
             
@@ -1195,37 +1689,63 @@ def analyze(
                 logger.error(f"Error in detailed branch report generation: {e}")
                 click.echo(f"   ❌ Error generating detailed branch report: {e}")
         
-        # Weekly trends report (includes developer and project trends)
-        trends_report = output / f'weekly_trends_{datetime.now().strftime("%Y%m%d")}.csv'
-        try:
-            logger.debug("Starting weekly trends report generation")
-            analytics_gen.generate_weekly_trends_report(
-                all_commits, developer_stats, trends_report, weeks
-            )
-            logger.debug("Weekly trends report completed successfully")
-            generated_reports.append(trends_report.name)
+        # Weekly classification trends reports (developer and project) (only if CSV generation is enabled)
+        if generate_csv:
+            weekly_trends_writer = WeeklyTrendsWriter()
+            date_suffix = f"_{datetime.now().strftime('%Y%m%d')}"
             
-            # Check for additional trend files generated
-            timestamp = trends_report.stem.split("_")[-1]
-            dev_trends_file = output / f'developer_trends_{timestamp}.csv'
-            proj_trends_file = output / f'project_trends_{timestamp}.csv'
-            
-            if dev_trends_file.exists():
-                generated_reports.append(dev_trends_file.name)
-            if proj_trends_file.exists():
-                generated_reports.append(proj_trends_file.name)
+            try:
+                logger.debug("Starting weekly classification trends report generation")
+                trends_paths = weekly_trends_writer.generate_weekly_trends_reports(
+                    all_commits, output, weeks, date_suffix
+                )
+                logger.debug("Weekly classification trends reports completed successfully")
                 
-            if not display:
-                click.echo(f"   ✅ Weekly trends: {trends_report}")
+                # Add both reports to generated reports list
+                for report_type, report_path in trends_paths.items():
+                    generated_reports.append(report_path.name)
+                    if not display:
+                        trend_type = "Developer" if "developer" in report_type else "Project"
+                        click.echo(f"   ✅ {trend_type} weekly trends: {report_path}")
+                        
+            except Exception as e:
+                logger.error(f"Error in weekly classification trends report generation: {e}")
+                click.echo(f"   ❌ Error generating weekly classification trends reports: {e}")
+                click.echo(f"   🔍 Error type: {type(e).__name__}")
+                click.echo(f"   📍 Error details: {str(e)}")
+        
+        # Weekly trends report (includes developer and project trends) (only if CSV generation is enabled)
+        if generate_csv:
+            trends_report = output / f'weekly_trends_{datetime.now().strftime("%Y%m%d")}.csv'
+            try:
+                logger.debug("Starting weekly trends report generation")
+                analytics_gen.generate_weekly_trends_report(
+                    all_commits, developer_stats, trends_report, weeks
+                )
+                logger.debug("Weekly trends report completed successfully")
+                generated_reports.append(trends_report.name)
+                
+                # Check for additional trend files generated
+                timestamp = trends_report.stem.split("_")[-1]
+                dev_trends_file = output / f'developer_trends_{timestamp}.csv'
+                proj_trends_file = output / f'project_trends_{timestamp}.csv'
+                
                 if dev_trends_file.exists():
-                    click.echo(f"   ✅ Developer trends: {dev_trends_file}")
+                    generated_reports.append(dev_trends_file.name)
                 if proj_trends_file.exists():
-                    click.echo(f"   ✅ Project trends: {proj_trends_file}")
-        except Exception as e:
-            logger.error(f"Error in weekly trends report generation: {e}")
-            handle_timezone_error(e, "weekly trends report", all_commits, logger)
-            click.echo(f"   ❌ Error generating weekly trends report: {e}")
-            raise
+                    generated_reports.append(proj_trends_file.name)
+                
+                if not display:
+                    click.echo(f"   ✅ Weekly trends: {trends_report}")
+                    if dev_trends_file.exists():
+                        click.echo(f"   ✅ Developer trends: {dev_trends_file}")
+                    if proj_trends_file.exists():
+                        click.echo(f"   ✅ Project trends: {proj_trends_file}")
+            except Exception as e:
+                logger.error(f"Error in weekly trends report generation: {e}")
+                handle_timezone_error(e, "weekly trends report", all_commits, logger)
+                click.echo(f"   ❌ Error generating weekly trends report: {e}")
+                raise
 
         # Calculate DORA metrics
         try:
@@ -1272,8 +1792,11 @@ def analyze(
             raise
 
 
-        # Generate narrative report if markdown format is enabled
+        # Generate markdown reports if enabled
         if "markdown" in cfg.output.formats:
+            # Calculate date range for consistent filename formatting across all markdown reports
+            date_range = f"{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
+            
             try:
                 logger.debug("Starting narrative report generation")
                 narrative_gen = NarrativeReportGenerator()
@@ -1294,7 +1817,8 @@ def analyze(
                 insights_data = cast(list[dict[str, Any]], insights_df.to_dict("records"))
 
                 logger.debug("Generating narrative report")
-                narrative_report = output / f'narrative_report_{datetime.now().strftime("%Y%m%d")}.md'
+                # Use pre-calculated date range for filename consistency
+                narrative_report = output / f'narrative_report_{date_range}.md'
                 
                 # Try to generate ChatGPT summary
                 chatgpt_summary = None
@@ -1335,7 +1859,7 @@ def analyze(
                         }
                         
                         # Add developer data
-                        for dev in developer_stats[:10]:  # Top 10 developers
+                        for dev in developer_stats:  # All developers
                             dev_id = dev.get('canonical_id', dev.get('primary_email', 'unknown'))
                             comprehensive_data["developers"][dev_id] = {
                                 "identity": {"name": dev.get('primary_name', 'Unknown')},
@@ -1386,6 +1910,57 @@ def analyze(
                 import traceback
                 traceback.print_exc()
                 raise
+
+        # Generate database-backed qualitative report
+        if "markdown" in cfg.output.formats:
+            try:
+                logger.debug("Starting database-backed qualitative report generation")
+                if display:
+                    display.print_status("Generating database-backed qualitative report...", "info")
+                else:
+                    click.echo("   🔄 Generating database-backed qualitative report...")
+                
+                # Initialize database report generator
+                from .reports.database_report_generator import DatabaseReportGenerator
+                from .core.metrics_storage import DailyMetricsStorage
+                
+                # Use existing metrics storage from earlier in the pipeline
+                metrics_db_path = cfg.cache.directory / "daily_metrics.db"
+                metrics_storage = DailyMetricsStorage(metrics_db_path)
+                db_report_gen = DatabaseReportGenerator(metrics_storage)
+                
+                # Generate report for the analysis period
+                # Use pre-calculated date range for filename consistency
+                db_qualitative_report = output / f'database_qualitative_report_{date_range}.md'
+                analysis_start_date = start_date.date() if hasattr(start_date, 'date') else start_date
+                analysis_end_date = (start_date + timedelta(weeks=weeks)).date() if hasattr(start_date, 'date') else (start_date + timedelta(weeks=weeks))
+                
+                report_stats = db_report_gen.generate_qualitative_report(
+                    analysis_start_date,
+                    analysis_end_date,
+                    db_qualitative_report
+                )
+                
+                generated_reports.append(db_qualitative_report.name)
+                logger.debug(f"Database qualitative report generated: {report_stats}")
+                
+                if display:
+                    display.print_status(
+                        f"Generated report with {report_stats['total_records']} records, "
+                        f"{report_stats['trends_calculated']} trends",
+                        "success"
+                    )
+                else:
+                    click.echo(f"   ✅ Database qualitative report: {db_qualitative_report}")
+                    click.echo(f"      📊 {report_stats['total_records']} records, {report_stats['trends_calculated']} trends analyzed")
+                
+            except Exception as e:
+                logger.error(f"Error in database qualitative report generation: {e}")
+                if display:
+                    display.print_status(f"Database report generation failed: {e}", "warning")
+                else:
+                    click.echo(f"   ❌ Error generating database qualitative report: {e}")
+                # Don't raise - this is a new feature and shouldn't break existing functionality
 
         # Generate comprehensive JSON export if enabled
         if "json" in cfg.output.formats:
@@ -1447,38 +2022,39 @@ def analyze(
                     click.echo(f"   ✅ Comprehensive JSON export: {json_report}")
                 
                 # Generate HTML report from JSON if requested
-                if "html" in cfg.output.formats:
-                    try:
-                        click.echo("   🔄 Generating HTML report...")
-                        from .reports.html_generator import HTMLReportGenerator
-                        html_report = output / f'gitflow_report_{datetime.now().strftime("%Y%m%d")}.html'
-                        logger.debug("Generating HTML report from JSON data")
-                        
-                        # Read the JSON data we just wrote
-                        if not json_report.exists():
-                            # Check for alternative JSON file name
-                            alt_json = output / f'gitflow_export_{datetime.now().strftime("%Y%m%d")}.json'
-                            if alt_json.exists():
-                                click.echo(f"   ⚠️ Using alternative JSON file: {alt_json.name}")
-                                json_report = alt_json
-                        
-                        with open(json_report) as f:
-                            import json
-                            json_data = json.load(f)
-                        
-                        html_generator = HTMLReportGenerator()
-                        html_generator.generate_report(
-                            json_data=json_data,
-                            output_path=html_report,
-                            title=f"GitFlow Analytics Report - {datetime.now().strftime('%B %Y')}"
-                        )
-                        generated_reports.append(html_report.name)
-                        if not display:
-                            click.echo(f"   ✅ HTML report: {html_report}")
-                        logger.debug("HTML report generation completed successfully")
-                    except Exception as e:
-                        logger.error(f"Error generating HTML report: {e}")
-                        click.echo(f"   ⚠️ Warning: HTML report generation failed: {e}")
+                # NOTE: HTML report generation temporarily disabled for database-backed reporting implementation
+                # if "html" in cfg.output.formats:
+                #     try:
+                #         click.echo("   🔄 Generating HTML report...")
+                #         from .reports.html_generator import HTMLReportGenerator
+                #         html_report = output / f'gitflow_report_{datetime.now().strftime("%Y%m%d")}.html'
+                #         logger.debug("Generating HTML report from JSON data")
+                #         
+                #         # Read the JSON data we just wrote
+                #         if not json_report.exists():
+                #             # Check for alternative JSON file name
+                #             alt_json = output / f'gitflow_export_{datetime.now().strftime("%Y%m%d")}.json'
+                #             if alt_json.exists():
+                #                 click.echo(f"   ⚠️ Using alternative JSON file: {alt_json.name}")
+                #                 json_report = alt_json
+                #         
+                #         with open(json_report) as f:
+                #             import json
+                #             json_data = json.load(f)
+                #         
+                #         html_generator = HTMLReportGenerator()
+                #         html_generator.generate_report(
+                #             json_data=json_data,
+                #             output_path=html_report,
+                #             title=f"GitFlow Analytics Report - {datetime.now().strftime('%B %Y')}"
+                #         )
+                #         generated_reports.append(html_report.name)
+                #         if not display:
+                #             click.echo(f"   ✅ HTML report: {html_report}")
+                #         logger.debug("HTML report generation completed successfully")
+                #     except Exception as e:
+                #         logger.error(f"Error generating HTML report: {e}")
+                #         click.echo(f"   ⚠️ Warning: HTML report generation failed: {e}")
             except Exception as e:
                 logger.error(f"Error in comprehensive JSON export generation: {e}")
                 try:
@@ -1522,9 +2098,48 @@ def analyze(
                 display.show_reports_generated(output, generated_reports)
                 logger.debug("display.show_reports_generated completed successfully")
                 
+                # Show LLM cost summary if cost tracking data is available
+                if qual_cost_stats:
+                    logger.debug("Starting display.show_llm_cost_summary")
+                    display.show_llm_cost_summary(qual_cost_stats)
+                    logger.debug("display.show_llm_cost_summary completed successfully")
+                
                 logger.debug("Starting display.print_status")
                 display.print_status("Analysis complete!", "success")
                 logger.debug("display.print_status completed successfully")
+                
+                # Display cache statistics
+                logger.debug("Starting cache statistics display")
+                try:
+                    cache_stats = cache.get_cache_stats()
+                    
+                    # Display cache performance summary
+                    display.print_status("📊 Cache Performance Summary", "info")
+                    display.print_status(f"  Total requests: {cache_stats['total_requests']}", "info")
+                    display.print_status(f"  Cache hits: {cache_stats['cache_hits']} ({cache_stats['hit_rate_percent']:.1f}%)", "info")
+                    display.print_status(f"  Cache misses: {cache_stats['cache_misses']}", "info")
+                    
+                    if cache_stats['time_saved_seconds'] > 0:
+                        if cache_stats['time_saved_minutes'] >= 1:
+                            display.print_status(f"  Time saved: {cache_stats['time_saved_minutes']:.1f} minutes", "success")
+                        else:
+                            display.print_status(f"  Time saved: {cache_stats['time_saved_seconds']:.1f} seconds", "success")
+                    
+                    # Display cache storage info
+                    display.print_status("💾 Cache Storage", "info")  
+                    display.print_status(f"  Cached commits: {cache_stats['fresh_commits']}", "info")
+                    if cache_stats['stale_commits'] > 0:
+                        display.print_status(f"  Stale commits: {cache_stats['stale_commits']}", "warning")
+                    display.print_status(f"  Database size: {cache_stats['database_size_mb']:.1f} MB", "info")
+                    
+                    if cache_stats['debug_mode']:
+                        display.print_status("🔍 Debug mode active (GITFLOW_DEBUG=1)", "info")
+                        
+                except Exception as e:
+                    logger.error(f"Error displaying cache statistics: {e}")
+                    display.print_status(f"Warning: Could not display cache statistics: {e}", "warning")
+                
+                logger.debug("Cache statistics display completed")
         except Exception as e:
             logger.error(f"Error in final summary/display: {e}")
             try:
@@ -1556,6 +2171,59 @@ def analyze(
                 click.echo(f"   - MTTR: {dora_metrics['mttr_hours']:.1f} hours")
                 click.echo(f"   - Performance level: {dora_metrics['performance_level']}")
 
+            # Show LLM cost summary if available
+            if qual_cost_stats and qual_cost_stats.get('total_cost', 0) > 0:
+                click.echo("\n🤖 LLM Usage Summary:")
+                total_calls = qual_cost_stats.get('total_calls', 0)
+                total_tokens = qual_cost_stats.get('total_tokens', 0)
+                total_cost = qual_cost_stats.get('total_cost', 0)
+                click.echo(f"   - Qualitative Analysis: {total_calls:,} calls, {total_tokens:,} tokens (${total_cost:.4f})")
+                
+                # Show budget info if available
+                daily_budget = 5.0  # Default budget from CostTracker
+                remaining = daily_budget - total_cost
+                utilization = (total_cost / daily_budget) * 100 if daily_budget > 0 else 0
+                click.echo(f"   - Budget: ${daily_budget:.2f}, Remaining: ${remaining:.2f}, Utilization: {utilization:.1f}%")
+                
+                # Show optimization suggestions if cost is significant
+                if total_cost > 0.01:
+                    model_usage = qual_cost_stats.get('model_usage', {})
+                    expensive_models = ['anthropic/claude-3-opus', 'openai/gpt-4']
+                    expensive_cost = sum(model_usage.get(model, {}).get("cost", 0) for model in expensive_models)
+                    
+                    if expensive_cost > total_cost * 0.3:
+                        click.echo("   💡 Cost Optimization: Consider using cheaper models (Claude Haiku, GPT-3.5) for routine tasks (save ~40%)")
+            else:
+                # Show note about token tracking when qualitative analysis is not configured
+                if not (enable_qualitative or (cfg.qualitative and cfg.qualitative.enabled)):
+                    click.echo("\n💡 Note: Token/cost tracking is only available with qualitative analysis enabled.")
+                    click.echo("   Add 'qualitative:' section to your config to enable detailed LLM cost tracking.")
+
+            # Display cache statistics in simple format
+            try:
+                cache_stats = cache.get_cache_stats()
+                click.echo("\n📊 Cache Performance:")
+                click.echo(f"   - Total requests: {cache_stats['total_requests']}")
+                click.echo(f"   - Cache hits: {cache_stats['cache_hits']} ({cache_stats['hit_rate_percent']:.1f}%)")
+                click.echo(f"   - Cache misses: {cache_stats['cache_misses']}")
+                
+                if cache_stats['time_saved_seconds'] > 0:
+                    if cache_stats['time_saved_minutes'] >= 1:
+                        click.echo(f"   - Time saved: {cache_stats['time_saved_minutes']:.1f} minutes")
+                    else:
+                        click.echo(f"   - Time saved: {cache_stats['time_saved_seconds']:.1f} seconds")
+                
+                click.echo(f"   - Cached commits: {cache_stats['fresh_commits']}")
+                if cache_stats['stale_commits'] > 0:
+                    click.echo(f"   - Stale commits: {cache_stats['stale_commits']}")
+                click.echo(f"   - Database size: {cache_stats['database_size_mb']:.1f} MB")
+                
+                if cache_stats['debug_mode']:
+                    click.echo("   - Debug mode: ACTIVE (GITFLOW_DEBUG=1)")
+                    
+            except Exception as e:
+                click.echo(f"   Warning: Could not display cache statistics: {e}")
+
             click.echo(f"\n✅ Analysis complete! Reports saved to {output}")
 
     except Exception as e:
@@ -1574,6 +2242,232 @@ def analyze(
                 display.show_error(error_msg, show_debug_hint=True)
             else:
                 click.echo(f"\n❌ Error: {error_msg}", err=True)
+        
+        if "--debug" in sys.argv:
+            raise
+        sys.exit(1)
+
+
+@cli.command(name="fetch")
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to YAML configuration file",
+)
+@click.option(
+    "--weeks", "-w", type=int, default=4, help="Number of weeks to fetch (default: 4)"
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output directory for cache (overrides config file)",
+)
+@click.option("--clear-cache", is_flag=True, help="Clear cache before fetching data")
+@click.option(
+    "--log",
+    type=click.Choice(["none", "INFO", "DEBUG"], case_sensitive=False),
+    default="none",
+    help="Enable logging with specified level (default: none)"
+)
+@click.option("--rich", is_flag=True, default=True, help="Use rich terminal output (default: enabled)")
+def fetch(
+    config: Path,
+    weeks: int,
+    output: Optional[Path],
+    clear_cache: bool,
+    log: str,
+    rich: bool,
+) -> None:
+    """Fetch raw Git commits and ticket data without classification (Step 1 of 2).
+    
+    This command collects all git commits and ticket data, organizing them by day
+    for efficient batch processing. No LLM classification is performed, making this
+    step fast and cost-effective.
+    
+    Use 'gitflow-analytics analyze' afterwards to classify the fetched data.
+    """
+    # Initialize display
+    display = create_rich_display() if rich else None
+    
+    # Configure logging
+    if log.upper() != "NONE":
+        log_level = getattr(logging, log.upper())
+        logging.basicConfig(
+            level=log_level,
+            format='[%(levelname)s] %(filename)s:%(lineno)d - %(message)s',
+            handlers=[logging.StreamHandler(sys.stderr)],
+            force=True
+        )
+        logging.getLogger('gitflow_analytics').setLevel(log_level)
+        logger = logging.getLogger(__name__)
+        logger.info(f"Logging enabled at {log.upper()} level")
+    else:
+        logging.getLogger().setLevel(logging.CRITICAL)
+        logging.getLogger('gitflow_analytics').setLevel(logging.CRITICAL)
+        logger = logging.getLogger(__name__)
+    
+    try:
+        if display:
+            display.show_header()
+        
+        # Load configuration
+        if display:
+            display.print_status(f"Loading configuration from {config}...", "info")
+        else:
+            click.echo(f"📋 Loading configuration from {config}...")
+            
+        cfg = ConfigLoader.load(config)
+        
+        # Override output directory if provided
+        if output:
+            cfg.cache.directory = output
+        
+        # Initialize cache
+        cache = GitAnalysisCache(cfg.cache.directory)
+        
+        # Clear cache if requested
+        if clear_cache:
+            if display:
+                display.print_status("Clearing cache...", "info")
+            else:
+                click.echo("🗑️  Clearing cache...")
+            cache.clear_all()
+        
+        # Initialize data fetcher
+        from .core.data_fetcher import GitDataFetcher
+        
+        data_fetcher = GitDataFetcher(
+            cache=cache,
+            branch_mapping_rules=getattr(cfg.analysis, 'branch_mapping_rules', {}),
+            allowed_ticket_platforms=getattr(cfg.analysis, 'ticket_platforms', ['jira', 'github', 'clickup', 'linear']),
+            exclude_paths=getattr(cfg.analysis, 'exclude_paths', None)
+        )
+        
+        # Initialize integrations for ticket fetching
+        orchestrator = IntegrationOrchestrator(cfg, cache)
+        jira_integration = orchestrator.integrations.get('jira')
+        
+        # Discovery organization repositories if needed
+        repositories_to_fetch = cfg.repositories
+        if cfg.github.organization and not repositories_to_fetch:
+            if display:
+                display.print_status(f"Discovering repositories from organization: {cfg.github.organization}", "info")
+            else:
+                click.echo(f"🔍 Discovering repositories from organization: {cfg.github.organization}")
+            try:
+                # Use a 'repos' directory in the config directory for cloned repositories
+                config_dir = Path(config).parent if config else Path.cwd()
+                repos_dir = config_dir / "repos"
+                discovered_repos = cfg.discover_organization_repositories(clone_base_path=repos_dir)
+                repositories_to_fetch = discovered_repos
+                
+                if display:
+                    display.print_status(f"Found {len(discovered_repos)} repositories in organization", "success")
+                    # Show repository discovery in structured format
+                    repo_data = [{
+                        "name": repo.name,
+                        "github_repo": repo.github_repo,
+                        "exists": repo.path.exists()
+                    } for repo in discovered_repos]
+                    display.show_repository_discovery(repo_data)
+                else:
+                    click.echo(f"   ✅ Found {len(discovered_repos)} repositories in organization")
+                    for repo in discovered_repos:
+                        click.echo(f"      - {repo.name} ({repo.github_repo})")
+            except Exception as e:
+                if display:
+                    display.show_error(f"Failed to discover repositories: {e}")
+                else:
+                    click.echo(f"   ❌ Failed to discover repositories: {e}")
+                return
+        
+        # Progress tracking
+        total_repos = len(repositories_to_fetch)
+        processed_repos = 0
+        total_commits = 0
+        total_tickets = 0
+        
+        if display:
+            display.print_status(f"Starting data fetch for {total_repos} repositories...", "info")
+        else:
+            click.echo(f"🔄 Starting data fetch for {total_repos} repositories...")
+        
+        # Process each repository
+        for repo_config in repositories_to_fetch:
+            try:
+                repo_path = Path(repo_config.path)
+                project_key = repo_config.project_key or repo_path.name
+                
+                if display:
+                    display.print_status(f"Fetching data for {project_key}...", "info")
+                else:
+                    click.echo(f"📦 Fetching data for {project_key}...")
+                
+                # Progress callback
+                def progress_callback(message: str):
+                    if display:
+                        display.print_status(message, "info")
+                    else:
+                        click.echo(f"   {message}")
+                
+                # Fetch repository data
+                result = data_fetcher.fetch_repository_data(
+                    repo_path=repo_path,
+                    project_key=project_key,
+                    weeks_back=weeks,
+                    branch_patterns=getattr(repo_config, 'branch_patterns', None),
+                    jira_integration=jira_integration,
+                    progress_callback=progress_callback
+                )
+                
+                # Update totals
+                total_commits += result['stats']['total_commits']
+                total_tickets += result['stats']['unique_tickets']
+                processed_repos += 1
+                
+                if display:
+                    display.print_status(
+                        f"✅ {project_key}: {result['stats']['total_commits']} commits, "
+                        f"{result['stats']['unique_tickets']} tickets", 
+                        "success"
+                    )
+                else:
+                    click.echo(f"   ✅ {result['stats']['total_commits']} commits, {result['stats']['unique_tickets']} tickets")
+                
+            except Exception as e:
+                logger.error(f"Error fetching data for {repo_config.path}: {e}")
+                if display:
+                    display.print_status(f"❌ Error fetching {project_key}: {e}", "error")
+                else:
+                    click.echo(f"   ❌ Error: {e}")
+                continue
+        
+        # Show final summary
+        if display:
+            display.print_status(
+                f"🎉 Data fetch completed: {processed_repos}/{total_repos} repositories, "
+                f"{total_commits} commits, {total_tickets} tickets",
+                "success"
+            )
+        else:
+            click.echo(f"\n🎉 Data fetch completed!")
+            click.echo(f"   📊 Processed: {processed_repos}/{total_repos} repositories")
+            click.echo(f"   📝 Commits: {total_commits}")
+            click.echo(f"   🎫 Tickets: {total_tickets}")
+            click.echo(f"\n💡 Next step: Run 'gitflow-analytics analyze -c {config}' to classify the data")
+        
+    except Exception as e:
+        logger.error(f"Fetch command failed: {e}")
+        error_msg = f"Data fetch failed: {e}"
+        
+        if display:
+            display.show_error(error_msg, show_debug_hint=True)
+        else:
+            click.echo(f"\n❌ Error: {error_msg}", err=True)
         
         if "--debug" in sys.argv:
             raise
@@ -1738,6 +2632,33 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
                 'enable_caching': cfg.analysis.ml_categorization.enable_caching,
                 'spacy_model': cfg.analysis.ml_categorization.spacy_model,
             }
+        
+        # LLM classification configuration
+        llm_config = {
+            'enabled': cfg.analysis.llm_classification.enabled,
+            'api_key': cfg.analysis.llm_classification.api_key,
+            'model': cfg.analysis.llm_classification.model,
+            'confidence_threshold': cfg.analysis.llm_classification.confidence_threshold,
+            'max_tokens': cfg.analysis.llm_classification.max_tokens,
+            'temperature': cfg.analysis.llm_classification.temperature,
+            'timeout_seconds': cfg.analysis.llm_classification.timeout_seconds,
+            'cache_duration_days': cfg.analysis.llm_classification.cache_duration_days,
+            'enable_caching': cfg.analysis.llm_classification.enable_caching,
+            'max_daily_requests': cfg.analysis.llm_classification.max_daily_requests,
+            'domain_terms': cfg.analysis.llm_classification.domain_terms,
+        }
+
+        # Configure branch analysis
+        branch_analysis_config = {
+            'strategy': cfg.analysis.branch_analysis.strategy,
+            'max_branches_per_repo': cfg.analysis.branch_analysis.max_branches_per_repo,
+            'active_days_threshold': cfg.analysis.branch_analysis.active_days_threshold,
+            'include_main_branches': cfg.analysis.branch_analysis.include_main_branches,
+            'always_include_patterns': cfg.analysis.branch_analysis.always_include_patterns,
+            'always_exclude_patterns': cfg.analysis.branch_analysis.always_exclude_patterns,
+            'enable_progress_logging': cfg.analysis.branch_analysis.enable_progress_logging,
+            'branch_commit_limit': cfg.analysis.branch_analysis.branch_commit_limit,
+        }
 
         analyzer = GitAnalyzer(
             cache,
@@ -1745,6 +2666,8 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
             allowed_ticket_platforms=getattr(cfg.analysis, "ticket_platforms", None),
             exclude_paths=cfg.analysis.exclude_paths,
             ml_categorization_config=ml_config,
+            llm_config=llm_config,
+            branch_analysis_config=branch_analysis_config,
         )
         
         click.echo("🔍 Analyzing repositories for developer identities...")
@@ -1854,6 +2777,351 @@ def list_developers(config: Path) -> None:
         if len(developers) > 20:
             click.echo(f"\n... and {len(developers) - 20} more developers")
 
+    except Exception as e:
+        click.echo(f"❌ Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to YAML configuration file",
+)
+@click.option(
+    "--weeks", "-w", type=int, default=12, help="Number of weeks to analyze (default: 12)"
+)
+@click.option(
+    "--session-name", 
+    type=str, 
+    default=None, 
+    help="Optional name for the training session"
+)
+@click.option(
+    "--min-examples", 
+    type=int, 
+    default=50, 
+    help="Minimum number of training examples required (default: 50)"
+)
+@click.option(
+    "--validation-split", 
+    type=float, 
+    default=0.2, 
+    help="Fraction of data to use for validation (default: 0.2)"
+)
+@click.option(
+    "--model-type", 
+    type=click.Choice(['random_forest', 'svm', 'naive_bayes']), 
+    default='random_forest',
+    help="Type of model to train (default: random_forest)"
+)
+@click.option(
+    "--incremental", 
+    is_flag=True, 
+    help="Add to existing training data instead of starting fresh"
+)
+@click.option(
+    "--save-training-data", 
+    is_flag=True, 
+    help="Save extracted training data as CSV for inspection"
+)
+@click.option(
+    "--clear-cache", 
+    is_flag=True, 
+    help="Clear cache before training"
+)
+@click.option(
+    "--log",
+    type=click.Choice(["none", "INFO", "DEBUG"], case_sensitive=False),
+    default="INFO",
+    help="Enable logging with specified level (default: INFO)"
+)
+def train(
+    config: Path,
+    weeks: int,
+    session_name: Optional[str],
+    min_examples: int,
+    validation_split: float,
+    model_type: str,
+    incremental: bool,
+    save_training_data: bool,
+    clear_cache: bool,
+    log: str,
+) -> None:
+    """Train a commit classification model using PM platform data.
+    
+    This command analyzes repositories to extract commits with ticket references,
+    uses PM platform data to label commits by ticket type, and trains a machine
+    learning model to classify commits automatically.
+    
+    The training process:
+    1. Extracts commits from configured repositories
+    2. Matches commits with tickets from PM platforms (JIRA, GitHub Issues, etc.)
+    3. Maps ticket types to classification categories
+    4. Trains and validates a classification model
+    5. Saves the model with performance metrics
+    
+    Requirements:
+    - PM platform integration must be configured and enabled
+    - Sufficient commits with ticket references (minimum specified by --min-examples)
+    - scikit-learn dependencies for model training
+    """
+    
+    # Configure logging
+    if log.upper() != "NONE":
+        log_level = getattr(logging, log.upper())
+        logging.basicConfig(
+            level=log_level,
+            format='[%(levelname)s] %(filename)s:%(lineno)d - %(message)s',
+            handlers=[logging.StreamHandler(sys.stderr)],
+            force=True
+        )
+        logger = logging.getLogger(__name__)
+        logger.info(f"Training logging enabled at {log.upper()} level")
+    else:
+        logging.getLogger().setLevel(logging.CRITICAL)
+        logger = logging.getLogger(__name__)
+    
+    try:
+        click.echo("🚀 GitFlow Analytics - Commit Classification Training")
+        click.echo("=" * 60)
+        
+        # Load configuration
+        click.echo(f"📋 Loading configuration from {config}...")
+        cfg = ConfigLoader.load(config)
+        
+        # Validate PM integration is enabled
+        if not cfg.pm_integration or not cfg.pm_integration.enabled:
+            click.echo("❌ Error: PM integration must be enabled for training")
+            click.echo("   Add PM platform configuration to your config file:")
+            click.echo("   ")
+            click.echo("   pm_integration:")
+            click.echo("     enabled: true")
+            click.echo("     platforms:")
+            click.echo("       jira:")
+            click.echo("         enabled: true")
+            click.echo("         config: {...}")
+            sys.exit(1)
+        
+        # Check if any PM platforms are configured
+        active_platforms = [
+            name for name, platform in cfg.pm_integration.platforms.items() 
+            if platform.enabled
+        ]
+        
+        if not active_platforms:
+            click.echo("❌ Error: No PM platforms are enabled")
+            click.echo(f"   Configure at least one platform: {list(cfg.pm_integration.platforms.keys())}")
+            sys.exit(1)
+        
+        click.echo(f"✅ PM integration enabled with platforms: {', '.join(active_platforms)}")
+        
+        # Setup cache
+        cache_dir = cfg.cache.directory
+        if clear_cache:
+            click.echo("🗑️  Clearing cache...")
+            import shutil
+            if cache_dir.exists():
+                shutil.rmtree(cache_dir)
+        
+        cache = GitAnalysisCache(cache_dir, ttl_hours=cfg.cache.ttl_hours)
+        
+        # Initialize integrations
+        click.echo("🔧 Initializing integrations...")
+        orchestrator = IntegrationOrchestrator(cfg, cache)
+        
+        # Check PM orchestrator is available
+        if not orchestrator.pm_orchestrator or not orchestrator.pm_orchestrator.is_enabled():
+            click.echo("❌ Error: PM framework orchestrator failed to initialize")
+            click.echo("   Check your PM platform configurations and credentials")
+            sys.exit(1)
+        
+        click.echo(f"✅ PM framework initialized with {len(orchestrator.pm_orchestrator.get_active_platforms())} platforms")
+        
+        # Get repositories to analyze
+        repositories_to_analyze = cfg.repositories
+        if cfg.github.organization and not repositories_to_analyze:
+            click.echo(f"🔍 Discovering repositories from organization: {cfg.github.organization}")
+            try:
+                config_dir = Path(config).parent if config else Path.cwd()
+                repos_dir = config_dir / "repos"
+                discovered_repos = cfg.discover_organization_repositories(clone_base_path=repos_dir)
+                repositories_to_analyze = discovered_repos
+                click.echo(f"✅ Found {len(discovered_repos)} repositories in organization")
+            except Exception as e:
+                click.echo(f"❌ Failed to discover repositories: {e}")
+                sys.exit(1)
+        
+        if not repositories_to_analyze:
+            click.echo("❌ Error: No repositories configured for analysis")
+            click.echo("   Configure repositories in your config file or use GitHub organization discovery")
+            sys.exit(1)
+        
+        click.echo(f"📁 Analyzing {len(repositories_to_analyze)} repositories")
+        
+        # Training configuration
+        training_config = {
+            'min_training_examples': min_examples,
+            'validation_split': validation_split,
+            'model_type': model_type,
+            'save_training_data': save_training_data
+        }
+        
+        # Initialize trainer
+        click.echo("🧠 Initializing training pipeline...")
+        try:
+            trainer = CommitClassificationTrainer(
+                config=cfg,
+                cache=cache,
+                orchestrator=orchestrator,
+                training_config=training_config
+            )
+        except ImportError as e:
+            click.echo(f"❌ Error: {e}")
+            click.echo("\n💡 Install training dependencies:")
+            click.echo("   pip install scikit-learn")
+            sys.exit(1)
+        
+        # Start training
+        click.echo("\n🎯 Starting training session...")
+        click.echo(f"   Time period: {weeks} weeks")
+        click.echo(f"   Repositories: {len(repositories_to_analyze)}")
+        click.echo(f"   Model type: {model_type}")
+        click.echo(f"   Min examples: {min_examples}")
+        click.echo(f"   Validation split: {validation_split:.1%}")
+        
+        start_time = time.time()
+        
+        try:
+            # Calculate since date from weeks
+            since = datetime.now(timezone.utc) - timedelta(weeks=weeks)
+            
+            results = trainer.train(
+                repositories=repositories_to_analyze,
+                since=since,
+                session_name=session_name
+            )
+            
+            training_time = time.time() - start_time
+            
+            # Display results
+            click.echo("\n🎉 Training completed successfully!")
+            click.echo("=" * 50)
+            click.echo(f"Session ID: {results['session_id']}")
+            click.echo(f"Training examples: {results['training_examples']}")
+            click.echo(f"Model accuracy: {results['accuracy']:.1%}")
+            click.echo(f"Training time: {training_time:.1f} seconds")
+            click.echo(f"Model saved to: {trainer.classifier.model_path}")
+            
+            # Show per-category performance
+            if 'results' in results and 'class_metrics' in results['results']:
+                click.echo("\n📊 Per-category performance:")
+                for category, metrics in results['results']['class_metrics'].items():
+                    if isinstance(metrics, dict) and 'precision' in metrics:
+                        precision = metrics['precision']
+                        recall = metrics['recall']
+                        f1 = metrics['f1-score']
+                        support = metrics['support']
+                        click.echo(f"   {category:12} - P: {precision:.3f}, R: {recall:.3f}, F1: {f1:.3f} (n={support})")
+            
+            # Show PM platform coverage
+            if orchestrator.pm_orchestrator:
+                platforms = orchestrator.pm_orchestrator.get_active_platforms()
+                if platforms:
+                    click.echo(f"\n🔗 PM platforms used: {', '.join(platforms)}")
+            
+            # Save training data if requested
+            if save_training_data:
+                try:
+                    training_data_path = trainer._export_training_data(results['session_id'])
+                    click.echo(f"📄 Training data saved to: {training_data_path}")
+                except Exception as e:
+                    click.echo(f"⚠️ Warning: Failed to save training data: {e}")
+            
+            # Show next steps
+            click.echo("\n✨ Next steps:")
+            click.echo("   1. Review the training metrics above")
+            click.echo("   2. Test the model with 'gitflow-analytics analyze --enable-ml'")
+            click.echo("   3. Monitor model performance and retrain as needed")
+            click.echo("   4. Use 'gitflow-analytics train-stats' to view training history")
+            
+        except ValueError as e:
+            click.echo(f"\n❌ Training failed: {e}")
+            if "Insufficient training data" in str(e):
+                click.echo("\n💡 Suggestions to get more training data:")
+                click.echo("   - Increase --weeks to analyze more history")
+                click.echo("   - Ensure commits reference ticket IDs (e.g., PROJ-123)")
+                click.echo("   - Check PM platform connectivity and permissions")
+                click.echo("   - Lower --min-examples threshold (not recommended)")
+            sys.exit(1)
+            
+        except Exception as e:
+            click.echo(f"\n❌ Training failed with error: {e}")
+            if log.upper() == "DEBUG":
+                import traceback
+                traceback.print_exc()
+            sys.exit(1)
+            
+    except Exception as e:
+        click.echo(f"\n❌ Configuration or setup error: {e}")
+        if log.upper() == "DEBUG":
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command(name="train-stats")
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to YAML configuration file",
+)
+def training_statistics(config: Path) -> None:
+    """Show training session statistics and model performance history."""
+    try:
+        cfg = ConfigLoader.load(config)
+        cache = GitAnalysisCache(cfg.cache.directory)
+        
+        # Initialize trainer to access statistics
+        trainer = CommitClassificationTrainer(
+            config=cfg,
+            cache=cache,
+            orchestrator=None,  # Not needed for stats
+            training_config={}
+        )
+        
+        stats = trainer.get_training_statistics()
+        
+        click.echo("📊 Training Statistics")
+        click.echo("=" * 40)
+        click.echo(f"Total sessions: {stats['total_sessions']}")
+        click.echo(f"Completed sessions: {stats['completed_sessions']}")
+        click.echo(f"Failed sessions: {stats['failed_sessions']}")
+        click.echo(f"Total models: {stats['total_models']}")
+        click.echo(f"Active models: {stats['active_models']}")
+        click.echo(f"Training examples: {stats['total_training_examples']}")
+        
+        if stats['latest_session']:
+            latest = stats['latest_session']
+            click.echo("\n🕒 Latest Session:")
+            click.echo(f"   ID: {latest['session_id']}")
+            click.echo(f"   Status: {latest['status']}")
+            if latest['accuracy']:
+                click.echo(f"   Accuracy: {latest['accuracy']:.1%}")
+            if latest['training_time_minutes']:
+                click.echo(f"   Training time: {latest['training_time_minutes']:.1f} minutes")
+        
+        if stats['best_model']:
+            best = stats['best_model']
+            click.echo("\n🏆 Best Model:")
+            click.echo(f"   ID: {best['model_id']}")
+            click.echo(f"   Version: {best['version']}")
+            click.echo(f"   Accuracy: {best['accuracy']:.1%}")
+        
     except Exception as e:
         click.echo(f"❌ Error: {e}", err=True)
         sys.exit(1)

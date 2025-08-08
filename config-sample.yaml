@@ -1,0 +1,213 @@
+# GitFlow Analytics Sample Configuration
+# Copy this file and customize for your project
+version: "1.0"
+
+# GitHub authentication
+github:
+  token: "${GITHUB_TOKEN}"  # Set in .env file
+  owner: "${GITHUB_OWNER}"   # Default owner for repositories
+  
+  # Optional: For organization-based repository discovery
+  # organization: "your-organization"  # Uncomment to auto-discover repos
+  
+  # Optional: For GitHub Enterprise
+  # base_url: "https://github.enterprise.com/api/v3"
+  
+  # Rate limiting settings
+  rate_limit:
+    max_retries: 3
+    backoff_factor: 2
+
+# Repository definitions (not needed if using organization discovery)
+repositories:
+  - name: "frontend"
+    path: "~/repos/my-project/frontend"
+    github_repo: "myorg/frontend"
+    project_key: "FRONTEND"
+    branch: "main"  # Optional: specify branch (default: main)
+    
+  - name: "backend"
+    path: "~/repos/my-project/backend"
+    github_repo: "myorg/backend" 
+    project_key: "BACKEND"
+    branch: "main"
+    
+  - name: "api"
+    path: "~/repos/my-project/api"
+    github_repo: "myorg/api"
+    project_key: "API"
+    branch: "main"
+
+# Optional: JIRA Integration for story point extraction
+jira:
+  access_user: "${JIRA_ACCESS_USER}"  # Set in .env file
+  access_token: "${JIRA_ACCESS_TOKEN}"  # Set in .env file
+  base_url: "https://yourcompany.atlassian.net"
+
+jira_integration:
+  enabled: true
+  fetch_story_points: true
+  story_point_fields:
+    - "Story point estimate"  # Your custom field name
+    - "customfield_10016"     # Or use field ID directly
+
+# Optional: ClickUp Integration
+clickup:
+  token: "${CLICKUP_TOKEN}"  # Set in .env file
+  workspace_url: "https://app.clickup.com/your_workspace"
+
+# Analysis settings
+analysis:
+  # Default ticket platform for this project
+  default_ticket_platform: "jira"  # or "github", "clickup", "linear"
+  
+  # Branch to project mapping rules (optional)
+  branch_mapping_rules:
+    FRONTEND:
+      - "^feature/fe[-/_]"
+      - "^frontend/"
+      - "[-/_]frontend[-/_]"
+    BACKEND:
+      - "^feature/be[-/_]"
+      - "^backend/"
+      - "[-/_]backend[-/_]"
+    API:
+      - "^feature/api[-/_]"
+      - "^api/"
+      - "[-/_]api[-/_]"
+  
+  # Story point extraction patterns
+  story_point_patterns:
+    - "(?:story\\s*points?|sp|pts?)\\s*[:=]\\s*(\\d+)"
+    - "\\[(\\d+)\\s*(?:sp|pts?)\\]"
+    - "#(\\d+)sp"
+    - "estimate:\\s*(\\d+)"
+    - "points?:\\s*(\\d+)"
+    - "\\bSP(\\d+)\\b"
+  
+  # Platforms to track tickets from
+  ticket_platforms:
+    - jira
+    - github
+    - clickup
+    - linear
+  
+  # Commit filtering
+  exclude:
+    # Skip commits from these authors
+    authors:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+      - "github-actions[bot]"
+      - "snyk-bot"
+    # Skip commits with these patterns in message
+    message_patterns:
+      - "^Merge branch"
+      - "^Merge pull request"
+      - "^\\[skip ci\\]"
+      - "^\\[ci skip\\]"
+      - "^chore\\(deps\\):"
+    # Skip files/paths
+    paths:
+      - "**/node_modules/**"
+      - "**/*.min.js"
+      - "**/package-lock.json"
+      - "**/yarn.lock"
+  
+  # Enhanced untracked commit analysis
+  untracked_analysis:
+    file_threshold: 1  # Minimum files changed to include commit
+    acceptable_categories:
+      - "maintenance"
+      - "style" 
+      - "documentation"
+      - "test"
+  
+  # Developer identity resolution
+  identity:
+    similarity_threshold: 0.85
+    auto_analysis: true  # Enable automatic identity consolidation
+    
+    # Manual identity mappings (optional)
+    manual_mappings:
+      - name: "John Developer"  # Display name in reports
+        primary_email: "john.dev@company.com"
+        aliases:
+          - "jdeveloper@oldcompany.com"
+          - "123456+john@users.noreply.github.com"
+      - name: "Sarah Smith"
+        primary_email: "sarah.smith@company.com"
+        aliases:
+          - "s.smith@contractor.com"
+  
+  # ML-enhanced commit categorization
+  ml_categorization:
+    enabled: true  # Enable ML categorization (requires spaCy model)
+    min_confidence: 0.6  # Minimum confidence for ML predictions
+    hybrid_threshold: 0.5  # Threshold for ML vs rule-based fallback
+    semantic_weight: 0.7  # Weight for semantic analysis
+    file_pattern_weight: 0.3  # Weight for file pattern analysis
+    
+    # Caching for performance
+    enable_caching: true
+    cache_duration_days: 30
+    
+    # Processing settings
+    batch_size: 100
+    spacy_model: "en_core_web_sm"  # Download with: python -m spacy download en_core_web_sm
+
+# Output settings
+output:
+  # Output directory for reports
+  directory: "./reports"
+  
+  # Report formats to generate
+  formats:
+    - csv      # Weekly metrics, developer stats, untracked commits
+    - markdown # Comprehensive narrative summary
+    - json     # Raw data export for API integration
+  
+  # CSV-specific settings
+  csv:
+    include_headers: true
+    delimiter: ","
+    encoding: "utf-8"
+  
+  # Anonymization settings (for external sharing)
+  anonymization:
+    enabled: false  # Set to true for anonymized reports
+    fields:
+      - email
+      - name
+    method: "hash"  # or "sequential" for Dev1, Dev2, etc.
+
+# Cache settings
+cache:
+  # Cache directory (relative to config file)
+  directory: "./.gitflow-cache"
+  # Cache TTL in hours (168 = 1 week)
+  ttl_hours: 168
+  # Maximum cache size in MB
+  max_size_mb: 500
+
+# Optional: Qualitative analysis (advanced ML features)
+qualitative:
+  enabled: false  # Enable for advanced ML insights
+  batch_size: 1000
+  confidence_threshold: 0.7
+  
+  # NLP settings
+  nlp:
+    spacy_model: "en_core_web_sm"
+    fast_mode: true
+  
+  # Caching
+  cache:
+    enable_pattern_learning: true
+    pattern_cache_ttl_hours: 168
+
+# Optional: ChatGPT integration for enhanced insights
+# chatgpt:
+#   api_key: "${OPENAI_API_KEY}"  # Set in .env file
+#   model: "gpt-3.5-turbo"
+#   enabled: false

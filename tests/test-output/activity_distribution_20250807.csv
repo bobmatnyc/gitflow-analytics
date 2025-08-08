@@ -1,0 +1,16 @@
+developer,project,commits,lines_changed,files_changed,story_points,dev_commit_pct,dev_lines_pct,dev_files_pct,proj_commit_pct,proj_lines_pct,proj_files_pct,total_activity_pct
+Unknown,EWTN_CMS,4,73,10,0,66.7,86.9,83.3,16.0,0.2,5.7,16.0
+Unknown,EWTN_PLUS_FOUNDATION,4,33539,52,0,100.0,100.0,100.0,16.0,84.7,29.9,16.0
+Unknown,EWTN_PLUS_API_GATEWAY,3,1491,13,0,100.0,100.0,100.0,12.0,3.8,7.5,12.0
+Unknown,RADCON_CMS,2,32,30,0,100.0,100.0,100.0,8.0,0.1,17.2,8.0
+Unknown,EWTN_PLUS_API_GATEWAY,2,348,9,0,100.0,100.0,100.0,8.0,0.9,5.2,8.0
+Unknown,AUTH0_EMAIL_TEMPLATES,1,16,1,0,33.3,16.5,33.3,4.0,0.0,0.6,4.0
+Unknown,EWTN_PLUS_API_GATEWAY,1,59,1,0,33.3,60.8,33.3,4.0,0.1,0.6,4.0
+Unknown,EWTN_PLUS_ROKU,1,22,1,0,33.3,22.7,33.3,4.0,0.1,0.6,4.0
+Unknown,EWTN_PLUS_API_GATEWAY,1,7,1,0,16.7,8.3,8.3,4.0,0.0,0.6,4.0
+Unknown,OMEGA,1,4,1,0,16.7,4.8,8.3,4.0,0.0,0.6,4.0
+Unknown,EWTN_PLUS_ROKU,1,22,1,0,100.0,100.0,100.0,4.0,0.1,0.6,4.0
+Unknown,COPY_ASSETS,1,12,1,0,100.0,100.0,100.0,4.0,0.0,0.6,4.0
+Unknown,ACIDIGITAL_REBUILD,1,492,16,0,50.0,47.1,51.6,4.0,1.2,9.2,4.0
+Unknown,ACISTAMPA,1,552,15,0,50.0,52.9,48.4,4.0,1.4,8.6,4.0
+Unknown,CNA_API,1,2947,22,0,100.0,100.0,100.0,4.0,7.4,12.6,4.0

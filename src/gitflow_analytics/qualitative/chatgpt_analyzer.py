@@ -7,9 +7,8 @@ based on comprehensive GitFlow Analytics data.
 import json
 import logging
 import os
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import requests
 
@@ -40,7 +39,7 @@ class ChatGPTQualitativeAnalyzer:
             self.client = OpenAI(api_key=self.api_key)
             self.model = "gpt-4-turbo-preview"
     
-    def generate_executive_summary(self, comprehensive_data: Dict[str, Any]) -> str:
+    def generate_executive_summary(self, comprehensive_data: dict[str, Any]) -> str:
         """Generate a qualitative executive summary from comprehensive export data.
         
         Args:
@@ -104,7 +103,7 @@ class ChatGPTQualitativeAnalyzer:
             logger.error(f"Error generating ChatGPT summary: {e}")
             return self._generate_fallback_summary(summary_data)
     
-    def _extract_summary_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_summary_data(self, data: dict[str, Any]) -> dict[str, Any]:
         """Extract key data points for the executive summary."""
         
         exec_summary = data.get("executive_summary", {})
@@ -114,7 +113,7 @@ class ChatGPTQualitativeAnalyzer:
         
         # Get top contributors
         top_developers = []
-        for dev_id, dev_data in developers.items():
+        for _dev_id, dev_data in developers.items():
             identity = dev_data.get("identity", {})
             summary = dev_data.get("summary", {})
             top_developers.append({
@@ -156,7 +155,7 @@ class ChatGPTQualitativeAnalyzer:
             "anomalies": data.get("anomaly_detection", {}).get("anomalies", [])[:3]
         }
     
-    def _create_executive_summary_prompt(self, summary_data: Dict[str, Any]) -> str:
+    def _create_executive_summary_prompt(self, summary_data: dict[str, Any]) -> str:
         """Create the prompt for ChatGPT."""
         
         prompt = f"""Based on the following GitFlow Analytics data from the past {summary_data['period_weeks']} weeks, provide a comprehensive executive summary with qualitative insights:
@@ -207,7 +206,7 @@ Focus on insights that aren't immediately obvious from the raw metrics. Consider
         
         return prompt
     
-    def _generate_fallback_summary(self, summary_data: Dict[str, Any]) -> str:
+    def _generate_fallback_summary(self, summary_data: dict[str, Any]) -> str:
         """Generate a basic summary if ChatGPT fails."""
         
         return f"""## Executive Summary
@@ -241,7 +240,7 @@ def generate_chatgpt_summary(json_file_path: Path, api_key: Optional[str] = None
         Markdown-formatted executive summary
     """
     # Load the JSON data
-    with open(json_file_path, 'r') as f:
+    with open(json_file_path) as f:
         comprehensive_data = json.load(f)
     
     # Generate summary

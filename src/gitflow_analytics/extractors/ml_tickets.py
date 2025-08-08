@@ -22,16 +22,23 @@ PERFORMANCE: Designed to handle large repositories efficiently with:
 """
 
 import logging
-import pickle
 import sqlite3
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional
 
-from .tickets import TicketExtractor
 from ..qualitative.classifiers.change_type import ChangeTypeClassifier
+from ..qualitative.classifiers.llm_commit_classifier import LLMCommitClassifier, LLMConfig
 from ..qualitative.models.schemas import ChangeTypeConfig
+from .tickets import TicketExtractor, filter_git_artifacts
+
+# Import training model loader with fallback
+try:
+    from ..training.model_loader import TrainingModelLoader
+    TRAINING_LOADER_AVAILABLE = True
+except ImportError:
+    TRAINING_LOADER_AVAILABLE = False
 
 try:
     import spacy
@@ -60,24 +67,29 @@ class MLTicketExtractor(TicketExtractor):
     """
     
     def __init__(self, 
-                 allowed_platforms: Optional[List[str]] = None,
+                 allowed_platforms: Optional[list[str]] = None,
                  untracked_file_threshold: int = 1,
-                 ml_config: Optional[Dict[str, Any]] = None,
+                 ml_config: Optional[dict[str, Any]] = None,
+                 llm_config: Optional[dict[str, Any]] = None,
                  cache_dir: Optional[Path] = None,
-                 enable_ml: bool = True) -> None:
+                 enable_ml: bool = True,
+                 enable_llm: bool = False) -> None:
         """Initialize ML-enhanced ticket extractor.
         
         Args:
             allowed_platforms: List of platforms to extract tickets from
             untracked_file_threshold: Minimum files changed for significant commits
             ml_config: Configuration for ML categorization (optional)
+            llm_config: Configuration for LLM classification (optional)
             cache_dir: Directory for caching ML predictions
             enable_ml: Whether to enable ML features (fallback to rule-based if False)
+            enable_llm: Whether to enable LLM classification (fallback to ML/rules if False)
         """
         # Initialize parent class
         super().__init__(allowed_platforms, untracked_file_threshold)
         
         self.enable_ml = enable_ml and SPACY_AVAILABLE
+        self.enable_llm = enable_llm
         self.cache_dir = cache_dir or Path(".gitflow-cache")
         self.cache_dir.mkdir(exist_ok=True)
         
@@ -94,15 +106,46 @@ class MLTicketExtractor(TicketExtractor):
         
         self.ml_config = {**default_ml_config, **(ml_config or {})}
         
+        # LLM configuration with sensible defaults
+        default_llm_config = {
+            'api_key': None,
+            'model': 'mistralai/mistral-7b-instruct',
+            'confidence_threshold': 0.7,
+            'max_tokens': 50,
+            'temperature': 0.1,
+            'timeout_seconds': 30.0,
+            'cache_duration_days': 90,
+            'enable_caching': True,
+            'max_daily_requests': 1000,
+            'domain_terms': {}
+        }
+        
+        self.llm_config_dict = {**default_llm_config, **(llm_config or {})}
+        
         # Initialize ML components
         self.change_type_classifier = None
         self.nlp_model = None
         self.ml_cache = None
+        self.trained_model_loader = None
+        self.llm_classifier = None
         
         if self.enable_ml:
             self._initialize_ml_components()
         
-        logger.info(f"MLTicketExtractor initialized with ML {'enabled' if self.enable_ml else 'disabled'}")
+        # Initialize LLM classifier if enabled
+        if self.enable_llm:
+            self._initialize_llm_classifier()
+            
+        # Initialize trained model loader if available
+        if TRAINING_LOADER_AVAILABLE and self.enable_ml:
+            try:
+                self.trained_model_loader = TrainingModelLoader(self.cache_dir)
+                logger.info("Trained model loader initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize trained model loader: {e}")
+                self.trained_model_loader = None
+        
+        logger.info(f"MLTicketExtractor initialized with ML {'enabled' if self.enable_ml else 'disabled'}, LLM {'enabled' if self.enable_llm else 'disabled'}")
     
     def _initialize_ml_components(self) -> None:
         """Initialize ML components (ChangeTypeClassifier and spaCy model).
@@ -122,12 +165,19 @@ class MLTicketExtractor(TicketExtractor):
             # Initialize spaCy model (try English first, then basic)
             try:
                 self.nlp_model = spacy.load("en_core_web_sm")
+                logger.info("spaCy model 'en_core_web_sm' loaded successfully")
             except OSError:
-                logger.warning("English spaCy model not found, trying basic model")
+                logger.warning(
+                    "spaCy model 'en_core_web_sm' not found. Trying alternative model..."
+                )
                 try:
                     self.nlp_model = spacy.load("en_core_web_md")
+                    logger.info("spaCy model 'en_core_web_md' loaded successfully")
                 except OSError:
-                    logger.warning("No spaCy models found, ML classification will use fallback")
+                    logger.warning(
+                        "No spaCy models found. ML categorization will gracefully fall back to rule-based classification. "
+                        "To enable ML features, install a spaCy model: python -m spacy download en_core_web_sm"
+                    )
                     self.nlp_model = None
             
             # Initialize ML cache
@@ -137,9 +187,41 @@ class MLTicketExtractor(TicketExtractor):
             logger.info("ML components initialized successfully")
             
         except Exception as e:
-            logger.error(f"Failed to initialize ML components: {e}")
-            logger.info("Falling back to rule-based classification")
+            logger.warning(f"Failed to initialize ML components: {e}")
+            logger.info("Analysis will continue with rule-based classification only")
             self.enable_ml = False
+    
+    def _initialize_llm_classifier(self) -> None:
+        """Initialize LLM classifier for commit categorization.
+        
+        WHY: LLM-based classification can provide more nuanced understanding
+        of commit messages compared to rule-based or traditional ML approaches.
+        This method handles graceful degradation if LLM setup fails.
+        """
+        try:
+            # Create LLM configuration object
+            llm_config = LLMConfig(
+                api_key=self.llm_config_dict.get('api_key'),
+                model=self.llm_config_dict.get('model', 'mistralai/mistral-7b-instruct'),
+                confidence_threshold=self.llm_config_dict.get('confidence_threshold', 0.7),
+                max_tokens=self.llm_config_dict.get('max_tokens', 50),
+                temperature=self.llm_config_dict.get('temperature', 0.1),
+                timeout_seconds=self.llm_config_dict.get('timeout_seconds', 30.0),
+                cache_duration_days=self.llm_config_dict.get('cache_duration_days', 90),
+                enable_caching=self.llm_config_dict.get('enable_caching', True),
+                max_daily_requests=self.llm_config_dict.get('max_daily_requests', 1000),
+                domain_terms=self.llm_config_dict.get('domain_terms', {})
+            )
+            
+            # Initialize LLM classifier
+            self.llm_classifier = LLMCommitClassifier(llm_config, self.cache_dir)
+            logger.info(f"LLM classifier initialized with model: {llm_config.model}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to initialize LLM classifier: {e}")
+            logger.info("Analysis will continue without LLM classification")
+            self.enable_llm = False
+            self.llm_classifier = None
     
     def _initialize_ml_cache(self) -> None:
         """Initialize SQLite cache for ML predictions.
@@ -155,12 +237,17 @@ class MLTicketExtractor(TicketExtractor):
             logger.warning(f"Failed to initialize ML cache: {e}")
             self.ml_cache = None
     
-    def categorize_commit(self, message: str, files_changed: Optional[List[str]] = None) -> str:
-        """Categorize a commit using hybrid ML + rule-based approach.
+    def categorize_commit(self, message: str, files_changed: Optional[list[str]] = None) -> str:
+        """Categorize a commit using LLM -> ML -> rule-based fallback approach.
         
-        This method extends the parent's categorize_commit with ML capabilities while
-        maintaining backward compatibility. It returns the same category strings as
+        This method extends the parent's categorize_commit with LLM and ML capabilities 
+        while maintaining backward compatibility. It returns the same category strings as
         the parent class.
+        
+        Classification priority:
+        1. LLM-based classification (if enabled and confident)
+        2. ML-based classification (if enabled and confident) 
+        3. Rule-based classification (always available)
         
         Args:
             message: The commit message to categorize
@@ -173,19 +260,32 @@ class MLTicketExtractor(TicketExtractor):
         if not message:
             return "other"
         
-        # Try ML categorization first if enabled
+        # Filter git artifacts for cleaner classification
+        cleaned_message = filter_git_artifacts(message)
+        if not cleaned_message:
+            return "other"
+        
+        # Try LLM classification first if enabled
+        if self.enable_llm and self.llm_classifier:
+            llm_result = self._llm_categorize_commit(cleaned_message, files_changed or [])
+            if llm_result and llm_result['confidence'] >= self.llm_config_dict.get('confidence_threshold', 0.7):
+                # Map LLM categories to parent class categories
+                mapped_category = self._map_llm_to_parent_category(llm_result['category'])
+                return mapped_category
+        
+        # Fall back to ML categorization if enabled
         if self.enable_ml:
-            ml_result = self._ml_categorize_commit(message, files_changed or [])
+            ml_result = self._ml_categorize_commit(cleaned_message, files_changed or [])
             if ml_result and ml_result['confidence'] >= self.ml_config['hybrid_threshold']:
                 # Map ML categories to parent class categories
                 mapped_category = self._map_ml_to_parent_category(ml_result['category'])
                 return mapped_category
         
-        # Fall back to parent's rule-based categorization
-        return super().categorize_commit(message)
+        # Final fallback to parent's rule-based categorization
+        return super().categorize_commit(cleaned_message)
     
     def categorize_commit_with_confidence(self, message: str, 
-                                        files_changed: Optional[List[str]] = None) -> Dict[str, Any]:
+                                        files_changed: Optional[list[str]] = None) -> dict[str, Any]:
         """Categorize commit with detailed confidence information.
         
         This is the main entry point for getting detailed categorization results
@@ -218,30 +318,55 @@ class MLTicketExtractor(TicketExtractor):
                 'processing_time_ms': 0.0
             }
         
+        # Filter git artifacts for cleaner classification
+        cleaned_message = filter_git_artifacts(message)
+        if not cleaned_message:
+            return {
+                'category': 'other',
+                'confidence': 0.3,
+                'method': 'filtered_empty',
+                'alternatives': [],
+                'features': {},
+                'processing_time_ms': (time.time() - start_time) * 1000
+            }
+        
         files_changed = files_changed or []
         
         # Check cache first
         if self.ml_cache and self.ml_config['enable_caching']:
-            cached_result = self.ml_cache.get_prediction(message, files_changed)
+            cached_result = self.ml_cache.get_prediction(cleaned_message, files_changed)
             if cached_result:
                 cached_result['processing_time_ms'] = (time.time() - start_time) * 1000
                 return cached_result
         
-        # Try ML categorization
+        # Try LLM categorization first if enabled
+        if self.enable_llm and self.llm_classifier:
+            llm_result = self._llm_categorize_commit_detailed(cleaned_message, files_changed)
+            if llm_result and llm_result['confidence'] >= self.llm_config_dict.get('confidence_threshold', 0.7):
+                # Map to parent categories and cache result
+                llm_result['category'] = self._map_llm_to_parent_category(llm_result['category'])
+                llm_result['processing_time_ms'] = (time.time() - start_time) * 1000
+                
+                if self.ml_cache and self.ml_config['enable_caching']:
+                    self.ml_cache.store_prediction(cleaned_message, files_changed, llm_result)
+                
+                return llm_result
+        
+        # Fall back to ML categorization
         if self.enable_ml:
-            ml_result = self._ml_categorize_commit_detailed(message, files_changed)
+            ml_result = self._ml_categorize_commit_detailed(cleaned_message, files_changed)
             if ml_result and ml_result['confidence'] >= self.ml_config['hybrid_threshold']:
                 # Map to parent categories and cache result
                 ml_result['category'] = self._map_ml_to_parent_category(ml_result['category'])
                 ml_result['processing_time_ms'] = (time.time() - start_time) * 1000
                 
                 if self.ml_cache and self.ml_config['enable_caching']:
-                    self.ml_cache.store_prediction(message, files_changed, ml_result)
+                    self.ml_cache.store_prediction(cleaned_message, files_changed, ml_result)
                 
                 return ml_result
         
         # Fall back to rule-based categorization
-        rule_category = super().categorize_commit(message)
+        rule_category = super().categorize_commit(cleaned_message)
         rule_result = {
             'category': rule_category,
             'confidence': 0.8 if rule_category != 'other' else 0.3,
@@ -256,7 +381,7 @@ class MLTicketExtractor(TicketExtractor):
         
         return rule_result
     
-    def _ml_categorize_commit(self, message: str, files_changed: List[str]) -> Optional[Dict[str, Any]]:
+    def _ml_categorize_commit(self, message: str, files_changed: list[str]) -> Optional[dict[str, Any]]:
         """Internal ML categorization method (simplified version).
         
         Args:
@@ -289,8 +414,10 @@ class MLTicketExtractor(TicketExtractor):
         
         return None
     
-    def _ml_categorize_commit_detailed(self, message: str, files_changed: List[str]) -> Optional[Dict[str, Any]]:
+    def _ml_categorize_commit_detailed(self, message: str, files_changed: list[str]) -> Optional[dict[str, Any]]:
         """Detailed ML categorization with comprehensive metadata.
+        
+        Tries trained models first, then falls back to built-in ML classification.
         
         Args:
             message: Commit message
@@ -299,7 +426,20 @@ class MLTicketExtractor(TicketExtractor):
         Returns:
             Detailed categorization result dictionary or None if ML unavailable
         """
-        if not self.change_type_classifier or not message:
+        if not message:
+            return None
+        
+        # Try trained model first if available
+        if self.trained_model_loader:
+            try:
+                trained_result = self.trained_model_loader.predict_commit_category(message, files_changed)
+                if trained_result['method'] != 'failed' and trained_result['confidence'] >= self.ml_config['hybrid_threshold']:
+                    return trained_result
+            except Exception as e:
+                logger.debug(f"Trained model prediction failed, falling back to built-in ML: {e}")
+        
+        # Fall back to built-in ML classification
+        if not self.change_type_classifier:
             return None
         
         try:
@@ -317,17 +457,17 @@ class MLTicketExtractor(TicketExtractor):
                 return {
                     'category': ml_category,
                     'confidence': confidence,
-                    'method': 'ml',
+                    'method': 'builtin_ml',
                     'alternatives': self._get_alternative_predictions(message, doc, files_changed),
                     'features': features
                 }
             
         except Exception as e:
-            logger.warning(f"Detailed ML categorization failed: {e}")
+            logger.warning(f"Built-in ML categorization failed: {e}")
         
         return None
     
-    def _extract_features(self, message: str, doc: Optional[Doc], files_changed: List[str]) -> Dict[str, Any]:
+    def _extract_features(self, message: str, doc: Optional[Doc], files_changed: list[str]) -> dict[str, Any]:
         """Extract features used for ML classification.
         
         Args:
@@ -355,7 +495,7 @@ class MLTicketExtractor(TicketExtractor):
         return features
     
     def _get_alternative_predictions(self, message: str, doc: Optional[Doc], 
-                                   files_changed: List[str]) -> List[Dict[str, Any]]:
+                                   files_changed: list[str]) -> list[dict[str, Any]]:
         """Get alternative predictions with lower confidence scores.
         
         This is a simplified version - in a full implementation, you would
@@ -383,6 +523,99 @@ class MLTicketExtractor(TicketExtractor):
         
         return alternatives[:3]  # Top 3 alternatives
     
+    def _llm_categorize_commit(self, message: str, files_changed: list[str]) -> Optional[dict[str, Any]]:
+        """Internal LLM categorization method (simplified version).
+        
+        Args:
+            message: Cleaned commit message (git artifacts already filtered)
+            files_changed: List of changed files
+            
+        Returns:
+            Dictionary with category and confidence, or None if LLM unavailable
+        """
+        if not self.llm_classifier or not message:
+            return None
+        
+        try:
+            # Get LLM classification
+            llm_result = self.llm_classifier.classify_commit(message, files_changed)
+            
+            if llm_result and llm_result.get('category') and llm_result['category'] != 'maintenance':
+                return {
+                    'category': llm_result['category'],
+                    'confidence': llm_result['confidence']
+                }
+            elif llm_result and llm_result.get('category') == 'maintenance' and llm_result['confidence'] >= 0.8:
+                # Accept maintenance category only if high confidence
+                return {
+                    'category': llm_result['category'],
+                    'confidence': llm_result['confidence']
+                }
+            
+        except Exception as e:
+            logger.warning(f"LLM categorization failed: {e}")
+        
+        return None
+    
+    def _llm_categorize_commit_detailed(self, message: str, files_changed: list[str]) -> Optional[dict[str, Any]]:
+        """Detailed LLM categorization with comprehensive metadata.
+        
+        Args:
+            message: Cleaned commit message (git artifacts already filtered)
+            files_changed: List of changed files
+            
+        Returns:
+            Detailed categorization result dictionary or None if LLM unavailable
+        """
+        if not self.llm_classifier or not message:
+            return None
+        
+        try:
+            # Get detailed LLM classification
+            llm_result = self.llm_classifier.classify_commit(message, files_changed)
+            
+            if llm_result and llm_result.get('category'):
+                return {
+                    'category': llm_result['category'],
+                    'confidence': llm_result['confidence'],
+                    'method': 'llm',
+                    'reasoning': llm_result.get('reasoning', 'LLM-based classification'),
+                    'model': llm_result.get('model', 'unknown'),
+                    'alternatives': llm_result.get('alternatives', []),
+                    'features': {'llm_classification': True}
+                }
+            
+        except Exception as e:
+            logger.warning(f"Detailed LLM categorization failed: {e}")
+        
+        return None
+    
+    def _map_llm_to_parent_category(self, llm_category: str) -> str:
+        """Map LLM categories to parent class categories.
+        
+        WHY: The LLM classifier uses streamlined 7-category system while the parent
+        TicketExtractor uses different category names. This mapping ensures 
+        backward compatibility with existing reports and analysis.
+        
+        Args:
+            llm_category: Category from LLM classifier
+            
+        Returns:
+            Category compatible with parent class
+        """
+        # Map from LLM's 7 streamlined categories to parent categories
+        mapping = {
+            'feature': 'feature',         # New functionality -> feature
+            'bugfix': 'bug_fix',         # Bug fixes -> bug_fix (parent uses underscore)
+            'maintenance': 'maintenance', # Maintenance -> maintenance
+            'integration': 'build',       # Integration -> build (closest parent category)
+            'content': 'documentation',   # Content -> documentation
+            'media': 'other',            # Media -> other (no direct parent equivalent)
+            'localization': 'other'       # Localization -> other (no direct parent equivalent)
+        }
+        
+        return mapping.get(llm_category, 'other')
+    
     def _map_ml_to_parent_category(self, ml_category: str) -> str:
         """Map ML categories to parent class categories.
         
@@ -409,8 +642,8 @@ class MLTicketExtractor(TicketExtractor):
         
         return mapping.get(ml_category, 'other')
     
-    def analyze_ticket_coverage(self, commits: List[Dict[str, Any]], 
-                              prs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def analyze_ticket_coverage(self, commits: list[dict[str, Any]], 
+                              prs: list[dict[str, Any]]) -> dict[str, Any]:
         """Enhanced ticket coverage analysis with ML categorization insights.
         
         This method extends the parent's analysis with ML-specific insights including
@@ -444,7 +677,7 @@ class MLTicketExtractor(TicketExtractor):
         
         return base_analysis
     
-    def _analyze_ml_categorization_quality(self, commits: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _analyze_ml_categorization_quality(self, commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Analyze the quality and distribution of ML categorizations.
         
         Args:
@@ -470,12 +703,32 @@ class MLTicketExtractor(TicketExtractor):
         processed_commits = 0
         
         for commit in commits:
-            if commit.get('is_merge') or commit.get('files_changed', 0) < self.untracked_file_threshold:
+            # Get files_changed count efficiently with proper type handling
+            files_count = commit.get('files_changed_count')
+            if files_count is None:
+                files_changed = commit.get('files_changed', 0)
+                if isinstance(files_changed, int):
+                    files_count = files_changed
+                elif isinstance(files_changed, list):
+                    files_count = len(files_changed)
+                else:
+                    logger.warning(f"Unexpected files_changed type: {type(files_changed)}, defaulting to 0")
+                    files_count = 0
+            
+            if commit.get('is_merge') or files_count < self.untracked_file_threshold:
                 continue
             
             # Get detailed categorization for analysis
             message = commit.get('message', '')
-            files_changed = commit.get('files_changed_list', [])
+            # Normalize files_changed to ensure it's always a list
+            files_changed_raw = commit.get('files_changed', [])
+            if isinstance(files_changed_raw, int):
+                # If files_changed is an integer count, we can't provide file names
+                files_changed = []
+            elif isinstance(files_changed_raw, list):
+                files_changed = files_changed_raw
+            else:
+                files_changed = []
             
             result = self.categorize_commit_with_confidence(message, files_changed)
             
@@ -526,7 +779,7 @@ class MLTicketExtractor(TicketExtractor):
         
         return ml_stats
     
-    def _enhance_untracked_commits(self, untracked_commits: List[Dict[str, Any]]) -> None:
+    def _enhance_untracked_commits(self, untracked_commits: list[dict[str, Any]]) -> None:
         """Enhance untracked commits with ML confidence scores and metadata.
         
         Args:
@@ -545,26 +798,49 @@ class MLTicketExtractor(TicketExtractor):
             commit['ml_alternatives'] = result.get('alternatives', [])
             commit['ml_processing_time_ms'] = result.get('processing_time_ms', 0.0)
     
-    def get_ml_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive ML usage and performance statistics.
+    def get_ml_statistics(self) -> dict[str, Any]:
+        """Get comprehensive ML and LLM usage and performance statistics.
         
         Returns:
-            Dictionary with ML performance metrics and usage statistics
+            Dictionary with ML/LLM performance metrics and usage statistics
         """
         stats = {
             'ml_enabled': self.enable_ml,
+            'llm_enabled': self.enable_llm,
             'spacy_available': SPACY_AVAILABLE,
+            'training_loader_available': TRAINING_LOADER_AVAILABLE,
             'components_loaded': {
                 'change_type_classifier': self.change_type_classifier is not None,
                 'nlp_model': self.nlp_model is not None,
-                'ml_cache': self.ml_cache is not None
+                'ml_cache': self.ml_cache is not None,
+                'trained_model_loader': self.trained_model_loader is not None,
+                'llm_classifier': self.llm_classifier is not None
             },
-            'configuration': self.ml_config.copy()
+            'configuration': {
+                'ml_config': self.ml_config.copy(),
+                'llm_config': self.llm_config_dict.copy()
+            }
         }
         
         # Add cache statistics if available
         if self.ml_cache:
             stats['cache_statistics'] = self.ml_cache.get_statistics()
+        
+        # Add trained model statistics if available
+        if self.trained_model_loader:
+            try:
+                stats['trained_model_statistics'] = self.trained_model_loader.get_model_statistics()
+            except Exception as e:
+                logger.warning(f"Failed to get trained model statistics: {e}")
+                stats['trained_model_statistics'] = {'error': str(e)}
+        
+        # Add LLM statistics if available
+        if self.llm_classifier:
+            try:
+                stats['llm_statistics'] = self.llm_classifier.get_statistics()
+            except Exception as e:
+                logger.warning(f"Failed to get LLM statistics: {e}")
+                stats['llm_statistics'] = {'error': str(e)}
         
         return stats
 
@@ -618,7 +894,7 @@ class MLPredictionCache:
             
             conn.commit()
     
-    def _generate_cache_key(self, message: str, files_changed: List[str]) -> Tuple[str, str, str]:
+    def _generate_cache_key(self, message: str, files_changed: list[str]) -> tuple[str, str, str]:
         """Generate cache key components.
         
         Args:
@@ -636,7 +912,7 @@ class MLPredictionCache:
         
         return cache_key, message_hash, files_hash
     
-    def get_prediction(self, message: str, files_changed: List[str]) -> Optional[Dict[str, Any]]:
+    def get_prediction(self, message: str, files_changed: list[str]) -> Optional[dict[str, Any]]:
         """Get cached prediction if available and not expired.
         
         Args:
@@ -673,7 +949,7 @@ class MLPredictionCache:
         
         return None
     
-    def store_prediction(self, message: str, files_changed: List[str], result: Dict[str, Any]) -> None:
+    def store_prediction(self, message: str, files_changed: list[str], result: dict[str, Any]) -> None:
         """Store prediction in cache with expiration.
         
         Args:
@@ -725,7 +1001,7 @@ class MLPredictionCache:
             logger.warning(f"Cache cleanup failed: {e}")
             return 0
     
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get cache usage statistics.
         
         Returns:

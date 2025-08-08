@@ -1,0 +1,3 @@
+week_start,developer_id,developer_name,developer_email,project,commits,story_points,lines_added,lines_removed,files_changed,complexity_delta,ticket_coverage_pct,avg_commit_size,unique_tickets,prs_involved,activity_score,activity_level,commit_score,pr_score,code_impact_score,complexity_score,curved_score,percentile,quintile,curved_activity_level
+2025-07-28,8659e109-1449-4a87-bec0-da013b5237bd,Robert (Masa) Matsuoka,bobmatnyc@users.noreply.github.com,GITFLOW,17,0,20450,4111,161,-4983.39,0.0,1444.8,0,0,94.4,exceptional,145.2,0,182.3,2541.7,50.0,50.0,1,minimal
+2025-08-04,8659e109-1449-4a87-bec0-da013b5237bd,Robert (Masa) Matsuoka,bobmatnyc@users.noreply.github.com,GITFLOW,14,0,18538,389,82,-4827.51,0.0,1351.9,0,0,91.5,exceptional,134.9,0,181.5,2463.8,50.0,50.0,1,minimal

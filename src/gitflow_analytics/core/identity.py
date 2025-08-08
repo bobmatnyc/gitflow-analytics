@@ -6,6 +6,7 @@ import uuid
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 from sqlalchemy import and_
@@ -24,18 +25,102 @@ class DeveloperIdentityResolver:
         similarity_threshold: float = 0.85,
         manual_mappings: Optional[list[dict[str, Any]]] = None,
     ) -> None:
-        """Initialize with database for persistence."""
+        """
+        Initialize with database for persistence.
+        
+        WHY: This initializer handles database connection issues gracefully,
+        allowing the system to continue functioning even when persistence fails.
+        
+        Args:
+            db_path: Path to the SQLite database file
+            similarity_threshold: Threshold for fuzzy matching (0.0-1.0)
+            manual_mappings: Optional manual identity mappings from configuration
+        """
         self.similarity_threshold = similarity_threshold
-        self.db = Database(db_path)
+        self.db_path = Path(db_path)  # Convert string to Path
         self._cache: dict[str, str] = {}  # In-memory cache for performance
-        self._load_cache()
+        
+        # Initialize database with error handling
+        try:
+            self.db = Database(self.db_path)
+            self._database_available = True
+            
+            # Warn user if using fallback database
+            if self.db.is_readonly_fallback:
+                logger.warning(
+                    "Using temporary database for identity resolution. "
+                    "Identity mappings will not persist between runs. "
+                    f"Check permissions on: {db_path}"
+                )
+                
+            # Load existing data from database
+            self._load_cache()
+            
+        except Exception as e:
+            logger.error(
+                f"Failed to initialize identity database at {db_path}: {e}. "
+                "Identity resolution will work but mappings won't persist."
+            )
+            self._database_available = False
+            self.db = None
 
         # Store manual mappings to apply later
         self.manual_mappings = manual_mappings
+        
+        # When database is not available, we need in-memory fallback storage
+        if not self._database_available:
+            logger.info(
+                "Database unavailable, using in-memory identity resolution. "
+                "Identity mappings will not persist between runs."
+            )
+            self._in_memory_identities: dict[str, dict[str, Any]] = {}
+            self._in_memory_aliases: dict[str, str] = {}
+            
+            # Apply manual mappings to in-memory storage if provided
+            if self.manual_mappings:
+                self._apply_manual_mappings_to_memory()
+        else:
+            # Apply manual mappings to database if provided
+            if self.manual_mappings:
+                self._apply_manual_mappings(self.manual_mappings)
 
     @contextmanager
     def get_session(self):
-        """Get database session context manager."""
+        """
+        Get database session context manager with fallback handling.
+        
+        WHY: When database is not available, we need to provide a no-op
+        context manager that allows the code to continue without failing.
+        """
+        if not self._database_available or not self.db:
+            # No-op context manager when database is not available
+            class NoOpSession:
+                def query(self, *args, **kwargs):
+                    return NoOpQuery()
+                def add(self, *args, **kwargs):
+                    pass
+                def delete(self, *args, **kwargs):
+                    pass
+                def commit(self):
+                    pass
+                def rollback(self):
+                    pass
+                def expire_all(self):
+                    pass
+            
+            class NoOpQuery:
+                def filter(self, *args, **kwargs):
+                    return self
+                def first(self):
+                    return None
+                def all(self):
+                    return []
+                def count(self):
+                    return 0
+            
+            yield NoOpSession()
+            return
+        
         session = self.db.get_session()
         try:
             yield session
@@ -47,7 +132,16 @@ class DeveloperIdentityResolver:
             session.close()
 
     def _load_cache(self) -> None:
-        """Load identities into memory cache."""
+        """
+        Load identities into memory cache.
+        
+        WHY: When database is not available, we start with an empty cache
+        and rely on in-memory identity resolution for the current session.
+        """
+        if not self._database_available:
+            logger.debug("Database not available, starting with empty identity cache")
+            return
+            
         with self.get_session() as session:
             # Load all identities
             identities = session.query(DeveloperIdentity).all()
@@ -66,6 +160,11 @@ class DeveloperIdentityResolver:
 
     def _apply_manual_mappings(self, manual_mappings: list[dict[str, Any]]) -> None:
         """Apply manual identity mappings from configuration."""
+        # Handle database unavailable scenario
+        if not self._database_available:
+            self._apply_manual_mappings_to_memory()
+            return
+            
         # Clear cache to ensure we get fresh data
         self._cache.clear()
         self._load_cache()
@@ -182,7 +281,16 @@ class DeveloperIdentityResolver:
     def resolve_developer(
         self, name: str, email: str, github_username: Optional[str] = None
     ) -> str:
-        """Resolve developer identity and return canonical ID."""
+        """
+        Resolve developer identity and return canonical ID.
+        
+        WHY: This method handles both database-backed and in-memory identity resolution,
+        allowing the system to function even when persistence is not available.
+        """
+        # Use fallback resolution when database is not available
+        if not self._database_available:
+            return self._fallback_identity_resolution(name, email)
+            
         # Normalize inputs
         name = name.strip()
         email = email.lower().strip()
@@ -437,6 +545,7 @@ class DeveloperIdentityResolver:
                         "alias_count": alias_count,
                         "first_seen": identity.first_seen,
                         "last_seen": identity.last_seen,
+                        "ticket_coverage_pct": 0.0,  # Default value, will be calculated later
                     }
                 )
 
@@ -455,6 +564,8 @@ class DeveloperIdentityResolver:
                 continue
 
             canonical_id = self.resolve_developer(commit["author_name"], commit["author_email"])
+            # Update the commit with the resolved canonical_id for later use in reports
+            commit["canonical_id"] = canonical_id
 
             stats_by_dev[canonical_id]["commits"] += 1
             stats_by_dev[canonical_id]["story_points"] += commit.get("story_points", 0) or 0
@@ -481,3 +592,104 @@ class DeveloperIdentityResolver:
         """Apply manual mappings - can be called explicitly after identities are created."""
         if self.manual_mappings:
             self._apply_manual_mappings(self.manual_mappings)
+    
+    def _apply_manual_mappings_to_memory(self) -> None:
+        """
+        Apply manual mappings to in-memory storage when database is not available.
+        
+        WHY: When persistence fails, we still need to apply user-configured
+        identity mappings for the current analysis session.
+        """
+        if not self.manual_mappings:
+            return
+            
+        for mapping in self.manual_mappings:
+            # Support both canonical_email and primary_email for backward compatibility
+            canonical_email = (
+                (mapping.get("primary_email", "") or mapping.get("canonical_email", ""))
+                .lower()
+                .strip()
+            )
+            aliases = mapping.get("aliases", [])
+            preferred_name = mapping.get("name")  # Optional display name
+            
+            if not canonical_email or not aliases:
+                continue
+                
+            # Create canonical identity in memory
+            canonical_id = str(uuid.uuid4())
+            self._in_memory_identities[canonical_id] = {
+                "primary_name": preferred_name or canonical_email.split("@")[0],
+                "primary_email": canonical_email,
+                "github_username": None,
+                "total_commits": 0,
+                "total_story_points": 0,
+            }
+            
+            # Add to cache
+            self._cache[canonical_id] = self._in_memory_identities[canonical_id]
+            
+            # Process aliases
+            for alias_email in aliases:
+                alias_email = alias_email.lower().strip()
+                alias_key = f"{alias_email}:{preferred_name or canonical_email.split('@')[0]}"
+                self._in_memory_aliases[alias_key] = canonical_id
+                self._cache[alias_key] = canonical_id
+                
+            logger.debug(
+                f"Applied in-memory mapping: {preferred_name or canonical_email.split('@')[0]} "
+                f"with {len(aliases)} aliases"
+            )
+    
+    def _fallback_identity_resolution(self, name: str, email: str) -> str:
+        """
+        Fallback identity resolution when database is not available.
+        
+        WHY: Even without persistence, we need consistent identity resolution
+        within a single analysis session to avoid duplicate developer entries.
+        
+        Args:
+            name: Developer name
+            email: Developer email
+            
+        Returns:
+            Canonical ID for the developer
+        """
+        # Normalize inputs
+        name = name.strip()
+        email = email.lower().strip()
+        cache_key = f"{email}:{name.lower()}"
+        
+        # Check if already resolved
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        
+        # Check in-memory aliases
+        if cache_key in self._in_memory_aliases:
+            canonical_id = self._in_memory_aliases[cache_key]
+            self._cache[cache_key] = canonical_id
+            return canonical_id
+        
+        # Check for email match in existing identities
+        for canonical_id, identity in self._in_memory_identities.items():
+            if identity["primary_email"] == email:
+                # Add this name variant to cache
+                self._cache[cache_key] = canonical_id
+                return canonical_id
+        
+        # Create new identity
+        canonical_id = str(uuid.uuid4())
+        self._in_memory_identities[canonical_id] = {
+            "primary_name": name,
+            "primary_email": email,
+            "github_username": None,
+            "total_commits": 0,
+            "total_story_points": 0,
+        }
+        
+        # Add to cache
+        self._cache[canonical_id] = self._in_memory_identities[canonical_id]
+        self._cache[cache_key] = canonical_id
+        
+        logger.debug(f"Created in-memory identity for {name} <{email}>")
+        return canonical_id

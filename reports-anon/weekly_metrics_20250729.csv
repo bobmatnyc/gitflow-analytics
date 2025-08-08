@@ -1,9 +1,0 @@
-week_start,developer_id,developer_name,developer_email,project,commits,story_points,lines_added,lines_removed,files_changed,complexity_delta,ticket_coverage_pct,avg_commit_size,unique_tickets,prs_involved
-2025-06-02,ID0001,Developer2,dev3@gmail.com,FRONTEND,4,0,1185,548,12,0.0,75.0,433.2,4,0
-2025-06-09,ID0001,Developer2,dev3@gmail.com,FRONTEND,5,0,754,10,7,0.0,40.0,152.8,3,0
-2025-06-09,ID0004,Developer5,dev6@users.noreply.github.com,FRONTEND,3,0,14,16,10,0.0,0.0,10.0,0,0
-2025-06-16,ID0001,Developer2,dev3@gmail.com,FRONTEND,2,0,2,2,2,0.0,50.0,2.0,1,0
-2025-06-16,ID0004,Developer5,dev6@users.noreply.github.com,FRONTEND,3,0,26,16,11,0.0,66.7,14.0,2,0
-2025-06-23,ID0004,Developer5,dev6@users.noreply.github.com,FRONTEND,2,0,2,2,2,0.0,50.0,2.0,1,0
-2025-07-14,ID0004,Developer5,dev6@users.noreply.github.com,FRONTEND,1,0,71,2,5,0.0,100.0,73.0,2,0
-2025-07-14,ID0007,Developer8,dev9@users.noreply.github.com,FRONTEND,1,0,71,2,5,0.0,100.0,73.0,1,0

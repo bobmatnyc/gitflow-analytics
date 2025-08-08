@@ -13,13 +13,16 @@ Key Components:
 """
 
 from .core.processor import QualitativeProcessor
+from .models.schemas import (
+    CacheConfig as QualitativeCacheConfig,
+)
+
 # from .enhanced_analyzer import EnhancedQualitativeAnalyzer  # Commented out - missing dependencies
 from .models.schemas import (
+    LLMConfig,
+    NLPConfig,
     QualitativeCommitData,
     QualitativeConfig,
-    NLPConfig,
-    LLMConfig,
-    CacheConfig as QualitativeCacheConfig,
 )
 
 __all__ = [

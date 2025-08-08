@@ -155,7 +155,8 @@ class TestQualitativeIntegration:
         # Tables should be created during initialization
         with db.get_session() as session:
             # Test that we can execute a basic query (tables exist)
-            result = session.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            from sqlalchemy import text
+            result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
             table_names = [row[0] for row in result.fetchall()]
             
             # Check that qualitative tables are created

@@ -2,8 +2,8 @@
 
 import logging
 import re
-from typing import Dict, List, Any, Set
 from collections import defaultdict
+from typing import Any
 
 from ..models.schemas import IntentConfig
 
@@ -121,7 +121,7 @@ class IntentAnalyzer:
             }
         }
         
-    def analyze(self, message: str, doc: Doc) -> Dict[str, Any]:
+    def analyze(self, message: str, doc: Doc) -> dict[str, Any]:
         """Analyze commit message for intent signals.
         
         Args:
@@ -179,7 +179,7 @@ class IntentAnalyzer:
             }
         }
         
-    def _analyze_urgency(self, message: str) -> Dict[str, Any]:
+    def _analyze_urgency(self, message: str) -> dict[str, Any]:
         """Analyze urgency level from message content.
         
         Args:
@@ -224,7 +224,7 @@ class IntentAnalyzer:
             'signals': signals
         }
         
-    def _analyze_confidence(self, message: str, doc: Doc) -> Dict[str, Any]:
+    def _analyze_confidence(self, message: str, doc: Doc) -> dict[str, Any]:
         """Analyze confidence level in the commit.
         
         Args:
@@ -277,7 +277,7 @@ class IntentAnalyzer:
             'signals': signals
         }
         
-    def _analyze_tone(self, message: str) -> Dict[str, Any]:
+    def _analyze_tone(self, message: str) -> dict[str, Any]:
         """Analyze emotional tone of the commit message.
         
         Args:
@@ -316,7 +316,7 @@ class IntentAnalyzer:
             'signals': signals
         }
         
-    def _analyze_planning_stage(self, message: str) -> Dict[str, Any]:
+    def _analyze_planning_stage(self, message: str) -> dict[str, Any]:
         """Analyze what stage of planning/development this commit represents.
         
         Args:
@@ -367,7 +367,7 @@ class IntentAnalyzer:
             'signals': signals
         }
         
-    def _analyze_collaboration(self, message: str) -> Dict[str, Any]:
+    def _analyze_collaboration(self, message: str) -> dict[str, Any]:
         """Analyze collaboration signals in the commit message.
         
         Args:
@@ -397,7 +397,7 @@ class IntentAnalyzer:
             'is_collaborative': len(collaboration_types) > 0
         }
         
-    def _analyze_complexity(self, message: str) -> Dict[str, Any]:
+    def _analyze_complexity(self, message: str) -> dict[str, Any]:
         """Analyze technical complexity signals in the commit message.
         
         Args:

@@ -2,7 +2,6 @@
 
 import hashlib
 import re
-from typing import Dict, List, Set
 
 
 class TextProcessor:
@@ -22,7 +21,7 @@ class TextProcessor:
         self.ticket_pattern = re.compile(r'\b(?:JIRA|TICKET|ISSUE|BUG|TASK)-?\d+\b', re.IGNORECASE)
         
         # Stop words for feature extraction
-        self.stop_words: Set[str] = {
+        self.stop_words: set[str] = {
             'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
             'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
             'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
@@ -61,7 +60,7 @@ class TextProcessor:
         
         return normalized.strip()
         
-    def extract_keywords(self, text: str, min_length: int = 3) -> List[str]:
+    def extract_keywords(self, text: str, min_length: int = 3) -> list[str]:
         """Extract meaningful keywords from text.
         
         Extracts keywords by removing stop words, punctuation, and short words
@@ -88,7 +87,7 @@ class TextProcessor:
         
         return keywords
         
-    def create_semantic_fingerprint(self, message: str, files: List[str]) -> str:
+    def create_semantic_fingerprint(self, message: str, files: list[str]) -> str:
         """Create a semantic fingerprint for similarity matching.
         
         Creates a hash-based fingerprint that captures the semantic essence
@@ -158,7 +157,7 @@ class TextProcessor:
         
         return intersection / union if union > 0 else 0.0
         
-    def extract_file_patterns(self, files: List[str]) -> Dict[str, int]:
+    def extract_file_patterns(self, files: list[str]) -> dict[str, int]:
         """Extract file patterns for domain classification.
         
         Analyzes file paths to extract patterns useful for determining
@@ -200,8 +199,8 @@ class TextProcessor:
                     
         return patterns
         
-    def calculate_commit_complexity(self, message: str, files: List[str], 
-                                  insertions: int, deletions: int) -> Dict[str, float]:
+    def calculate_commit_complexity(self, message: str, files: list[str], 
+                                  insertions: int, deletions: int) -> dict[str, float]:
         """Calculate various complexity metrics for a commit.
         
         Estimates the complexity of a commit based on message content,

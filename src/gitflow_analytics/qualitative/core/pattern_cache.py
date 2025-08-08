@@ -3,16 +3,15 @@
 import hashlib
 import json
 import logging
-import time
+from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
-from collections import defaultdict
+from typing import Any, Optional
 
-from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc
 
-from ...models.database import Database, PatternCache as PatternCacheModel
+from ...models.database import Database
+from ...models.database import PatternCache as PatternCacheModel
 from ..models.schemas import CacheConfig, QualitativeCommitData
 from ..utils.text_processing import TextProcessor
 
@@ -45,7 +44,7 @@ class PatternCache:
         self.text_processor = TextProcessor()
         
         # In-memory cache for frequently accessed patterns
-        self._memory_cache: Dict[str, Dict[str, Any]] = {}
+        self._memory_cache: dict[str, dict[str, Any]] = {}
         self._memory_cache_hits = defaultdict(int)
         
         # Statistics
@@ -59,7 +58,7 @@ class PatternCache:
         
         self.logger.info(f"Pattern cache initialized with TTL: {config.pattern_cache_ttl_hours}h")
         
-    def lookup_pattern(self, message: str, files: List[str]) -> Optional[Dict[str, Any]]:
+    def lookup_pattern(self, message: str, files: list[str]) -> Optional[dict[str, Any]]:
         """Look up cached classification for a commit pattern.
         
         Args:
@@ -111,8 +110,8 @@ class PatternCache:
         self.cache_misses += 1
         return None
         
-    def store_pattern(self, message: str, files: List[str], 
-                     classification_result: Dict[str, Any], 
+    def store_pattern(self, message: str, files: list[str], 
+                     classification_result: dict[str, Any], 
                      confidence_score: float, source_method: str,
                      processing_time_ms: float = 0.0) -> None:
         """Store a new pattern in the cache.
@@ -181,7 +180,7 @@ class PatternCache:
             f"(confidence: {confidence_score:.2f}, method: {source_method})"
         )
         
-    def learn_from_results(self, results: List[QualitativeCommitData]) -> None:
+    def learn_from_results(self, results: list[QualitativeCommitData]) -> None:
         """Learn patterns from successful classification results.
         
         Args:
@@ -213,7 +212,7 @@ class PatternCache:
         if learned_patterns > 0:
             self.logger.info(f"Learned {learned_patterns} new patterns from results")
             
-    def _add_to_memory_cache(self, fingerprint: str, result: Dict[str, Any]) -> None:
+    def _add_to_memory_cache(self, fingerprint: str, result: dict[str, Any]) -> None:
         """Add result to in-memory cache with size management.
         
         Args:
@@ -237,7 +236,7 @@ class PatternCache:
         self._memory_cache[fingerprint] = result
         self._memory_cache_hits[fingerprint] = 1
         
-    def cleanup_cache(self) -> Dict[str, int]:
+    def cleanup_cache(self) -> dict[str, int]:
         """Clean up expired and low-quality cache entries.
         
         Returns:
@@ -296,7 +295,7 @@ class PatternCache:
         
         return stats
         
-    def get_cache_statistics(self) -> Dict[str, Any]:
+    def get_cache_statistics(self) -> dict[str, Any]:
         """Get comprehensive cache statistics.
         
         Returns:
@@ -377,7 +376,7 @@ class PatternCache:
             }
         }
         
-    def optimize_cache(self) -> Dict[str, Any]:
+    def optimize_cache(self) -> dict[str, Any]:
         """Optimize cache for better performance.
         
         Returns:

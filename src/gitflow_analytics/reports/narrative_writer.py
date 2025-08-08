@@ -1,7 +1,7 @@
 """Narrative report generation in Markdown format."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -71,15 +71,21 @@ class NarrativeReportGenerator:
 
         # Team Composition
         report.write("\n## Team Composition\n\n")
-        self._write_team_composition(report, developer_stats, focus_data, commits, prs)
+        self._write_team_composition(report, developer_stats, focus_data, commits, prs, ticket_analysis, weeks)
 
         # Project Activity
         report.write("\n## Project Activity\n\n")
-        self._write_project_activity(report, activity_dist, commits, branch_health_metrics)
+        self._write_project_activity(report, activity_dist, commits, branch_health_metrics, ticket_analysis, weeks)
+
 
         # Development Patterns
         report.write("\n## Development Patterns\n\n")
         self._write_development_patterns(report, insights, focus_data)
+
+        # Commit Classification Analysis (if ML analysis is available)
+        if ticket_analysis.get("ml_analysis", {}).get("enabled", False):
+            report.write("\n## Commit Classification Analysis\n\n")
+            self._write_commit_classification_analysis(report, ticket_analysis)
 
         # Pull Request Analysis (if available)
         if pr_metrics and pr_metrics.get("total_prs", 0) > 0:
@@ -135,7 +141,7 @@ class NarrativeReportGenerator:
             total_stale = 0
             overall_health_scores = []
             
-            for repo_name, metrics in branch_health_metrics.items():
+            for _repo_name, metrics in branch_health_metrics.items():
                 summary = metrics.get("summary", {})
                 health_indicators = metrics.get("health_indicators", {})
                 
@@ -198,6 +204,686 @@ class NarrativeReportGenerator:
                     f"- **Team Activity**: {activity_assessment} (avg {avg_commits_per_dev:.1f} commits/developer)\n"
                 )
 
+    def _aggregate_commit_classifications(
+        self, 
+        ticket_analysis: dict[str, Any], 
+        commits: list[dict[str, Any]] = None,
+        developer_stats: list[dict[str, Any]] = None
+    ) -> dict[str, dict[str, int]]:
+        """Aggregate commit classifications per developer.
+        
+        WHY: This method provides detailed breakdown of commit types per developer,
+        replacing simple commit counts with actionable insights into what types of
+        work each developer is doing. This helps identify patterns and training needs.
+        
+        DESIGN DECISION: Classify ALL commits (tracked and untracked) into proper
+        categories (feature, bug_fix, refactor, etc.) rather than using 'tracked_work'
+        as a category. For tracked commits, use ticket information to enhance accuracy.
+        
+        Args:
+            ticket_analysis: Ticket analysis data containing classification info
+            commits: Optional list of all commits for complete categorization
+            developer_stats: Developer statistics for mapping canonical IDs
+            
+        Returns:
+            Dictionary mapping developer canonical_id to category counts:
+            {
+                'dev_canonical_id': {
+                    'feature': 15,
+                    'bug_fix': 8, 
+                    'maintenance': 5,
+                    ...
+                }
+            }
+        """
+        # Defensive type checking
+        if not isinstance(ticket_analysis, dict):
+            return {}
+        
+        if commits is not None and not isinstance(commits, list):
+            # Log the error and continue without commits data
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Expected commits to be list or None, got {type(commits)}: {commits}")
+            commits = None
+        
+        if developer_stats is not None and not isinstance(developer_stats, list):
+            developer_stats = None
+            
+        classifications = {}
+        
+        # If we have full commits data, classify ALL commits properly
+        if commits and isinstance(commits, list):
+            # Import the ticket extractor for classification
+            try:
+                from ..extractors.ml_tickets import MLTicketExtractor
+                extractor = MLTicketExtractor(enable_ml=True)
+            except Exception:
+                # Fallback to basic ticket extractor
+                from ..extractors.tickets import TicketExtractor
+                extractor = TicketExtractor()
+            
+            # Classify all commits
+            for commit in commits:
+                canonical_id = commit.get("canonical_id", "Unknown")
+                message = commit.get("message", "")
+                
+                # Get files_changed in proper format for classification
+                files_changed = commit.get("files_changed", [])
+                if isinstance(files_changed, int):
+                    # If files_changed is just a count, we can't provide file names
+                    files_changed = []
+                elif not isinstance(files_changed, list):
+                    files_changed = []
+                
+                # Use ticket information to enhance classification for tracked commits
+                ticket_refs = commit.get("ticket_references", [])
+                
+                if ticket_refs and hasattr(extractor, 'categorize_commit_with_confidence'):
+                    # Use ML categorization with confidence for tracked commits
+                    try:
+                        result = extractor.categorize_commit_with_confidence(message, files_changed)
+                        category = result['category']
+                        # For tracked commits with ticket info, try to infer better category from ticket type
+                        category = self._enhance_category_with_ticket_info(category, ticket_refs, message)
+                    except Exception:
+                        # Fallback to basic categorization
+                        category = extractor.categorize_commit(message)
+                else:
+                    # Use basic categorization for untracked commits
+                    category = extractor.categorize_commit(message)
+                
+                # Initialize developer classification if not exists
+                if canonical_id not in classifications:
+                    classifications[canonical_id] = {}
+                
+                # Initialize category count if not exists
+                if category not in classifications[canonical_id]:
+                    classifications[canonical_id][category] = 0
+                
+                # Increment category count
+                classifications[canonical_id][category] += 1
+        
+        else:
+            # Fallback: Only process untracked commits (legacy behavior)
+            untracked_commits = ticket_analysis.get("untracked_commits", [])
+            
+            # Process untracked commits (these have category information)
+            for commit in untracked_commits:
+                author = commit.get("author", "Unknown")
+                category = commit.get("category", "other")
+                
+                # Map author to canonical_id if developer_stats is available
+                canonical_id = author  # fallback
+                if developer_stats:
+                    for dev in developer_stats:
+                        # Check multiple possible name mappings
+                        if (dev.get("primary_name") == author or 
+                            dev.get("primary_email") == author or
+                            dev.get("canonical_id") == author):
+                            canonical_id = dev.get("canonical_id", author)
+                            break
+                
+                if canonical_id not in classifications:
+                    classifications[canonical_id] = {}
+                
+                if category not in classifications[canonical_id]:
+                    classifications[canonical_id][category] = 0
+                
+                classifications[canonical_id][category] += 1
+        
+        return classifications
+    
+    def _enhance_category_with_ticket_info(self, category: str, ticket_refs: list, message: str) -> str:
+        """Enhance commit categorization using ticket reference information.
+        
+        WHY: For tracked commits, we can often infer better categories by examining
+        the ticket references and message content. This improves classification accuracy
+        for tracked work versus relying purely on message patterns.
+        
+        Args:
+            category: Base category from ML/rule-based classification
+            ticket_refs: List of ticket references for this commit
+            message: Commit message
+            
+        Returns:
+            Enhanced category, potentially refined based on ticket information
+        """
+        if not ticket_refs:
+            return category
+        
+        # Try to extract insights from ticket references and message
+        message_lower = message.lower()
+        
+        # Look for ticket type patterns in the message or ticket IDs
+        # These patterns suggest specific categories regardless of base classification
+        if any(pattern in message_lower for pattern in ['hotfix', 'critical', 'urgent', 'prod', 'production']):
+            return 'bug_fix'  # Production/critical issues are typically bug fixes
+        
+        if any(pattern in message_lower for pattern in ['feature', 'epic', 'story', 'user story']):
+            return 'feature'  # Explicitly mentioned features
+        
+        # Look for JIRA/GitHub issue patterns that might indicate bug fixes
+        for ticket_ref in ticket_refs:
+            if isinstance(ticket_ref, dict):
+                ticket_id = ticket_ref.get('id', '').lower()
+            else:
+                ticket_id = str(ticket_ref).lower()
+            
+            # Common bug fix patterns in ticket IDs
+            if any(pattern in ticket_id for pattern in ['bug', 'fix', 'issue', 'defect']):
+                return 'bug_fix'
+            
+            # Feature patterns in ticket IDs
+            if any(pattern in ticket_id for pattern in ['feat', 'feature', 'epic', 'story']):
+                return 'feature'
+        
+        # If no specific enhancement found, return original category
+        return category
+    
+    def _get_project_classifications(
+        self, project: str, commits: list[dict[str, Any]], ticket_analysis: dict[str, Any]
+    ) -> dict[str, int]:
+        """Get commit classification breakdown for a specific project.
+        
+        WHY: This method filters classification data to show only commits belonging
+        to a specific project, enabling project-specific classification insights
+        in the project activity section.
+        
+        DESIGN DECISION: Classify ALL commits (tracked and untracked) for this project
+        into proper categories rather than lumping tracked commits as 'tracked_work'.
+        
+        Args:
+            project: Project key to filter by
+            commits: List of all commits for mapping
+            ticket_analysis: Ticket analysis data containing classifications
+            
+        Returns:
+            Dictionary mapping category names to commit counts for this project:
+            {'feature': 15, 'bug_fix': 8, 'refactor': 5, ...}
+        """
+        if not isinstance(ticket_analysis, dict):
+            return {}
+        
+        project_classifications = {}
+        
+        # First, try to use already classified untracked commits
+        untracked_commits = ticket_analysis.get("untracked_commits", [])
+        for commit in untracked_commits:
+            commit_project = commit.get("project_key", "UNKNOWN")
+            if commit_project == project:
+                category = commit.get("category", "other")
+                if category not in project_classifications:
+                    project_classifications[category] = 0
+                project_classifications[category] += 1
+        
+        # If we have classifications from untracked commits, use those
+        if project_classifications:
+            return project_classifications
+        
+        # Fallback: If no untracked commits data, classify all commits for this project
+        if isinstance(commits, list):
+            # Import the ticket extractor for classification
+            try:
+                from ..extractors.ml_tickets import MLTicketExtractor
+                extractor = MLTicketExtractor(enable_ml=True)
+            except Exception:
+                # Fallback to basic ticket extractor
+                from ..extractors.tickets import TicketExtractor
+                extractor = TicketExtractor()
+            
+            # Classify all commits for this project
+            for commit in commits:
+                commit_project = commit.get("project_key", "UNKNOWN")
+                if commit_project == project:
+                    message = commit.get("message", "")
+                    
+                    # Get files_changed in proper format for classification
+                    files_changed = commit.get("files_changed", [])
+                    if isinstance(files_changed, int):
+                        # If files_changed is just a count, we can't provide file names
+                        files_changed = []
+                    elif not isinstance(files_changed, list):
+                        files_changed = []
+                    
+                    # Use ticket information to enhance classification for tracked commits
+                    ticket_refs = commit.get("ticket_references", [])
+                    
+                    if ticket_refs and hasattr(extractor, 'categorize_commit_with_confidence'):
+                        # Use ML categorization with confidence for tracked commits
+                        try:
+                            result = extractor.categorize_commit_with_confidence(message, files_changed)
+                            category = result['category']
+                            # For tracked commits with ticket info, try to infer better category from ticket type
+                            category = self._enhance_category_with_ticket_info(category, ticket_refs, message)
+                        except Exception:
+                            # Fallback to basic categorization
+                            category = extractor.categorize_commit(message)
+                    else:
+                        # Use basic categorization for untracked commits
+                        category = extractor.categorize_commit(message)
+                    
+                    # Initialize category count if not exists
+                    if category not in project_classifications:
+                        project_classifications[category] = 0
+                    
+                    # Increment category count
+                    project_classifications[category] += 1
+        
+        return project_classifications
+    
+    def _format_category_name(self, category: str) -> str:
+        """Convert internal category names to user-friendly display names.
+        
+        Args:
+            category: Internal category name (e.g., 'bug_fix', 'feature', 'refactor')
+            
+        Returns:
+            User-friendly display name (e.g., 'Bug Fixes', 'Features', 'Refactoring')
+        """
+        category_mapping = {
+            'bug_fix': 'Bug Fixes',
+            'feature': 'Features', 
+            'refactor': 'Refactoring',
+            'documentation': 'Documentation',
+            'maintenance': 'Maintenance',
+            'test': 'Testing',
+            'style': 'Code Style',
+            'build': 'Build/CI',
+            'other': 'Other'
+        }
+        return category_mapping.get(category, category.replace('_', ' ').title())
+    
+    def _calculate_weekly_classification_percentages(
+        self,
+        commits: list[dict[str, Any]],
+        developer_id: str = None,
+        project_key: str = None,
+        weeks: int = 4
+    ) -> list[dict[str, Any]]:
+        """Calculate weekly classification percentages for trend lines.
+        
+        WHY: This method creates detailed week-by-week breakdown of commit classifications
+        showing how work type distribution changes over time, providing granular insights
+        into development patterns and workload shifts.
+        
+        DESIGN DECISION: Break down the analysis period into individual weeks and show
+        classification percentages for each week, with change indicators from previous week.
+        Only show categories that represent >5% of work to avoid noise.
+        
+        Args:
+            commits: List of all commits with timestamps and classifications
+            developer_id: Optional canonical developer ID to filter by
+            project_key: Optional project key to filter by
+            weeks: Total analysis period in weeks
+            
+        Returns:
+            List of weekly data dictionaries:
+            [
+                {
+                    'week_start': datetime,
+                    'week_display': 'Jul 7-13',
+                    'classifications': {'Features': 45.0, 'Bug Fixes': 30.0, 'Maintenance': 25.0},
+                    'changes': {'Features': 5.0, 'Bug Fixes': -5.0, 'Maintenance': 0.0}
+                },
+                ...
+            ]
+        """
+        if not commits or weeks < 1:
+            return []
+        
+        # Filter commits by developer or project if specified
+        filtered_commits = []
+        for commit in commits:
+            if developer_id and commit.get('canonical_id') != developer_id:
+                continue
+            if project_key and commit.get('project_key') != project_key:
+                continue
+            filtered_commits.append(commit)
+        
+        if len(filtered_commits) < 2:
+            return []
+        
+        # Group commits by week
+        weekly_commits = {}
+        
+        for commit in filtered_commits:
+            timestamp = commit.get('timestamp')
+            if not timestamp:
+                continue
+            
+            # Ensure timezone consistency
+            if hasattr(timestamp, 'tzinfo'):
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                elif timestamp.tzinfo != timezone.utc:
+                    timestamp = timestamp.astimezone(timezone.utc)
+            
+            # Get week start (Monday)
+            week_start = self._get_week_start(timestamp)
+            
+            if week_start not in weekly_commits:
+                weekly_commits[week_start] = []
+            weekly_commits[week_start].append(commit)
+        
+        if len(weekly_commits) < 2:
+            return []
+        
+        # Sort weeks chronologically
+        sorted_weeks = sorted(weekly_commits.keys())
+        
+        # Import classifiers
+        try:
+            from ..extractors.ml_tickets import MLTicketExtractor
+            extractor = MLTicketExtractor(enable_ml=True)
+        except Exception:
+            from ..extractors.tickets import TicketExtractor
+            extractor = TicketExtractor()
+        
+        # Calculate classifications for each week
+        weekly_data = []
+        previous_percentages = {}
+        
+        for week_start in sorted_weeks:
+            week_commits = weekly_commits[week_start]
+            
+            # Classify commits for this week
+            week_classifications = {}
+            for commit in week_commits:
+                message = commit.get('message', '')
+                files_changed = commit.get('files_changed', [])
+                if isinstance(files_changed, int) or not isinstance(files_changed, list):
+                    files_changed = []
+                
+                ticket_refs = commit.get('ticket_references', [])
+                
+                if ticket_refs and hasattr(extractor, 'categorize_commit_with_confidence'):
+                    try:
+                        result = extractor.categorize_commit_with_confidence(message, files_changed)
+                        category = result['category']
+                        category = self._enhance_category_with_ticket_info(category, ticket_refs, message)
+                    except Exception:
+                        category = extractor.categorize_commit(message)
+                else:
+                    category = extractor.categorize_commit(message)
+                
+                if category not in week_classifications:
+                    week_classifications[category] = 0
+                week_classifications[category] += 1
+            
+            # Calculate percentages
+            total_commits = sum(week_classifications.values())
+            if total_commits == 0:
+                continue
+            
+            week_percentages = {}
+            for category, count in week_classifications.items():
+                percentage = (count / total_commits) * 100
+                if percentage >= 5.0:  # Only include significant categories
+                    display_name = self._format_category_name(category)
+                    week_percentages[display_name] = percentage
+            
+            # Calculate changes from previous week
+            changes = {}
+            if previous_percentages:
+                for category in set(week_percentages.keys()) | set(previous_percentages.keys()):
+                    current_pct = week_percentages.get(category, 0.0)
+                    prev_pct = previous_percentages.get(category, 0.0)
+                    change = current_pct - prev_pct
+                    if abs(change) >= 1.0:  # Only show changes >= 1%
+                        changes[category] = change
+            
+            # Format week display
+            week_end = week_start + timedelta(days=6)
+            week_display = f"{week_start.strftime('%b %d')}-{week_end.strftime('%d')}"
+            
+            weekly_data.append({
+                'week_start': week_start,
+                'week_display': week_display,
+                'classifications': week_percentages,
+                'changes': changes
+            })
+            
+            previous_percentages = week_percentages.copy()
+        
+        return weekly_data
+    
+    def _calculate_classification_trends(
+        self, 
+        commits: list[dict[str, Any]], 
+        developer_id: str = None, 
+        project_key: str = None,
+        weeks: int = 4
+    ) -> dict[str, float]:
+        """Calculate week-over-week changes in classification percentages.
+        
+        WHY: This method provides trend analysis showing how development patterns
+        change over time, helping identify shifts in work type distribution.
+        
+        DESIGN DECISION: Compare the most recent half of the analysis period
+        with the earlier half to show meaningful trends. For shorter periods,
+        compare week-to-week. Use percentage point changes for clarity.
+        
+        Args:
+            commits: List of all commits with timestamps and classifications
+            developer_id: Optional canonical developer ID to filter by
+            project_key: Optional project key to filter by
+            weeks: Total analysis period in weeks
+            
+        Returns:
+            Dictionary mapping category names to percentage point changes:
+            {'Features': 15.2, 'Bug Fixes': -8.1, 'Refactoring': 3.4}
+            Positive values indicate increases, negative indicate decreases.
+        """
+        if not commits or len(commits) < 2:
+            return {}
+        
+        # Filter commits by developer or project if specified
+        filtered_commits = []
+        for commit in commits:
+            if developer_id and commit.get('canonical_id') != developer_id:
+                continue
+            if project_key and commit.get('project_key') != project_key:
+                continue
+            filtered_commits.append(commit)
+        
+        if len(filtered_commits) < 2:
+            return {}
+        
+        # Sort commits by timestamp
+        def safe_timestamp_key(commit):
+            ts = commit.get('timestamp')
+            if ts is None:
+                return datetime.min.replace(tzinfo=timezone.utc)
+            if hasattr(ts, 'tzinfo'):
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                return ts
+            return ts
+        
+        sorted_commits = sorted(filtered_commits, key=safe_timestamp_key)
+        
+        if len(sorted_commits) < 4:  # Need at least 4 commits for meaningful trend
+            return {}
+        
+        # Determine time split strategy based on analysis period
+        if weeks <= 2:
+            # For short periods (1-2 weeks), compare last 3 days vs previous 3+ days
+            cutoff_days = 3
+        elif weeks <= 4:
+            # For 3-4 week periods, compare last week vs previous weeks
+            cutoff_days = 7
+        else:
+            # For longer periods, compare recent half vs older half
+            cutoff_days = (weeks * 7) // 2
+        
+        # Calculate cutoff timestamp
+        latest_timestamp = safe_timestamp_key(sorted_commits[-1])
+        cutoff_timestamp = latest_timestamp - timedelta(days=cutoff_days)
+        
+        # Split commits into recent and previous periods
+        recent_commits = [c for c in sorted_commits if safe_timestamp_key(c) >= cutoff_timestamp]
+        previous_commits = [c for c in sorted_commits if safe_timestamp_key(c) < cutoff_timestamp]
+        
+        if not recent_commits or not previous_commits:
+            return {}
+        
+        # Classify commits for both periods
+        def get_period_classifications(period_commits):
+            period_classifications = {}
+            
+            # Import classifiers
+            try:
+                from ..extractors.ml_tickets import MLTicketExtractor
+                extractor = MLTicketExtractor(enable_ml=True)
+            except Exception:
+                from ..extractors.tickets import TicketExtractor
+                extractor = TicketExtractor()
+            
+            for commit in period_commits:
+                message = commit.get('message', '')
+                files_changed = commit.get('files_changed', [])
+                if isinstance(files_changed, int) or not isinstance(files_changed, list):
+                    files_changed = []
+                
+                # Get ticket info for enhancement
+                ticket_refs = commit.get('ticket_references', [])
+                
+                if ticket_refs and hasattr(extractor, 'categorize_commit_with_confidence'):
+                    try:
+                        result = extractor.categorize_commit_with_confidence(message, files_changed)
+                        category = result['category']
+                        category = self._enhance_category_with_ticket_info(category, ticket_refs, message)
+                    except Exception:
+                        category = extractor.categorize_commit(message)
+                else:
+                    category = extractor.categorize_commit(message)
+                
+                if category not in period_classifications:
+                    period_classifications[category] = 0
+                period_classifications[category] += 1
+            
+            return period_classifications
+        
+        recent_classifications = get_period_classifications(recent_commits)
+        previous_classifications = get_period_classifications(previous_commits)
+        
+        # Calculate percentage changes
+        trends = {}
+        all_categories = set(recent_classifications.keys()) | set(previous_classifications.keys())
+        
+        total_recent = sum(recent_classifications.values())
+        total_previous = sum(previous_classifications.values())
+        
+        if total_recent == 0 or total_previous == 0:
+            return {}
+        
+        for category in all_categories:
+            recent_count = recent_classifications.get(category, 0)
+            previous_count = previous_classifications.get(category, 0)
+            
+            recent_pct = (recent_count / total_recent) * 100
+            previous_pct = (previous_count / total_previous) * 100
+            
+            change = recent_pct - previous_pct
+            
+            # Only include significant changes (>= 5% absolute change)
+            if abs(change) >= 5.0:
+                display_name = self._format_category_name(category)
+                trends[display_name] = change
+        
+        return trends
+    
+    def _format_trend_line(self, trends: dict[str, float], prefix: str = "📈 Trends") -> str:
+        """Format trend data into a readable line with appropriate icons.
+        
+        WHY: This method provides consistent formatting for trend display across
+        different sections of the report, using visual indicators to highlight
+        increases, decreases, and overall patterns.
+        
+        Args:
+            trends: Dictionary of category name to percentage change
+            prefix: Text prefix for the trend line
+            
+        Returns:
+            Formatted trend line string, or empty string if no significant trends
+        """
+        if not trends:
+            return ""
+        
+        # Sort by absolute change magnitude (largest first)
+        sorted_trends = sorted(trends.items(), key=lambda x: abs(x[1]), reverse=True)
+        
+        trend_parts = []
+        for category, change in sorted_trends[:4]:  # Show top 4 trends
+            if change > 0:
+                icon = "⬆️"
+                sign = "+"
+            else:
+                icon = "⬇️"
+                sign = ""
+            
+            trend_parts.append(f"{category} {icon}{sign}{change:.0f}%")
+        
+        if trend_parts:
+            return f"{prefix}: {', '.join(trend_parts)}"
+        
+        return ""
+    
+    def _write_weekly_trend_lines(
+        self,
+        report: StringIO,
+        weekly_trends: list[dict[str, Any]],
+        prefix: str = ""
+    ) -> None:
+        """Write weekly trend lines showing week-by-week classification changes.
+        
+        WHY: This method provides detailed weekly breakdown of work patterns,
+        showing how development focus shifts over time with specific percentages
+        and change indicators from previous weeks.
+        
+        Args:
+            report: StringIO buffer to write to
+            weekly_trends: List of weekly classification data
+            prefix: Optional prefix for the trend section (e.g., "Project ")
+        """
+        if not weekly_trends:
+            return
+        
+        report.write(f"- {prefix}Weekly Trends:\n")
+        
+        for i, week_data in enumerate(weekly_trends):
+            week_display = week_data['week_display']
+            classifications = week_data['classifications']
+            changes = week_data['changes']
+            
+            if not classifications:
+                continue
+            
+            # Format classifications with percentages
+            classification_parts = []
+            for category in sorted(classifications.keys()):
+                percentage = classifications[category]
+                change = changes.get(category, 0.0)
+                
+                if i == 0 or abs(change) < 1.0:
+                    # First week or no significant change
+                    classification_parts.append(f"{category} {percentage:.0f}%")
+                else:
+                    # Show change from previous week
+                    if change > 0:
+                        change_indicator = f"(+{change:.0f}%)"
+                    else:
+                        change_indicator = f"({change:.0f}%)"
+                    classification_parts.append(f"{category} {percentage:.0f}% {change_indicator}")
+            
+            if classification_parts:
+                classifications_text = ", ".join(classification_parts)
+                report.write(f"  - Week {i+1} ({week_display}): {classifications_text}\n")
+        
+        # Add a blank line after trend lines for spacing
+        # (Note: Don't add extra newline here as the caller will handle spacing)
+    
     def _write_team_composition(
         self,
         report: StringIO,
@@ -205,8 +891,15 @@ class NarrativeReportGenerator:
         focus_data: list[dict[str, Any]],
         commits: list[dict[str, Any]] = None,
         prs: list[dict[str, Any]] = None,
+        ticket_analysis: dict[str, Any] = None,
+        weeks: int = 4,
     ) -> None:
-        """Write team composition analysis with activity scores."""
+        """Write team composition analysis with activity scores and commit classifications.
+        
+        WHY: Enhanced team composition shows not just how much each developer commits,
+        but what types of work they're doing. This provides actionable insights into
+        developer specializations, training needs, and work distribution patterns.
+        """
         report.write("### Developer Profiles\n\n")
 
         # Create developer lookup for focus data
@@ -233,16 +926,22 @@ class NarrativeReportGenerator:
                 metrics["commits"] += 1
                 metrics["lines_added"] += commit.get(
                     "filtered_insertions", commit.get("insertions", 0)
-                )
+                ) or 0
                 metrics["lines_removed"] += commit.get(
                     "filtered_deletions", commit.get("deletions", 0)
-                )
-                metrics["complexity_delta"] += commit.get("complexity_delta", 0)
+                ) or 0
+                metrics["complexity_delta"] += commit.get("complexity_delta", 0) or 0
 
                 # Track unique files
                 files = commit.get("files_changed", [])
                 if isinstance(files, list):
-                    metrics["files_changed"].update(files)
+                    # Only update if metrics["files_changed"] is still a set
+                    if isinstance(metrics["files_changed"], set):
+                        metrics["files_changed"].update(files)
+                    else:
+                        # If it's already an int, convert back to set and update
+                        metrics["files_changed"] = set()
+                        metrics["files_changed"].update(files)
                 elif isinstance(files, int):
                     # If it's already aggregated, just add the count
                     if isinstance(metrics["files_changed"], set):
@@ -287,14 +986,130 @@ class NarrativeReportGenerator:
         # Calculate team scores for relative ranking
         all_scores = [score["raw_score"] for score in activity_scores.values()]
 
-        for dev in developer_stats[:10]:  # Top 10 developers
+        for dev in developer_stats:  # All developers
             # Handle both 'primary_name' (production) and 'name' (tests) for backward compatibility
             name = dev.get("primary_name", dev.get("name", "Unknown Developer"))
-            commits = dev["total_commits"]
+            total_commits = dev["total_commits"]
             canonical_id = dev.get("canonical_id")
 
             report.write(f"**{name}**\n")
-            report.write(f"- Commits: {commits}\n")
+            
+            # Try to get commit classification breakdown if available
+            if ticket_analysis:
+                classifications = self._aggregate_commit_classifications(
+                    ticket_analysis, commits, developer_stats
+                )
+                dev_classifications = classifications.get(canonical_id, {})
+                
+                if dev_classifications:
+                    # Sort categories by count (descending) 
+                    sorted_categories = sorted(
+                        dev_classifications.items(), 
+                        key=lambda x: x[1], 
+                        reverse=True
+                    )
+                    
+                    # Format as "Features: 15 (45%), Bug Fixes: 8 (24%), etc."
+                    total_classified = sum(dev_classifications.values())
+                    if total_classified > 0:
+                        category_parts = []
+                        for category, count in sorted_categories:
+                            pct = (count / total_classified) * 100
+                            display_name = self._format_category_name(category)
+                            category_parts.append(f"{display_name}: {count} ({pct:.0f}%)")
+                        
+                        # Show top categories (limit to avoid excessive length)
+                        max_categories = 5
+                        if len(category_parts) > max_categories:
+                            shown_parts = category_parts[:max_categories]
+                            remaining = len(category_parts) - max_categories
+                            shown_parts.append(f"({remaining} more)")
+                            category_display = ", ".join(shown_parts)
+                        else:
+                            category_display = ", ".join(category_parts)
+                        
+                        # Calculate ticket coverage for this developer
+                        ticket_coverage_pct = dev.get("ticket_coverage_pct", 0)
+                        report.write(f"- Commits: {category_display}\n")
+                        report.write(f"- Ticket Coverage: {ticket_coverage_pct:.1f}%\n")
+                        
+                        # Add weekly trend lines if available
+                        if commits:
+                            weekly_trends = self._calculate_weekly_classification_percentages(
+                                commits, developer_id=canonical_id, weeks=weeks
+                            )
+                            if weekly_trends:
+                                self._write_weekly_trend_lines(report, weekly_trends)
+                            else:
+                                # Fallback to simple trend analysis
+                                trends = self._calculate_classification_trends(
+                                    commits, developer_id=canonical_id, weeks=weeks
+                                )
+                                trend_line = self._format_trend_line(trends)
+                                if trend_line:
+                                    report.write(f"- {trend_line}\n")
+                    else:
+                        # Fallback to simple count if no classifications
+                        ticket_coverage_pct = dev.get("ticket_coverage_pct", 0)
+                        report.write(f"- Commits: {total_commits}\n")
+                        report.write(f"- Ticket Coverage: {ticket_coverage_pct:.1f}%\n")
+                        
+                        # Still try to add weekly trend lines for simple commits
+                        if commits:
+                            weekly_trends = self._calculate_weekly_classification_percentages(
+                                commits, developer_id=canonical_id, weeks=weeks
+                            )
+                            if weekly_trends:
+                                self._write_weekly_trend_lines(report, weekly_trends)
+                            else:
+                                # Fallback to simple trend analysis
+                                trends = self._calculate_classification_trends(
+                                    commits, developer_id=canonical_id, weeks=weeks
+                                )
+                                trend_line = self._format_trend_line(trends)
+                                if trend_line:
+                                    report.write(f"- {trend_line}\n")
+                else:
+                    # Fallback to simple count if no classification data for this developer
+                    ticket_coverage_pct = dev.get("ticket_coverage_pct", 0)
+                    report.write(f"- Commits: {total_commits}\n")
+                    report.write(f"- Ticket Coverage: {ticket_coverage_pct:.1f}%\n")
+                    
+                    # Still try to add weekly trend lines
+                    if commits:
+                        weekly_trends = self._calculate_weekly_classification_percentages(
+                            commits, developer_id=canonical_id, weeks=weeks
+                        )
+                        if weekly_trends:
+                            self._write_weekly_trend_lines(report, weekly_trends)
+                        else:
+                            # Fallback to simple trend analysis
+                            trends = self._calculate_classification_trends(
+                                commits, developer_id=canonical_id, weeks=weeks
+                            )
+                            trend_line = self._format_trend_line(trends)
+                            if trend_line:
+                                report.write(f"- {trend_line}\n")
+            else:
+                # Fallback to simple count if no ticket analysis available
+                report.write(f"- Commits: {total_commits}\n")
+                # No ticket coverage info available in this case
+                
+                # Still try to add weekly trend lines if commits available
+                if commits:
+                    weekly_trends = self._calculate_weekly_classification_percentages(
+                        commits, developer_id=canonical_id, weeks=weeks
+                    )
+                    if weekly_trends:
+                        self._write_weekly_trend_lines(report, weekly_trends)
+                    else:
+                        # Fallback to simple trend analysis
+                        trends = self._calculate_classification_trends(
+                            commits, developer_id=canonical_id, weeks=weeks
+                        )
+                        trend_line = self._format_trend_line(trends)
+                        if trend_line:
+                            report.write(f"- {trend_line}\n")
 
             # Add activity score if available
             if canonical_id and canonical_id in activity_scores:
@@ -366,9 +1181,17 @@ class NarrativeReportGenerator:
 
     def _write_project_activity(
         self, report: StringIO, activity_dist: list[dict[str, Any]], commits: list[dict[str, Any]],
-        branch_health_metrics: dict[str, dict[str, Any]] = None
+        branch_health_metrics: dict[str, dict[str, Any]] = None,
+        ticket_analysis: dict[str, Any] = None,
+        weeks: int = 4
     ) -> None:
-        """Write project activity breakdown."""
+        """Write project activity breakdown with commit classifications.
+        
+        WHY: Enhanced project activity section now includes commit classification
+        breakdown per project, providing insights into what types of work are
+        happening in each project (features, bug fixes, refactoring, etc.).
+        This helps identify project-specific development patterns.
+        """
         # Aggregate by project with developer details
         project_totals: dict[str, dict[str, Any]] = {}
         project_developers: dict[str, dict[str, int]] = {}
@@ -425,6 +1248,56 @@ class NarrativeReportGenerator:
             contributors_str = ", ".join(contributors)
             report.write(f"- Contributors: {contributors_str}\n")
             
+            # Add commit classification breakdown for this project
+            if ticket_analysis:
+                project_classifications = self._get_project_classifications(project, commits, ticket_analysis)
+                if project_classifications:
+                    # Sort categories by count (descending)
+                    sorted_categories = sorted(
+                        project_classifications.items(),
+                        key=lambda x: x[1],
+                        reverse=True
+                    )
+                    
+                    # Calculate total for percentages
+                    total_classified = sum(project_classifications.values())
+                    if total_classified > 0:
+                        category_parts = []
+                        for category, count in sorted_categories:
+                            pct = (count / total_classified) * 100
+                            display_name = self._format_category_name(category)
+                            category_parts.append(f"{display_name} ({pct:.0f}%)")
+                        
+                        # Show top categories to avoid excessive length
+                        max_categories = 4
+                        if len(category_parts) > max_categories:
+                            shown_parts = category_parts[:max_categories]
+                            remaining = len(category_parts) - max_categories
+                            shown_parts.append(f"({remaining} more)")
+                            category_display = ", ".join(shown_parts)
+                        else:
+                            category_display = ", ".join(category_parts)
+                        
+                        report.write(f"- Classifications: {category_display}\n")
+                        
+                        # Add project-level weekly trend lines
+                        if commits:
+                            project_weekly_trends = self._calculate_weekly_classification_percentages(
+                                commits, project_key=project, weeks=weeks
+                            )
+                            if project_weekly_trends:
+                                self._write_weekly_trend_lines(report, project_weekly_trends, "Project ")
+                            else:
+                                # Fallback to simple project trend analysis
+                                project_trends = self._calculate_classification_trends(
+                                    commits, project_key=project, weeks=weeks
+                                )
+                                project_trend_line = self._format_trend_line(
+                                    project_trends, prefix="📊 Weekly Trend"
+                                )
+                                if project_trend_line:
+                                    report.write(f"- {project_trend_line}\n")
+            
             # Add branch health for this project/repository if available
             if branch_health_metrics and project in branch_health_metrics:
                 repo_health = branch_health_metrics[project]
@@ -452,7 +1325,7 @@ class NarrativeReportGenerator:
                     status_emoji = "🔴"
                     status_text = "Needs Attention"
                 
-                report.write(f"\n**Branch Management**\n")
+                report.write("\n**Branch Management**\n")
                 report.write(f"- Overall Health: {status_emoji} {status_text} ({health_score:.0f}/100)\n")
                 report.write(f"- Total Branches: {total_branches}\n")
                 report.write(f"  - Active: {active_branches} branches\n")
@@ -466,7 +1339,7 @@ class NarrativeReportGenerator:
                     problem_branches.sort(key=lambda x: x.get("health_score", 100))
                     
                     if problem_branches:
-                        report.write(f"\n**Branches Needing Attention**:\n")
+                        report.write("\n**Branches Needing Attention**:\n")
                         for i, branch in enumerate(problem_branches[:3]):  # Show top 3
                             name = branch.get("name", "unknown")
                             age = branch.get("age_days", 0)
@@ -484,11 +1357,28 @@ class NarrativeReportGenerator:
                 # Add recommendations
                 recommendations = repo_health.get("recommendations", [])
                 if recommendations:
-                    report.write(f"\n**Recommended Actions**:\n")
+                    report.write("\n**Recommended Actions**:\n")
                     for rec in recommendations[:3]:  # Show top 3 recommendations
                         report.write(f"- {rec}\n")
             
             report.write("\n")
+
+    def _get_week_start(self, date: datetime) -> datetime:
+        """Get Monday of the week for a given date."""
+        # Ensure consistent timezone handling - keep timezone info
+        if hasattr(date, "tzinfo") and date.tzinfo is not None:
+            # Keep timezone-aware but ensure it's UTC
+            if date.tzinfo != timezone.utc:
+                date = date.astimezone(timezone.utc)
+        else:
+            # Convert naive datetime to UTC timezone-aware
+            date = date.replace(tzinfo=timezone.utc)
+
+        days_since_monday = date.weekday()
+        monday = date - timedelta(days=days_since_monday)
+        result = monday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        return result
 
     def _write_development_patterns(
         self, report: StringIO, insights: list[dict[str, Any]], focus_data: list[dict[str, Any]]
@@ -584,6 +1474,16 @@ class NarrativeReportGenerator:
         commits_with_tickets = ticket_analysis.get("commits_with_tickets", 0)
         total_commits = ticket_analysis.get("total_commits", 0)
         coverage_pct = ticket_analysis.get("commit_coverage_pct", 0)
+
+        # Debug logging for ticket coverage issues
+        logger.debug(f"Ticket coverage analysis - commits_with_tickets: {commits_with_tickets}, total_commits: {total_commits}, coverage_pct: {coverage_pct}")
+        if commits_with_tickets == 0 and total_commits > 0:
+            logger.warning(f"No commits found with ticket references out of {total_commits} total commits")
+            # Log sample of ticket_analysis structure for debugging
+            if "ticket_summary" in ticket_analysis:
+                logger.debug(f"Ticket summary: {ticket_analysis['ticket_summary']}")
+            if "ticket_platforms" in ticket_analysis:
+                logger.debug(f"Ticket platforms: {ticket_analysis['ticket_platforms']}")
 
         report.write(f"- **Commits with Tickets**: {commits_with_tickets} ")
         report.write(f"of {total_commits} ")
@@ -921,6 +1821,105 @@ class NarrativeReportGenerator:
         else:
             report.write("✅ The team shows healthy development patterns. ")
             report.write("Continue current practices while monitoring for changes.\n")
+
+    def _write_commit_classification_analysis(
+        self, report: StringIO, ticket_analysis: dict[str, Any]
+    ) -> None:
+        """Write commit classification analysis section.
+        
+        WHY: This section provides insights into automated commit categorization
+        quality and distribution, helping teams understand their development patterns
+        and the effectiveness of ML-based categorization.
+        
+        Args:
+            report: StringIO buffer to write to
+            ticket_analysis: Ticket analysis data containing ML classification results
+        """
+        ml_analysis = ticket_analysis.get("ml_analysis", {})
+        if not ml_analysis.get("enabled", False):
+            return
+        
+        report.write("The team's commit patterns reveal the following automated classification insights:\n\n")
+        
+        # Overall classification statistics
+        total_ml_predictions = ml_analysis.get("total_ml_predictions", 0)
+        total_rule_predictions = ml_analysis.get("total_rule_predictions", 0)
+        total_cached_predictions = ml_analysis.get("total_cached_predictions", 0)
+        total_predictions = total_ml_predictions + total_rule_predictions + total_cached_predictions
+        
+        if total_predictions > 0:
+            report.write("### Classification Method Distribution\n\n")
+            
+            # Calculate percentages
+            ml_pct = (total_ml_predictions / total_predictions) * 100
+            rules_pct = (total_rule_predictions / total_predictions) * 100
+            cached_pct = (total_cached_predictions / total_predictions) * 100
+            
+            report.write(f"- **ML-based Classifications**: {total_ml_predictions} commits ({ml_pct:.1f}%)\n")
+            report.write(f"- **Rule-based Classifications**: {total_rule_predictions} commits ({rules_pct:.1f}%)\n")
+            report.write(f"- **Cached Results**: {total_cached_predictions} commits ({cached_pct:.1f}%)\n\n")
+            
+            # Classification confidence analysis
+            avg_confidence = ml_analysis.get("avg_confidence", 0)
+            confidence_dist = ml_analysis.get("confidence_distribution", {})
+            
+            if confidence_dist:
+                report.write("### Classification Confidence\n\n")
+                report.write(f"- **Average Confidence**: {avg_confidence:.1%} across all classifications\n")
+                
+                high_conf = confidence_dist.get("high", 0)
+                medium_conf = confidence_dist.get("medium", 0)
+                low_conf = confidence_dist.get("low", 0)
+                total_conf_items = high_conf + medium_conf + low_conf
+                
+                if total_conf_items > 0:
+                    high_pct = (high_conf / total_conf_items) * 100
+                    medium_pct = (medium_conf / total_conf_items) * 100
+                    low_pct = (low_conf / total_conf_items) * 100
+                    
+                    report.write(f"- **High Confidence** (≥80%): {high_conf} commits ({high_pct:.1f}%)\n")
+                    report.write(f"- **Medium Confidence** (60-79%): {medium_conf} commits ({medium_pct:.1f}%)\n")
+                    report.write(f"- **Low Confidence** (<60%): {low_conf} commits ({low_pct:.1f}%)\n\n")
+            
+            # Category confidence breakdown
+            category_confidence = ml_analysis.get("category_confidence", {})
+            if category_confidence:
+                report.write("### Classification Categories\n\n")
+                
+                # Sort categories by count (descending)
+                sorted_categories = sorted(
+                    category_confidence.items(), 
+                    key=lambda x: x[1].get("count", 0), 
+                    reverse=True
+                )
+                
+                # Calculate total commits for percentages
+                total_categorized = sum(data.get("count", 0) for data in category_confidence.values())
+                
+                for category, data in sorted_categories:
+                    count = data.get("count", 0)
+                    avg_conf = data.get("avg", 0)
+                    
+                    if count > 0:
+                        category_pct = (count / total_categorized) * 100
+                        category_display = category.replace("_", " ").title()
+                        report.write(f"- **{category_display}**: {count} commits ({category_pct:.1f}%, avg confidence: {avg_conf:.1%})\n")
+                
+                report.write("\n")
+            
+            # Performance metrics
+            processing_stats = ml_analysis.get("processing_time_stats", {})
+            if processing_stats.get("total_ms", 0) > 0:
+                avg_ms = processing_stats.get("avg_ms", 0)
+                total_ms = processing_stats.get("total_ms", 0)
+                
+                report.write("### Processing Performance\n\n")
+                report.write(f"- **Average Processing Time**: {avg_ms:.1f}ms per commit\n")
+                report.write(f"- **Total Processing Time**: {total_ms:.0f}ms ({total_ms/1000:.1f} seconds)\n\n")
+            
+        
+        else:
+            report.write("No classification data available for analysis.\n\n")
 
     def _write_pm_insights(self, report: StringIO, pm_data: dict[str, Any]) -> None:
         """Write PM platform integration insights.

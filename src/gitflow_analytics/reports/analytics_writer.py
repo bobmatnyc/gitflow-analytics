@@ -21,6 +21,29 @@ class AnalyticsReportGenerator:
         self._anonymization_map = {}
         self._anonymous_counter = 0
     
+    def _get_files_changed_count(self, commit: Dict[str, Any]) -> int:
+        """Safely extract files_changed count from commit data.
+        
+        WHY: The files_changed field can be either an int (count) or list (file names).
+        This helper ensures we always get an integer count for calculations.
+        
+        Args:
+            commit: Commit dictionary with files_changed field
+            
+        Returns:
+            Integer count of files changed
+        """
+        files_changed = commit.get('files_changed', 0)
+        
+        if isinstance(files_changed, int):
+            return files_changed
+        elif isinstance(files_changed, list):
+            return len(files_changed)
+        else:
+            # Fallback for unexpected types
+            logger.warning(f"Unexpected files_changed type: {type(files_changed)}, defaulting to 0")
+            return 0
+    
     def _log_datetime_comparison(self, dt1: datetime, dt2: datetime, operation: str, location: str) -> None:
         """Log datetime comparison details for debugging timezone issues."""
         logger.debug(f"Comparing dates in {location} ({operation}):")
@@ -103,7 +126,7 @@ class AnalyticsReportGenerator:
             c.get('filtered_deletions', c.get('deletions', 0)) 
             for c in commits
         )
-        total_files = sum(c['files_changed'] for c in commits)
+        total_files = sum(self._get_files_changed_count(c) for c in commits)
         
         # Group by developer and project
         dev_project_activity = defaultdict(lambda: defaultdict(lambda: {
@@ -119,7 +142,16 @@ class AnalyticsReportGenerator:
                 commit.get('filtered_insertions', commit.get('insertions', 0)) + 
                 commit.get('filtered_deletions', commit.get('deletions', 0))
             )
-            dev_project_activity[dev_id][project]['files'] += commit.get('filtered_files_changed', commit.get('files_changed', 0))
+            # Handle files_changed safely - could be int or list
+            files_changed = commit.get('filtered_files_changed')
+            if files_changed is None:
+                files_changed = self._get_files_changed_count(commit)
+            elif isinstance(files_changed, list):
+                files_changed = len(files_changed)
+            elif not isinstance(files_changed, int):
+                files_changed = 0
+            
+            dev_project_activity[dev_id][project]['files'] += files_changed
             dev_project_activity[dev_id][project]['story_points'] += commit.get('story_points', 0) or 0
         
         # Build report data
@@ -751,7 +783,11 @@ class AnalyticsReportGenerator:
         insights = []
         
         # File change patterns
-        file_changes = [c['files_changed'] for c in commits if c['files_changed'] > 0]
+        file_changes = []
+        for c in commits:
+            files_count = self._get_files_changed_count(c)
+            if files_count > 0:
+                file_changes.append(files_count)
         if file_changes:
             avg_files = np.mean(file_changes)
             

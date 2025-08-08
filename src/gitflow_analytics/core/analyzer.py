@@ -2,9 +2,10 @@
 
 import fnmatch
 import logging
+import os
 import re
 from collections.abc import Generator
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -39,8 +40,11 @@ class GitAnalyzer:
         allowed_ticket_platforms: Optional[list[str]] = None,
         exclude_paths: Optional[list[str]] = None,
         ml_categorization_config: Optional[dict[str, Any]] = None,
+        llm_config: Optional[dict[str, Any]] = None,
+        classification_config: Optional[dict[str, Any]] = None,
+        branch_analysis_config: Optional[dict[str, Any]] = None,
     ):
-        """Initialize analyzer with cache and optional ML categorization.
+        """Initialize analyzer with cache and optional ML categorization and commit classification.
         
         Args:
             cache: Git analysis cache instance
@@ -49,6 +53,9 @@ class GitAnalyzer:
             allowed_ticket_platforms: List of allowed ticket platforms
             exclude_paths: List of file paths to exclude from analysis
             ml_categorization_config: Configuration for ML-based categorization
+            llm_config: Configuration for LLM-based commit classification
+            classification_config: Configuration for commit classification
+            branch_analysis_config: Configuration for branch analysis optimization
         """
         self.cache = cache
         self.batch_size = batch_size
@@ -60,11 +67,19 @@ class GitAnalyzer:
             ML_EXTRACTOR_AVAILABLE):
             
             logger.info("Initializing ML-enhanced ticket extractor")
+            
+            # Check if LLM classification is enabled
+            enable_llm = llm_config and llm_config.get('enabled', False)
+            if enable_llm:
+                logger.info("LLM-based commit classification enabled")
+            
             self.ticket_extractor = MLTicketExtractor(
                 allowed_platforms=allowed_ticket_platforms,
                 ml_config=ml_categorization_config,
+                llm_config=llm_config,
                 cache_dir=cache.cache_dir / "ml_predictions",
-                enable_ml=True
+                enable_ml=True,
+                enable_llm=enable_llm
             )
         else:
             if ml_categorization_config and ml_categorization_config.get('enabled', True):
@@ -79,74 +94,500 @@ class GitAnalyzer:
         
         self.branch_mapper = BranchToProjectMapper(branch_mapping_rules)
         self.exclude_paths = exclude_paths or []
+        
+        # Initialize branch analysis configuration
+        self.branch_analysis_config = branch_analysis_config or {}
+        self.branch_strategy = self.branch_analysis_config.get("strategy", "all")
+        self.max_branches_per_repo = self.branch_analysis_config.get("max_branches_per_repo", 50)
+        self.active_days_threshold = self.branch_analysis_config.get("active_days_threshold", 90)
+        self.include_main_branches = self.branch_analysis_config.get("include_main_branches", True)
+        self.always_include_patterns = self.branch_analysis_config.get("always_include_patterns", [
+            r"^(main|master|develop|dev)$",
+            r"^release/.*",
+            r"^hotfix/.*"
+        ])
+        self.always_exclude_patterns = self.branch_analysis_config.get("always_exclude_patterns", [
+            r"^dependabot/.*",
+            r"^renovate/.*",
+            r".*-backup$",
+            r".*-temp$"
+        ])
+        self.enable_progress_logging = self.branch_analysis_config.get("enable_progress_logging", True)
+        self.branch_commit_limit = self.branch_analysis_config.get("branch_commit_limit", None)  # No limit by default
+        
+        # Initialize commit classifier if enabled
+        self.classification_enabled = classification_config and classification_config.get('enabled', False)
+        self.commit_classifier = None
+        
+        if self.classification_enabled:
+            try:
+                from ..classification.classifier import CommitClassifier
+                self.commit_classifier = CommitClassifier(
+                    config=classification_config,
+                    cache_dir=cache.cache_dir / 'classification'
+                )
+                logger.info("Commit classification enabled")
+            except ImportError as e:
+                logger.warning(f"Classification dependencies not available: {e}")
+                self.classification_enabled = False
+            except Exception as e:
+                logger.error(f"Failed to initialize commit classifier: {e}")
+                self.classification_enabled = False
 
     def analyze_repository(
         self, repo_path: Path, since: datetime, branch: Optional[str] = None
     ) -> list[dict[str, Any]]:
-        """Analyze a Git repository with batch processing."""
+        """Analyze a Git repository with batch processing and optional classification."""
         try:
             repo = Repo(repo_path)
+            # Update repository from remote before analysis
+            self._update_repository(repo)
         except Exception as e:
             raise ValueError(f"Failed to open repository at {repo_path}: {e}") from e
 
-        # Get commits to analyze
-        commits = self._get_commits(repo, since, branch)
+        # Get commits to analyze with optimized branch selection
+        commits = self._get_commits_optimized(repo, since, branch)
         total_commits = len(commits)
 
         if total_commits == 0:
             return []
 
         analyzed_commits = []
+        total_cache_hits = 0
+        total_cache_misses = 0
 
         # Process in batches with progress bar
+        processed_commits = 0
         with tqdm(total=total_commits, desc=f"Analyzing {repo_path.name}") as pbar:
             for batch in self._batch_commits(commits, self.batch_size):
-                batch_results = self._process_batch(repo, repo_path, batch)
+                batch_results, batch_hits, batch_misses = self._process_batch(repo, repo_path, batch)
                 analyzed_commits.extend(batch_results)
+                
+                # Track overall cache performance
+                total_cache_hits += batch_hits
+                total_cache_misses += batch_misses
 
-                # Cache the batch
+                # Cache all results (cache method handles duplicates efficiently)
                 self.cache.cache_commits_batch(str(repo_path), batch_results)
 
-                pbar.update(len(batch))
+                # Update progress tracking
+                batch_size = len(batch)
+                processed_commits += batch_size
+                
+                # Ensure we don't exceed the total (safety check)
+                progress_update = min(batch_size, total_commits - pbar.n)
+                
+                # Update progress bar with cache info
+                hit_rate = (batch_hits / batch_size) * 100 if batch_size > 0 else 0
+                pbar.set_postfix({
+                    "cache_hit_rate": f"{hit_rate:.1f}%",
+                    "processed": f"{processed_commits}/{total_commits}"
+                })
+                pbar.update(progress_update)
+                
+                # Debug logging for progress tracking issues
+                if os.getenv("GITFLOW_DEBUG", "").lower() in ("1", "true", "yes"):
+                    logger.debug(f"Batch: {batch_size} commits, Progress: {pbar.n}/{total_commits}, Processed: {processed_commits}")
+                    
+                # Safety check to prevent over-counting
+                if pbar.n >= total_commits:
+                    break
+            
+            # Ensure progress bar shows completion
+            if pbar.n < total_commits:
+                pbar.update(total_commits - pbar.n)
+
+        # Log overall cache performance
+        if total_cache_hits + total_cache_misses > 0:
+            overall_hit_rate = (total_cache_hits / (total_cache_hits + total_cache_misses)) * 100
+            logger.info(f"Repository {repo_path.name}: {total_cache_hits} cached, {total_cache_misses} analyzed ({overall_hit_rate:.1f}% cache hit rate)")
+
+        # Apply commit classification if enabled
+        if self.classification_enabled and self.commit_classifier and analyzed_commits:
+            logger.info(f"Applying commit classification to {len(analyzed_commits)} commits")
+            
+            try:
+                # Prepare commits for classification (add file changes information)
+                commits_with_files = self._prepare_commits_for_classification(repo, analyzed_commits)
+                
+                # Get classification results
+                classification_results = self.commit_classifier.classify_commits(commits_with_files)
+                
+                # Merge classification results back into analyzed commits
+                for commit, classification in zip(analyzed_commits, classification_results):
+                    if classification:  # Classification might be empty if disabled or failed
+                        commit.update({
+                            'predicted_class': classification.get('predicted_class'),
+                            'classification_confidence': classification.get('confidence'),
+                            'is_reliable_prediction': classification.get('is_reliable_prediction'),
+                            'class_probabilities': classification.get('class_probabilities'),
+                            'file_analysis_summary': classification.get('file_analysis'),
+                            'classification_metadata': classification.get('classification_metadata')
+                        })
+                
+                logger.info(f"Successfully classified {len(classification_results)} commits")
+                
+            except Exception as e:
+                logger.error(f"Commit classification failed: {e}")
+                # Continue without classification rather than failing entirely
 
         return analyzed_commits
 
-    def _get_commits(
+    def _update_repository(self, repo) -> bool:
+        """Update repository from remote before analysis.
+        
+        WHY: This ensures we have the latest commits from the remote repository
+        before performing analysis. Critical for getting accurate data especially
+        when analyzing repositories that are actively being developed.
+        
+        DESIGN DECISION: Uses fetch() for all cases, then pull() only when on a
+        tracking branch that's not in detached HEAD state. This approach:
+        - Handles detached HEAD states gracefully (common in CI/CD)
+        - Always gets latest refs from remote via fetch
+        - Only attempts pull when it's safe to do so
+        - Continues analysis even if update fails (logs warning)
+        
+        Args:
+            repo: GitPython Repo object
+            
+        Returns:
+            bool: True if update succeeded, False if failed (but analysis continues)
+        """
+        try:
+            if repo.remotes:
+                origin = repo.remotes.origin
+                logger.info("Fetching latest changes from remote")
+                origin.fetch()
+                
+                # Only try to pull if not in detached HEAD state
+                if not repo.head.is_detached:
+                    current_branch = repo.active_branch
+                    tracking = current_branch.tracking_branch()
+                    if tracking:
+                        # Pull latest changes
+                        origin.pull()
+                        logger.debug(f"Pulled latest changes for {current_branch.name}")
+                    else:
+                        logger.debug(f"Branch {current_branch.name} has no tracking branch, skipping pull")
+                else:
+                    logger.debug("Repository in detached HEAD state, skipping pull")
+                return True
+            else:
+                logger.debug("No remotes configured, skipping repository update")
+                return True
+        except Exception as e:
+            logger.warning(f"Could not update repository: {e}")
+            # Continue with analysis using local state
+            return False
+
+    def _get_commits_optimized(
         self, repo: Repo, since: datetime, branch: Optional[str] = None
     ) -> list[git.Commit]:
-        """Get commits from repository."""
-        logger.debug(f"Getting commits since: {since} (tzinfo: {getattr(since, 'tzinfo', 'N/A')})")
+        """Get commits from repository with branch analysis strategy.
         
-        if branch:
-            try:
-                commits = list(repo.iter_commits(branch, since=since))
-            except git.GitCommandError:
-                # Branch doesn't exist
-                return []
-        else:
-            # Get commits from all branches
-            commits = []
-            for ref in repo.refs:
-                if ref.name.startswith("origin/"):
-                    continue  # Skip remote branches
+        WHY: Different analysis needs require different branch coverage approaches.
+        The default "all" strategy ensures complete commit coverage without missing
+        important development work that happens on feature branches.
+        
+        DESIGN DECISION: Three strategies available:
+        1. "main_only": Only analyze main/master branch (fastest, least comprehensive)
+        2. "smart": Analyze active branches with smart filtering (balanced, may miss commits)
+        3. "all": Analyze all branches (comprehensive coverage, default)
+        
+        DEFAULT STRATEGY CHANGED: Now defaults to "all" to ensure complete coverage
+        after reports that "smart" strategy was missing significant commits (~100+ commits
+        and entire developers working on feature branches).
+        
+        The "smart" strategy filters branches based on:
+        - Recent activity (commits within active_days_threshold)
+        - Branch naming patterns (always include main, release, hotfix branches)
+        - Exclude automation branches (dependabot, renovate, etc.)
+        - Limit total branches per repository
+        
+        The "all" strategy:
+        - Analyzes all local and remote branches/refs
+        - No artificial branch limits
+        - No commit limits per branch (unless explicitly configured)
+        - Ensures complete development history capture
+        """
+        logger.debug(f"Getting commits since: {since} (tzinfo: {getattr(since, 'tzinfo', 'N/A')})")
+        logger.debug(f"Using branch analysis strategy: {self.branch_strategy}")
+        
+        if self.branch_strategy == "main_only":
+            return self._get_main_branch_commits(repo, since, branch)
+        elif self.branch_strategy == "all":
+            logger.info("Using 'all' branches strategy for complete commit coverage")
+            return self._get_all_branch_commits(repo, since)
+        else:  # smart strategy
+            return self._get_smart_branch_commits(repo, since)
+    
+    def _get_main_branch_commits(self, repo: Repo, since: datetime, branch: Optional[str] = None) -> list[git.Commit]:
+        """Get commits from main branch only (fastest strategy).
+        
+        Args:
+            repo: Git repository object
+            since: Date to get commits since
+            branch: Specific branch to analyze (overrides main branch detection)
+            
+        Returns:
+            List of commits from main branch only
+        """
+        target_branch = branch
+        if not target_branch:
+            # Auto-detect main branch
+            main_branch_names = ["main", "master", "develop", "dev"]
+            for branch_name in main_branch_names:
                 try:
-                    branch_commits = list(repo.iter_commits(ref, since=since))
-                    commits.extend(branch_commits)
-                except git.GitCommandError:
+                    if branch_name in [b.name for b in repo.branches]:
+                        target_branch = branch_name
+                        break
+                except Exception:
                     continue
+            
+            if not target_branch and repo.branches:
+                target_branch = repo.branches[0].name  # Fallback to first branch
+                
+        if not target_branch:
+            logger.warning("No main branch found, no commits will be analyzed")
+            return []
+            
+        logger.debug(f"Analyzing main branch only: {target_branch}")
+        
+        try:
+            if self.branch_commit_limit:
+                commits = list(repo.iter_commits(target_branch, since=since, max_count=self.branch_commit_limit))
+            else:
+                commits = list(repo.iter_commits(target_branch, since=since))
+            logger.debug(f"Found {len(commits)} commits in main branch {target_branch}")
+            return sorted(commits, key=lambda c: c.committed_datetime)
+        except git.GitCommandError as e:
+            logger.warning(f"Failed to get commits from branch {target_branch}: {e}")
+            return []
+    
+    def _get_all_branch_commits(self, repo: Repo, since: datetime) -> list[git.Commit]:
+        """Get commits from all branches (comprehensive analysis).
+        
+        WHY: This strategy captures ALL commits from ALL branches without artificial limitations.
+        It's designed to ensure complete coverage even if it takes longer to run.
+        
+        DESIGN DECISION: Analyzes both local and remote branches to ensure we don't miss
+        commits that exist only on remote branches. Uses no commit limits per branch
+        to capture complete development history.
+        
+        Args:
+            repo: Git repository object
+            since: Date to get commits since
+            
+        Returns:
+            List of unique commits from all branches
+        """
+        logger.info("Analyzing all branches for complete commit coverage")
+        
+        commits = []
+        branch_count = 0
+        processed_refs = set()  # Track processed refs to avoid duplicates
+        
+        # Process all refs (local branches, remote branches, tags)
+        for ref in repo.refs:
+            # Skip if we've already processed this ref
+            ref_name = ref.name
+            if ref_name in processed_refs:
+                continue
+                
+            processed_refs.add(ref_name)
+            branch_count += 1
+            
+            try:
+                # No commit limit - get ALL commits from this branch
+                if self.branch_commit_limit:
+                    branch_commits = list(repo.iter_commits(ref, since=since, max_count=self.branch_commit_limit))
+                    logger.debug(f"Branch {ref_name}: found {len(branch_commits)} commits (limited to {self.branch_commit_limit})")
+                else:
+                    branch_commits = list(repo.iter_commits(ref, since=since))
+                    logger.debug(f"Branch {ref_name}: found {len(branch_commits)} commits (no limit)")
+                    
+                commits.extend(branch_commits)
+                
+                if self.enable_progress_logging and branch_count % 10 == 0:
+                    logger.info(f"Processed {branch_count} branches, found {len(commits)} total commits so far")
+                    
+            except git.GitCommandError as e:
+                logger.debug(f"Skipping branch {ref_name} due to error: {e}")
+                continue
 
-            # Remove duplicates while preserving order
-            seen = set()
-            unique_commits = []
-            for commit in commits:
-                if commit.hexsha not in seen:
-                    seen.add(commit.hexsha)
-                    unique_commits.append(commit)
-
-            commits = unique_commits
-
-        # Sort by date
-        return sorted(commits, key=lambda c: c.committed_datetime)
+        # Remove duplicates while preserving order
+        unique_commits = self._deduplicate_commits(commits)
+        
+        logger.info(f"Found {len(unique_commits)} unique commits across {branch_count} branches/refs")
+        return sorted(unique_commits, key=lambda c: c.committed_datetime)
+    
+    def _get_smart_branch_commits(self, repo: Repo, since: datetime) -> list[git.Commit]:
+        """Get commits using smart branch filtering (balanced approach).
+        
+        This method implements intelligent branch selection that:
+        1. Always includes main/important branches
+        2. Includes recently active branches
+        3. Excludes automation/temporary branches
+        4. Limits total number of branches analyzed
+        
+        Args:
+            repo: Git repository object
+            since: Date to get commits since
+            
+        Returns:
+            List of unique commits from selected branches
+        """
+        logger.debug("Using smart branch analysis strategy")
+        
+        # Get active date threshold
+        active_threshold = datetime.now(timezone.utc) - timedelta(days=self.active_days_threshold)
+        
+        # Collect branch information
+        branch_info = []
+        
+        for ref in repo.refs:
+            if ref.name.startswith("origin/"):
+                continue  # Skip remote tracking branches
+                
+            try:
+                branch_name = ref.name
+                
+                # Check if branch should be excluded
+                if self._should_exclude_branch(branch_name):
+                    continue
+                    
+                # Get latest commit date for this branch
+                try:
+                    latest_commit = next(repo.iter_commits(ref, max_count=1))
+                    latest_date = latest_commit.committed_datetime
+                    
+                    # Convert to timezone-aware if needed
+                    if latest_date.tzinfo is None:
+                        latest_date = latest_date.replace(tzinfo=timezone.utc)
+                    elif latest_date.tzinfo != timezone.utc:
+                        latest_date = latest_date.astimezone(timezone.utc)
+                        
+                except StopIteration:
+                    continue  # Empty branch
+                    
+                # Determine branch priority
+                is_important = self._is_important_branch(branch_name)
+                is_active = latest_date >= active_threshold
+                
+                branch_info.append({
+                    'ref': ref,
+                    'name': branch_name,
+                    'latest_date': latest_date,
+                    'is_important': is_important,
+                    'is_active': is_active
+                })
+                
+            except Exception as e:
+                logger.debug(f"Skipping branch {ref.name} due to error: {e}")
+                continue
+        
+        # Sort branches by importance and activity
+        branch_info.sort(key=lambda x: (
+            x['is_important'],  # Important branches first
+            x['is_active'],     # Then active branches
+            x['latest_date']    # Then by recency
+        ), reverse=True)
+        
+        # Select branches to analyze
+        selected_branches = branch_info[:self.max_branches_per_repo]
+        
+        if self.enable_progress_logging:
+            logger.info(f"Selected {len(selected_branches)} branches out of {len(branch_info)} total branches")
+            important_count = sum(1 for b in selected_branches if b['is_important'])
+            active_count = sum(1 for b in selected_branches if b['is_active'])
+            logger.debug(f"Selected branches: {important_count} important, {active_count} active")
+        
+        # Get commits from selected branches
+        commits = []
+        
+        with tqdm(total=len(selected_branches), desc="Analyzing branches", 
+                 disable=not self.enable_progress_logging, leave=False) as pbar:
+            
+            for branch_data in selected_branches:
+                try:
+                    if self.branch_commit_limit:
+                        branch_commits = list(repo.iter_commits(
+                            branch_data['ref'], 
+                            since=since, 
+                            max_count=self.branch_commit_limit
+                        ))
+                    else:
+                        branch_commits = list(repo.iter_commits(
+                            branch_data['ref'], 
+                            since=since
+                        ))
+                    commits.extend(branch_commits)
+                    
+                    if self.enable_progress_logging:
+                        pbar.set_postfix({
+                            'branch': branch_data['name'][:15] + ('...' if len(branch_data['name']) > 15 else ''),
+                            'commits': len(branch_commits)
+                        })
+                        
+                except git.GitCommandError as e:
+                    logger.debug(f"Failed to get commits from branch {branch_data['name']}: {e}")
+                    
+                pbar.update(1)
+        
+        # Remove duplicates while preserving order
+        unique_commits = self._deduplicate_commits(commits)
+        
+        logger.info(f"Smart analysis found {len(unique_commits)} unique commits from {len(selected_branches)} branches")
+        return sorted(unique_commits, key=lambda c: c.committed_datetime)
+    
+    def _should_exclude_branch(self, branch_name: str) -> bool:
+        """Check if a branch should be excluded from analysis.
+        
+        Args:
+            branch_name: Name of the branch to check
+            
+        Returns:
+            True if the branch should be excluded, False otherwise
+        """
+        # Check against exclude patterns
+        for pattern in self.always_exclude_patterns:
+            if re.match(pattern, branch_name, re.IGNORECASE):
+                return True
+        return False
+    
+    def _is_important_branch(self, branch_name: str) -> bool:
+        """Check if a branch is considered important and should always be included.
+        
+        Args:
+            branch_name: Name of the branch to check
+            
+        Returns:
+            True if the branch is important, False otherwise
+        """
+        # Check against important branch patterns
+        for pattern in self.always_include_patterns:
+            if re.match(pattern, branch_name, re.IGNORECASE):
+                return True
+        return False
+    
+    def _deduplicate_commits(self, commits: list[git.Commit]) -> list[git.Commit]:
+        """Remove duplicate commits while preserving order.
+        
+        Args:
+            commits: List of commits that may contain duplicates
+            
+        Returns:
+            List of unique commits in original order
+        """
+        seen = set()
+        unique_commits = []
+        
+        for commit in commits:
+            if commit.hexsha not in seen:
+                seen.add(commit.hexsha)
+                unique_commits.append(commit)
+                
+        return unique_commits
 
     def _batch_commits(
         self, commits: list[git.Commit], batch_size: int
@@ -157,22 +598,43 @@ class GitAnalyzer:
 
     def _process_batch(
         self, repo: Repo, repo_path: Path, commits: list[git.Commit]
-    ) -> list[dict[str, Any]]:
-        """Process a batch of commits."""
+    ) -> tuple[list[dict[str, Any]], int, int]:
+        """Process a batch of commits with optimized cache lookups.
+        
+        WHY: Bulk cache lookups are much faster than individual queries.
+        This optimization can reduce subsequent run times from minutes to seconds
+        when most commits are already cached.
+        
+        Returns:
+            Tuple of (results, cache_hits, cache_misses)
+        """
         results = []
+        
+        # Bulk fetch cached commits
+        commit_hashes = [commit.hexsha for commit in commits]
+        cached_commits = self.cache.get_cached_commits_bulk(str(repo_path), commit_hashes)
+        
+        cache_hits = 0
+        cache_misses = 0
 
         for commit in commits:
-            # Check cache first
-            cached = self.cache.get_cached_commit(str(repo_path), commit.hexsha)
-            if cached:
-                results.append(cached)
+            # Check bulk cache results
+            if commit.hexsha in cached_commits:
+                results.append(cached_commits[commit.hexsha])
+                cache_hits += 1
                 continue
 
             # Analyze commit
             commit_data = self._analyze_commit(repo, commit, repo_path)
             results.append(commit_data)
+            cache_misses += 1
 
-        return results
+        # Log cache performance for debugging
+        if cache_hits + cache_misses > 0:
+            cache_hit_rate = (cache_hits / (cache_hits + cache_misses)) * 100
+            logger.debug(f"Batch cache performance: {cache_hits} hits, {cache_misses} misses ({cache_hit_rate:.1f}% hit rate)")
+
+        return results, cache_hits, cache_misses
 
     def _analyze_commit(self, repo: Repo, commit: git.Commit, repo_path: Path) -> dict[str, Any]:
         """Analyze a single commit."""
@@ -217,7 +679,9 @@ class GitAnalyzer:
 
         # Calculate metrics - use raw stats for backward compatibility
         stats = commit.stats.total
-        commit_data["files_changed"] = stats["files"] if isinstance(stats, dict) else stats.files
+        files_count = stats["files"] if isinstance(stats, dict) else stats.files
+        commit_data["files_changed_count"] = files_count  # Integer count for backward compatibility
+        commit_data["files_changed"] = self._get_changed_file_paths(commit)  # List of file paths for ML
         commit_data["insertions"] = stats["insertions"] if isinstance(stats, dict) else stats.insertions
         commit_data["deletions"] = stats["deletions"] if isinstance(stats, dict) else stats.deletions
 
@@ -250,6 +714,32 @@ class GitAnalyzer:
             if commit in repo.iter_commits(branch):
                 return branch.name
         return "unknown"
+
+    def _get_changed_file_paths(self, commit: git.Commit) -> list[str]:
+        """Extract list of changed file paths from a git commit.
+        
+        Args:
+            commit: Git commit object
+            
+        Returns:
+            List of file paths that were changed in the commit
+        """
+        file_paths = []
+        
+        # Handle initial commits (no parents) and regular commits
+        parent = commit.parents[0] if commit.parents else None
+        
+        try:
+            for diff in commit.diff(parent):
+                # Get file path - prefer the new path (b_path) for modifications and additions,
+                # fall back to old path (a_path) for deletions
+                file_path = diff.b_path if diff.b_path else diff.a_path
+                if file_path:
+                    file_paths.append(file_path)
+        except Exception as e:
+            logger.warning(f"Failed to extract file paths from commit {commit.hexsha[:8]}: {e}")
+        
+        return file_paths
 
     def _calculate_complexity_delta(self, commit: git.Commit) -> float:
         """Calculate complexity change for a commit."""
@@ -483,3 +973,76 @@ class GitAnalyzer:
             pass
 
         return filtered_stats
+
+    def _prepare_commits_for_classification(self, repo: Repo, commits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Prepare commits for classification by adding file change information.
+        
+        Args:
+            repo: Git repository object
+            commits: List of analyzed commit dictionaries
+            
+        Returns:
+            List of commits with file change information needed for classification
+        """
+        prepared_commits = []
+        
+        for commit_data in commits:
+            commit_hash = commit_data.get('hash')
+            if not commit_hash:
+                prepared_commits.append(commit_data)
+                continue
+            
+            try:
+                # Use the file paths already extracted during analysis
+                files_changed = commit_data.get('files_changed', [])
+                
+                # If files_changed is somehow not available or empty, extract it as fallback
+                if not files_changed:
+                    logger.warning(f"No file paths found for commit {commit_hash[:8]}, extracting as fallback")
+                    files_changed = self._get_changed_file_paths(repo.commit(commit_hash))
+                
+                # Create enhanced commit data for classification
+                enhanced_commit = commit_data.copy()
+                enhanced_commit['files_changed'] = files_changed
+                
+                # Add file details if needed by classifier
+                if files_changed:
+                    file_details = {}
+                    # Only extract file details if we need to get commit object for other reasons
+                    # or if file details are specifically required by the classifier
+                    try:
+                        commit = repo.commit(commit_hash)
+                        parent = commit.parents[0] if commit.parents else None
+                        
+                        for diff in commit.diff(parent):
+                            file_path = diff.b_path if diff.b_path else diff.a_path
+                            if file_path and file_path in files_changed:
+                                # Calculate insertions and deletions per file
+                                if diff.diff:
+                                    diff_text = (
+                                        diff.diff
+                                        if isinstance(diff.diff, str)
+                                        else diff.diff.decode("utf-8", errors="ignore")
+                                    )
+                                    insertions = len([line for line in diff_text.split("\n") 
+                                                    if line.startswith("+") and not line.startswith("+++")])
+                                    deletions = len([line for line in diff_text.split("\n") 
+                                                   if line.startswith("-") and not line.startswith("---")])
+                                    
+                                    file_details[file_path] = {
+                                        'insertions': insertions,
+                                        'deletions': deletions
+                                    }
+                        
+                        enhanced_commit['file_details'] = file_details
+                    except Exception as detail_error:
+                        logger.warning(f"Failed to extract file details for commit {commit_hash[:8]}: {detail_error}")
+                        enhanced_commit['file_details'] = {}
+                
+                prepared_commits.append(enhanced_commit)
+                
+            except Exception as e:
+                logger.warning(f"Failed to prepare commit {commit_hash} for classification: {e}")
+                prepared_commits.append(commit_data)
+        
+        return prepared_commits

@@ -52,20 +52,37 @@ from .models import (
 from .orchestrator import PMFrameworkOrchestrator
 from .registry import PlatformRegistry
 
-# Create default registry with available adapters
-_default_registry = PlatformRegistry()
-_default_registry.register_adapter('jira', JIRAAdapter)
+# Lazy initialization - registry created on first access
+_default_registry = None
 
 def get_default_registry() -> PlatformRegistry:
     """Get the default platform registry with built-in adapters registered.
     
     WHY: Provides a convenient way to access a pre-configured registry with
-    all available adapters already registered. This simplifies usage for
-    consumers who don't need custom adapter management.
+    all available adapters already registered. Uses lazy initialization to
+    avoid creating registry instances at import time before credentials are
+    available.
+    
+    DESIGN DECISION: Lazy initialization prevents authentication issues in
+    training pipeline where imports happen before configuration is loaded.
+    The registry is created when first accessed, ensuring credentials are
+    available from the orchestrator configuration.
     
     Returns:
         PlatformRegistry instance with built-in adapters registered.
     """
+    global _default_registry
+    
+    if _default_registry is None:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug("Initializing default PM platform registry (lazy initialization)")
+        
+        _default_registry = PlatformRegistry()
+        _default_registry.register_adapter('jira', JIRAAdapter)
+        
+        logger.debug("Default registry initialized with built-in adapters")
+    
     return _default_registry
 
 __all__ = [

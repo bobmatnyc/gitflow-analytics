@@ -64,6 +64,167 @@ class MLCategorization:
 
 
 @dataclass
+class LLMClassificationConfig:
+    """LLM-based commit classification configuration.
+    
+    This configuration enables Large Language Model-based commit classification
+    via OpenRouter API for more accurate and context-aware categorization.
+    """
+    
+    # Enable/disable LLM classification
+    enabled: bool = False  # Disabled by default to avoid unexpected API costs
+    
+    # OpenRouter API configuration
+    api_key: Optional[str] = None  # Set via environment variable or config
+    api_base_url: str = "https://openrouter.ai/api/v1"
+    model: str = "mistralai/mistral-7b-instruct"  # Fast, affordable model
+    
+    # Alternative models for different use cases:
+    # - "meta-llama/llama-3-8b-instruct" (Higher accuracy, slightly more expensive)
+    # - "openai/gpt-3.5-turbo" (Good balance, more expensive)
+    
+    # Classification parameters
+    confidence_threshold: float = 0.7  # Minimum confidence for LLM predictions
+    max_tokens: int = 50  # Keep responses short for cost optimization
+    temperature: float = 0.1  # Low temperature for consistent results
+    timeout_seconds: float = 30.0  # API request timeout
+    
+    # Caching configuration (aggressive caching for cost optimization)
+    cache_duration_days: int = 90  # Long cache duration
+    enable_caching: bool = True
+    
+    # Cost and rate limiting
+    max_daily_requests: int = 1000  # Daily API request limit
+    
+    # Domain-specific terms for better classification accuracy
+    domain_terms: dict[str, list[str]] = field(default_factory=lambda: {
+        "media": [
+            "video", "audio", "streaming", "player", "media", "content",
+            "broadcast", "live", "recording", "episode", "program", "tv",
+            "radio", "podcast", "channel", "playlist"
+        ],
+        "localization": [
+            "translation", "i18n", "l10n", "locale", "language", "spanish",
+            "french", "german", "italian", "portuguese", "multilingual",
+            "translate", "localize", "regional"
+        ],
+        "integration": [
+            "api", "webhook", "third-party", "external", "service",
+            "integration", "sync", "import", "export", "connector",
+            "oauth", "auth", "authentication", "sso"
+        ],
+        "content": [
+            "copy", "text", "wording", "messaging", "editorial", "article",
+            "blog", "news", "story", "caption", "title", "headline",
+            "description", "summary", "metadata"
+        ]
+    })
+    
+    # Fallback behavior when LLM is unavailable
+    fallback_to_rules: bool = True  # Fall back to rule-based classification
+    fallback_to_ml: bool = True     # Fall back to existing ML classification
+
+
+@dataclass
+class CommitClassificationConfig:
+    """Configuration for commit classification system.
+    
+    This configuration controls the Random Forest-based commit classification
+    system that analyzes commits to categorize them into types like feature,
+    bugfix, refactor, docs, test, etc.
+    """
+    
+    enabled: bool = True
+    confidence_threshold: float = 0.5  # Minimum confidence for reliable predictions
+    batch_size: int = 100  # Commits processed per batch
+    auto_retrain: bool = True  # Automatically check if model needs retraining
+    retrain_threshold_days: int = 30  # Days after which to suggest retraining
+    
+    # Model hyperparameters
+    model: dict[str, Any] = field(default_factory=lambda: {
+        'n_estimators': 100,  # Number of trees in random forest
+        'max_depth': 20,  # Maximum depth of trees
+        'min_samples_split': 5,  # Minimum samples to split a node
+        'min_samples_leaf': 2,  # Minimum samples at leaf node
+        'random_state': 42,  # For reproducible results
+        'n_jobs': -1  # Use all available CPU cores
+    })
+    
+    # Feature extraction settings
+    feature_extraction: dict[str, Any] = field(default_factory=lambda: {
+        'enable_temporal_features': True,
+        'enable_author_features': True,
+        'enable_file_analysis': True,
+        'keyword_categories': [
+            'feature', 'bugfix', 'refactor', 'docs', 'test', 'config',
+            'security', 'performance', 'ui', 'api', 'database', 'deployment'
+        ]
+    })
+    
+    # Training settings
+    training: dict[str, Any] = field(default_factory=lambda: {
+        'validation_split': 0.2,  # Fraction for validation
+        'min_training_samples': 20,  # Minimum samples needed for training
+        'cross_validation_folds': 5,  # K-fold cross validation
+        'class_weight': 'balanced'  # Handle class imbalance
+    })
+    
+    # Supported classification categories
+    categories: dict[str, str] = field(default_factory=lambda: {
+        'feature': 'New functionality or capabilities',
+        'bugfix': 'Bug fixes and error corrections',
+        'refactor': 'Code restructuring and optimization',
+        'docs': 'Documentation changes and updates',
+        'test': 'Testing-related changes',
+        'config': 'Configuration and settings changes',
+        'chore': 'Maintenance and housekeeping tasks',
+        'security': 'Security-related changes',
+        'hotfix': 'Emergency production fixes',
+        'style': 'Code style and formatting changes',
+        'build': 'Build system and dependency changes',
+        'ci': 'Continuous integration changes',
+        'revert': 'Reverts of previous changes',
+        'merge': 'Merge commits and integration',
+        'wip': 'Work in progress commits'
+    })
+
+
+@dataclass
+class BranchAnalysisConfig:
+    """Configuration for branch analysis optimization.
+    
+    This configuration controls how branches are analyzed to prevent performance
+    issues on large organizations with many repositories and branches.
+    """
+    
+    # Branch analysis strategy
+    strategy: str = "smart"  # Options: "all", "smart", "main_only"
+    
+    # Smart analysis parameters
+    max_branches_per_repo: int = 50  # Maximum branches to analyze per repository
+    active_days_threshold: int = 90  # Days to consider a branch "active"
+    include_main_branches: bool = True  # Always include main/master branches
+    
+    # Branch name patterns to always include/exclude
+    always_include_patterns: list[str] = field(default_factory=lambda: [
+        r"^(main|master|develop|dev)$",  # Main development branches
+        r"^release/.*",  # Release branches
+        r"^hotfix/.*"   # Hotfix branches
+    ])
+    
+    always_exclude_patterns: list[str] = field(default_factory=lambda: [
+        r"^dependabot/.*",  # Dependabot branches
+        r"^renovate/.*",   # Renovate branches
+        r".*-backup$",     # Backup branches
+        r".*-temp$"        # Temporary branches
+    ])
+    
+    # Performance limits
+    enable_progress_logging: bool = True  # Log branch analysis progress
+    branch_commit_limit: int = 1000  # Max commits to analyze per branch
+    
+
+@dataclass
 class AnalysisConfig:
     """Analysis-specific configuration."""
 
@@ -77,7 +238,10 @@ class AnalysisConfig:
     branch_mapping_rules: dict[str, list[str]] = field(default_factory=dict)
     ticket_platforms: Optional[list[str]] = None
     auto_identity_analysis: bool = True  # Enable automatic identity analysis by default
+    branch_analysis: BranchAnalysisConfig = field(default_factory=BranchAnalysisConfig)
     ml_categorization: MLCategorization = field(default_factory=MLCategorization)
+    commit_classification: CommitClassificationConfig = field(default_factory=CommitClassificationConfig)
+    llm_classification: LLMClassificationConfig = field(default_factory=LLMClassificationConfig)
 
 
 @dataclass
@@ -537,6 +701,37 @@ class ConfigLoader:
             spacy_model=ml_data.get("spacy_model", "en_core_web_sm"),
         )
 
+        # Process commit classification settings
+        classification_data = analysis_data.get("commit_classification", {})
+        commit_classification_config = CommitClassificationConfig(
+            enabled=classification_data.get("enabled", True),
+            confidence_threshold=classification_data.get("confidence_threshold", 0.5),
+            batch_size=classification_data.get("batch_size", 100),
+            auto_retrain=classification_data.get("auto_retrain", True),
+            retrain_threshold_days=classification_data.get("retrain_threshold_days", 30),
+            model=classification_data.get("model", {}),
+            feature_extraction=classification_data.get("feature_extraction", {}),
+            training=classification_data.get("training", {}),
+            categories=classification_data.get("categories", {})
+        )
+        
+        # Process LLM classification configuration with environment variable resolution
+        llm_classification_data = analysis_data.get("llm_classification", {})
+        llm_classification_config = LLMClassificationConfig(
+            enabled=llm_classification_data.get("enabled", False),
+            api_key=cls._resolve_env_var(llm_classification_data.get("api_key")),
+            api_base_url=llm_classification_data.get("api_base_url", "https://openrouter.ai/api/v1"),
+            model=llm_classification_data.get("model", "mistralai/mistral-7b-instruct"),
+            confidence_threshold=llm_classification_data.get("confidence_threshold", 0.7),
+            max_tokens=llm_classification_data.get("max_tokens", 50),
+            temperature=llm_classification_data.get("temperature", 0.1),
+            timeout_seconds=llm_classification_data.get("timeout_seconds", 30.0),
+            cache_duration_days=llm_classification_data.get("cache_duration_days", 90),
+            enable_caching=llm_classification_data.get("enable_caching", True),
+            max_daily_requests=llm_classification_data.get("max_daily_requests", 1000),
+            domain_terms=llm_classification_data.get("domain_terms", {})
+        )
+
         analysis_config = AnalysisConfig(
             story_point_patterns=analysis_data.get(
                 "story_point_patterns",
@@ -562,6 +757,8 @@ class ConfigLoader:
                 "auto_analysis", True
             ),
             ml_categorization=ml_categorization_config,
+            commit_classification=commit_classification_config,
+            llm_classification=llm_classification_config,
         )
 
         # Process output settings
@@ -673,10 +870,13 @@ class ConfigLoader:
                 
                 # Parse LLM configuration
                 llm_data = qualitative_data.get("llm", {})
+                cost_tracking_data = qualitative_data.get("cost_tracking", {})
                 llm_config = LLMConfig(
-                    openrouter_api_key=cls._resolve_env_var(llm_data.get("openrouter_api_key", "${OPENROUTER_API_KEY}")),
+                    openrouter_api_key=cls._resolve_env_var(
+                        llm_data.get("openrouter_api_key") or llm_data.get("api_key", "${OPENROUTER_API_KEY}")
+                    ),
                     base_url=llm_data.get("base_url", "https://openrouter.ai/api/v1"),
-                    primary_model=llm_data.get("primary_model", "anthropic/claude-3-haiku"),
+                    primary_model=llm_data.get("primary_model") or llm_data.get("model", "anthropic/claude-3-haiku"),
                     fallback_model=llm_data.get("fallback_model", "meta-llama/llama-3.1-8b-instruct:free"),
                     complex_model=llm_data.get("complex_model", "anthropic/claude-3-sonnet"),
                     complexity_threshold=llm_data.get("complexity_threshold", 0.5),
@@ -687,8 +887,8 @@ class ConfigLoader:
                     similarity_threshold=llm_data.get("similarity_threshold", 0.8),
                     requests_per_minute=llm_data.get("requests_per_minute", 200),
                     max_retries=llm_data.get("max_retries", 3),
-                    max_daily_cost=llm_data.get("max_daily_cost", 5.0),
-                    enable_cost_tracking=llm_data.get("enable_cost_tracking", True)
+                    max_daily_cost=cost_tracking_data.get("daily_budget_usd") or llm_data.get("max_daily_cost", 5.0),
+                    enable_cost_tracking=cost_tracking_data.get("enabled") if cost_tracking_data.get("enabled") is not None else llm_data.get("enable_cost_tracking", True)
                 )
                 
                 # Parse cache configuration

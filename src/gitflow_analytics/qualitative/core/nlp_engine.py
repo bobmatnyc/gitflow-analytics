@@ -2,15 +2,15 @@
 
 import logging
 import time
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any
 
-from ..models.schemas import NLPConfig, QualitativeCommitData
 from ..classifiers.change_type import ChangeTypeClassifier
 from ..classifiers.domain_classifier import DomainClassifier
 from ..classifiers.intent_analyzer import IntentAnalyzer
 from ..classifiers.risk_analyzer import RiskAnalyzer
-from ..utils.text_processing import TextProcessor
+from ..models.schemas import NLPConfig, QualitativeCommitData
 from ..utils.metrics import PerformanceMetrics
+from ..utils.text_processing import TextProcessor
 
 try:
     import spacy
@@ -46,6 +46,12 @@ class NLPEngine:
             OSError: If spaCy model is not installed
         """
         if not SPACY_AVAILABLE:
+            # Create a temporary logger since self.logger doesn't exist yet
+            temp_logger = logging.getLogger(__name__)
+            temp_logger.warning(
+                "spaCy is not available. NLP processing will be disabled. "
+                "To enable ML features, install spaCy: pip install spacy"
+            )
             raise ImportError(
                 "spaCy is required for NLP processing. Install with: pip install spacy"
             )
@@ -90,12 +96,17 @@ class NLPEngine:
                     self.logger.info(f"Disabled spaCy components for speed: {disabled_components}")
                     
         except OSError as e:
+            self.logger.warning(
+                f"spaCy model '{self.config.spacy_model}' not found. "
+                f"ML features will be disabled. To enable, install with: python -m spacy download {self.config.spacy_model}"
+            )
+            # Raise the original error since the NLP engine requires spaCy
             raise OSError(
                 f"spaCy model '{self.config.spacy_model}' not found. "
                 f"Install with: python -m spacy download {self.config.spacy_model}"
             ) from e
             
-    def process_batch(self, commits: List[Dict[str, Any]]) -> List[QualitativeCommitData]:
+    def process_batch(self, commits: list[dict[str, Any]]) -> list[QualitativeCommitData]:
         """Process a batch of commits efficiently using spaCy pipeline.
         
         This method leverages spaCy's batch processing capabilities to analyze
@@ -165,7 +176,7 @@ class NLPEngine:
         
         return results
         
-    def _analyze_commit(self, commit: Dict[str, Any], doc: Doc) -> QualitativeCommitData:
+    def _analyze_commit(self, commit: dict[str, Any], doc: Doc) -> QualitativeCommitData:
         """Analyze a single commit with all classifiers.
         
         Args:
@@ -272,7 +283,7 @@ class NLPEngine:
         
         return min(1.0, max(0.0, overall))
         
-    def _create_fallback_result(self, commit: Dict[str, Any]) -> QualitativeCommitData:
+    def _create_fallback_result(self, commit: dict[str, Any]) -> QualitativeCommitData:
         """Create a fallback result when analysis fails.
         
         Args:
@@ -309,7 +320,7 @@ class NLPEngine:
             confidence_score=0.0
         )
         
-    def get_performance_stats(self) -> Dict[str, Any]:
+    def get_performance_stats(self) -> dict[str, Any]:
         """Get NLP engine performance statistics.
         
         Returns:
@@ -335,7 +346,7 @@ class NLPEngine:
             'batch_size': self.config.spacy_batch_size
         }
         
-    def validate_setup(self) -> Tuple[bool, List[str]]:
+    def validate_setup(self) -> tuple[bool, list[str]]:
         """Validate NLP engine setup and dependencies.
         
         Returns:

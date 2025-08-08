@@ -51,7 +51,7 @@ class ActivityScorer:
         prs = metrics.get("prs_involved", 0)
         lines_added = metrics.get("lines_added", 0)
         lines_removed = metrics.get("lines_removed", 0)
-        files_changed = metrics.get("files_changed", 0)
+        files_changed = metrics.get("files_changed_count", metrics.get("files_changed", 0) if isinstance(metrics.get("files_changed"), int) else len(metrics.get("files_changed", [])))
         complexity = metrics.get("complexity_delta", 0)
 
         # Calculate component scores
@@ -114,7 +114,12 @@ class ActivityScorer:
         return base_score * size_bonus
 
     def _calculate_code_impact_score(self, lines_added: int, lines_removed: int) -> float:
-        """Calculate code impact score with balanced add/remove consideration."""
+        """Calculate code impact score with balanced add/remove consideration and enhanced diminishing returns.
+        
+        WHY: Massive single commits can unfairly inflate scores. This implementation
+        uses stronger diminishing returns to prevent score inflation from extremely
+        large commits while still rewarding meaningful contributions.
+        """
         # Research shows deletions are valuable (refactoring, cleanup)
         # Weight deletions at 70% of additions
         effective_lines = lines_added + (lines_removed * 0.7)
@@ -128,7 +133,14 @@ class ActivityScorer:
             return effective_lines * 0.2
         else:
             base = 500 * 0.2
-            extra = math.log10(effective_lines - 499) * 20
+            # Enhanced diminishing returns for massive commits
+            if effective_lines <= 2000:
+                extra = math.log10(effective_lines - 499) * 15  # Reduced multiplier
+            else:
+                # Very large commits get even more aggressive diminishing returns
+                medium_extra = math.log10(2000 - 499) * 15
+                large_extra = math.log10(effective_lines - 1999) * 8  # Much smaller multiplier
+                extra = medium_extra + large_extra
             return base + extra
 
     def _calculate_complexity_score(self, files_changed: int, complexity_delta: float) -> float:

@@ -1,14 +1,14 @@
 """Analysis pass for auto-aliasing developer identities."""
 
 import logging
-from pathlib import Path
-from typing import List, Dict, Any, Optional
-import yaml
 import os
+from pathlib import Path
+from typing import Any, Optional
+
+import yaml
 
 from .analyzer import LLMIdentityAnalyzer
 from .models import IdentityAnalysisResult
-from ..core.identity import DeveloperIdentityResolver
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +21,9 @@ class IdentityAnalysisPass:
         self.config_path = config_path
         self.config = self._load_config()
         
-    def _load_config(self) -> Dict[str, Any]:
+    def _load_config(self) -> dict[str, Any]:
         """Load configuration from file."""
-        with open(self.config_path, 'r') as f:
+        with open(self.config_path) as f:
             config = yaml.safe_load(f)
             
         # Handle environment variables
@@ -37,7 +37,7 @@ class IdentityAnalysisPass:
         return config
     
     def run_analysis(self, 
-                    commits: List[Dict[str, Any]], 
+                    commits: list[dict[str, Any]], 
                     output_path: Optional[Path] = None,
                     apply_to_config: bool = False) -> IdentityAnalysisResult:
         """Run identity analysis pass on commits."""
@@ -133,7 +133,7 @@ class IdentityAnalysisPass:
             return
             
         # Load current config
-        with open(self.config_path, 'r') as f:
+        with open(self.config_path) as f:
             config = yaml.safe_load(f)
             
         # Ensure analysis section exists
@@ -174,7 +174,7 @@ class IdentityAnalysisPass:
             
         logger.info(f"Updated configuration with {len(new_mappings)} identity mappings")
         
-    def generate_suggested_config(self, result: IdentityAnalysisResult) -> Dict[str, Any]:
+    def generate_suggested_config(self, result: IdentityAnalysisResult) -> dict[str, Any]:
         """Generate suggested configuration snippet for manual review."""
         manual_mappings = result.get_manual_mappings()
         

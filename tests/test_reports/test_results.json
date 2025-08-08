@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "test_date": "2025-08-07T21:46:46.379662",
+    "repository": "gitflow-analytics",
+    "date_range": {
+      "start": "2025-07-09T01:46:44.487222+00:00",
+      "end": "2025-08-08T01:46:44.487222+00:00"
+    }
+  },
+  "summary": {
+    "total_commits": 32,
+    "unique_developers": 1,
+    "average_confidence": 0.0,
+    "high_confidence_rate": 0.0,
+    "classification_distribution": {
+      "unknown": 32
+    },
+    "developer_stats": {
+      "ecb4c3b8-add3-485c-9766-4043c282acad": {
+        "commits": 32,
+        "primary_classification": "unknown"
+      }
+    }
+  }
+}

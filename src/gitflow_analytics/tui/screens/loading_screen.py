@@ -2,15 +2,13 @@
 
 import asyncio
 import time
-from typing import Optional, Dict, Any
+from typing import Any, Optional
 
-from textual.widgets import Header, Footer, Label, Static, LoadingIndicator
-from textual.containers import Container, Vertical, Horizontal, Center
-from textual.screen import Screen
 from textual.binding import Binding
+from textual.containers import Center, Container, Vertical
 from textual.message import Message
-from rich.text import Text
-from rich.align import Align
+from textual.screen import Screen
+from textual.widgets import Footer, Header, Label, LoadingIndicator, Static
 
 from ..widgets.progress_widget import AnalysisProgressWidget
 
@@ -56,32 +54,31 @@ class LoadingScreen(Screen):
             yield Label("Developer Productivity Analysis", classes="help-text center")
             
             # Loading animation and message
-            with Center():
-                with Vertical(id="loading-content"):
-                    yield LoadingIndicator(id="main-spinner")
-                    yield Label(self.loading_message, classes="center", id="loading-message")
+            with Center(), Vertical(id="loading-content"):
+                yield LoadingIndicator(id="main-spinner")
+                yield Label(self.loading_message, classes="center", id="loading-message")
+                
+                # Overall progress bar
+                yield AnalysisProgressWidget(
+                    "Startup Progress",
+                    total=100.0,
+                    id="startup-progress"
+                )
+                
+                # Status messages
+                with Container(classes="status-panel"):
+                    yield Label("Status", classes="panel-title")
+                    yield Static("Starting up...", id="status-message")
                     
-                    # Overall progress bar
-                    yield AnalysisProgressWidget(
-                        "Startup Progress",
-                        total=100.0,
-                        id="startup-progress"
-                    )
-                    
-                    # Status messages
-                    with Container(classes="status-panel"):
-                        yield Label("Status", classes="panel-title")
-                        yield Static("Starting up...", id="status-message")
-                        
-                    # Loading steps indicators
-                    with Container(classes="stats-panel"):
-                        yield Label("Loading Steps", classes="panel-title")
-                        with Vertical(id="loading-steps"):
-                            yield Static("⏳ Initializing application...", id="step-init")
-                            yield Static("⏳ Loading configuration...", id="step-config")
-                            yield Static("⏳ Preparing analysis engine...", id="step-engine")
-                            yield Static("⏳ Loading NLP models...", id="step-nlp")
-                            yield Static("⏳ Finalizing setup...", id="step-finalize")
+                # Loading steps indicators
+                with Container(classes="stats-panel"):
+                    yield Label("Loading Steps", classes="panel-title")
+                    with Vertical(id="loading-steps"):
+                        yield Static("⏳ Initializing application...", id="step-init")
+                        yield Static("⏳ Loading configuration...", id="step-config")
+                        yield Static("⏳ Preparing analysis engine...", id="step-engine")
+                        yield Static("⏳ Loading NLP models...", id="step-nlp")
+                        yield Static("⏳ Finalizing setup...", id="step-finalize")
         
         yield Footer()
     
@@ -353,6 +350,6 @@ class InitializationLoadingScreen(LoadingScreen):
     
     class InitializationComplete(Message):
         """Message sent when initialization is complete with data."""
-        def __init__(self, data: Dict[str, Any]) -> None:
+        def __init__(self, data: dict[str, Any]) -> None:
             super().__init__()
             self.data = data

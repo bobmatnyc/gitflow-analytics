@@ -1,0 +1,23 @@
+# Minimal test configuration for GitFlow Analytics
+version: "1.0"
+
+repositories:
+  - name: "gitflow-analytics"
+    url: "https://github.com/bobmatnyc/gitflow-analytics"
+    project_key: "GFA"
+    path: "/Users/masa/Projects/managed/gitflow-analytics"
+
+analysis:
+  branch_analysis:
+    strategy: "smart"
+    max_branches_per_repo: 5
+    enable_progress_logging: true
+
+output:
+  directory: "/Users/masa/Projects/managed/gitflow-analytics/test-reports"
+  formats:
+    - markdown
+    - csv
+
+cache:
+  directory: "/Users/masa/Projects/managed/gitflow-analytics/test-cache"

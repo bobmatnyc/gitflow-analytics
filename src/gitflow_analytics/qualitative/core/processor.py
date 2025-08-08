@@ -2,18 +2,17 @@
 
 import logging
 import time
-from typing import Dict, List, Any, Tuple, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any, Optional
 
+from ...core.schema_version import create_schema_manager
 from ...models.database import Database
-from ..models.schemas import QualitativeConfig, QualitativeCommitData
-from .nlp_engine import NLPEngine
-from .llm_fallback import LLMFallback
-from .pattern_cache import PatternCache
+from ..models.schemas import QualitativeCommitData, QualitativeConfig
 from ..utils.batch_processor import BatchProcessor, ProgressTracker
 from ..utils.metrics import PerformanceMetrics
-from ...core.schema_version import create_schema_manager
+from .llm_fallback import LLMFallback
+from .nlp_engine import NLPEngine
+from .pattern_cache import PatternCache
 
 
 class QualitativeProcessor:
@@ -55,7 +54,7 @@ class QualitativeProcessor:
         self.llm_fallback = None
         if config.llm_config.openrouter_api_key:
             try:
-                self.llm_fallback = LLMFallback(config.llm_config)
+                self.llm_fallback = LLMFallback(config.llm_config, cache_dir)
                 self.logger.info("LLM fallback system initialized")
             except Exception as e:
                 self.logger.warning(f"LLM fallback initialization failed: {e}")
@@ -81,8 +80,8 @@ class QualitativeProcessor:
         
         self.logger.info("Qualitative processor initialized")
     
-    def _filter_commits_for_processing(self, commits: List[Dict[str, Any]], 
-                                     force_reprocess: bool = False) -> List[Dict[str, Any]]:
+    def _filter_commits_for_processing(self, commits: list[dict[str, Any]], 
+                                     force_reprocess: bool = False) -> list[dict[str, Any]]:
         """Filter commits to only those that need processing based on schema versioning."""
         if force_reprocess:
             return commits
@@ -118,7 +117,7 @@ class QualitativeProcessor:
         
         return commits_to_process
     
-    def _get_existing_results(self, commits: List[Dict[str, Any]]) -> List[QualitativeCommitData]:
+    def _get_existing_results(self, commits: list[dict[str, Any]]) -> list[QualitativeCommitData]:
         """Get existing qualitative results for commits from the database."""
         results = []
         
@@ -152,7 +151,7 @@ class QualitativeProcessor:
             
         return results
     
-    def _update_schema_tracking(self, commits: List[Dict[str, Any]]):
+    def _update_schema_tracking(self, commits: list[dict[str, Any]]):
         """Update schema version tracking after processing commits."""
         if not commits:
             return
@@ -173,9 +172,9 @@ class QualitativeProcessor:
         self.schema_manager.update_schema_version('qualitative', config_dict, latest_date)
         self.schema_manager.mark_date_processed('qualitative', latest_date, config_dict)
         
-    def process_commits(self, commits: List[Dict[str, Any]], 
+    def process_commits(self, commits: list[dict[str, Any]], 
                        show_progress: bool = True,
-                       force_reprocess: bool = False) -> List[QualitativeCommitData]:
+                       force_reprocess: bool = False) -> list[QualitativeCommitData]:
         """Process commits with qualitative analysis using incremental processing.
         
         Args:
@@ -254,8 +253,8 @@ class QualitativeProcessor:
         self.logger.info(f"Qualitative analysis completed in {time.time() - self.processing_stats['processing_start_time']:.2f}s")
         return all_results
         
-    def _check_cache(self, commits: List[Dict[str, Any]], 
-                    progress_tracker: Optional[ProgressTracker]) -> Tuple[List[QualitativeCommitData], List[Dict[str, Any]]]:
+    def _check_cache(self, commits: list[dict[str, Any]], 
+                    progress_tracker: Optional[ProgressTracker]) -> tuple[list[QualitativeCommitData], list[dict[str, Any]]]:
         """Check pattern cache for known commit patterns.
         
         Args:
@@ -287,8 +286,8 @@ class QualitativeProcessor:
                 
         return cached_results, uncached_commits
         
-    def _process_with_nlp(self, commits: List[Dict[str, Any]], 
-                         progress_tracker: Optional[ProgressTracker]) -> List[QualitativeCommitData]:
+    def _process_with_nlp(self, commits: list[dict[str, Any]], 
+                         progress_tracker: Optional[ProgressTracker]) -> list[QualitativeCommitData]:
         """Process commits using NLP engine.
         
         Args:
@@ -301,7 +300,7 @@ class QualitativeProcessor:
         if not commits:
             return []
             
-        def process_batch_with_progress(batch: List[Dict[str, Any]]) -> List[QualitativeCommitData]:
+        def process_batch_with_progress(batch: list[dict[str, Any]]) -> list[QualitativeCommitData]:
             results = self.nlp_engine.process_batch(batch)
             if progress_tracker:
                 progress_tracker.update(len(batch))
@@ -324,7 +323,7 @@ class QualitativeProcessor:
         self.processing_stats['nlp_processed'] += len(commits)
         return all_results
         
-    def _separate_by_confidence(self, results: List[QualitativeCommitData]) -> Tuple[List[QualitativeCommitData], List[Dict[str, Any]]]:
+    def _separate_by_confidence(self, results: list[QualitativeCommitData]) -> tuple[list[QualitativeCommitData], list[dict[str, Any]]]:
         """Separate results by confidence threshold.
         
         Args:  
@@ -355,8 +354,8 @@ class QualitativeProcessor:
                 
         return confident_results, uncertain_commits
         
-    def _process_with_llm(self, commits: List[Dict[str, Any]], 
-                         progress_tracker: Optional[ProgressTracker]) -> List[QualitativeCommitData]:
+    def _process_with_llm(self, commits: list[dict[str, Any]], 
+                         progress_tracker: Optional[ProgressTracker]) -> list[QualitativeCommitData]:
         """Process uncertain commits with LLM fallback.
         
         Args:
@@ -403,8 +402,8 @@ class QualitativeProcessor:
         self.processing_stats['llm_processed'] += len(commits)
         return all_results
         
-    def _create_result_from_cache(self, commit: Dict[str, Any], 
-                                 cached_data: Dict[str, Any]) -> QualitativeCommitData:
+    def _create_result_from_cache(self, commit: dict[str, Any], 
+                                 cached_data: dict[str, Any]) -> QualitativeCommitData:
         """Create QualitativeCommitData from cached pattern.
         
         Args:
@@ -442,7 +441,7 @@ class QualitativeProcessor:
             confidence_score=cached_data.get('confidence_score', 0.5)
         )
         
-    def _convert_to_uncertain_result(self, commit: Dict[str, Any]) -> QualitativeCommitData:
+    def _convert_to_uncertain_result(self, commit: dict[str, Any]) -> QualitativeCommitData:
         """Convert commit to uncertain result when LLM is unavailable.
         
         Args:
@@ -479,7 +478,7 @@ class QualitativeProcessor:
             confidence_score=0.3
         )
         
-    def _create_disabled_results(self, commits: List[Dict[str, Any]]) -> List[QualitativeCommitData]:
+    def _create_disabled_results(self, commits: list[dict[str, Any]]) -> list[QualitativeCommitData]:
         """Create disabled results when qualitative analysis is turned off.
         
         Args:
@@ -554,11 +553,7 @@ class QualitativeProcessor:
             True if optimization should be performed
         """
         # Optimize every 10,000 commits or every hour
-        if (self.processing_stats['total_processed'] % 10000 == 0 or
-            (self.processing_stats['last_optimization'] is None) or
-            (time.time() - self.processing_stats['last_optimization'] > 3600)):
-            return True
-        return False
+        return bool(self.processing_stats['total_processed'] % 10000 == 0 or self.processing_stats['last_optimization'] is None or time.time() - self.processing_stats['last_optimization'] > 3600)
         
     def _optimize_system(self) -> None:
         """Perform system optimization."""
@@ -572,7 +567,7 @@ class QualitativeProcessor:
         
         self.logger.info("System optimization completed")
         
-    def get_processing_statistics(self) -> Dict[str, Any]:
+    def get_processing_statistics(self) -> dict[str, Any]:
         """Get comprehensive processing statistics.
         
         Returns:
@@ -622,7 +617,7 @@ class QualitativeProcessor:
             
         return stats
         
-    def validate_setup(self) -> Tuple[bool, List[str]]:
+    def validate_setup(self) -> tuple[bool, list[str]]:
         """Validate processor setup and dependencies.
         
         Returns:

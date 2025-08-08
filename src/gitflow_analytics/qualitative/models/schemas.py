@@ -1,9 +1,8 @@
 """Data models and configuration schemas for qualitative analysis."""
 
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -20,7 +19,7 @@ class QualitativeCommitData:
     author_name: str
     author_email: str
     timestamp: datetime
-    files_changed: List[str]
+    files_changed: list[str]
     insertions: int
     deletions: int
     
@@ -30,17 +29,17 @@ class QualitativeCommitData:
     business_domain: str  # frontend|backend|database|infrastructure|mobile|devops|unknown
     domain_confidence: float  # 0.0-1.0
     risk_level: str  # low|medium|high|critical
-    risk_factors: List[str]  # List of identified risk factors
-    intent_signals: Dict[str, Any]  # Intent analysis results
-    collaboration_patterns: Dict[str, Any]  # Team interaction patterns
-    technical_context: Dict[str, Any]  # Technical context information
+    risk_factors: list[str]  # List of identified risk factors
+    intent_signals: dict[str, Any]  # Intent analysis results
+    collaboration_patterns: dict[str, Any]  # Team interaction patterns
+    technical_context: dict[str, Any]  # Technical context information
     
     # Processing metadata
     processing_method: str  # 'nlp' or 'llm'
     processing_time_ms: float
     confidence_score: float  # Overall confidence in analysis
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             'hash': self.hash,
@@ -74,14 +73,14 @@ class ChangeTypeConfig:
     semantic_weight: float = 0.6  # Weight for semantic features
     file_pattern_weight: float = 0.4  # Weight for file pattern signals
     enable_custom_patterns: bool = True
-    custom_patterns: Dict[str, Dict[str, List[str]]] = field(default_factory=dict)
+    custom_patterns: dict[str, dict[str, list[str]]] = field(default_factory=dict)
 
 
 @dataclass
 class IntentConfig:
     """Configuration for intent analysis."""
     
-    urgency_keywords: Dict[str, List[str]] = field(default_factory=lambda: {
+    urgency_keywords: dict[str, list[str]] = field(default_factory=lambda: {
         'critical': ['critical', 'urgent', 'hotfix', 'emergency', 'immediate'],
         'important': ['important', 'priority', 'asap', 'needed'],
         'routine': ['routine', 'regular', 'normal', 'standard']
@@ -94,7 +93,7 @@ class IntentConfig:
 class DomainConfig:
     """Configuration for domain classification."""
     
-    file_patterns: Dict[str, List[str]] = field(default_factory=lambda: {
+    file_patterns: dict[str, list[str]] = field(default_factory=lambda: {
         'frontend': ['*.js', '*.jsx', '*.ts', '*.tsx', '*.vue', '*.html', '*.css', '*.scss'],
         'backend': ['*.py', '*.java', '*.go', '*.rb', '*.php', '*.cs', '*.cpp'],
         'database': ['*.sql', 'migrations/*', 'schema/*', '**/models/**'],
@@ -102,7 +101,7 @@ class DomainConfig:
         'mobile': ['*.swift', '*.kt', '*.java', 'android/*', 'ios/*'],
         'devops': ['*.yml', '*.yaml', 'ci/*', '.github/*', 'docker/*']
     })
-    keyword_patterns: Dict[str, List[str]] = field(default_factory=lambda: {
+    keyword_patterns: dict[str, list[str]] = field(default_factory=lambda: {
         'frontend': ['ui', 'component', 'styling', 'interface', 'layout'],
         'backend': ['api', 'endpoint', 'service', 'server', 'logic'],
         'database': ['query', 'schema', 'migration', 'data', 'model'],
@@ -117,7 +116,7 @@ class DomainConfig:
 class RiskConfig:
     """Configuration for risk analysis."""
     
-    high_risk_patterns: List[str] = field(default_factory=lambda: [
+    high_risk_patterns: list[str] = field(default_factory=lambda: [
         # Security-related patterns
         'password', 'secret', 'key', 'token', 'auth', 'security',
         # Critical system patterns  
@@ -127,11 +126,11 @@ class RiskConfig:
         # Large change patterns
         'refactor', 'rewrite', 'restructure'
     ])
-    medium_risk_patterns: List[str] = field(default_factory=lambda: [
+    medium_risk_patterns: list[str] = field(default_factory=lambda: [
         'config', 'configuration', 'settings', 'environment',
         'api', 'endpoint', 'service', 'integration'
     ])
-    file_risk_patterns: Dict[str, str] = field(default_factory=lambda: {
+    file_risk_patterns: dict[str, str] = field(default_factory=lambda: {
         # High risk file patterns
         '**/*prod*': 'high',
         '**/migrations/**': 'high', 
@@ -141,7 +140,7 @@ class RiskConfig:
         '*.yaml': 'medium',
         '**/*config*': 'medium'
     })
-    size_thresholds: Dict[str, int] = field(default_factory=lambda: {
+    size_thresholds: dict[str, int] = field(default_factory=lambda: {
         'large_commit_files': 20,  # Files changed
         'large_commit_lines': 500,  # Lines changed
         'massive_commit_lines': 2000  # Very large changes
@@ -247,7 +246,7 @@ class QualitativeConfig:
     min_overall_confidence: float = 0.6  # Min confidence for any result
     enable_quality_feedback: bool = True  # Learn from corrections
     
-    def validate(self) -> List[str]:
+    def validate(self) -> list[str]:
         """Validate configuration and return any warnings.
         
         Returns:

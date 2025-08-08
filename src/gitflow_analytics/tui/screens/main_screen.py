@@ -3,13 +3,12 @@
 from pathlib import Path
 from typing import Optional
 
-from textual.widgets import Header, Footer, Button, Label, Static, Rule
-from textual.containers import Container, Vertical, Horizontal
-from textual.screen import Screen
 from textual.binding import Binding
+from textual.containers import Container, Vertical
 from textual.message import Message
+from textual.screen import Screen
+from textual.widgets import Button, Footer, Header, Label, Rule, Static
 
-from ..widgets.export_modal import ExportModal
 from gitflow_analytics.config import Config
 
 

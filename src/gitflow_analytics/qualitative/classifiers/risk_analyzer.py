@@ -2,8 +2,7 @@
 
 import logging
 import re
-from typing import Dict, List, Any, Set
-from pathlib import Path
+from typing import Any
 
 from ..models.schemas import RiskConfig
 
@@ -106,7 +105,7 @@ class RiskAnalyzer:
         pattern = f'^{pattern}$'
         return pattern
         
-    def assess(self, commit: Dict[str, Any], doc: Doc) -> Dict[str, Any]:
+    def assess(self, commit: dict[str, Any], doc: Doc) -> dict[str, Any]:
         """Assess risk level and identify risk factors for a commit.
         
         Args:
@@ -155,7 +154,7 @@ class RiskAnalyzer:
             }
         }
         
-    def _analyze_message_risk(self, message: str, doc: Doc) -> Dict[str, Any]:
+    def _analyze_message_risk(self, message: str, doc: Doc) -> dict[str, Any]:
         """Analyze commit message for risk indicators.
         
         Args:
@@ -216,7 +215,7 @@ class RiskAnalyzer:
                 
         return {'score': risk_score, 'factors': factors}
         
-    def _analyze_file_risk(self, files: List[str]) -> Dict[str, Any]:
+    def _analyze_file_risk(self, files: list[str]) -> dict[str, Any]:
         """Analyze changed files for risk indicators.
         
         Args:
@@ -270,7 +269,7 @@ class RiskAnalyzer:
                     
         return {'score': risk_score, 'factors': factors}
         
-    def _analyze_size_risk(self, commit: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_size_risk(self, commit: dict[str, Any]) -> dict[str, Any]:
         """Analyze commit size for risk indicators.
         
         Args:
@@ -312,7 +311,7 @@ class RiskAnalyzer:
                 
         return {'score': risk_score, 'factors': factors}
         
-    def _analyze_context_risk(self, commit: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_context_risk(self, commit: dict[str, Any]) -> dict[str, Any]:
         """Analyze commit context for risk indicators.
         
         Args:
@@ -368,7 +367,7 @@ class RiskAnalyzer:
         else:
             return 'low'
             
-    def get_risk_statistics(self, commits: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def get_risk_statistics(self, commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Get risk analysis statistics for a set of commits.
         
         Args:

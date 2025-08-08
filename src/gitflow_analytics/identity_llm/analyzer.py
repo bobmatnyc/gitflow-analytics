@@ -1,12 +1,11 @@
 """LLM-based developer identity analyzer."""
 
+import difflib
 import json
 import logging
-from collections import defaultdict
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Set, Tuple
-import difflib
 import re
+from collections import defaultdict
+from typing import Any, Optional
 
 from ..core.identity import DeveloperIdentityResolver
 from .models import DeveloperAlias, DeveloperCluster, IdentityAnalysisResult
@@ -28,7 +27,7 @@ class LLMIdentityAnalyzer:
         self._has_openrouter = api_key is not None
         
     def analyze_identities(self, 
-                         commits: List[Dict[str, Any]], 
+                         commits: list[dict[str, Any]], 
                          existing_resolver: Optional[DeveloperIdentityResolver] = None) -> IdentityAnalysisResult:
         """Analyze commits to identify developer aliases using LLM."""
         # Extract unique developer identities from commits
@@ -64,7 +63,7 @@ class LLMIdentityAnalyzer:
             }
         )
     
-    def _extract_identities(self, commits: List[Dict[str, Any]]) -> Dict[str, DeveloperAlias]:
+    def _extract_identities(self, commits: list[dict[str, Any]]) -> dict[str, DeveloperAlias]:
         """Extract unique developer identities from commits."""
         identities = {}
         
@@ -92,7 +91,7 @@ class LLMIdentityAnalyzer:
                 
         return identities
     
-    def _pre_cluster_identities(self, identities: Dict[str, DeveloperAlias]) -> List[Set[str]]:
+    def _pre_cluster_identities(self, identities: dict[str, DeveloperAlias]) -> list[set[str]]:
         """Pre-cluster identities using heuristic rules."""
         clusters = []
         processed = set()
@@ -106,7 +105,7 @@ class LLMIdentityAnalyzer:
             cluster = {identity1.email}
             processed.add(identity1.email)
             
-            for j, identity2 in enumerate(identity_list[i+1:], i+1):
+            for _j, identity2 in enumerate(identity_list[i+1:], i+1):
                 if identity2.email in processed:
                     continue
                     
@@ -204,14 +203,11 @@ class LLMIdentityAnalyzer:
                 return True
                 
         # Check overlapping repositories with high name similarity
-        if (id1.repositories & id2.repositories and name_similarity > 0.7):
-            return True
-            
-        return False
+        return bool(id1.repositories & id2.repositories and name_similarity > 0.7)
     
     def _finalize_heuristic_clusters(self, 
-                                   pre_clusters: List[Set[str]], 
-                                   identities: Dict[str, DeveloperAlias]) -> List[DeveloperCluster]:
+                                   pre_clusters: list[set[str]], 
+                                   identities: dict[str, DeveloperAlias]) -> list[DeveloperCluster]:
         """Convert pre-clusters to final clusters without LLM."""
         clusters = []
         
@@ -246,8 +242,8 @@ class LLMIdentityAnalyzer:
         return clusters
     
     def _analyze_with_llm(self, 
-                         pre_clusters: List[Set[str]], 
-                         identities: Dict[str, DeveloperAlias]) -> List[DeveloperCluster]:
+                         pre_clusters: list[set[str]], 
+                         identities: dict[str, DeveloperAlias]) -> list[DeveloperCluster]:
         """Analyze pre-clusters with LLM for intelligent grouping."""
         try:
             import openai
@@ -321,7 +317,7 @@ class LLMIdentityAnalyzer:
             logger.warning(f"LLM analysis failed, falling back to heuristics: {e}")
             return self._finalize_heuristic_clusters(pre_clusters, identities)
     
-    def _create_analysis_prompt(self, identity_data: List[Dict[str, Any]]) -> str:
+    def _create_analysis_prompt(self, identity_data: list[dict[str, Any]]) -> str:
         """Create prompt for LLM analysis."""
         return f"""Analyze these developer identities and determine if they belong to the same person:
 
@@ -343,8 +339,8 @@ Respond with a JSON object:
 
     def _parse_llm_response(self, 
                           response: str, 
-                          cluster_identities: List[DeveloperAlias],
-                          all_identities: Dict[str, DeveloperAlias]) -> Optional[DeveloperCluster]:
+                          cluster_identities: list[DeveloperAlias],
+                          all_identities: dict[str, DeveloperAlias]) -> Optional[DeveloperCluster]:
         """Parse LLM response into a cluster."""
         try:
             # Extract JSON from response
@@ -397,8 +393,8 @@ Respond with a JSON object:
             return None
     
     def _analyze_unclustered_with_llm(self, 
-                                     unclustered: List[DeveloperAlias],
-                                     client) -> List[DeveloperCluster]:
+                                     unclustered: list[DeveloperAlias],
+                                     client) -> list[DeveloperCluster]:
         """Analyze unclustered identities with LLM."""
         clusters = []
         

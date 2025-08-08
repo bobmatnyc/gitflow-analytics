@@ -1,13 +1,12 @@
 """LLM fallback system for uncertain commit classifications using OpenRouter."""
 
-import asyncio
+import hashlib
 import json
 import logging
-import time
-import uuid
-from typing import Dict, List, Optional, Tuple, Any
-import hashlib
 import os
+import time
+from pathlib import Path
+from typing import Any, Optional
 
 from ..models.schemas import LLMConfig, QualitativeCommitData
 from ..utils.cost_tracker import CostTracker
@@ -79,11 +78,12 @@ class LLMFallback:
     to access multiple models cost-effectively.
     """
     
-    def __init__(self, config: LLMConfig):
+    def __init__(self, config: LLMConfig, cache_dir: Optional[Path] = None):
         """Initialize LLM fallback system.
         
         Args:
             config: LLM configuration
+            cache_dir: Cache directory for cost tracking (defaults to config cache_dir)
             
         Raises:
             ImportError: If OpenAI library is not available
@@ -99,8 +99,9 @@ class LLMFallback:
         # Initialize OpenRouter client
         self.client = self._initialize_openrouter_client()
         
-        # Initialize utilities
-        self.cost_tracker = CostTracker(daily_budget=config.max_daily_cost)
+        # Initialize utilities with proper cache directory
+        cost_cache_dir = cache_dir / ".qualitative_cache" if cache_dir else None
+        self.cost_tracker = CostTracker(cache_dir=cost_cache_dir, daily_budget=config.max_daily_cost)
         self.model_router = ModelRouter(config, self.cost_tracker)
         self.text_processor = TextProcessor()
         
@@ -154,7 +155,7 @@ class LLMFallback:
         else:
             return api_key
             
-    def group_similar_commits(self, commits: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    def group_similar_commits(self, commits: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
         """Group similar commits for efficient batch processing.
         
         Args:
@@ -194,7 +195,7 @@ class LLMFallback:
         self.logger.debug(f"Grouped {len(commits)} commits into {len(groups)} groups")
         return groups
         
-    def process_group(self, commits: List[Dict[str, Any]]) -> List[QualitativeCommitData]:
+    def process_group(self, commits: list[dict[str, Any]]) -> list[QualitativeCommitData]:
         """Process a group of similar commits with OpenRouter.
         
         Args:
@@ -316,7 +317,7 @@ class LLMFallback:
             self.logger.error(f"OpenRouter API call failed: {e}")
             raise
             
-    def _build_batch_classification_prompt(self, commits: List[Dict[str, Any]]) -> str:
+    def _build_batch_classification_prompt(self, commits: list[dict[str, Any]]) -> str:
         """Build optimized prompt for OpenRouter batch processing.
         
         Args:
@@ -364,7 +365,7 @@ Respond with JSON array only:
 
         return prompt
         
-    def _parse_llm_response(self, response: str, commits: List[Dict[str, Any]]) -> List[QualitativeCommitData]:
+    def _parse_llm_response(self, response: str, commits: list[dict[str, Any]]) -> list[QualitativeCommitData]:
         """Parse LLM response into QualitativeCommitData objects.
         
         Args:
@@ -450,7 +451,7 @@ Respond with JSON array only:
             self.logger.debug(f"Raw response: {response}")
             return self._create_fallback_results(commits)
             
-    def _assess_complexity(self, commits: List[Dict[str, Any]]) -> float:
+    def _assess_complexity(self, commits: list[dict[str, Any]]) -> float:
         """Assess complexity of commits for model selection.
         
         Args:
@@ -503,7 +504,7 @@ Respond with JSON array only:
         # Fallback estimation (roughly 4 characters per token)
         return len(text) // 4
         
-    def _generate_group_cache_key(self, commits: List[Dict[str, Any]]) -> str:
+    def _generate_group_cache_key(self, commits: list[dict[str, Any]]) -> str:
         """Generate cache key for a group of commits.
         
         Args:
@@ -523,7 +524,7 @@ Respond with JSON array only:
         combined_fingerprint = '|'.join(sorted(fingerprints))
         return hashlib.md5(combined_fingerprint.encode()).hexdigest()
         
-    def _create_template_from_results(self, results: List[QualitativeCommitData]) -> Dict[str, Any]:
+    def _create_template_from_results(self, results: list[QualitativeCommitData]) -> dict[str, Any]:
         """Create a template from successful results for caching.
         
         Args:
@@ -544,8 +545,8 @@ Respond with JSON array only:
             'confidence_score': template.confidence_score
         }
         
-    def _apply_template_to_group(self, template: Dict[str, Any], 
-                                commits: List[Dict[str, Any]]) -> List[QualitativeCommitData]:
+    def _apply_template_to_group(self, template: dict[str, Any], 
+                                commits: list[dict[str, Any]]) -> list[QualitativeCommitData]:
         """Apply cached template to a group of commits.
         
         Args:
@@ -590,8 +591,8 @@ Respond with JSON array only:
             
         return results
         
-    def _retry_with_fallback_model(self, commits: List[Dict[str, Any]], 
-                                  prompt: str) -> List[QualitativeCommitData]:
+    def _retry_with_fallback_model(self, commits: list[dict[str, Any]], 
+                                  prompt: str) -> list[QualitativeCommitData]:
         """Retry processing with fallback model.
         
         Args:
@@ -609,7 +610,7 @@ Respond with JSON array only:
             self.logger.error(f"Fallback model also failed: {e}")
             return self._create_fallback_results(commits)
             
-    def _create_fallback_results(self, commits: List[Dict[str, Any]]) -> List[QualitativeCommitData]:
+    def _create_fallback_results(self, commits: list[dict[str, Any]]) -> list[QualitativeCommitData]:
         """Create fallback results when LLM processing fails.
         
         Args:

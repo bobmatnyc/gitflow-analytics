@@ -926,3 +926,101 @@ class CSVReportGenerator:
             df.to_csv(output_path, index=False)
 
         return output_path
+    def generate_weekly_categorization_report(
+        self, ticket_analysis: dict[str, Any], output_path: Path, weeks: int = 12
+    ) -> Path:
+        """Generate weekly commit categorization metrics CSV report.
+        
+        WHY: Categorization trends provide insights into development patterns
+        over time, helping identify process improvements and training needs.
+        
+        Args:
+            ticket_analysis: Ticket analysis results containing categorized commits
+            output_path: Path where the CSV report should be written
+            weeks: Number of weeks to analyze
+            
+        Returns:
+            Path to the generated CSV file
+        """
+        # Calculate week boundaries
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(weeks=weeks)
+        
+        # Get categorized commits
+        untracked_commits = ticket_analysis.get("untracked_commits", [])
+        
+        # Group by week and category
+        weekly_categories = defaultdict(lambda: defaultdict(int))
+        
+        for commit in untracked_commits:
+            timestamp = commit.get("timestamp")
+            if not timestamp:
+                continue
+                
+            # Ensure timezone consistency
+            if hasattr(timestamp, "tzinfo") and timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            elif hasattr(timestamp, "tzinfo") and timestamp.tzinfo != timezone.utc:
+                timestamp = timestamp.astimezone(timezone.utc)
+                
+            if timestamp < start_date or timestamp > end_date:
+                continue
+                
+            week_start = self._get_week_start(timestamp)
+            category = commit.get("category", "other")
+            
+            weekly_categories[week_start][category] += 1
+        
+        # NOTE: This method currently only processes untracked commits with explicit categories.
+        # For complete classification of ALL commits (tracked and untracked), the method
+        # would need access to the full commits data and use the ML/rule-based classification
+        # system similar to narrative_writer.py. This would require refactoring the method
+        # signature to accept commits data.
+        
+        # Build CSV rows
+        rows = []
+        all_categories = set()
+        
+        # Collect all categories
+        for week_data in weekly_categories.values():
+            all_categories.update(week_data.keys())
+        
+        # Sort categories for consistent output
+        sorted_categories = sorted(all_categories)
+        
+        for week_start in sorted(weekly_categories.keys()):
+            week_data = weekly_categories[week_start]
+            total_commits = sum(week_data.values())
+            
+            row = {
+                "week_start": week_start.strftime("%Y-%m-%d"),
+                "total_commits": total_commits,
+            }
+            
+            # Add each category count and percentage
+            for category in sorted_categories:
+                count = week_data.get(category, 0)
+                pct = (count / total_commits * 100) if total_commits > 0 else 0
+                
+                row[f"{category}_count"] = count
+                row[f"{category}_pct"] = round(pct, 1)
+            
+            rows.append(row)
+        
+        # Write CSV
+        if rows:
+            df = pd.DataFrame(rows)
+            df.to_csv(output_path, index=False)
+        else:
+            # Write empty CSV with standard headers
+            headers = ["week_start", "total_commits"]
+            standard_categories = ["bug_fix", "feature", "refactor", "documentation", "maintenance", "test", "style", "build", "other"]
+            
+            for category in standard_categories:
+                headers.extend([f"{category}_count", f"{category}_pct"])
+            
+            with open(output_path, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=headers)
+                writer.writeheader()
+        
+        return output_path

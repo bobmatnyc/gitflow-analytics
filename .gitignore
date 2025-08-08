@@ -78,6 +78,11 @@ config-*.yaml
 reports/
 output/
 
+# Build and cache directories  
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
 # Documentation
 docs/_build/
 docs/_static/

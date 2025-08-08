@@ -1,11 +1,10 @@
 """Enhanced data table widget for GitFlow Analytics TUI."""
 
-from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
+from typing import Any, Optional, Union
 
-from textual.widgets import DataTable
 from textual.reactive import reactive
-from rich.text import Text
+from textual.widgets import DataTable
 
 
 class EnhancedDataTable(DataTable):
@@ -48,7 +47,7 @@ class EnhancedDataTable(DataTable):
     
     def __init__(
         self,
-        data: Optional[List[Dict[str, Any]]] = None,
+        data: Optional[list[dict[str, Any]]] = None,
         *,
         name: Optional[str] = None,
         id: Optional[str] = None,
@@ -59,7 +58,7 @@ class EnhancedDataTable(DataTable):
         self._filtered_data = []
         self._column_formatters = {}
         
-    def set_data(self, data: List[Dict[str, Any]]) -> None:
+    def set_data(self, data: list[dict[str, Any]]) -> None:
         """
         Set table data with automatic column detection and formatting.
         
@@ -88,7 +87,7 @@ class EnhancedDataTable(DataTable):
         # Add data rows
         self._apply_filter_and_sort()
     
-    def _calculate_column_width(self, column: str, data: List[Dict[str, Any]]) -> int:
+    def _calculate_column_width(self, column: str, data: list[dict[str, Any]]) -> int:
         """
         Calculate appropriate column width based on content.
         
@@ -113,7 +112,7 @@ class EnhancedDataTable(DataTable):
         # Convert snake_case to Title Case
         return column.replace('_', ' ').title()
     
-    def _setup_formatters(self, data: List[Dict[str, Any]]) -> None:
+    def _setup_formatters(self, data: list[dict[str, Any]]) -> None:
         """
         Set up column formatters based on data types.
         
@@ -214,7 +213,7 @@ class EnhancedDataTable(DataTable):
         for row in filtered_data:
             formatted_row = [
                 self._format_cell_value(col, row.get(col, ""))
-                for col in row.keys()
+                for col in row
             ]
             self.add_row(*formatted_row)
     

@@ -2,18 +2,24 @@
 
 import os
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Optional
 
-from textual.widgets import (
-    Header, Footer, Button, Input, Label, Switch, 
-    TabbedContent, TabPane, Rule, Static
-)
-from textual.containers import Container, Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.binding import Binding
+from textual.containers import Container, Horizontal
+from textual.screen import ModalScreen
 from textual.validation import Function, ValidationResult
+from textual.widgets import (
+    Button,
+    Input,
+    Label,
+    Rule,
+    Static,
+    Switch,
+    TabbedContent,
+    TabPane,
+)
 
-from gitflow_analytics.config import ConfigLoader, Config
+from gitflow_analytics.config import Config
 
 
 class ConfigurationScreen(ModalScreen[Optional[Config]]):
@@ -444,7 +450,7 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
         self.notify("Connection testing not yet implemented", severity="info")
         # TODO: Implement connection testing
     
-    def _collect_form_data(self) -> Dict[str, Any]:
+    def _collect_form_data(self) -> dict[str, Any]:
         """Collect all form data from inputs."""
         return {
             'config_path': self.query_one("#config-path", Input).value,
@@ -465,7 +471,7 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
             'auto_discover': self.query_one("#auto-discover", Switch).value,
         }
     
-    def _validate_form_data(self, form_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_form_data(self, form_data: dict[str, Any]) -> dict[str, Any]:
         """Validate collected form data."""
         errors = []
         
@@ -512,7 +518,7 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
         validation_msg.add_class("validation-error")
         validation_msg.remove_class("validation-success")
     
-    def _update_env_vars(self, form_data: Dict[str, Any]) -> None:
+    def _update_env_vars(self, form_data: dict[str, Any]) -> None:
         """Update environment variables with provided values."""
         env_updates = {}
         
@@ -530,7 +536,7 @@ class ConfigurationScreen(ModalScreen[Optional[Config]]):
         # Update current environment
         os.environ.update(env_updates)
     
-    def _create_config_from_form(self, form_data: Dict[str, Any]) -> Config:
+    def _create_config_from_form(self, form_data: dict[str, Any]) -> Config:
         """
         Create a Config object from form data.
         

@@ -3,8 +3,7 @@
 import logging
 import re
 from collections import defaultdict
-from typing import Dict, List, Tuple, Set, Any
-from pathlib import Path
+from typing import Any
 
 from ..models.schemas import DomainConfig
 
@@ -136,7 +135,7 @@ class DomainClassifier:
         pattern = f'^{pattern}$'
         return pattern
         
-    def classify(self, message: str, doc: Doc, files: List[str]) -> Tuple[str, float]:
+    def classify(self, message: str, doc: Doc, files: list[str]) -> tuple[str, float]:
         """Classify commit domain with confidence score.
         
         Args:
@@ -175,7 +174,7 @@ class DomainClassifier:
             
         return best_domain, confidence
         
-    def _analyze_file_patterns(self, files: List[str]) -> Dict[str, float]:
+    def _analyze_file_patterns(self, files: list[str]) -> dict[str, float]:
         """Analyze file patterns to determine domain.
         
         Args:
@@ -207,7 +206,7 @@ class DomainClassifier:
             
         return scores
         
-    def _analyze_directory_patterns(self, files: List[str]) -> Dict[str, float]:
+    def _analyze_directory_patterns(self, files: list[str]) -> dict[str, float]:
         """Analyze directory patterns for domain signals.
         
         Args:
@@ -247,7 +246,7 @@ class DomainClassifier:
                 
         return scores
         
-    def _analyze_message_content(self, message: str, doc: Doc) -> Dict[str, float]:
+    def _analyze_message_content(self, message: str, doc: Doc) -> dict[str, float]:
         """Analyze commit message content for domain keywords.
         
         Args:
@@ -290,7 +289,7 @@ class DomainClassifier:
                 
         return domain_scores
         
-    def _extract_keywords_from_doc(self, doc: Doc) -> Set[str]:
+    def _extract_keywords_from_doc(self, doc: Doc) -> set[str]:
         """Extract meaningful keywords from spaCy document.
         
         Args:
@@ -315,9 +314,9 @@ class DomainClassifier:
                 
         return keywords
         
-    def _combine_domain_scores(self, file_scores: Dict[str, float],
-                              dir_scores: Dict[str, float],
-                              message_scores: Dict[str, float]) -> Dict[str, float]:
+    def _combine_domain_scores(self, file_scores: dict[str, float],
+                              dir_scores: dict[str, float],
+                              message_scores: dict[str, float]) -> dict[str, float]:
         """Combine scores from different analysis methods.
         
         Args:
@@ -360,7 +359,7 @@ class DomainClassifier:
                 
         return combined_scores
         
-    def get_domain_statistics(self, files: List[str]) -> Dict[str, Any]:
+    def get_domain_statistics(self, files: list[str]) -> dict[str, Any]:
         """Get detailed domain analysis statistics for debugging.
         
         Args:

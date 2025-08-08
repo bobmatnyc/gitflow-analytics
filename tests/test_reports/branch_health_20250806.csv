@@ -1,0 +1,4 @@
+repository,branch_name,total_branches,active_branches,stale_branches,long_lived_branches,overall_health,stale_percentage,branch_creation_rate_weekly,average_branch_age_days,average_commits_per_branch,age_days,is_stale,is_merged,total_commits,unique_authors,ahead_of_main,behind_main,divergence_score,health_score,latest_activity,daily_commit_average
+gitflow-analytics,[SUMMARY],2.0,2.0,0.0,0.0,excellent,0.0,0.5,0.0,32.0,,,,,,,,,,,
+gitflow-analytics,experiment/commit-classification,,,,,,,,,,1.0,False,True,32.0,1.0,0.0,0.0,0.0,100.0,2025-08-05T10:58:34-04:00,5.333333333333333
+gitflow-analytics,main,,,,,,,,,,1.0,False,True,32.0,1.0,0.0,0.0,0.0,100.0,2025-08-05T10:58:34-04:00,5.333333333333333

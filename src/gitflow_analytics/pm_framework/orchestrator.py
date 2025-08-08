@@ -53,7 +53,12 @@ class PMFrameworkOrchestrator:
                        }
                    }
         """
+        logger.info("Initializing PM Framework Orchestrator...")
+        logger.debug(f"PM platforms in config: {list(config.get('pm_platforms', {}).keys())}")
+        
         self.config = config
+        # Create a new registry instance for this orchestrator
+        # This ensures we don't use the default registry which may lack credentials
         self.registry = PlatformRegistry()
         self.adapters: dict[str, BasePlatformAdapter] = {}
         
@@ -65,13 +70,21 @@ class PMFrameworkOrchestrator:
         self.pm_integration_enabled = pm_config.get('enabled', False)
         self.primary_platform = pm_config.get('primary_platform', None)
         
+        logger.info(f"PM integration enabled: {self.pm_integration_enabled}")
+        if self.primary_platform:
+            logger.info(f"Primary platform: {self.primary_platform}")
+        
         # Correlation settings
         correlation_config = pm_config.get('correlation', {})
         self.fuzzy_matching_enabled = correlation_config.get('fuzzy_matching', True)
         self.temporal_window_hours = correlation_config.get('temporal_window_hours', 72)
         self.confidence_threshold = correlation_config.get('confidence_threshold', 0.8)
         
+        import traceback
         logger.info("PM Framework Orchestrator initialized")
+        print("   🔍 PM Framework init stack trace:")
+        for line in traceback.format_stack()[-5:-1]:
+            print("   " + line.strip())
         
         # Initialize configured platforms if PM integration is enabled
         if self.pm_integration_enabled:
@@ -86,13 +99,19 @@ class PMFrameworkOrchestrator:
         requiring manual registration. Future implementations will add
         JIRA, Azure DevOps, Linear, and other adapters here.
         """
-        # TODO: Register built-in adapters when implemented
-        # self.registry.register_adapter('jira', JIRAAdapter)
+        logger.debug("Registering built-in platform adapters...")
+        
+        # Register available adapters
+        from .adapters import JIRAAdapter
+        self.registry.register_adapter('jira', JIRAAdapter)
+        logger.debug("Registered JIRA adapter")
+        
         # self.registry.register_adapter('azure_devops', AzureDevOpsAdapter)
         # self.registry.register_adapter('linear', LinearAdapter)
         # self.registry.register_adapter('asana', AsanaAdapter)
         
-        logger.debug("Built-in adapters registration complete")
+        available_platforms = self.registry.get_available_platforms()
+        logger.info(f"Built-in adapters registered: {available_platforms}")
     
     def _initialize_platforms(self) -> None:
         """Initialize platform adapters based on configuration.
@@ -115,6 +134,12 @@ class PMFrameworkOrchestrator:
                 logger.info(f"Platform {platform_name} disabled, skipping initialization")
                 continue
             
+            # Log configuration details for debugging (without credentials)
+            config_keys = list(platform_config.keys())
+            has_credentials = ('username' in platform_config and 'api_token' in platform_config) or \
+                             ('access_user' in platform_config and 'access_token' in platform_config)
+            logger.debug(f"Platform {platform_name} config keys: {config_keys}, has credentials: {has_credentials}")
+            
             try:
                 logger.info(f"Initializing {platform_name} adapter...")
                 adapter = self.registry.create_adapter(platform_name, platform_config)
@@ -133,6 +158,7 @@ class PMFrameworkOrchestrator:
             except Exception as e:
                 error_msg = f"Failed to initialize {platform_name}: {e}"
                 logger.error(f"❌ {error_msg}")
+                logger.debug(f"Full error details for {platform_name}: {e}", exc_info=True)
                 
                 initialization_results.append({
                     'platform': platform_name,
@@ -288,6 +314,42 @@ class PMFrameworkOrchestrator:
         logger.info(f"Total issues collected: {total_issues}")
         
         return all_issues
+    
+    def get_issues_by_keys(self, platform: str, issue_keys: list[str]) -> dict[str, UnifiedIssue]:
+        """Get specific issues by their keys from a platform.
+        
+        WHY: Training pipeline needs to fetch specific issues referenced in commits
+        to determine their types for classification labeling.
+        
+        Args:
+            platform: Platform name (e.g., 'jira')
+            issue_keys: List of issue keys to fetch
+            
+        Returns:
+            Dictionary mapping issue keys to UnifiedIssue objects.
+        """
+        if platform not in self.adapters:
+            # Don't log errors for non-configured platforms - this is expected
+            logger.debug(f"Platform {platform} not configured, skipping")
+            return {}
+        
+        adapter = self.adapters[platform]
+        issues_dict = {}
+        
+        # For JIRA, we can fetch issues directly by key
+        if platform == 'jira' and hasattr(adapter, 'get_issue_by_key'):
+            for key in issue_keys:
+                try:
+                    issue = adapter.get_issue_by_key(key)
+                    if issue:
+                        issues_dict[key] = issue
+                except Exception as e:
+                    logger.warning(f"Failed to fetch {key} from {platform}: {e}")
+        else:
+            # For other platforms, we may need to use search or other methods
+            logger.warning(f"Batch fetch by keys not implemented for {platform}")
+        
+        return issues_dict
     
     def correlate_issues_with_commits(self, issues: dict[str, list[UnifiedIssue]], 
                                     commits: list[dict[str, Any]]) -> list[dict[str, Any]]:

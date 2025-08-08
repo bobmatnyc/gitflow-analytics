@@ -4,7 +4,7 @@ import asyncio
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from rich.pretty import Pretty
 from textual.binding import Binding
@@ -223,7 +223,7 @@ class AnalysisProgressScreen(Screen):
         # Small delay to show progress
         await asyncio.sleep(0.5)
     
-    async def _discover_repositories(self, log: Log) -> List:
+    async def _discover_repositories(self, log: Log) -> list:
         """Discover repositories to analyze."""
         repositories = self.config.repositories
         
@@ -250,7 +250,7 @@ class AnalysisProgressScreen(Screen):
         await asyncio.sleep(0.5)  # Brief pause for UI updates
         return repositories
     
-    async def _analyze_repositories(self, repositories: List, log: Log) -> tuple:
+    async def _analyze_repositories(self, repositories: list, log: Log) -> tuple:
         """Analyze all repositories and return commits and PRs."""
         repo_progress = self.query_one("#repo-progress", AnalysisProgressWidget)
         
@@ -309,7 +309,7 @@ class AnalysisProgressScreen(Screen):
         repo_progress.complete(f"Completed {len(repositories)} repositories")
         return all_commits, all_prs
     
-    async def _enrich_with_integrations(self, repositories: List, commits: List, log: Log) -> None:
+    async def _enrich_with_integrations(self, repositories: list, commits: list, log: Log) -> None:
         """Enrich data with integration sources."""
         integration_progress = self.query_one("#integration-progress", AnalysisProgressWidget)
         
@@ -339,7 +339,7 @@ class AnalysisProgressScreen(Screen):
         
         integration_progress.complete("Integration enrichment complete")
     
-    async def _resolve_identities(self, commits: List, log: Log) -> List:
+    async def _resolve_identities(self, commits: list, log: Log) -> list:
         """Resolve developer identities and return statistics."""
         log.write_line("👥 Updating developer statistics...")
         
@@ -357,7 +357,7 @@ class AnalysisProgressScreen(Screen):
         await asyncio.sleep(0.5)
         return developer_stats
     
-    async def _run_qualitative_analysis(self, commits: List, log: Log) -> None:
+    async def _run_qualitative_analysis(self, commits: list, log: Log) -> None:
         """Run qualitative analysis if enabled."""
         if not self.enable_qualitative:
             return
@@ -479,7 +479,7 @@ class AnalysisProgressScreen(Screen):
             log.write_line(f"   ❌ Failed to clone {repo_config.github_repo}: {e}")
             raise
     
-    async def _update_live_stats(self, stats: Dict[str, Any]) -> None:
+    async def _update_live_stats(self, stats: dict[str, Any]) -> None:
         """Update live statistics display."""
         stats_widget = self.query_one("#live-stats", Pretty)
         stats_widget.update(stats)

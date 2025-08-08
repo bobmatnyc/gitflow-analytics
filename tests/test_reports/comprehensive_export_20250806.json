@@ -1,0 +1,855 @@
+{
+  "metadata": {
+    "generated_at": "2025-08-06T16:00:34.698638+00:00",
+    "format_version": "2.0.0",
+    "generator": "GitFlow Analytics Comprehensive JSON Exporter",
+    "analysis_period": {
+      "start_date": "2025-07-30T16:00:34.698627+00:00",
+      "end_date": "2025-08-06T16:00:34.698627+00:00",
+      "weeks_analyzed": 1,
+      "total_days": 7
+    },
+    "data_summary": {
+      "total_commits": 31,
+      "total_prs": 0,
+      "total_developers": 1,
+      "repositories_analyzed": 0,
+      "projects_identified": 1,
+      "repositories": [],
+      "projects": [
+        "GITFLOW"
+      ]
+    },
+    "export_settings": {
+      "anonymized": false,
+      "timezone": "UTC"
+    }
+  },
+  "executive_summary": {
+    "key_metrics": {
+      "commits": {
+        "total": 31,
+        "trend_percent": 6.7,
+        "trend_direction": "stable"
+      },
+      "lines_changed": {
+        "total": 43488,
+        "trend_percent": -21.9,
+        "trend_direction": "decreasing"
+      },
+      "story_points": {
+        "total": 0,
+        "trend_percent": 0,
+        "trend_direction": "stable"
+      },
+      "developers": {
+        "total": 1,
+        "active_percentage": 100.0
+      },
+      "pull_requests": {
+        "total": 0,
+        "trend_percent": 0,
+        "trend_direction": "stable"
+      },
+      "ticket_coverage": {
+        "percentage": 0.0,
+        "quality_rating": "poor"
+      }
+    },
+    "performance_indicators": {
+      "velocity": {
+        "commits_per_week": 15.5,
+        "story_points_per_week": 0.0
+      },
+      "quality": {
+        "avg_commit_size": 1402.8,
+        "ticket_coverage_pct": 0.0
+      },
+      "collaboration": {
+        "developers_per_project": 1.0,
+        "cross_project_contributors": 0
+      }
+    },
+    "trends": {
+      "commits_trend": 6.7,
+      "lines_trend": -21.9,
+      "story_points_trend": 0
+    },
+    "anomalies": [],
+    "wins": [],
+    "concerns": [
+      {
+        "category": "process",
+        "title": "Low Ticket Coverage",
+        "description": "Only 0.0% of commits linked to tickets",
+        "impact": "high",
+        "recommendation": "Improve ticket referencing in commit messages"
+      },
+      {
+        "category": "quality",
+        "title": "Large Commit Sizes",
+        "description": "Average commit size of 1403 lines may indicate batched changes",
+        "impact": "low",
+        "recommendation": "Consider breaking down changes into smaller commits"
+      }
+    ],
+    "health_score": {
+      "overall": 47.1,
+      "components": {
+        "activity_consistency": 90.3,
+        "ticket_coverage": 0.0,
+        "collaboration": 50,
+        "code_quality": 0,
+        "velocity": 100
+      },
+      "weights": {
+        "activity_consistency": 0.3,
+        "ticket_coverage": 0.25,
+        "collaboration": 0.2,
+        "code_quality": 0.15,
+        "velocity": 0.1
+      },
+      "rating": "fair"
+    }
+  },
+  "projects": {
+    "GITFLOW": {
+      "summary": {
+        "total_commits": 31,
+        "total_contributors": 1,
+        "lines_changed": 43488,
+        "story_points": 0,
+        "files_touched": 52,
+        "pull_requests": 0
+      },
+      "health_score": {
+        "overall": 75.1,
+        "components": {
+          "activity": 100,
+          "contributor_diversity": 30,
+          "consistency": 95.2
+        },
+        "rating": "good"
+      },
+      "contributors": [
+        {
+          "id": "8659e109-1449-4a87-bec0-da013b5237bd",
+          "name": "Robert (Masa) Matsuoka",
+          "commits": 31,
+          "commits_percentage": 100.0,
+          "lines_changed": 43488,
+          "role": "primary"
+        }
+      ],
+      "activity_patterns": {
+        "commits_per_week": 15.5,
+        "peak_activity_day": "Friday",
+        "commit_size_distribution": {
+          "mean": 1402.8,
+          "median": 79,
+          "std_dev": 3234.9,
+          "min": 1,
+          "max": 14426,
+          "small_commits": 14,
+          "medium_commits": 4,
+          "large_commits": 13
+        }
+      },
+      "trends": {
+        "commits_trend": 42.9,
+        "lines_trend": -81.0,
+        "contributors_trend": 0.0
+      },
+      "anomalies": [],
+      "focus_metrics": {
+        "primary_contributors": [
+          "Robert (Masa) Matsuoka"
+        ],
+        "contribution_distribution": {
+          "gini_coefficient": 0.0,
+          "concentration_level": "low",
+          "top_contributor_percentage": 100.0,
+          "contributor_count": 1
+        }
+      }
+    }
+  },
+  "developers": {
+    "8659e109-1449-4a87-bec0-da013b5237bd": {
+      "identity": {
+        "name": "Robert (Masa) Matsuoka",
+        "canonical_id": "8659e109-1449-4a87-bec0-da013b5237bd",
+        "primary_email": "bobmatnyc@users.noreply.github.com",
+        "github_username": null,
+        "aliases_count": 0
+      },
+      "summary": {
+        "total_commits": 217,
+        "total_story_points": 0,
+        "projects_contributed": 1,
+        "first_seen": "2025-08-06T15:58:42.619767",
+        "last_seen": "2025-08-06T16:00:33.713522",
+        "days_active": 0
+      },
+      "health_score": {
+        "overall": 81.7,
+        "components": {
+          "activity": 100,
+          "consistency": 95.2,
+          "engagement": 50
+        },
+        "rating": "excellent"
+      },
+      "projects": {
+        "GITFLOW": {
+          "commits": 31,
+          "commits_percentage": 100.0,
+          "lines_changed": 43488,
+          "story_points": 0,
+          "first_commit": "2025-07-31T13:01:55",
+          "last_commit": "2025-08-05T14:58:34",
+          "days_active": 5
+        }
+      },
+      "contribution_patterns": {
+        "total_commits": 31,
+        "avg_commit_size": 1402.8,
+        "commit_size_stddev": 3234.9,
+        "peak_hour": 3,
+        "time_distribution": "afternoon_focused",
+        "peak_day": "Friday",
+        "work_pattern": "strictly_weekdays",
+        "consistency_score": 90.3
+      },
+      "collaboration": {
+        "projects_count": 1,
+        "potential_collaborators": 0,
+        "cross_project_work": false,
+        "collaboration_score": 0
+      },
+      "achievements": [
+        {
+          "type": "productivity",
+          "title": "High Productivity",
+          "description": "217 commits in analysis period",
+          "badge": "prolific_contributor"
+        }
+      ],
+      "improvement_areas": [
+        {
+          "category": "process",
+          "title": "Improve Ticket Linking",
+          "description": "Only 0.0% of commits reference tickets",
+          "priority": "medium",
+          "suggestion": "Include ticket references in commit messages"
+        },
+        {
+          "category": "quality",
+          "title": "Consider Smaller Commits",
+          "description": "Average commit size is 1403 lines",
+          "priority": "low",
+          "suggestion": "Break down large changes into smaller, focused commits"
+        }
+      ],
+      "activity_timeline": [
+        {
+          "week": "2025-07-28",
+          "commits": 17,
+          "lines_changed": 24561,
+          "projects": 1,
+          "project_list": [
+            "GITFLOW"
+          ]
+        },
+        {
+          "week": "2025-08-04",
+          "commits": 14,
+          "lines_changed": 18927,
+          "projects": 1,
+          "project_list": [
+            "GITFLOW"
+          ]
+        }
+      ]
+    }
+  },
+  "workflow_analysis": {
+    "branching_strategy": {
+      "merge_commits": 0,
+      "merge_rate_percent": 0.0,
+      "strategy": "linear",
+      "complexity_rating": "low"
+    },
+    "commit_patterns": {
+      "peak_hour": 19,
+      "peak_hour_commits": 6,
+      "time_distribution": {
+        "morning_pct": 0.0,
+        "afternoon_pct": 19.4,
+        "evening_pct": 58.1,
+        "night_pct": 22.6
+      },
+      "peak_day": "Friday",
+      "peak_day_commits": 11,
+      "weekday_pct": 100.0,
+      "weekend_pct": 0.0
+    },
+    "pr_workflow": {},
+    "git_pm_correlation": {},
+    "process_health": {
+      "ticket_linking_rate": 0.0,
+      "merge_commit_rate": 0.0,
+      "commit_message_quality": {
+        "avg_message_length_words": 61.7,
+        "median_message_length_words": 54,
+        "ticket_reference_rate_pct": 0.0,
+        "conventional_commit_rate_pct": 100.0,
+        "overall_rating": "good"
+      }
+    }
+  },
+  "time_series": {
+    "weekly": {
+      "labels": [
+        "2025-07-30",
+        "2025-08-06"
+      ],
+      "datasets": {
+        "commits": {
+          "label": "Commits",
+          "data": [
+            31,
+            0
+          ],
+          "backgroundColor": "rgba(54, 162, 235, 0.2)",
+          "borderColor": "rgba(54, 162, 235, 1)"
+        },
+        "lines_changed": {
+          "label": "Lines Changed",
+          "data": [
+            43488,
+            0
+          ],
+          "backgroundColor": "rgba(255, 99, 132, 0.2)",
+          "borderColor": "rgba(255, 99, 132, 1)"
+        },
+        "story_points": {
+          "label": "Story Points",
+          "data": [
+            0,
+            0
+          ],
+          "backgroundColor": "rgba(75, 192, 192, 0.2)",
+          "borderColor": "rgba(75, 192, 192, 1)"
+        },
+        "active_developers": {
+          "label": "Active Developers",
+          "data": [
+            1,
+            0
+          ],
+          "backgroundColor": "rgba(153, 102, 255, 0.2)",
+          "borderColor": "rgba(153, 102, 255, 1)"
+        }
+      }
+    },
+    "daily": {
+      "labels": [
+        "2025-07-30",
+        "2025-07-31",
+        "2025-08-01",
+        "2025-08-02",
+        "2025-08-03",
+        "2025-08-04",
+        "2025-08-05",
+        "2025-08-06"
+      ],
+      "datasets": {
+        "commits": {
+          "label": "Daily Commits",
+          "data": [
+            1,
+            5,
+            11,
+            0,
+            0,
+            14,
+            0,
+            0
+          ],
+          "backgroundColor": "rgba(54, 162, 235, 0.1)",
+          "borderColor": "rgba(54, 162, 235, 1)"
+        }
+      }
+    }
+  },
+  "insights": {
+    "quantitative": [
+      {
+        "category": "productivity",
+        "type": "metric",
+        "title": "Weekly Commit Rate",
+        "description": "Team averages 15.5 commits per week",
+        "value": 15.5,
+        "trend": "decreasing",
+        "priority": "medium"
+      },
+      {
+        "category": "quality",
+        "type": "concern",
+        "title": "Large Commit Sizes",
+        "description": "Average commit size is 1403 lines",
+        "value": 1402.8387096774193,
+        "priority": "medium",
+        "recommendation": "Consider breaking down changes into smaller commits"
+      }
+    ],
+    "qualitative": [],
+    "prioritized": [
+      {
+        "category": "quality",
+        "type": "concern",
+        "title": "Large Commit Sizes",
+        "description": "Average commit size is 1403 lines",
+        "value": 1402.8387096774193,
+        "priority": "medium",
+        "recommendation": "Consider breaking down changes into smaller commits"
+      },
+      {
+        "category": "productivity",
+        "type": "metric",
+        "title": "Weekly Commit Rate",
+        "description": "Team averages 15.5 commits per week",
+        "value": 15.5,
+        "trend": "decreasing",
+        "priority": "medium"
+      }
+    ],
+    "insight_categories": {
+      "productivity": [
+        {
+          "category": "productivity",
+          "type": "metric",
+          "title": "Weekly Commit Rate",
+          "description": "Team averages 15.5 commits per week",
+          "value": 15.5,
+          "trend": "decreasing",
+          "priority": "medium"
+        }
+      ],
+      "quality": [
+        {
+          "category": "quality",
+          "type": "concern",
+          "title": "Large Commit Sizes",
+          "description": "Average commit size is 1403 lines",
+          "value": 1402.8387096774193,
+          "priority": "medium",
+          "recommendation": "Consider breaking down changes into smaller commits"
+        }
+      ]
+    },
+    "actionable_recommendations": [
+      {
+        "title": "Large Commit Sizes",
+        "action": "Consider breaking down changes into smaller commits",
+        "priority": "medium",
+        "category": "quality",
+        "expected_impact": "low"
+      },
+      {
+        "title": "Improve Development Process Tracking",
+        "action": "Implement consistent ticket referencing in commits and PRs",
+        "priority": "medium",
+        "category": "process",
+        "expected_impact": "medium"
+      }
+    ]
+  },
+  "untracked_analysis": {
+    "summary": {
+      "total_untracked": 31,
+      "total_commits": 31,
+      "untracked_percentage": 100.0,
+      "avg_lines_per_untracked_commit": 1402.8,
+      "analysis_status": "complete"
+    },
+    "categories": {
+      "feature": {
+        "count": 8,
+        "lines_changed": 29767,
+        "files_changed": 116,
+        "examples": [
+          {
+            "hash": "616057c",
+            "message": "feat: major enhancements to developer analytics and reporting",
+            "author": "Robert (Masa) Matsuoka",
+            "timestamp": "2025-08-05T14:58:34",
+            "lines_changed": 2351,
+            "files_changed": 10
+          },
+          {
+            "hash": "bc18302",
+            "message": "feat: add fallback mechanism for git clone when specified branch doesn't exist",
+            "author": "Robert (Masa) Matsuoka",
+            "timestamp": "2025-08-05T03:52:24",
+            "lines_changed": 39,
+            "files_changed": 2
+          },
+          {
+            "hash": "34c77dd",
+            "message": "feat: implement comprehensive branch health metrics based on 2025 best practices",
+            "author": "Robert (Masa) Matsuoka",
+            "timestamp": "2025-08-05T03:35:37",
+            "lines_changed": 533,
+            "files_changed": 3
+          }
+        ],
+        "authors": 1,
+        "avg_lines_per_commit": 3720.875
+      },
+      "bug_fix": {
+        "count": 15,
+        "lines_changed": 9270,
+        "files_changed": 73,
+        "examples": [
+          {
+            "hash": "eebda90",
+            "message": "fix: remove misplaced exception handling code causing variable scope error",
+            "author": "Robert (Masa) Matsuoka",
+            "timestamp": "2025-08-05T03:51:22",
+            "lines_changed": 11,
+            "files_changed": 1
+          },
+          {
+            "hash": "cc7c266",
+            "message": "fix: handle mixed types for files_changed in narrative report generation",
+            "author": "Robert (Masa) Matsuoka",
+            "timestamp": "2025-08-05T03:38:59",
+            "lines_changed": 5,
+            "files_changed": 1
+          },
+          {
+            "hash": "0d7a4de",
+            "message": "fix: handle repositories without 'main' branch during clone",
+            "author": "Robert (Masa) Matsuoka",
+            "timestamp": "2025-08-05T03:24:59",
+            "lines_changed": 40,
+            "files_changed": 2
+          }
+        ],
+        "authors": 1,
+        "avg_lines_per_commit": 618.0
+      },
+      "maintenance": {
+        "count": 8,
+        "lines_changed": 4451,
+        "files_changed": 54,
+        "examples": [
+          {
+            "hash": "a9813ae",
+            "message": "chore: bump version to 1.0.7",
+            "author": "Robert (Masa) Matsuoka",
+            "timestamp": "2025-08-01T19:55:02",
+            "lines_changed": 10,
+            "files_changed": 2
+          },
+          {
+            "hash": "f559390",
+            "message": "chore: bump version to 1.0.6",
+            "author": "Robert (Masa) Matsuoka",
+            "timestamp": "2025-08-01T19:20:24",
+            "lines_changed": 10,
+            "files_changed": 2
+          },
+          {
+            "hash": "24f2a62",
+            "message": "chore: bump version to 1.0.5",
+            "author": "Robert (Masa) Matsuoka",
+            "timestamp": "2025-08-01T18:42:03",
+            "lines_changed": 10,
+            "files_changed": 2
+          }
+        ],
+        "authors": 1,
+        "avg_lines_per_commit": 556.375
+      }
+    },
+    "contributors": {
+      "8659e109-1449-4a87-bec0-da013b5237bd": {
+        "name": "Robert (Masa) Matsuoka",
+        "count": 31,
+        "lines_changed": 43488,
+        "categories": [
+          "feature",
+          "maintenance",
+          "bug_fix"
+        ],
+        "projects": [
+          "GITFLOW"
+        ],
+        "recent_commits": [
+          {
+            "hash": "616057c",
+            "message": "feat: major enhancements to developer analytics and reporting",
+            "category": "feature",
+            "timestamp": "2025-08-05T14:58:34",
+            "lines_changed": 2351
+          },
+          {
+            "hash": "bc18302",
+            "message": "feat: add fallback mechanism for git clone when specified branch doesn't exist",
+            "category": "feature",
+            "timestamp": "2025-08-05T03:52:24",
+            "lines_changed": 39
+          },
+          {
+            "hash": "eebda90",
+            "message": "fix: remove misplaced exception handling code causing variable scope error",
+            "category": "bug_fix",
+            "timestamp": "2025-08-05T03:51:22",
+            "lines_changed": 11
+          },
+          {
+            "hash": "cc7c266",
+            "message": "fix: handle mixed types for files_changed in narrative report generation",
+            "category": "bug_fix",
+            "timestamp": "2025-08-05T03:38:59",
+            "lines_changed": 5
+          },
+          {
+            "hash": "34c77dd",
+            "message": "feat: implement comprehensive branch health metrics based on 2025 best practices",
+            "category": "feature",
+            "timestamp": "2025-08-05T03:35:37",
+            "lines_changed": 533
+          }
+        ],
+        "avg_lines_per_commit": 1402.8387096774193
+      }
+    },
+    "projects": {
+      "GITFLOW": {
+        "count": 31,
+        "lines_changed": 43488,
+        "categories": [
+          "feature",
+          "maintenance",
+          "bug_fix"
+        ],
+        "contributors": 1,
+        "avg_commit_size": 1402.8387096774193
+      }
+    },
+    "monthly_trends": {
+      "2025-08": {
+        "count": 25,
+        "categories": {
+          "feature": 6,
+          "bug_fix": 13,
+          "maintenance": 6
+        },
+        "contributors": 1
+      },
+      "2025-07": {
+        "count": 6,
+        "categories": {
+          "feature": 2,
+          "bug_fix": 2,
+          "maintenance": 2
+        },
+        "contributors": 1
+      }
+    },
+    "insights": [
+      {
+        "type": "concern",
+        "category": "process",
+        "title": "High Bug Fix Untracked Rate",
+        "description": "48.4% of untracked work is bug fix development",
+        "impact": "high",
+        "value": 48.38709677419355
+      },
+      {
+        "type": "concern",
+        "category": "coverage",
+        "title": "High Untracked Rate",
+        "description": "100.0% of all commits lack ticket references",
+        "impact": "high",
+        "value": 100.0
+      }
+    ],
+    "recommendations": [
+      {
+        "type": "process_improvement",
+        "priority": "high",
+        "title": "Enforce Feature Ticket Requirements",
+        "description": "Many feature developments lack ticket references",
+        "action": "Require ticket creation and referencing for all new features",
+        "expected_impact": "Improved project visibility and planning",
+        "effort": "low"
+      },
+      {
+        "type": "process_improvement",
+        "priority": "high",
+        "title": "Link Bug Fixes to Issues",
+        "description": "Bug fixes should be tracked through issue management",
+        "action": "Create issues for bugs and reference them in fix commits",
+        "expected_impact": "Better bug tracking and resolution visibility",
+        "effort": "low"
+      },
+      {
+        "type": "team_training",
+        "priority": "medium",
+        "title": "Team Process Training",
+        "description": "High percentage of untracked commits indicates process gaps",
+        "action": "Provide training on ticket referencing and commit best practices",
+        "expected_impact": "Improved process adherence and visibility",
+        "effort": "medium"
+      }
+    ],
+    "quality_scores": {
+      "process_adherence": 0,
+      "appropriate_untracked": 25.8,
+      "work_type_balance": 84.9,
+      "overall": 24.7,
+      "rating": "needs_improvement"
+    }
+  },
+  "raw_data": {
+    "commits_sample": [
+      {
+        "hash": "01747539777cceb6998ab9b77f46606a628c0238",
+        "author_name": "Robert (Masa) Matsuoka",
+        "author_email": "bobmatnyc@users.noreply.github.com",
+        "message": "chore: bump version to 1.0.1\n\nMajor features added:\n- Path exclusion support for filtering boilerplate files from metrics\n- JIRA integration for automatic story point extraction\n- Organization-based repository discovery\n- Ticket platform filtering\n- Enhanced .env file support with validation\n\nImprovements:\n- Filtered line count metrics in all reports\n- Better developer identity consolidation\n- Improved documentation with complete examples\n- Fixed timezone comparison and linting issues\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n",
+        "timestamp": "2025-07-31T13:01:55",
+        "branch": "experiment/commit-classification",
+        "is_merge": false,
+        "files_changed": 21,
+        "insertions": 1196,
+        "deletions": 103,
+        "complexity_delta": -105.49,
+        "story_points": null,
+        "ticket_references": [],
+        "project_key": "GITFLOW",
+        "canonical_id": "8659e109-1449-4a87-bec0-da013b5237bd"
+      },
+      {
+        "hash": "41d1f9cb62984c05c86deedb7bb7288f6071c3ae",
+        "author_name": "Robert (Masa) Matsuoka",
+        "author_email": "bobmatnyc@users.noreply.github.com",
+        "message": "feat: add atomic versioning system with CI/CD automation\n\n- Fixed CLI version display bug by importing from _version module\n- Implemented python-semantic-release for automated version management\n- Added GitHub Actions CI/CD workflows for testing and publishing\n- Updated documentation for PyPI availability and deployment process\n- Added semantic release configuration in pyproject.toml\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n",
+        "timestamp": "2025-07-31T19:12:01",
+        "branch": "experiment/commit-classification",
+        "is_merge": false,
+        "files_changed": 8,
+        "insertions": 724,
+        "deletions": 173,
+        "complexity_delta": 0.0,
+        "story_points": null,
+        "ticket_references": [],
+        "project_key": "GITFLOW",
+        "canonical_id": "8659e109-1449-4a87-bec0-da013b5237bd"
+      },
+      {
+        "hash": "461c27eeec67a2402eb2ad483f66b4e1f812280e",
+        "author_name": "Robert (Masa) Matsuoka",
+        "author_email": "bobmatnyc@users.noreply.github.com",
+        "message": "fix: add type annotations and reduce mypy errors by 55%\n\n- Added comprehensive type annotations across core modules\n- Fixed GitPython object type issues\n- Resolved pandas DataFrame typing\n- Added missing return type annotations\n- Installed type stubs for pandas and tqdm\n- Created test suite structure with fixtures\n- Applied black formatting to entire codebase\n- Updated deprecated configurations in pyproject.toml\n",
+        "timestamp": "2025-07-31T19:40:46",
+        "branch": "experiment/commit-classification",
+        "is_merge": false,
+        "files_changed": 30,
+        "insertions": 3845,
+        "deletions": 1515,
+        "complexity_delta": -769.53,
+        "story_points": null,
+        "ticket_references": [],
+        "project_key": "GITFLOW",
+        "canonical_id": "8659e109-1449-4a87-bec0-da013b5237bd"
+      },
+      {
+        "hash": "27a772703081584e1ef02f3d36238fc7d9d25de3",
+        "author_name": "Robert (Masa) Matsuoka",
+        "author_email": "bobmatnyc@users.noreply.github.com",
+        "message": "chore: modernize type hints and implement comprehensive test suite\n\n- Added types-PyYAML to dev dependencies\n- Modernized 200+ type hints from typing.Dict/List to dict/list\n- Implemented comprehensive test cases for all modules\n- Achieved 41 passing tests with 38% code coverage\n- All ruff linting checks now pass\n- Package builds and installs successfully\n",
+        "timestamp": "2025-07-31T20:21:59",
+        "branch": "experiment/commit-classification",
+        "is_merge": false,
+        "files_changed": 21,
+        "insertions": 1293,
+        "deletions": 1793,
+        "complexity_delta": 0.0,
+        "story_points": null,
+        "ticket_references": [],
+        "project_key": "GITFLOW",
+        "canonical_id": "8659e109-1449-4a87-bec0-da013b5237bd"
+      },
+      {
+        "hash": "dcfc055ffca3b0f3c2fa5791aaa4d540f3efe034",
+        "author_name": "Robert (Masa) Matsuoka",
+        "author_email": "bobmatnyc@users.noreply.github.com",
+        "message": "fix: resolve test failures and type errors\n\n- Fixed 7 out of 16 failing tests (84.2% pass rate)\n- Reduced mypy errors from 58 to 46 (21% improvement)\n- Fixed CLI orchestrator imports and mocks\n- Added missing type annotations across core modules\n- Fixed SQLAlchemy declarative base typing\n- Added types-requests to dev dependencies\n- Updated test data structures to match implementation\n- Improved overall type safety and test reliability\n",
+        "timestamp": "2025-07-31T21:12:14",
+        "branch": "experiment/commit-classification",
+        "is_merge": false,
+        "files_changed": 12,
+        "insertions": 76,
+        "deletions": 66,
+        "complexity_delta": 0.0,
+        "story_points": null,
+        "ticket_references": [],
+        "project_key": "GITFLOW",
+        "canonical_id": "8659e109-1449-4a87-bec0-da013b5237bd"
+      }
+    ],
+    "prs_sample": [],
+    "developer_stats_schema": {
+      "fields": [
+        "canonical_id",
+        "primary_name",
+        "primary_email",
+        "github_username",
+        "total_commits",
+        "total_story_points",
+        "alias_count",
+        "first_seen",
+        "last_seen",
+        "ticket_coverage_pct"
+      ],
+      "sample_record": {
+        "canonical_id": "8659e109-1449-4a87-bec0-da013b5237bd",
+        "primary_name": "Robert (Masa) Matsuoka",
+        "primary_email": "bobmatnyc@users.noreply.github.com",
+        "github_username": null,
+        "total_commits": 217,
+        "total_story_points": 0,
+        "alias_count": 0,
+        "first_seen": "2025-08-06T15:58:42.619767",
+        "last_seen": "2025-08-06T16:00:33.713522",
+        "ticket_coverage_pct": 0.0
+      }
+    },
+    "dora_metrics": {
+      "deployment_frequency": {
+        "daily_average": 0.5714285714285714,
+        "weekly_average": 4.0,
+        "category": "High"
+      },
+      "lead_time_hours": 0,
+      "change_failure_rate": 0.0,
+      "mttr_hours": 0,
+      "performance_level": "Elite",
+      "total_deployments": 4,
+      "total_failures": 0,
+      "metrics_period_weeks": 1.0
+    },
+    "data_quality": {
+      "commits_with_timestamps": 31,
+      "commits_with_projects": 31,
+      "commits_with_tickets": 0,
+      "developers_with_github": 0
+    }
+  }
+}

@@ -3,21 +3,18 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any, Optional
 
-from textual.widgets import (
-    Header, Footer, Label, Static, Button, 
-    TabbedContent, TabPane, Rule
-)
-from textual.containers import Container, Vertical, Horizontal, ScrollableContainer
-from textual.screen import Screen
-from textual.binding import Binding
 from rich.table import Table
-from rich.text import Text
+from textual.binding import Binding
+from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
+from textual.screen import Screen
+from textual.widgets import Button, Footer, Header, Label, Rule, Static, TabbedContent, TabPane
+
+from gitflow_analytics.config import Config
 
 from ..widgets.data_table import EnhancedDataTable
 from ..widgets.export_modal import ExportModal
-from gitflow_analytics.config import Config
 
 
 class ResultsScreen(Screen):
@@ -44,9 +41,9 @@ class ResultsScreen(Screen):
     
     def __init__(
         self,
-        commits: List[Dict],
-        prs: List[Dict],
-        developers: List[Dict],
+        commits: list[dict],
+        prs: list[dict],
+        developers: list[dict],
         config: Config,
         *,
         name: Optional[str] = None,
@@ -148,7 +145,7 @@ class ResultsScreen(Screen):
         
         from rich.console import Console
         from rich.panel import Panel
-        console = Console()
+        Console()
         
         container.mount(Static(Panel(summary_table, title="Key Metrics", border_style="blue")))
         
@@ -501,19 +498,14 @@ Total Analyzed: {len(confidence_scores):,} commits"""
             
             if data_type == "summary":
                 data = self._prepare_summary_data()
-                filename = f"gitflow_summary_{timestamp}.csv"
             elif data_type == "developers":
                 data = self.developers
-                filename = f"gitflow_developers_{timestamp}.csv"
             elif data_type == "commits":
                 data = self.commits
-                filename = f"gitflow_commits_{timestamp}.csv"
             elif data_type == "prs":
                 data = self.prs
-                filename = f"gitflow_prs_{timestamp}.csv"
             elif data_type == "qualitative":
                 data = self._prepare_qualitative_data()
-                filename = f"gitflow_qualitative_{timestamp}.csv"
             elif data_type == "complete":
                 data = {
                     'commits': self.commits,
@@ -521,7 +513,6 @@ Total Analyzed: {len(confidence_scores):,} commits"""
                     'developers': self.developers,
                     'config': self.config.__dict__ if hasattr(self.config, '__dict__') else {}
                 }
-                filename = f"gitflow_complete_{timestamp}.json"
             else:
                 self.notify("Unknown export type", severity="error")
                 return
@@ -546,7 +537,7 @@ Total Analyzed: {len(confidence_scores):,} commits"""
         except Exception as e:
             self.notify(f"Export preparation failed: {e}", severity="error")
     
-    def _perform_export(self, data: Any, export_config: Dict[str, Any], format_type: str) -> None:
+    def _perform_export(self, data: Any, export_config: dict[str, Any], format_type: str) -> None:
         """Perform the actual export operation."""
         try:
             export_path = export_config['path']
@@ -563,7 +554,7 @@ Total Analyzed: {len(confidence_scores):,} commits"""
         except Exception as e:
             self.notify(f"Export failed: {e}", severity="error")
     
-    def _export_to_csv(self, data: List[Dict], path: Path, config: Dict[str, Any]) -> None:
+    def _export_to_csv(self, data: list[dict], path: Path, config: dict[str, Any]) -> None:
         """Export data to CSV format."""
         import csv
         
@@ -586,7 +577,7 @@ Total Analyzed: {len(confidence_scores):,} commits"""
                     row = self._anonymize_row(row)
                 writer.writerow(row)
     
-    def _export_to_json(self, data: Any, path: Path, config: Dict[str, Any]) -> None:
+    def _export_to_json(self, data: Any, path: Path, config: dict[str, Any]) -> None:
         """Export data to JSON format."""
         # Ensure parent directory exists
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -598,12 +589,12 @@ Total Analyzed: {len(confidence_scores):,} commits"""
         with open(path, 'w', encoding='utf-8') as jsonfile:
             json.dump(data, jsonfile, indent=2, default=str)
     
-    def _export_to_markdown(self, data: Any, path: Path, config: Dict[str, Any]) -> None:
+    def _export_to_markdown(self, data: Any, path: Path, config: dict[str, Any]) -> None:
         """Export data as markdown report."""
         self.notify("Markdown export not yet implemented", severity="info")
         # TODO: Implement markdown report generation
     
-    def _prepare_summary_data(self) -> List[Dict]:
+    def _prepare_summary_data(self) -> list[dict]:
         """Prepare summary statistics for export."""
         return [
             {'metric': 'Total Commits', 'value': len(self.commits)},
@@ -612,7 +603,7 @@ Total Analyzed: {len(confidence_scores):,} commits"""
             {'metric': 'Total Story Points', 'value': sum(c.get('story_points', 0) or 0 for c in self.commits)},
         ]
     
-    def _prepare_qualitative_data(self) -> List[Dict]:
+    def _prepare_qualitative_data(self) -> list[dict]:
         """Prepare qualitative analysis data for export."""
         qualitative_commits = []
         for commit in self.commits:
@@ -629,7 +620,7 @@ Total Analyzed: {len(confidence_scores):,} commits"""
                 qualitative_commits.append(qual_commit)
         return qualitative_commits
     
-    def _anonymize_row(self, row: Dict) -> Dict:
+    def _anonymize_row(self, row: dict) -> dict:
         """Anonymize sensitive data in a row."""
         # Simple anonymization - replace names with hashed versions
         anonymized = row.copy()

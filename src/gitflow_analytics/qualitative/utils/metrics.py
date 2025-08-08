@@ -1,12 +1,10 @@
 """Performance and accuracy metrics for qualitative analysis."""
 
 import logging
-import time
+import statistics
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
-import statistics
 
 
 @dataclass 
@@ -122,7 +120,7 @@ class PerformanceMetrics:
         """
         self.classification_accuracy.append(accuracy)
         
-    def get_processing_stats(self, hours: int = 24) -> Dict[str, any]:
+    def get_processing_stats(self, hours: int = 24) -> dict[str, any]:
         """Get processing statistics for the last N hours.
         
         Args:
@@ -184,7 +182,7 @@ class PerformanceMetrics:
             'time_period_hours': hours
         }
         
-    def get_quality_metrics(self) -> Dict[str, any]:
+    def get_quality_metrics(self) -> dict[str, any]:
         """Get quality and accuracy metrics.
         
         Returns:
@@ -234,7 +232,7 @@ class PerformanceMetrics:
             'total_samples': len(confidences)
         }
         
-    def get_error_analysis(self) -> Dict[str, any]:
+    def get_error_analysis(self) -> dict[str, any]:
         """Get error analysis and system health metrics.
         
         Returns:
@@ -268,7 +266,7 @@ class PerformanceMetrics:
             'system_health': 'healthy' if error_rate < 0.01 else 'degraded' if error_rate < 0.05 else 'unhealthy'
         }
         
-    def get_performance_alerts(self) -> List[str]:
+    def get_performance_alerts(self) -> list[str]:
         """Get performance alerts and recommendations.
         
         Returns:
@@ -309,7 +307,7 @@ class PerformanceMetrics:
             
         return alerts
         
-    def get_optimization_suggestions(self) -> List[str]:
+    def get_optimization_suggestions(self) -> list[str]:
         """Get optimization suggestions based on metrics.
         
         Returns:
