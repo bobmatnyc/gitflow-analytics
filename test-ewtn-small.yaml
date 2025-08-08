@@ -48,14 +48,13 @@ analysis:
           - "jnewell-work"
       
       - name: "Nazarii Pak"
-        primary_email: "nazarii.pak@example.com"
+        primary_email: "nazarii.pak@pettersonapps.com"
         aliases:
-          - "Nazarii"
+          - "142906195+Nazarii-Pak@users.noreply.github.com"
       
       - name: "Daci"
-        primary_email: "daci@example.com"
-        aliases:
-          - "daci"
+        primary_email: "daci@tantawowa.com"
+        aliases: []
 
 output:
   directory: "/Users/masa/Clients/EWTN/gfa/reports"
