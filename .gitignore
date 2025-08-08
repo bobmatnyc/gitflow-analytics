@@ -75,8 +75,51 @@ gitflow_cache.db
 *.db
 config-*.yaml
 !config-sample.yaml
+!examples/config/config-*.yaml
 reports/
 output/
+
+# Test files and results (prevent accidental commits)
+test_*.py
+!tests/**
+*_test_results*
+test-reports/
+test-identity-reports/
+test-output/
+test-cache/
+override-reports/
+*_demo_results/
+ml_test_results.json
+test_config_minimal.yaml
+test-*.yaml
+!tests/**/*.yaml
+
+# Temporary analysis files
+*_ANALYSIS*.md
+*_CLASSIFICATION*.md
+*_VERIFICATION*.md
+*_IMPLEMENTATION*.md
+*_REPORT*.md
+HOTFIX_*.md
+RELEASE_*.md
+COMMIT_MESSAGE*.md
+BRANCH_OPTIMIZATION*.md
+CACHE_*.md
+YAML_*.md
+!CHANGELOG.md
+!README.md
+!CLAUDE.md
+!CONTRIBUTING.md
+!SECURITY.md
+
+# EWTN-specific files
+EWTN_*.md
+ewtn_*.py
+ewtn_*
+*ewtn*
+
+# Tickets directory (if not intentional)
+tickets/
 
 # Build and cache directories  
 htmlcov/

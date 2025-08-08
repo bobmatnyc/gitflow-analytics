@@ -1,0 +1,146 @@
+# GitFlow Analytics Configuration
+# Sample configuration for recess-recreo repositories
+version: "1.0"
+
+# GitHub authentication
+github:
+  token: "${GITHUB_TOKEN}"
+  owner: "${GITHUB_OWNER}"
+  # For GitHub Enterprise, uncomment and modify:
+  # base_url: "https://github.enterprise.com/api/v3"
+  
+  # Rate limiting settings
+  rate_limit:
+    max_retries: 3
+    backoff_factor: 2
+
+# Repository definitions
+repositories:
+  - name: "frontend"
+    path: "~/repos/recess-recreo/frontend"
+    github_repo: "recess-recreo/frontend"
+    project_key: "FRONTEND"
+    branch: "main"
+    
+  - name: "service-ts"
+    path: "~/repos/recess-recreo/service-ts"
+    github_repo: "recess-recreo/service-ts"
+    project_key: "SERVICE_TS"
+    branch: "main"
+    
+  - name: "services"
+    path: "~/repos/recess-recreo/services"
+    github_repo: "recess-recreo/services"
+    project_key: "SERVICES"
+    branch: "main"
+    
+  - name: "scraper"
+    path: "~/repos/recess-recreo/scraper"
+    github_repo: "recess-recreo/scraper"
+    project_key: "SCRAPER"
+    branch: "main"
+    
+  # - name: "keycloak"
+  #   path: "~/repos/recess-recreo/keycloak"
+  #   github_repo: "recess-recreo/keycloak"
+  #   project_key: "KEYCLOAK"
+  #   branch: "main"
+
+# ClickUp Integration (Phase 2+)
+clickup:
+  # ClickUp workspace/project for correlation
+  workspace_url: "https://app.clickup.com/9014422905/v/o/f/90144651545"
+  # API token would be added here for Phase 2
+  # token: "${CLICKUP_TOKEN}"
+
+# Analysis settings
+analysis:
+  # Default ticket platform for this team (they primarily use ClickUp)
+  default_ticket_platform: "clickup"
+  
+  # Branch to project mapping rules
+  branch_mapping_rules:
+    FRONTEND:
+      - "^feature/fe[-/_]"
+      - "^frontend/"
+      - "[-/_]frontend[-/_]"
+    SERVICE_TS:
+      - "^feature/service-ts[-/_]"
+      - "^service-ts/"
+      - "[-/_]service-ts[-/_]"
+    SERVICES:
+      - "^feature/services[-/_]"
+      - "^services/"
+      - "[-/_]services[-/_]"
+    SCRAPER:
+      - "^feature/scraper[-/_]"
+      - "^scraper/"
+      - "[-/_]scraper[-/_]"
+  
+  # Story point extraction patterns
+  story_point_patterns:
+    - "(?:story\\s*points?|sp|pts?)\\s*[:=]\\s*(\\d+)"
+    - "\\[(\\d+)\\s*(?:sp|pts?)\\]"
+    - "#(\\d+)sp"
+    - "estimate:\\s*(\\d+)"
+    - "points?:\\s*(\\d+)"
+    - "\\bSP(\\d+)\\b"
+  
+  # Commit filtering
+  exclude:
+    # Skip commits from these authors
+    authors:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+      - "github-actions[bot]"
+      - "snyk-bot"
+    # Skip commits with these patterns in message
+    message_patterns:
+      - "^Merge branch"
+      - "^Merge pull request"
+      - "^\\[skip ci\\]"
+      - "^\\[ci skip\\]"
+      - "^chore\\(deps\\):"
+  
+  # Identity resolution settings
+  identity:
+    similarity_threshold: 0.85
+    # Add manual mappings if developers use different emails
+    manual_mappings:
+      - canonical_email: "32915688+rodrian95@users.noreply.github.com"
+        aliases:
+          - "inbox@rod750.dev"
+
+# Output settings
+output:
+  # Output directory for reports
+  directory: "~/Clients/recess/reports"
+  
+  # Report formats to generate
+  formats:
+    - csv
+    - markdown
+    - json  # Enable JSON export for API integration
+  
+  # CSV-specific settings
+  csv:
+    include_headers: true
+    delimiter: ","
+    encoding: "utf-8"
+  
+  # Anonymization settings (disabled by default)
+  anonymization:
+    enabled: false
+    fields:
+      - email
+      - name
+    method: "hash"  # or "sequential" for Dev1, Dev2, etc.
+
+# Cache settings
+cache:
+  # Cache directory (relative to current directory)
+  directory: ".gitflow-cache"
+  # Cache TTL in hours (168 = 1 week)
+  ttl_hours: 168
+  # Maximum cache size in MB
+  max_size_mb: 500

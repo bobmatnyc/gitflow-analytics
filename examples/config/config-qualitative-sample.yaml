@@ -1,0 +1,208 @@
+# GitFlow Analytics Configuration with Qualitative Analysis
+# This sample configuration demonstrates how to enable and configure
+# the qualitative data extraction system for enhanced commit analysis.
+
+version: "1.0"
+
+# Repository configuration
+repositories:
+  - name: "example-repo"
+    path: "./repos/example-repo"
+    github_repo: "your-org/example-repo"
+    project_key: "EXAMPLE"
+
+# GitHub configuration  
+github:
+  token: "${GITHUB_TOKEN}"
+  owner: "your-org"
+  # organization: "your-org"  # Uncomment for organization-wide analysis
+
+# Analysis configuration
+analysis:
+  # Story point extraction patterns
+  story_point_patterns:
+    - '(?:story\s*points?|sp|pts?)\s*[:=]\s*(\d+)'
+    - '\[(\d+)\s*(?:sp|pts?)\]'
+    - '#(\d+)sp'
+  
+  # Exclusions
+  exclude:
+    authors:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+    message_patterns: []
+    paths:
+      - "**/node_modules/**"
+      - "**/vendor/**"
+      - "**/*.min.js"
+  
+  # Identity resolution
+  identity:
+    similarity_threshold: 0.85
+    manual_mappings:
+      - canonical_id: "john_doe"
+        primary_name: "John Doe"
+        primary_email: "john.doe@company.com"
+        aliases:
+          - name: "John D"
+            email: "john.d@company.com"
+          - name: "jdoe"
+            email: "jdoe@company.com"
+
+# Qualitative Analysis Configuration
+qualitative:
+  # Enable/disable qualitative analysis
+  enabled: true
+  
+  # Processing settings
+  batch_size: 1000                    # Commits processed per batch
+  confidence_threshold: 0.7           # Min confidence for NLP results
+  max_llm_fallback_pct: 0.15         # Max 15% of commits use LLM
+  
+  # Performance settings
+  enable_performance_tracking: true
+  target_processing_time_ms: 2.0     # Target per-commit processing time
+  min_overall_confidence: 0.6        # Min confidence for any result
+  enable_quality_feedback: true      # Learn from corrections
+
+  # NLP Configuration
+  nlp:
+    # spaCy settings
+    spacy_model: "en_core_web_sm"     # Download with: python -m spacy download en_core_web_sm
+    spacy_batch_size: 1000
+    fast_mode: true                   # Disable parser/NER for speed
+    enable_parallel_processing: true
+    max_workers: 4
+    
+    # Change type classification
+    change_type:
+      min_confidence: 0.7
+      semantic_weight: 0.6            # Weight for semantic features
+      file_pattern_weight: 0.4        # Weight for file pattern signals
+      enable_custom_patterns: true
+    
+    # Intent analysis
+    intent:
+      confidence_threshold: 0.6
+      sentiment_analysis: true
+      urgency_keywords:
+        critical: ["critical", "urgent", "hotfix", "emergency", "immediate"]
+        important: ["important", "priority", "asap", "needed"]
+        routine: ["routine", "regular", "normal", "standard"]
+    
+    # Domain classification
+    domain:
+      min_confidence: 0.6
+      file_patterns:
+        frontend: ["*.js", "*.jsx", "*.ts", "*.tsx", "*.vue", "*.html", "*.css"]
+        backend: ["*.py", "*.java", "*.go", "*.rb", "*.php", "*.cs"]
+        database: ["*.sql", "migrations/*", "schema/*", "**/models/**"]
+        infrastructure: ["Dockerfile", "*.yaml", "*.yml", "terraform/*", "*.tf"]
+        mobile: ["*.swift", "*.kt", "android/*", "ios/*"]
+        devops: ["*.yml", "*.yaml", "ci/*", ".github/*", "docker/*"]
+      keyword_patterns:
+        frontend: ["ui", "component", "styling", "interface", "layout"]
+        backend: ["api", "endpoint", "service", "server", "logic"]
+        database: ["query", "schema", "migration", "data", "model"]
+        infrastructure: ["deploy", "config", "environment", "setup"]
+        mobile: ["android", "ios", "mobile", "app"]
+        devops: ["build", "pipeline", "deploy", "ci", "docker"]
+    
+    # Risk analysis
+    risk:
+      high_risk_patterns:
+        - "password"
+        - "secret" 
+        - "key"
+        - "token"
+        - "production"
+        - "critical"
+        - "database"
+        - "migration"
+      medium_risk_patterns:
+        - "config"
+        - "configuration"
+        - "api"
+        - "endpoint"
+      file_risk_patterns:
+        "**/*prod*": "high"
+        "**/migrations/**": "high"
+        "Dockerfile": "medium"
+        "*.yml": "medium"
+        "**/*config*": "medium"
+      size_thresholds:
+        large_commit_files: 20        # Files changed
+        large_commit_lines: 500       # Lines changed
+        massive_commit_lines: 2000    # Very large changes
+
+  # LLM Configuration (OpenRouter)
+  llm:
+    # API settings
+    openrouter_api_key: "${OPENROUTER_API_KEY}"  # Set in .env file
+    base_url: "https://openrouter.ai/api/v1"
+    
+    # Model selection
+    primary_model: "anthropic/claude-3-haiku"              # Fast, cheap classification
+    fallback_model: "meta-llama/llama-3.1-8b-instruct:free"  # Free fallback
+    complex_model: "anthropic/claude-3-sonnet"             # For complex cases
+    
+    # Model routing
+    complexity_threshold: 0.5         # Route complex cases to better model
+    cost_threshold_per_1k: 0.01      # Max cost per 1k commits
+    
+    # Processing settings
+    max_tokens: 1000
+    temperature: 0.1
+    max_group_size: 10               # Process up to 10 commits per batch
+    similarity_threshold: 0.8        # Group similar commits together
+    
+    # Rate limiting and cost control
+    requests_per_minute: 200
+    max_retries: 3
+    max_daily_cost: 5.0              # Max daily spend in USD
+    enable_cost_tracking: true
+
+  # Cache Configuration
+  cache:
+    cache_dir: ".qualitative_cache"   # Relative to config file directory
+    semantic_cache_size: 10000        # Max cached patterns in memory
+    pattern_cache_ttl_hours: 168      # 1 week
+    
+    # Learning settings
+    enable_pattern_learning: true
+    learning_threshold: 10            # Min examples to learn pattern
+    confidence_boost_factor: 0.1      # Boost for learned patterns
+    
+    # Cache optimization
+    enable_compression: true
+    max_cache_size_mb: 100
+
+# Output configuration
+output:
+  directory: "./reports"
+  formats: ["csv", "markdown"]
+  csv:
+    delimiter: ","
+    encoding: "utf-8"
+  anonymization:
+    enabled: false
+    fields: ["author_name", "author_email"]
+    method: "hash"
+
+# Cache configuration  
+cache:
+  directory: ".gitflow-cache"
+  ttl_hours: 168                     # 1 week
+  max_size_mb: 500
+
+# JIRA integration (optional)
+# jira:
+#   access_user: "${JIRA_ACCESS_USER}"
+#   access_token: "${JIRA_ACCESS_TOKEN}"
+#   base_url: "https://yourcompany.atlassian.net"
+
+# jira_integration:
+#   enabled: true
+#   fetch_story_points: true
+#   project_keys: ["PROJ", "EXAMPLE"]
+#   story_point_fields: ["customfield_10016", "Story Points"]

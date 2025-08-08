@@ -261,19 +261,17 @@ class GitDataFetcher:
                     # Initial commit - compare with empty tree
                     diff = commit.diff(None)
                 
+                # Get file paths with filtering
                 files_changed = []
-                total_insertions = 0
-                total_deletions = 0
-                
                 for diff_item in diff:
                     file_path = diff_item.a_path or diff_item.b_path
                     if file_path and not self._should_exclude_file(file_path):
                         files_changed.append(file_path)
-                        
-                        # Count line changes if available
-                        if hasattr(diff_item, 'stats') and diff_item.stats:
-                            total_insertions += diff_item.stats.insertions
-                            total_deletions += diff_item.stats.deletions
+                
+                # Use reliable git numstat command for accurate line counts
+                line_stats = self._calculate_commit_stats(commit)
+                total_insertions = line_stats['insertions']
+                total_deletions = line_stats['deletions']
                 
                 commit_data.update({
                     'files_changed': files_changed,
@@ -828,3 +826,50 @@ class GitDataFetcher:
             return {}
         finally:
             session.close()
+
+    def _calculate_commit_stats(self, commit: Any) -> dict[str, int]:
+        """Calculate commit statistics using reliable git diff --numstat.
+        
+        Returns:
+            Dictionary with 'files', 'insertions', and 'deletions' counts
+        """
+        stats = {"files": 0, "insertions": 0, "deletions": 0}
+
+        # For initial commits or commits without parents
+        parent = commit.parents[0] if commit.parents else None
+
+        try:
+            # Use git command directly for accurate line counts
+            repo = commit.repo
+            if parent:
+                diff_output = repo.git.diff(parent.hexsha, commit.hexsha, '--numstat')
+            else:
+                # Initial commit - use git show with --numstat
+                diff_output = repo.git.show(commit.hexsha, '--numstat', '--format=')
+            
+            # Parse the numstat output: insertions\tdeletions\tfilename
+            for line in diff_output.strip().split('\n'):
+                if not line.strip():
+                    continue
+                    
+                parts = line.split('\t')
+                if len(parts) >= 3:
+                    try:
+                        insertions = int(parts[0]) if parts[0] != '-' else 0
+                        deletions = int(parts[1]) if parts[1] != '-' else 0
+                        # filename = parts[2] - we don't filter here since files_changed list is handled separately
+                        
+                        # Count all changes (raw stats, no filtering)
+                        stats["files"] += 1
+                        stats["insertions"] += insertions
+                        stats["deletions"] += deletions
+                        
+                    except ValueError:
+                        # Skip binary files or malformed lines
+                        continue
+                        
+        except Exception as e:
+            # Log the error for debugging but don't crash
+            logger.warning(f"Error calculating commit stats for {commit.hexsha[:8]}: {e}")
+            
+        return stats

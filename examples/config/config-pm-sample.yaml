@@ -1,0 +1,200 @@
+# GitFlow Analytics Configuration with PM Platform Integration
+# This sample shows how to configure PM platform integration for cross-platform analytics
+
+version: "1.0"
+
+# Repository configuration
+repositories:
+  - name: "my-project"
+    path: "../recess-recreo"  # Example path - update to your actual repository
+    github_repo: "myorg/my-project"
+    project_key: "MYPROJ"
+
+# GitHub integration (existing feature)
+github:
+  token: "${GITHUB_TOKEN}"
+  organization: "myorg"
+  base_url: "https://api.github.com"
+  rate_limit:
+    max_retries: 3
+    backoff_factor: 2
+
+# PM Platform Integration (NEW FEATURE)
+pm_integration:
+  enabled: true  # Enable PM platform integration
+  primary_platform: "jira"  # Primary platform for issue correlation
+  
+  # Correlation settings
+  correlation:
+    fuzzy_matching: true  # Enable fuzzy text matching for issue correlation
+    temporal_window_hours: 72  # Time window for temporal correlation (hours)
+    confidence_threshold: 0.8  # Minimum confidence for correlations (0.0-1.0)
+  
+  # Platform configurations
+  platforms:
+    # JIRA Configuration
+    jira:
+      enabled: true
+      platform_type: "jira"
+      config:
+        base_url: "https://mycompany.atlassian.net"
+        access_user: "${JIRA_ACCESS_USER}"
+        access_token: "${JIRA_ACCESS_TOKEN}"
+        project_keys: ["MYPROJ", "SHARED"]
+        story_point_fields: 
+          - "customfield_10016"  # Common JIRA story point field
+          - "customfield_10021"  # Alternative story point field
+          - "Story Points"       # Standard field name
+        fetch_sprints: true
+        include_subtasks: true
+        
+    # Azure DevOps Configuration (future implementation)
+    azure_devops:
+      enabled: false
+      platform_type: "azure_devops"
+      config:
+        organization: "myorg"
+        project: "MyProject"
+        access_token: "${AZURE_DEVOPS_TOKEN}"
+        area_paths: ["MyProject\\Team1", "MyProject\\Team2"]
+        iteration_paths: ["MyProject\\Sprint*"]
+        
+    # Linear Configuration (future implementation)
+    linear:
+      enabled: false
+      platform_type: "linear"
+      config:
+        api_key: "${LINEAR_API_KEY}"
+        team_ids: ["team_123", "team_456"]
+        include_archived: false
+
+# Traditional JIRA integration (for backward compatibility)
+# Note: Comment out or remove this section if not using traditional JIRA integration
+# jira:
+#   access_user: "${JIRA_ACCESS_USER}"
+#   access_token: "${JIRA_ACCESS_TOKEN}"
+#   base_url: "https://mycompany.atlassian.net"
+# 
+# jira_integration:
+#   enabled: true
+#   fetch_story_points: true
+#   project_keys: ["MYPROJ", "SHARED"]
+#   story_point_fields: ["customfield_10016", "customfield_10021"]
+
+# Analysis configuration
+analysis:
+  story_point_patterns:
+    - "(?i)story\\s*points?\\s*[:=]\\s*(\\d+)"
+    - "(?i)\\[(\\d+)\\s*(?:sp|pts?)\\]"
+    - "(?i)#(\\d+)sp"
+  
+  # PM integration preferences
+  default_ticket_platform: "jira"
+  ticket_platforms: ["jira", "github"]
+  
+  # Identity resolution for PM platforms
+  manual_identity_mappings:
+    - canonical_id: "john.doe@company.com"
+      aliases:
+        - "john.doe@company.com"
+        - "jdoe"
+        - "john.doe"
+        - "John Doe"
+      
+  exclude:
+    authors: ["dependabot[bot]", "renovate[bot]"]
+    message_patterns: 
+      - "^Merge (branch|pull request)"
+      - "^Bump .+ from .+ to .+"
+    paths:
+      - "**/node_modules/**"
+      - "**/dist/**"
+      - "**/*.min.js"
+
+# Output configuration
+output:
+  directory: "./reports"
+  formats: ["csv", "markdown"]
+  
+  # Anonymization (optional)
+  anonymization:
+    enabled: false
+    fields: ["name", "email", "username"]
+    method: "hash"
+
+# Cache configuration
+cache:
+  directory: "./.gitflow-cache"
+  ttl_hours: 168  # 1 week
+  max_size_mb: 500
+
+# Example .env file contents (create .env file in same directory as this config):
+# ================================================================================
+# GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+# JIRA_ACCESS_USER=your.email@company.com
+# JIRA_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxx
+# AZURE_DEVOPS_TOKEN=xxxxxxxxxxxxxxxxxxxx  # For future Azure DevOps integration
+# LINEAR_API_KEY=lin_api_xxxxxxxxxxxxxxxxxxxx  # For future Linear integration
+# ================================================================================
+
+# Usage Examples:
+# ================================================================================
+# 
+# 1. Basic PM integration (using config file settings):
+#    gitflow-analytics analyze -c config-pm-sample.yaml --weeks 8
+# 
+# 2. Enable PM integration via CLI (overrides config):
+#    gitflow-analytics analyze -c config-pm-sample.yaml --weeks 8 --enable-pm
+# 
+# 3. Use specific platforms only:
+#    gitflow-analytics analyze -c config-pm-sample.yaml --weeks 8 --pm-platform jira
+# 
+# 4. Disable PM integration temporarily:
+#    gitflow-analytics analyze -c config-pm-sample.yaml --weeks 8 --disable-pm
+# 
+# 5. Debug PM integration issues:
+#    gitflow-analytics analyze -c config-pm-sample.yaml --weeks 8 --log DEBUG
+# 
+# ================================================================================
+
+# Expected Output Reports with PM Integration:
+# ================================================================================
+# 
+# The following reports will be enhanced with PM platform data:
+# 
+# 1. summary_YYYYMMDD.csv - Includes PM platform metrics:
+#    - Total PM issues tracked
+#    - Story point coverage percentage  
+#    - Issue type distribution
+#    - Platform correlation statistics
+# 
+# 2. pm_correlations_YYYYMMDD.csv - NEW: PM correlation details:
+#    - Issue-commit correlations with confidence scores
+#    - Story point mapping accuracy
+#    - Correlation methods used (ticket references, fuzzy matching)
+# 
+# 3. narrative_report_YYYYMMDD.md - Enhanced with PM insights:
+#    - PM Platform Integration section
+#    - Story point tracking analysis
+#    - Cross-platform coverage metrics
+#    - Correlation quality assessment
+# 
+# ================================================================================
+
+# Troubleshooting:
+# ================================================================================
+# 
+# If PM integration is not working:
+# 
+# 1. Check environment variables are set correctly
+# 2. Verify platform credentials and permissions
+# 3. Use --log DEBUG to see detailed error messages
+# 4. Check network connectivity to PM platforms
+# 5. Validate project keys/IDs exist in configured platforms
+# 
+# Common issues:
+# - JIRA: Ensure custom field IDs are correct for your instance
+# - GitHub: Token needs appropriate organization/repository permissions
+# - Network: Corporate firewalls may block API requests
+# 
+# ================================================================================

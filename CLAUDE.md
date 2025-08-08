@@ -6,6 +6,36 @@ This document provides specific instructions for Claude (AI assistant) when work
 
 GitFlow Analytics is a Python package that analyzes Git repositories to generate developer productivity insights without requiring external project management tools. It provides comprehensive metrics including commit patterns, developer focus, ticket tracking, and DORA metrics.
 
+## Documentation Structure
+
+GitFlow Analytics uses a comprehensive documentation system organized for different audiences. All documentation is located in the `docs/` directory:
+
+- **[docs/STRUCTURE.md](docs/STRUCTURE.md)** - Complete documentation organization guide
+- **[docs/README.md](docs/README.md)** - Main documentation index and navigation
+- **[docs/getting-started/](docs/getting-started/)** - New user onboarding and tutorials  
+- **[docs/guides/](docs/guides/)** - Task-oriented configuration and usage guides
+- **[docs/examples/](docs/examples/)** - Real-world usage scenarios and templates
+- **[docs/reference/](docs/reference/)** - Technical specifications and API documentation
+- **[docs/developer/](docs/developer/)** - Contribution guidelines and development setup
+- **[docs/architecture/](docs/architecture/)** - System design and architectural decisions
+- **[docs/design/](docs/design/)** - Design documents and technical decision records
+- **[docs/deployment/](docs/deployment/)** - Production deployment and operations
+
+### Documentation Guidelines for Developers
+
+When working on the project:
+- **Update docs with code changes** - Documentation should stay current with implementation
+- **Follow the structure** - Place new documentation in the appropriate section
+- **Cross-reference related topics** - Use relative links to connect related information
+- **Test all examples** - Ensure code samples work and produce expected output
+- **Update index files** - Keep section README.md files current when adding new content
+
+### Documentation Audience Focus
+
+- **User Documentation** (`getting-started/`, `guides/`, `examples/`) - External users and administrators
+- **Developer Documentation** (`developer/`, `architecture/`, `design/`) - Contributors and maintainers  
+- **Reference Documentation** (`reference/`) - Technical specifications for integration
+
 ## Key Development Guidelines
 
 ### 1. Code Quality Standards

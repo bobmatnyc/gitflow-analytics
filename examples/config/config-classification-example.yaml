@@ -1,0 +1,97 @@
+version: "1.0"
+
+# Example configuration for GitFlow Analytics with Commit Classification
+# This demonstrates the new commit classification system
+
+github:
+  token: "${GITHUB_TOKEN}"
+  owner: "your-username"
+
+repositories:
+  - name: "sample-repo"
+    path: "/path/to/your/repo"
+    github_repo: "your-username/sample-repo"
+
+analysis:
+  # Identity resolution settings
+  identity:
+    similarity_threshold: 0.85
+    auto_analysis: true
+
+  # Commit classification settings (NEW)
+  commit_classification:
+    enabled: true
+    confidence_threshold: 0.6  # Minimum confidence for reliable predictions
+    batch_size: 100           # Commits processed per batch
+    auto_retrain: true        # Check if model needs retraining
+    retrain_threshold_days: 30 # Suggest retraining after 30 days
+    
+    # Random Forest model parameters
+    model:
+      n_estimators: 100       # Number of trees in the forest
+      max_depth: 20          # Maximum depth of trees
+      min_samples_split: 5   # Minimum samples to split a node
+      min_samples_leaf: 2    # Minimum samples at leaf node
+      random_state: 42       # For reproducible results
+      n_jobs: -1            # Use all CPU cores
+    
+    # Feature extraction settings
+    feature_extraction:
+      enable_temporal_features: true  # Include time-based features
+      enable_author_features: true    # Include author behavior features
+      enable_file_analysis: true      # Include file type/language analysis
+      keyword_categories:             # Keyword categories to analyze
+        - "feature"
+        - "bugfix"
+        - "refactor"
+        - "docs"
+        - "test"
+        - "config"
+        - "security"
+        - "performance"
+        - "ui"
+        - "api"
+        - "database"
+        - "deployment"
+    
+    # Training settings
+    training:
+      validation_split: 0.2           # 20% of data for validation
+      min_training_samples: 20        # Minimum samples needed for training
+      cross_validation_folds: 5       # K-fold cross validation
+      class_weight: "balanced"        # Handle class imbalance
+    
+    # Classification categories
+    categories:
+      feature: "New functionality or capabilities"
+      bugfix: "Bug fixes and error corrections"
+      refactor: "Code restructuring and optimization"
+      docs: "Documentation changes and updates"
+      test: "Testing-related changes"
+      config: "Configuration and settings changes"
+      chore: "Maintenance and housekeeping tasks"
+      security: "Security-related changes"
+      hotfix: "Emergency production fixes"
+      style: "Code style and formatting changes"
+      build: "Build system and dependency changes"
+      ci: "Continuous integration changes"
+      revert: "Reverts of previous changes"
+      merge: "Merge commits and integration"
+      wip: "Work in progress commits"
+
+  # Existing ML categorization (rule-based)
+  ml_categorization:
+    enabled: true
+    min_confidence: 0.6
+    hybrid_threshold: 0.5
+
+output:
+  directory: "./reports"
+  formats:
+    - "csv"
+    - "markdown"
+    - "json"
+
+cache:
+  directory: "./.gitflow-cache"
+  ttl_hours: 168  # 1 week

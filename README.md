@@ -3,118 +3,126 @@
 [![PyPI version](https://badge.fury.io/py/gitflow-analytics.svg)](https://badge.fury.io/py/gitflow-analytics)
 [![Python Support](https://img.shields.io/pypi/pyversions/gitflow-analytics.svg)](https://pypi.org/project/gitflow-analytics/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Documentation](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://github.com/bobmatnyc/gitflow-analytics#readme)
+[![Documentation](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://github.com/bobmatnyc/gitflow-analytics/tree/main/docs)
 [![Tests](https://github.com/bobmatnyc/gitflow-analytics/workflows/Tests/badge.svg)](https://github.com/bobmatnyc/gitflow-analytics/actions)
 
-A powerful Python package for analyzing Git repositories to generate comprehensive developer productivity reports without requiring external project management tools. Extract insights directly from Git history and GitHub APIs with ML-enhanced categorization, automated identity resolution, and beautiful reporting.
+A comprehensive Python package for analyzing Git repositories to generate developer productivity insights without requiring external project management tools. Extract actionable metrics directly from Git history with ML-enhanced commit categorization, automated developer identity resolution, and professional reporting.
 
-## 🎯 Why GitFlow Analytics?
+## 🚀 Key Features
 
-- **Zero PM Tool Dependencies**: Analyze productivity without requiring JIRA, Linear, or other PM tools
-- **ML-Powered Intelligence**: Advanced commit categorization with 85-95% accuracy using machine learning
-- **Automated Identity Resolution**: Smart developer consolidation across email addresses and accounts
-- **Enterprise Ready**: Organization-wide repository discovery, caching, and scalable analysis
-- **Beautiful Reports**: Rich markdown narratives with CSV data exports for further analysis
+- **🔍 Zero Dependencies**: Analyze productivity without requiring JIRA, Linear, or other PM tools
+- **🧠 ML-Powered Intelligence**: Advanced commit categorization with 85-95% accuracy
+- **👥 Smart Identity Resolution**: Automatically consolidate developer identities across email addresses
+- **🏢 Enterprise Ready**: Organization-wide repository discovery with intelligent caching
+- **📊 Professional Reports**: Rich markdown narratives and CSV exports for executive dashboards
 
-## 📊 Demo & Examples
+## 🎯 Quick Start
 
-### Sample Report Output
+Get up and running in 5 minutes:
 
 ```bash
-# Generate a comprehensive 12-week analysis
-gitflow-analytics -c config.yaml --weeks 12
+# 1. Install GitFlow Analytics
+pip install gitflow-analytics
 
-# Output includes:
-# ├── weekly_metrics_20240801.csv      # Weekly developer metrics
-# ├── developers_20240801.csv          # Complete developer profiles  
-# ├── untracked_commits_20240801.csv   # ML-categorized untracked work
-# ├── summary_20240801.csv             # Project-wide statistics
-# └── narrative_summary_20240801.md    # Rich markdown report
-```
+# 2. Install ML dependencies (optional but recommended)
+python -m spacy download en_core_web_sm
 
-**Example Narrative Report Section:**
-```markdown
-## Team Composition
-
-**John Developer**
-- Commits: 45 (22.5% of total)
-- Projects: FRONTEND (85.0%), API (15.0%)
-- Work Style: Focused
-- ML Categorization: 94% feature work, 6% bug fixes
-
-**Sarah Smith**  
-- Commits: 38 (19.0% of total)
-- Projects: API (70.0%), FRONTEND (30.0%)
-- Work Style: Multi-project
-- Untracked Work: 8% (maintenance & documentation)
-```
-
-### Live Demo Configuration
-
-Try GitFlow Analytics with a sample open source repository:
-
-```yaml
-# demo-config.yaml
-version: "1.0"
-
+# 3. Create a simple configuration
+echo 'version: "1.0"
 github:
   token: "${GITHUB_TOKEN}"
-  organization: "your-org"  # or configure specific repositories
+  organization: "your-org"' > config.yaml
 
-analysis:
-  ml_categorization:
-    enabled: true
-    min_confidence: 0.7
-    
-  identity:
-    auto_analysis: true  # Automatic developer consolidation
+# 4. Set your GitHub token
+echo 'GITHUB_TOKEN=ghp_your_token_here' > .env
+
+# 5. Run analysis
+gitflow-analytics -c config.yaml --weeks 8
 ```
 
-## 🆕 What's New in v1.1.0
+**What you get:**
+- 📈 Weekly metrics CSV with developer productivity trends
+- 👥 Developer profiles with project distribution and work styles
+- 🔍 Untracked work analysis with ML-powered categorization
+- 📋 Executive summary with actionable insights
+- 📊 Rich markdown report ready for stakeholders
 
-- **Database-Backed Reporting**: Store daily metrics in SQLite for 80% faster report generation
-- **Weekly Trend Analysis**: Track week-over-week changes in commit classifications
-- **Enhanced Classifications**: All commits properly categorized (no more "tracked_work" category)
-- **Project Classification Breakdowns**: See commit types per project in narrative reports
-- **Auto-Enable Qualitative Analysis**: No CLI flag needed when configured
-- **Improved Configuration Compatibility**: Supports multiple field name formats
+### Sample Output Preview
 
-## Features
+```markdown
+## Executive Summary
+- **Total Commits**: 156 across 3 projects
+- **Active Developers**: 5 team members
+- **Ticket Coverage**: 73.2% (industry benchmark: 60-80%)
+- **Top Contributor**: Sarah Chen (32 commits, FRONTEND focus)
 
-- 🚀 **Multi-repository analysis** with project grouping
-- 🏢 **Organization-based repository discovery** from GitHub
-- 👥 **Interactive developer identity resolution** with automatic suggestions
-- 📊 **Work volume analysis** (absolute vs relative effort)
-- 🎯 **Story point extraction** from commit messages and PR descriptions
-- 🎫 **Multi-platform ticket tracking** (JIRA, GitHub Issues, ClickUp, Linear)
-- 🧠 **ML-enhanced commit categorization** with confidence scoring and semantic analysis
-- 📈 **Weekly CSV reports** with productivity metrics
-- 🔒 **Data anonymization** for external sharing
-- ⚡ **Smart caching** for fast repeated analyses
-- 🔄 **Batch processing** for large repositories
-- 💾 **Database-backed reporting** with SQLite storage for instant report generation
-- 📊 **Weekly trend analysis** showing classification pattern changes over time
-- 🎨 **Enhanced project reports** with commit classification breakdowns
+## Key Insights
+🎯 **High Productivity**: Team averaged 31 commits/week
+📊 **Balanced Workload**: No single developer >40% of total work
+✅ **Good Process**: 73% ticket coverage shows strong tracking
+```
 
-## Quick Start
+## ✨ Latest Features (v1.2.x)
 
-### Installation
+- **🚀 Two-Step Processing**: Optimized fetch-then-classify workflow for better performance
+- **💰 Cost Tracking**: Monitor LLM API usage with detailed token and cost reporting
+- **⚡ Smart Caching**: Intelligent caching reduces analysis time by up to 90%
+- **🔄 Automatic Updates**: Repositories automatically fetch latest commits before analysis
+- **📊 Weekly Trends**: Track classification pattern changes over time
+- **🎯 Enhanced Categorization**: All commits properly categorized with confidence scores
 
-**From PyPI (Recommended):**
+## 🔥 Core Capabilities
 
+**📊 Analysis & Insights**
+- Multi-repository analysis with intelligent project grouping
+- ML-enhanced commit categorization (85-95% accuracy)
+- Developer productivity metrics and work pattern analysis
+- Story point extraction from commits and PRs
+- Ticket tracking across JIRA, GitHub, ClickUp, and Linear
+
+**🏢 Enterprise Features**
+- Organization-wide repository discovery from GitHub
+- Automated developer identity resolution and consolidation
+- Database-backed caching for sub-second report generation
+- Data anonymization for secure external sharing
+- Batch processing optimized for large repositories
+
+**📈 Professional Reporting**
+- Rich markdown narratives with executive summaries
+- Weekly CSV exports with trend analysis
+- Customizable output formats and filtering
+- Performance benchmarking and team comparisons
+
+## 📚 Documentation
+
+Comprehensive guides for every use case:
+
+| **Getting Started** | **Advanced Usage** | **Integration** |
+|-------------------|------------------|---------------|
+| [Installation](docs/getting-started/installation.md) | [Complete Configuration](docs/guides/configuration.md) | [CLI Reference](docs/reference/cli-commands.md) |
+| [5-Minute Tutorial](docs/getting-started/quickstart.md) | [ML Categorization](docs/guides/ml-categorization.md) | [JSON Export Schema](docs/reference/json-export-schema.md) |
+| [First Analysis](docs/getting-started/first-analysis.md) | [Enterprise Setup](docs/examples/enterprise-setup.md) | [CI Integration](docs/examples/ci-integration.md) |
+
+**🎯 Quick Links:**
+- 📖 [**Documentation Hub**](docs/README.md) - Complete guide index
+- 🚀 [**Quick Start**](docs/getting-started/quickstart.md) - Get running in 5 minutes
+- ⚙️ [**Configuration**](docs/guides/configuration.md) - Full reference
+- 🤝 [**Contributing**](docs/developer/contributing.md) - Join the project
+
+## ⚡ Installation Options
+
+### Standard Installation
 ```bash
 pip install gitflow-analytics
 ```
 
-**With ML Features (Recommended for enhanced categorization):**
-
+### With ML Enhancement (Recommended)
 ```bash
 pip install gitflow-analytics
 python -m spacy download en_core_web_sm
 ```
 
-**From Source (Development):**
-
+### Development Installation
 ```bash
 git clone https://github.com/bobmatnyc/gitflow-analytics.git
 cd gitflow-analytics
@@ -122,229 +130,106 @@ pip install -e ".[dev]"
 python -m spacy download en_core_web_sm
 ```
 
-> **Note**: The spaCy English model is required for ML-enhanced commit categorization. If not available, the system will gracefully fall back to rule-based categorization.
+## 🔧 Configuration
 
-### Basic Usage
-
-1. Create a configuration file (`config.yaml`):
-
-**Option A: Organization-based (Automatic Repository Discovery)**
-```yaml
-version: "1.0"
-
-github:
-  token: "${GITHUB_TOKEN}"
-  organization: "myorg"  # Automatically discovers all repositories
-
-analysis:
-  story_point_patterns:
-    - "(?:story\\s*points?|sp|pts?)\\s*[:=]\\s*(\\d+)"
-    - "\\[(\\d+)\\s*(?:sp|pts?)\\]"
-  
-  # Enhanced untracked commit analysis settings
-  untracked_analysis:
-    file_threshold: 1  # Minimum files changed to include commit (default: 1)
-    # Categories that are acceptable to be untracked
-    acceptable_categories:
-      - "maintenance" 
-      - "style"
-      - "documentation"
-  
-  # ML-enhanced commit categorization (optional)
-  ml_categorization:
-    enabled: true  # Enable ML categorization (default: true)
-    min_confidence: 0.6  # Minimum confidence for ML predictions
-    hybrid_threshold: 0.5  # Threshold for ML vs rule-based fallback
-```
-
-**Option B: Repository-based (Manual Configuration)**
-```yaml
-version: "1.0"
-
-github:
-  token: "${GITHUB_TOKEN}"
-  owner: "${GITHUB_OWNER}"
-
-repositories:
-  - name: "frontend"
-    path: "~/repos/frontend"
-    github_repo: "myorg/frontend"
-    project_key: "FRONTEND"
-    
-  - name: "backend"
-    path: "~/repos/backend"
-    github_repo: "myorg/backend"
-    project_key: "BACKEND"
-
-analysis:
-  story_point_patterns:
-    - "(?:story\\s*points?|sp|pts?)\\s*[:=]\\s*(\\d+)"
-    - "\\[(\\d+)\\s*(?:sp|pts?)\\]"
-```
-
-2. Create a `.env` file in the same directory as your `config.yaml`:
-
-```bash
-# .env
-GITHUB_TOKEN=ghp_your_github_token_here
-GITHUB_OWNER=your_github_org  # Only for repository-based setup
-```
-
-3. Run the analysis:
-
-```bash
-# Default behavior - analyze command runs automatically
-gitflow-analytics -c config.yaml
-
-# Explicit analyze command (backward compatibility)
-gitflow-analytics analyze -c config.yaml
-```
-
-## Configuration Options
-
-### Environment Variables and Credentials
-
-GitFlow Analytics automatically loads environment variables from a `.env` file in the same directory as your configuration YAML. This is the recommended approach for managing credentials securely.
-
-#### Step 1: Create a `.env` file
-
-Create a `.env` file next to your configuration YAML:
-
-```bash
-# .env file (same directory as your config.yaml)
-# GitHub credentials (required)
-GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-GITHUB_OWNER=myorg  # Optional: default owner for repositories
-
-# JIRA credentials (optional - only if using JIRA integration)
-JIRA_ACCESS_USER=your.email@company.com
-JIRA_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxx
-
-# Other optional tokens
-CLICKUP_TOKEN=pk_xxxxxxxxxxxx
-LINEAR_TOKEN=lin_api_xxxxxxxxxxxx
-```
-
-#### Step 2: Reference in YAML configuration
-
-Use `${VARIABLE_NAME}` syntax in your YAML to reference environment variables:
-
+### Option 1: Organization Analysis (Recommended)
 ```yaml
 # config.yaml
 version: "1.0"
-
-github:
-  token: "${GITHUB_TOKEN}"        # Required
-  owner: "${GITHUB_OWNER}"        # Optional
-  organization: "${GITHUB_ORG}"   # Optional (for org-based discovery)
-
-# Optional: JIRA integration
-jira:
-  access_user: "${JIRA_ACCESS_USER}"
-  access_token: "${JIRA_ACCESS_TOKEN}"
-  base_url: "https://yourcompany.atlassian.net"
-
-# Optional: Configure which JIRA fields contain story points
-jira_integration:
-  story_point_fields:
-    - "Story Points"
-    - "customfield_10016"  # Your custom field ID
-```
-
-#### Important Notes:
-
-- **Never commit `.env` files** to version control (add to `.gitignore`)
-- If credentials are not found in the `.env` file, the tool will exit with an informative error
-- The `.env` file must be in the same directory as your YAML configuration
-- All configured services must have corresponding environment variables set
-
-### Organization vs Repository-based Setup
-
-GitFlow Analytics supports two main configuration approaches:
-
-#### Organization-based Configuration (Recommended)
-
-Automatically discovers all non-archived repositories from a GitHub organization:
-
-```yaml
-version: "1.0"
-
 github:
   token: "${GITHUB_TOKEN}"
-  organization: "myorg"  # Your GitHub organization name
+  organization: "your-org"  # Auto-discovers all repositories
 
-# Optional: Customize analysis settings
 analysis:
-  story_point_patterns:
-    - "(?:story\\s*points?|sp|pts?)\\s*[:=]\\s*(\\d+)"
+  ml_categorization:
+    enabled: true
+    min_confidence: 0.7
+```
+
+### Option 2: Specific Repositories
+```yaml
+# config.yaml  
+version: "1.0"
+github:
+  token: "${GITHUB_TOKEN}"
   
-  exclude:
-    authors:
-      - "dependabot[bot]"
-      - "github-actions[bot]"
-```
-
-**Benefits:**
-- Automatically discovers new repositories as they're added to the organization
-- No need to manually configure each repository
-- Simplified configuration management
-- Perfect for teams with many repositories
-
-**Requirements:**
-- Your GitHub token must have organization read access
-- Repositories will be automatically cloned to local directories if they don't exist
-
-#### Repository-based Configuration
-
-Manually specify each repository to analyze:
-
-```yaml
-version: "1.0"
-
-github:
-  token: "${GITHUB_TOKEN}"
-  owner: "${GITHUB_OWNER}"  # Default owner for repositories
-
 repositories:
-  - name: "frontend"
-    path: "~/repos/frontend"
-    github_repo: "myorg/frontend"
-    project_key: "FRONTEND"
-    
-  - name: "backend"
-    path: "~/repos/backend"
-    github_repo: "myorg/backend"
-    project_key: "BACKEND"
-
-analysis:
-  story_point_patterns:
-    - "(?:story\\s*points?|sp|pts?)\\s*[:=]\\s*(\\d+)"
+  - name: "my-app"
+    path: "~/code/my-app"
+    github_repo: "myorg/my-app"
+    project_key: "APP"
 ```
 
-**Benefits:**
-- Fine-grained control over which repositories to analyze
-- Custom project keys and local paths
-- Works with mixed-ownership repositories
-- Compatible with existing configurations
-
-### Directory Defaults
-
-GitFlow Analytics now defaults cache and report directories to be relative to the configuration file location:
-
-- **Reports**: Default to same directory as config file (unless overridden with `--output`)
-- **Cache**: Default to `.gitflow-cache/` in config file directory
-- **Backward compatibility**: Absolute paths in configuration continue to work as before
-
-Example directory structure:
+### Environment Setup
+```bash
+# .env (same directory as config.yaml)
+GITHUB_TOKEN=ghp_your_token_here
 ```
-/project/
-├── config.yaml          # Configuration file
-├── weekly_metrics.csv    # Reports generated here by default
-├── summary.csv
-└── .gitflow-cache/       # Cache directory
-    ├── gitflow_cache.db
-    └── identities.db
+
+### Run Analysis
+```bash
+# Analyze last 8 weeks
+gitflow-analytics -c config.yaml --weeks 8
+
+# With custom output directory
+gitflow-analytics -c config.yaml --weeks 8 --output ./reports
 ```
+
+> 💡 **Need more configuration options?** See the [Complete Configuration Guide](docs/guides/configuration.md) for advanced features, integrations, and customization.
+
+## 📊 Generated Reports
+
+GitFlow Analytics generates comprehensive reports for different audiences:
+
+### 📈 CSV Data Files
+- **weekly_metrics.csv** - Developer productivity trends by week
+- **developers.csv** - Complete team profiles and statistics  
+- **summary.csv** - Project-wide statistics and benchmarks
+- **untracked_commits.csv** - ML-categorized uncommitted work analysis
+
+### 📋 Executive Reports
+- **narrative_summary.md** - Rich markdown report with:
+  - Executive summary with key metrics
+  - Team composition and work distribution  
+  - Project activity breakdown
+  - Development patterns and recommendations
+  - Weekly trend analysis
+
+### Sample Executive Summary
+```markdown
+## Executive Summary
+- **Total Commits**: 324 commits across 4 projects
+- **Active Developers**: 8 team members  
+- **Ticket Coverage**: 78.4% (above industry benchmark)
+- **Top Areas**: Frontend (45%), API (32%), Infrastructure (23%)
+
+## Key Insights  
+✅ **Strong Process Adherence**: 78% ticket coverage
+🎯 **Balanced Team**: No developer >35% of total work
+📈 **Growth Trend**: +15% productivity vs last quarter
+```
+
+## 🛠️ Common Use Cases
+
+**👥 Team Lead Dashboard**
+- Track individual developer productivity and growth
+- Identify workload distribution and potential burnout
+- Monitor code quality trends and technical debt
+
+**📈 Engineering Management**  
+- Generate executive reports on team velocity
+- Analyze process adherence and ticket coverage
+- Benchmark performance across projects and quarters
+
+**🔍 Process Optimization**
+- Identify untracked work patterns that should be formalized
+- Optimize developer focus and reduce context switching  
+- Improve estimation accuracy with historical data
+
+**🏢 Enterprise Analytics**
+- Organization-wide repository analysis across dozens of projects
+- Automated identity resolution for large, distributed teams
+- Cost-effective analysis without expensive PM tool dependencies
 
 ## Command Line Interface
 

@@ -680,9 +680,9 @@ class GitAnalysisCache:
             "message": commit.message,
             "timestamp": commit.committed_datetime,
             "is_merge": len(commit.parents) > 1,
-            "files_changed": len(commit.stats.files),
-            "insertions": commit.stats.total.get('insertions', 0),
-            "deletions": commit.stats.total.get('deletions', 0),
+            "files_changed": self._get_files_changed_count(commit),
+            "insertions": self._get_insertions_count(commit),
+            "deletions": self._get_deletions_count(commit),
             "complexity_delta": 0.0,  # Skip complexity calculation for warming
             "story_points": None,  # Skip story point extraction for warming
             "ticket_references": [],  # Skip ticket analysis for warming
@@ -752,3 +752,79 @@ class GitAnalysisCache:
             "labels": issue.labels or [],
             "platform_data": issue.platform_data or {},
         }
+
+    def _get_files_changed_count(self, commit: git.Commit) -> int:
+        """Get the number of files changed using reliable git command."""
+        parent = commit.parents[0] if commit.parents else None
+        
+        try:
+            repo = commit.repo
+            if parent:
+                diff_output = repo.git.diff(parent.hexsha, commit.hexsha, '--numstat')
+            else:
+                diff_output = repo.git.show(commit.hexsha, '--numstat', '--format=')
+            
+            file_count = 0
+            for line in diff_output.strip().split('\n'):
+                if line.strip() and '\t' in line:
+                    file_count += 1
+            
+            return file_count
+        except Exception:
+            return 0
+
+    def _get_insertions_count(self, commit: git.Commit) -> int:
+        """Get the number of insertions using reliable git command."""
+        parent = commit.parents[0] if commit.parents else None
+        
+        try:
+            repo = commit.repo
+            if parent:
+                diff_output = repo.git.diff(parent.hexsha, commit.hexsha, '--numstat')
+            else:
+                diff_output = repo.git.show(commit.hexsha, '--numstat', '--format=')
+            
+            total_insertions = 0
+            for line in diff_output.strip().split('\n'):
+                if not line.strip():
+                    continue
+                    
+                parts = line.split('\t')
+                if len(parts) >= 3:
+                    try:
+                        insertions = int(parts[0]) if parts[0] != '-' else 0
+                        total_insertions += insertions
+                    except ValueError:
+                        continue
+                        
+            return total_insertions
+        except Exception:
+            return 0
+
+    def _get_deletions_count(self, commit: git.Commit) -> int:
+        """Get the number of deletions using reliable git command."""
+        parent = commit.parents[0] if commit.parents else None
+        
+        try:
+            repo = commit.repo
+            if parent:
+                diff_output = repo.git.diff(parent.hexsha, commit.hexsha, '--numstat')
+            else:
+                diff_output = repo.git.show(commit.hexsha, '--numstat', '--format=')
+            
+            total_deletions = 0
+            for line in diff_output.strip().split('\n'):
+                if not line.strip():
+                    continue
+                    
+                parts = line.split('\t')
+                if len(parts) >= 3:
+                    try:
+                        deletions = int(parts[1]) if parts[1] != '-' else 0
+                        total_deletions += deletions
+                    except ValueError:
+                        continue
+                        
+            return total_deletions
+        except Exception:
+            return 0

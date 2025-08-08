@@ -1,0 +1,110 @@
+# GitFlow Analytics Configuration with Enhanced JIRA Network Resilience
+# This configuration demonstrates advanced JIRA integration settings for
+# handling DNS resolution issues and network connectivity problems.
+
+# Cache and output configuration
+cache_directory: ".gitflow-cache"
+reports_directory: "reports"
+
+# Repository analysis configuration
+repositories:
+  - name: "example-repo"
+    local_path: "./example-repo"
+    github_repo: "org/example-repo"
+    project_key: "EXAMPLE"
+
+# Analysis timeframe and settings
+analysis:
+  weeks: 8
+  ticket_platforms: ["jira", "github"]
+  
+  # Developer identity resolution
+  identity:
+    auto_analysis: true
+    fuzzy_threshold: 0.85
+
+# GitHub integration (optional)
+github:
+  token: "${GITHUB_TOKEN}"
+  max_retries: 3
+  backoff_factor: 1.0
+
+# JIRA configuration
+jira:
+  base_url: "https://ewtn.atlassian.net"  # Your JIRA instance
+  access_user: "${JIRA_ACCESS_USER}"       # Username/email
+  access_token: "${JIRA_ACCESS_TOKEN}"     # API token
+
+# Enhanced JIRA integration settings with network resilience
+jira_integration:
+  enabled: true
+  
+  # Story point field configuration
+  story_point_fields:
+    - "customfield_10016"  # Common JIRA Cloud field
+    - "customfield_10021"  # Alternative field
+    - "Story Points"       # Field name fallback
+    - "storypoints"        # Alternative name
+  
+  # Network resilience configuration
+  dns_timeout: 15              # DNS resolution timeout (seconds)
+  connection_timeout: 45       # HTTP connection timeout (seconds)
+  max_retries: 5              # Maximum retry attempts
+  backoff_factor: 2.0         # Exponential backoff multiplier
+  
+  # Proxy configuration (if needed)
+  enable_proxy: false         # Set to true if behind corporate proxy
+  proxy_url: null             # "http://proxy.company.com:8080"
+  
+  # Advanced settings
+  rate_limit_delay: 0.2       # Delay between requests (seconds)
+  batch_size: 25              # Issues per API request (max 100)
+
+# Example PM framework configuration (alternative approach)
+pm_integration:
+  enabled: false  # Disable if using jira_integration above
+  primary_platform: "jira"
+  
+  correlation:
+    ticket_reference_patterns:
+      - "PROJ-\\d+"
+      - "#\\d+"
+    
+  platforms:
+    jira:
+      enabled: true
+      config:
+        base_url: "https://ewtn.atlassian.net"
+        username: "${JIRA_ACCESS_USER}"
+        api_token: "${JIRA_ACCESS_TOKEN}"
+        verify_ssl: true
+        
+        # Network resilience settings
+        dns_timeout: 15
+        connection_timeout: 45
+        max_retries: 5
+        backoff_factor: 2.0
+
+# Branch to project mapping
+branch_mapping:
+  patterns:
+    - pattern: "^feature/PROJ-"
+      project_key: "PROJ"
+    - pattern: "^bugfix/PROJ-"
+      project_key: "PROJ"
+    - pattern: "^main$|^master$"
+      project_key: "MAIN"
+
+# Export formats
+export:
+  formats: ["csv", "json", "markdown"]
+  include_untracked: true
+
+# Advanced analysis options
+advanced:
+  ml_categorization:
+    enabled: false
+  
+  enhanced_commit_analysis:
+    enabled: true
+    untracked_file_threshold: 1

@@ -1,0 +1,84 @@
+# GitFlow Analytics Configuration with ML-Enhanced Commit Categorization
+# This sample configuration demonstrates the new ML-based commit categorization features
+
+version: "1.0"
+
+# Repository configuration
+repositories:
+  - name: "my-project"
+    path: "/path/to/my-project"
+    github_repo: "myorg/my-project"
+    project_key: "MY_PROJ"
+
+# GitHub configuration  
+github:
+  token: "${GITHUB_TOKEN}"
+  owner: "myorg"
+
+# Analysis configuration with ML categorization
+analysis:
+  # Standard analysis options
+  story_point_patterns:
+    - "(?:story\\s*points?|sp|pts?)\\s*[:=]\\s*(\\d+)"
+    - "\\[(\\d+)\\s*(?:sp|pts?)\\]"
+  
+  exclude:
+    authors:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+  
+  identity:
+    similarity_threshold: 0.85
+    auto_analysis: true
+  
+  # NEW: ML-enhanced commit categorization
+  ml_categorization:
+    # Enable ML categorization (default: true)
+    enabled: true
+    
+    # Minimum confidence for ML predictions (default: 0.6)
+    # Lower values = more ML predictions, higher values = more rule-based fallback
+    min_confidence: 0.6
+    
+    # Weight for semantic analysis vs file patterns (default: 0.7 vs 0.3)
+    semantic_weight: 0.7
+    file_pattern_weight: 0.3
+    
+    # Confidence threshold for using ML vs rule-based (default: 0.5)
+    # If ML confidence is below this, fall back to rule-based classification
+    hybrid_threshold: 0.5
+    
+    # Caching configuration
+    enable_caching: true
+    cache_duration_days: 30  # How long to cache ML predictions
+    
+    # Processing configuration
+    batch_size: 100  # Number of commits to process in batch
+    
+    # spaCy model to use (will fallback to simpler models if unavailable)
+    # Options: "en_core_web_sm", "en_core_web_md", "en_core_web_lg"
+    spacy_model: "en_core_web_sm"
+
+# Output configuration
+output:
+  directory: "./reports"
+  formats: ["csv", "markdown", "json"]
+
+# Cache configuration
+cache:
+  directory: "./.gitflow-cache"
+  ttl_hours: 168  # 1 week
+
+# Optional: Qualitative analysis (if available)
+qualitative:
+  enabled: true
+  batch_size: 1000
+  confidence_threshold: 0.7
+  
+  nlp:
+    spacy_model: "en_core_web_sm"
+    fast_mode: true
+    
+  cache:
+    enable_pattern_learning: true
+    pattern_cache_ttl_hours: 168

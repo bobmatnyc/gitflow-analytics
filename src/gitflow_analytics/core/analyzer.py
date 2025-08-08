@@ -677,13 +677,12 @@ class GitAnalyzer:
             str(commit_data["branch"]), repo_path
         )
 
-        # Calculate metrics - use raw stats for backward compatibility
-        stats = commit.stats.total
-        files_count = stats["files"] if isinstance(stats, dict) else stats.files
-        commit_data["files_changed_count"] = files_count  # Integer count for backward compatibility
+        # Calculate metrics using reliable git numstat for accurate line counts
+        raw_stats = self._calculate_raw_stats(commit)
+        commit_data["files_changed_count"] = raw_stats["files"]  # Integer count for backward compatibility
         commit_data["files_changed"] = self._get_changed_file_paths(commit)  # List of file paths for ML
-        commit_data["insertions"] = stats["insertions"] if isinstance(stats, dict) else stats.insertions
-        commit_data["deletions"] = stats["deletions"] if isinstance(stats, dict) else stats.deletions
+        commit_data["insertions"] = raw_stats["insertions"]
+        commit_data["deletions"] = raw_stats["deletions"]
 
         # Calculate filtered metrics (excluding boilerplate/generated files)
         filtered_stats = self._calculate_filtered_stats(commit)
@@ -936,43 +935,94 @@ class GitAnalyzer:
         return False
 
     def _calculate_filtered_stats(self, commit: git.Commit) -> dict[str, int]:
-        """Calculate commit statistics excluding boilerplate/generated files."""
+        """Calculate commit statistics excluding boilerplate/generated files using git diff --numstat."""
         filtered_stats = {"files": 0, "insertions": 0, "deletions": 0}
 
         # For initial commits or commits without parents
         parent = commit.parents[0] if commit.parents else None
 
         try:
-            for diff in commit.diff(parent):
-                # Get file path
-                file_path = diff.b_path if diff.b_path else diff.a_path
-                if not file_path:
+            # Use git command directly for accurate line counts
+            repo = commit.repo
+            if parent:
+                diff_output = repo.git.diff(parent.hexsha, commit.hexsha, '--numstat')
+            else:
+                # Initial commit - use git show with --numstat
+                diff_output = repo.git.show(commit.hexsha, '--numstat', '--format=')
+            
+            # Parse the numstat output: insertions\tdeletions\tfilename
+            for line in diff_output.strip().split('\n'):
+                if not line.strip():
                     continue
-
-                # Skip excluded files
-                if self._should_exclude_file(file_path):
-                    continue
-
-                # Count the file
-                filtered_stats["files"] += 1
-
-                # Count insertions and deletions
-                if diff.diff:
-                    diff_text = (
-                        diff.diff
-                        if isinstance(diff.diff, str)
-                        else diff.diff.decode("utf-8", errors="ignore")
-                    )
-                    for line in diff_text.split("\n"):
-                        if line.startswith("+") and not line.startswith("+++"):
-                            filtered_stats["insertions"] += 1
-                        elif line.startswith("-") and not line.startswith("---"):
-                            filtered_stats["deletions"] += 1
-        except Exception:
-            # If we can't calculate filtered stats, return zeros
-            pass
-
+                    
+                parts = line.split('\t')
+                if len(parts) >= 3:
+                    try:
+                        insertions = int(parts[0]) if parts[0] != '-' else 0
+                        deletions = int(parts[1]) if parts[1] != '-' else 0
+                        filename = parts[2]
+                        
+                        # Skip excluded files using the existing filter logic
+                        if self._should_exclude_file(filename):
+                            continue
+                        
+                        # Count the file and its changes
+                        filtered_stats["files"] += 1
+                        filtered_stats["insertions"] += insertions
+                        filtered_stats["deletions"] += deletions
+                        
+                    except ValueError:
+                        # Skip binary files or malformed lines
+                        continue
+                        
+        except Exception as e:
+            # Log the error for debugging but don't crash
+            logger.warning(f"Error calculating filtered stats for commit {commit.hexsha[:8]}: {e}")
+            
         return filtered_stats
+
+    def _calculate_raw_stats(self, commit: git.Commit) -> dict[str, int]:
+        """Calculate commit statistics for all files (no filtering) using git diff --numstat."""
+        raw_stats = {"files": 0, "insertions": 0, "deletions": 0}
+
+        # For initial commits or commits without parents
+        parent = commit.parents[0] if commit.parents else None
+
+        try:
+            # Use git command directly for accurate line counts
+            repo = commit.repo
+            if parent:
+                diff_output = repo.git.diff(parent.hexsha, commit.hexsha, '--numstat')
+            else:
+                # Initial commit - use git show with --numstat
+                diff_output = repo.git.show(commit.hexsha, '--numstat', '--format=')
+            
+            # Parse the numstat output: insertions\tdeletions\tfilename
+            for line in diff_output.strip().split('\n'):
+                if not line.strip():
+                    continue
+                    
+                parts = line.split('\t')
+                if len(parts) >= 3:
+                    try:
+                        insertions = int(parts[0]) if parts[0] != '-' else 0
+                        deletions = int(parts[1]) if parts[1] != '-' else 0
+                        # filename = parts[2] - not used in raw stats
+                        
+                        # Count all files and their changes (no filtering)
+                        raw_stats["files"] += 1
+                        raw_stats["insertions"] += insertions
+                        raw_stats["deletions"] += deletions
+                        
+                    except ValueError:
+                        # Skip binary files or malformed lines
+                        continue
+                        
+        except Exception as e:
+            # Log the error for debugging but don't crash
+            logger.warning(f"Error calculating raw stats for commit {commit.hexsha[:8]}: {e}")
+            
+        return raw_stats
 
     def _prepare_commits_for_classification(self, repo: Repo, commits: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Prepare commits for classification by adding file change information.
