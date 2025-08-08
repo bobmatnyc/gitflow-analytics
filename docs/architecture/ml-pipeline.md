@@ -46,7 +46,7 @@ The implementation provides advanced commit classification using Large Language 
   - Model selection
   - Confidence thresholds
   - Caching configuration
-  - Domain-specific terms for EWTN
+  - Domain-specific terms and patterns
   - Rate limiting settings
 
 ### 5. Fallback Architecture
@@ -77,8 +77,8 @@ The implementation provides advanced commit classification using Large Language 
 - **Monthly Cost** (typical usage): $10-20 with caching, $50-100 without
 
 ### Accuracy
-- **Expected**: >85% on EWTN-style commits
-- **Domain-specific**: Enhanced accuracy for media, localization, integration work
+- **Expected**: >85% on typical enterprise commits
+- **Domain-specific**: Enhanced accuracy for media, localization, integration, and business logic work
 - **Conventional Commits**: 95%+ accuracy on feat:, fix:, chore: prefixes
 
 ## Configuration Example
@@ -103,7 +103,7 @@ analysis:
 
 ### New Files
 - `src/gitflow_analytics/qualitative/classifiers/llm_commit_classifier.py`
-- `config-ewtn-llm-sample.yaml`
+- `config-sample-ml.yaml`
 - `tests/test_llm_commit_classification.py`
 - `docs/LLM_COMMIT_CLASSIFICATION_IMPLEMENTATION.md`
 
@@ -132,7 +132,7 @@ analysis:
 - **LLM Configuration**: 3 test cases for config validation
 - **Caching System**: 4 test cases for cache operations
 - **Integration**: 5 test cases for MLTicketExtractor integration
-- **Real-world Scenarios**: 1 comprehensive test with EWTN-style commits
+- **Real-world Scenarios**: 1 comprehensive test with enterprise-style commits
 
 ### Test Results
 - **Total Tests**: 24

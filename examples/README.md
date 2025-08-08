@@ -13,9 +13,7 @@ Sample configuration files demonstrating various use cases:
 - **config-pm-sample.yaml** - Configuration with project management tool integration
 - **config-jira-resilient.yaml** - Robust JIRA integration configuration
 - **config-classification-example.yaml** - Commit classification example
-- **config-ewtn-llm-sample.yaml** - LLM-based analysis configuration
 - **config-recess.yaml** - Example using recess-recreo test repositories
-- **test-ewtn-small.yaml** - Small test configuration
 
 ### scripts/
 Utility scripts for debugging and configuration management:

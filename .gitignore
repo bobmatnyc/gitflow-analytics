@@ -87,12 +87,22 @@ test-reports/
 test-identity-reports/
 test-output/
 test-cache/
+.test-cache/
+.test_cache/
 override-reports/
 *_demo_results/
 ml_test_results.json
 test_config_minimal.yaml
 test-*.yaml
 !tests/**/*.yaml
+
+# Test database files 
+tests/**/*.db
+tests/**/gitflow_cache.db
+tests/**/identities.db
+tests/**/ml_predictions.db
+tests/**/daily_metrics.db
+tests/**/llm_predictions.db
 
 # Temporary analysis files
 *_ANALYSIS*.md

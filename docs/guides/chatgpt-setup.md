@@ -73,7 +73,7 @@ management effectiveness.
 
 1. **Productivity Patterns**: The team shows consistent afternoon productivity peaks, 
    suggesting potential for morning standups or collaborative sessions
-2. **Project Distribution**: EWTN_PLUS_FOUNDATION dominates with 77.3% of activity, 
+2. **Project Distribution**: FRONTEND_PROJECT dominates with 77.3% of activity, 
    indicating either strategic focus or resource imbalance
 3. **Developer Specialization**: High focus scores (100% for several developers) suggest 
    deep expertise but limited knowledge sharing

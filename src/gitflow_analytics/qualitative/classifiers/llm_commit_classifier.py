@@ -2,7 +2,7 @@
 
 This module provides commit classification using Large Language Models (LLMs)
 via OpenRouter API. It focuses on 7 streamlined categories optimized for 
-EWTN's workflow and provides fast, affordable classification with caching.
+enterprise workflows and provides fast, affordable classification with caching.
 
 WHY: Traditional rule-based classification can miss nuanced context that LLMs
 excel at understanding. This implementation balances accuracy, speed, and cost
@@ -60,7 +60,7 @@ class LLMConfig:
     batch_size: int = 1  # Process one at a time for simplicity
     max_daily_requests: int = 1000  # Rate limiting
     
-    # Domain-specific terms for EWTN
+    # Domain-specific terms for organization
     domain_terms: Dict[str, List[str]] = None
     
     def __post_init__(self):

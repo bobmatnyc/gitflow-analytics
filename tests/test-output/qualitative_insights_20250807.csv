@@ -1,8 +1,0 @@
-category,insight,value,impact
-Timing,Peak commit hour,18:00,Indicates team working hours
-Quality,Commit message quality,Very detailed,Average 26.4 words per message
-Process,Ticket tracking adherence,Good tracking,64.0% commits have ticket references
-Team,Team size,Large team,27 active developers
-Team,Work distribution,Somewhat unbalanced,Gini coefficient: 0.63
-Workflow,Branching strategy,Active branching,16.0% merge commits
-Workflow,Change scope pattern,Moderate scope changes,Average 7.0 files per commit
