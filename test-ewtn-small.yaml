@@ -19,6 +19,13 @@ repositories:
     path: "/Users/masa/Clients/EWTN/gfa/repos/ewtn-plus-foundation"
 
 analysis:
+  # Exclude automated accounts
+  exclude:
+    authors:
+      - "dependabot[bot]"
+      - "CNA Studio Bot"
+      - "EWTN Automation"
+  
   branch_analysis:
     strategy: "all"
     enable_progress_logging: true
@@ -29,6 +36,26 @@ analysis:
       - name: "George Cook"
         primary_email: "georgejecook@users.noreply.github.com"
         aliases: []
+      
+      - name: "Nicholas Logo"
+        primary_email: "nicolas@ewtn.com"
+        aliases:
+          - "nicolaslogo"
+      
+      - name: "Joe Newell"
+        primary_email: "jnewell@ewtn.com"
+        aliases:
+          - "jnewell-work"
+      
+      - name: "Nazarii Pak"
+        primary_email: "nazarii.pak@example.com"
+        aliases:
+          - "Nazarii"
+      
+      - name: "Daci"
+        primary_email: "daci@example.com"
+        aliases:
+          - "daci"
 
 output:
   directory: "/Users/masa/Clients/EWTN/gfa/reports"
