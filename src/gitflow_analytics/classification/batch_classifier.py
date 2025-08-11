@@ -4,22 +4,18 @@ This module implements the second step of the two-step fetch/analyze process,
 providing intelligent batch classification of commits using LLM with ticket context.
 """
 
-import json
 import logging
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from tqdm import tqdm
 
 from ..models.database import (
     CachedCommit,
-    CommitClassificationBatch,
-    CommitTicketCorrelation,
     DailyCommitBatch,
-    DailyMetrics,
     Database,
     DetailedTicketData,
 )
@@ -40,12 +36,18 @@ class BatchCommitClassifier:
     
     DESIGN DECISION: Uses batch processing to reduce API calls and costs
     while providing better context for classification accuracy.
+    
+    PROGRESS REPORTING: Provides granular progress feedback with nested progress bars:
+    - Repository level: Shows which repository is being processed (position 0)
+    - Weekly level: Shows week being processed within repository (position 1) 
+    - API batch level: Shows LLM API batches being processed (position 2)
+    Each level shows commit counts and progress indicators for user feedback.
     """
 
     def __init__(
         self,
         cache_dir: Path,
-        llm_config: Optional[Dict[str, Any]] = None,
+        llm_config: Optional[dict[str, Any]] = None,
         batch_size: int = 50,
         confidence_threshold: float = 0.7,
         fallback_enabled: bool = True,
@@ -155,9 +157,9 @@ class BatchCommitClassifier:
         self,
         start_date: datetime,
         end_date: datetime,
-        project_keys: Optional[List[str]] = None,
+        project_keys: Optional[list[str]] = None,
         force_reclassify: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Classify all commits in a date range using batch processing.
         
         Args:
@@ -180,18 +182,67 @@ class BatchCommitClassifier:
             logger.info("No batches need classification")
             return {'processed_batches': 0, 'total_commits': 0}
         
-        # Process batches by week for optimal context
-        weekly_batches = self._group_batches_by_week(batches_to_process)
+        # Group batches by repository first for better progress reporting
+        repo_batches = self._group_batches_by_repository(batches_to_process)
         
         total_processed = 0
         total_commits = 0
         
-        for week_start, week_batches in weekly_batches.items():
-            logger.info(f"Processing week starting {week_start}: {len(week_batches)} daily batches")
-            
-            week_result = self._classify_weekly_batches(week_batches)
-            total_processed += week_result['batches_processed']
-            total_commits += week_result['commits_processed']
+        # Add progress bar for repository processing
+        with tqdm(
+            total=len(repo_batches),
+            desc="AI Classification",
+            unit="repo",
+            position=0,
+            leave=True
+        ) as repo_pbar:
+            for repo_num, (repo_info, repo_batch_list) in enumerate(repo_batches.items(), 1):
+                project_key, repo_path = repo_info
+                repo_name = Path(repo_path).name if repo_path else project_key
+                
+                # Count commits in this repository for detailed progress
+                repo_commit_count = sum(batch.commit_count for batch in repo_batch_list)
+                
+                repo_pbar.set_description(f"Classifying {repo_name} ({repo_commit_count} commits)")
+                logger.info(f"Processing repository {repo_num}/{len(repo_batches)}: {repo_name} ({len(repo_batch_list)} batches, {repo_commit_count} commits)")
+                
+                # Process this repository's batches by week for optimal context
+                weekly_batches = self._group_batches_by_week(repo_batch_list)
+                
+                repo_processed = 0
+                repo_commits_processed = 0
+                
+                # Add nested progress bar for weekly processing within repository
+                with tqdm(
+                    total=len(weekly_batches),
+                    desc=f"  Processing weeks",
+                    unit="week",
+                    position=1,
+                    leave=False
+                ) as week_pbar:
+                    for week_num, (week_start, week_batches) in enumerate(weekly_batches.items(), 1):
+                        week_pbar.set_description(f"  Week {week_num}/{len(weekly_batches)} ({week_start.strftime('%Y-%m-%d')})")
+                        logger.info(f"  Processing week starting {week_start}: {len(week_batches)} daily batches")
+                        
+                        week_result = self._classify_weekly_batches(week_batches)
+                        repo_processed += week_result['batches_processed']
+                        repo_commits_processed += week_result['commits_processed']
+                        
+                        week_pbar.update(1)
+                        week_pbar.set_postfix({
+                            'commits': f"{week_result['commits_processed']}"
+                        })
+                
+                total_processed += repo_processed
+                total_commits += repo_commits_processed
+                
+                repo_pbar.update(1)
+                repo_pbar.set_postfix({
+                    'total_repos': f"{repo_num}/{len(repo_batches)}",
+                    'total_commits': f"{total_commits}"
+                })
+                
+                logger.info(f"  Repository {repo_name} completed: {repo_processed} batches, {repo_commits_processed} commits")
         
         # Store daily metrics from classification results
         self._store_daily_metrics(start_date, end_date, project_keys)
@@ -209,9 +260,9 @@ class BatchCommitClassifier:
         self,
         start_date: datetime,
         end_date: datetime,
-        project_keys: Optional[List[str]],
+        project_keys: Optional[list[str]],
         force_reclassify: bool,
-    ) -> List[DailyCommitBatch]:
+    ) -> list[DailyCommitBatch]:
         """Get daily commit batches that need classification."""
         session = self.database.get_session()
         
@@ -240,10 +291,28 @@ class BatchCommitClassifier:
         finally:
             session.close()
 
+    def _group_batches_by_repository(
+        self, 
+        batches: list[DailyCommitBatch]
+    ) -> dict[tuple[str, str], list[DailyCommitBatch]]:
+        """Group daily batches by repository for granular progress reporting."""
+        repo_batches = defaultdict(list)
+        
+        for batch in batches:
+            # Use (project_key, repo_path) as the key for unique repository identification
+            repo_key = (batch.project_key, batch.repo_path)
+            repo_batches[repo_key].append(batch)
+        
+        # Sort each repository's batches by date
+        for batches_list in repo_batches.values():
+            batches_list.sort(key=lambda b: b.date)
+        
+        return dict(repo_batches)
+
     def _group_batches_by_week(
         self, 
-        batches: List[DailyCommitBatch]
-    ) -> Dict[datetime, List[DailyCommitBatch]]:
+        batches: list[DailyCommitBatch]
+    ) -> dict[datetime, list[DailyCommitBatch]]:
         """Group daily batches by week for optimal context window."""
         weekly_batches = defaultdict(list)
         
@@ -263,8 +332,8 @@ class BatchCommitClassifier:
 
     def _classify_weekly_batches(
         self, 
-        weekly_batches: List[DailyCommitBatch]
-    ) -> Dict[str, Any]:
+        weekly_batches: list[DailyCommitBatch]
+    ) -> dict[str, Any]:
         """Classify all batches for a single week with shared context."""
         session = self.database.get_session()
         batches_processed = 0
@@ -288,7 +357,12 @@ class BatchCommitClassifier:
                     batch_commit_map[commit['commit_hash']] = batch
             
             if not week_commits:
-                logger.warning("No commits found for weekly batches")
+                logger.warning(f"No commits found for weekly batches (expected {sum(batch.commit_count for batch in weekly_batches)} commits)")
+                # Mark batches as failed due to missing commits
+                for batch in weekly_batches:
+                    batch.classification_status = 'failed'
+                    batch.classified_at = datetime.utcnow()
+                session.commit()
                 return {'batches_processed': 0, 'commits_processed': 0}
             
             # Get ticket context for the week
@@ -296,16 +370,33 @@ class BatchCommitClassifier:
             
             # Process commits in batches (respecting API limits)
             classified_commits = []
+            num_batches = (len(week_commits) + self.batch_size - 1) // self.batch_size
             
-            for i in range(0, len(week_commits), self.batch_size):
-                batch_commits = week_commits[i:i + self.batch_size]
-                logger.info(f"Classifying batch {i // self.batch_size + 1}: {len(batch_commits)} commits")
-                
-                # Classify this batch with LLM
-                batch_results = self._classify_commit_batch_with_llm(
-                    batch_commits, week_tickets
-                )
-                classified_commits.extend(batch_results)
+            # Add progress bar for batch processing within the week
+            with tqdm(
+                total=num_batches,
+                desc="    Processing batches",
+                unit="batch",
+                position=2,
+                leave=False
+            ) as batch_pbar:
+                for i in range(0, len(week_commits), self.batch_size):
+                    batch_num = i // self.batch_size + 1
+                    batch_commits = week_commits[i:i + self.batch_size]
+                    batch_pbar.set_description(f"    API batch {batch_num}/{num_batches} ({len(batch_commits)} commits)")
+                    logger.info(f"Classifying batch {batch_num}: {len(batch_commits)} commits")
+                    
+                    # Classify this batch with LLM
+                    batch_results = self._classify_commit_batch_with_llm(
+                        batch_commits, week_tickets
+                    )
+                    classified_commits.extend(batch_results)
+                    
+                    batch_pbar.update(1)
+                    batch_pbar.set_postfix({
+                        'commits': f"{len(batch_commits)}",
+                        'total': f"{len(classified_commits)}"
+                    })
             
             # Store classification results
             for commit_result in classified_commits:
@@ -340,13 +431,13 @@ class BatchCommitClassifier:
         self, 
         session: Any, 
         batch: DailyCommitBatch
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get all commits for a daily batch."""
         try:
             # Get cached commits for this batch
-            # Create timezone-aware boundaries to match CachedCommit.timestamp
-            start_of_day = datetime.combine(batch.date, datetime.min.time()).replace(tzinfo=timezone.utc)
-            end_of_day = datetime.combine(batch.date, datetime.max.time()).replace(tzinfo=timezone.utc)
+            # Create timezone-naive boundaries to match CachedCommit.timestamp (which are timezone-naive)
+            start_of_day = datetime.combine(batch.date, datetime.min.time())
+            end_of_day = datetime.combine(batch.date, datetime.max.time())
             
             commits = session.query(CachedCommit).filter(
                 CachedCommit.repo_path == batch.repo_path,
@@ -383,8 +474,8 @@ class BatchCommitClassifier:
     def _get_ticket_context_for_commits(
         self, 
         session: Any, 
-        commits: List[Dict[str, Any]]
-    ) -> Dict[str, Dict[str, Any]]:
+        commits: list[dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
         """Get ticket context for a list of commits."""
         # Extract all ticket references from commits
         all_ticket_ids = set()
@@ -422,9 +513,9 @@ class BatchCommitClassifier:
 
     def _classify_commit_batch_with_llm(
         self,
-        commits: List[Dict[str, Any]],
-        ticket_context: Dict[str, Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        commits: list[dict[str, Any]],
+        ticket_context: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Classify a batch of commits using LLM with ticket context."""
         batch_id = str(uuid.uuid4())
         logger.info(f"Starting LLM classification for batch {batch_id} with {len(commits)} commits")
@@ -454,7 +545,7 @@ class BatchCommitClassifier:
             
             # Process LLM results and add fallbacks
             processed_results = []
-            for i, (commit, llm_result) in enumerate(zip(commits, llm_results)):
+            for _i, (commit, llm_result) in enumerate(zip(commits, llm_results)):
                 confidence = llm_result.get('confidence', 0.0)
                 predicted_category = llm_result.get('category', 'other')
                 
@@ -504,7 +595,7 @@ class BatchCommitClassifier:
             
             return []
 
-    def _fallback_classify_commit(self, commit: Dict[str, Any]) -> str:
+    def _fallback_classify_commit(self, commit: dict[str, Any]) -> str:
         """Classify commit using rule-based patterns."""
         import re
         
@@ -522,7 +613,7 @@ class BatchCommitClassifier:
     def _store_commit_classification(
         self, 
         session: Any, 
-        classification_result: Dict[str, Any]
+        classification_result: dict[str, Any]
     ) -> None:
         """Store classification result in cached commit record."""
         try:
@@ -541,7 +632,7 @@ class BatchCommitClassifier:
                 
                 # Add classification data to the record
                 # Note: This is a simplified approach - in production you'd want a separate table
-                classification_data = {
+                {
                     'category': classification_result['category'],
                     'confidence': classification_result['confidence'],
                     'method': classification_result['method'],
@@ -559,13 +650,13 @@ class BatchCommitClassifier:
         self,
         start_date: datetime,
         end_date: datetime,
-        project_keys: Optional[List[str]],
+        project_keys: Optional[list[str]],
     ) -> None:
         """Store aggregated daily metrics from classification results."""
         from ..core.metrics_storage import DailyMetricsStorage
         
         try:
-            metrics_storage = DailyMetricsStorage(self.cache_dir / "gitflow_cache.db")
+            DailyMetricsStorage(self.cache_dir / "gitflow_cache.db")
             
             # This would typically aggregate from the classification results
             # For now, we'll let the existing system handle this
@@ -578,8 +669,8 @@ class BatchCommitClassifier:
         self,
         start_date: datetime,
         end_date: datetime,
-        project_keys: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        project_keys: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
         """Get classification status for a date range."""
         session = self.database.get_session()
         
