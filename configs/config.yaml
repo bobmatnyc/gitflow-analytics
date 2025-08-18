@@ -1,0 +1,129 @@
+# GitFlow Analytics Configuration for gitflow-analytics project
+# Comprehensive configuration with qualitative analysis, story points, and proper identity resolution
+
+project_name: "GitFlow Analytics"
+project_key: "GFA"
+
+# Repository configuration
+repositories:
+  - name: "gitflow-analytics"
+    path: "/Users/masa/Projects/managed/gitflow-analytics"
+    project_key: "GFA"
+    branch: "main"
+
+# Analysis settings
+analysis:
+  weeks: 24  # 24-week comprehensive analysis
+  include_weekends: true
+  
+  # Story point patterns for commit message parsing
+  story_point_patterns:
+    - '(?:story\s*points?|sp|pts?)\s*[:=]\s*(\d+)'  # SP: 5, story points = 3
+    - '\[(\d+)\s*(?:sp|pts?)\]'                       # [5 sp], [3 pts]
+    - '#(\d+)sp'                                      # #5sp
+    - 'SP-(\d+)'                                       # SP-5
+    - '\((\d+)\s*points?\)'                          # (5 points)
+  
+  # Ticket platform integration
+  ticket_platforms:
+    - github
+    - jira
+  
+  # Branch analysis configuration
+  branch_analysis:
+    strategy: "all"
+    max_branches_per_repo: 50
+    active_days_threshold: 90
+    include_main_branches: true
+    enable_progress_logging: true
+  
+  # Enhanced ML categorization
+  ml_categorization:
+    enabled: true
+    min_confidence: 0.6
+    hybrid_threshold: 0.5
+    cache_duration_days: 30
+  
+  # LLM-based commit classification for better categorization
+  llm_classification:
+    enabled: true
+    api_key: "${OPENROUTER_API_KEY}"  # From .env file in ~/Clients/EWTN/gfa/
+    api_base_url: "https://openrouter.ai/api/v1"
+    model: "mistralai/mistral-7b-instruct"  # Fast, affordable model
+    
+    # Cost optimization settings
+    confidence_threshold: 0.6
+    max_tokens: 30
+    temperature: 0.1
+    timeout_seconds: 15.0
+    max_daily_requests: 500
+    
+    # Caching for cost efficiency
+    cache_duration_days: 90
+    enable_caching: true
+
+# Identity resolution configuration
+identity:
+  auto_analysis: true
+  similarity_threshold: 0.85
+  
+  # Manual identity mappings for proper developer consolidation
+  manual_mappings:
+    - name: "Robert (Masa) Matsuoka"
+      primary_email: "bobmatnyc@users.noreply.github.com"
+      aliases:
+        - "bob@matsuoka.com"
+        - "masa@matsuoka.com"
+        - "bobmatnyc@gmail.com"
+
+# Qualitative analysis configuration
+qualitative:
+  enabled: true
+  api_key: "${OPENROUTER_API_KEY}"  # From .env file in ~/Clients/EWTN/gfa/
+  api_base_url: "https://openrouter.ai/api/v1"
+  model: "mistralai/mistral-7b-instruct"
+  
+  # Cost optimization
+  max_tokens: 150
+  temperature: 0.3
+  timeout_seconds: 30.0
+  max_daily_requests: 1000
+  
+  # Analysis settings
+  min_commits_for_analysis: 5
+  focus_on_recent_activity: true
+  include_code_quality_insights: true
+  
+  # Caching
+  cache_duration_days: 30
+  enable_caching: true
+
+# GitHub integration (optional for private repos)
+github:
+  token: "${GITHUB_TOKEN}"  # From .env file in ~/Clients/EWTN/gfa/
+
+# PM Integration Framework
+pm_integration:
+  enabled: true
+  primary_platform: "github"
+  
+  # Correlation settings
+  correlation:
+    fuzzy_matching: true
+    temporal_window_hours: 72
+    confidence_threshold: 0.8
+    ticket_reference_patterns:
+      - "GFA-\\d+"
+      - "#\\d+"
+      - "issue\\s*#?\\d+"
+
+# Cache and output settings
+cache:
+  directory: ".gitflow-cache"
+
+output:
+  directory: "reports"  # Reports will be in configs/reports/
+  formats:
+    - csv
+    - markdown
+    - json

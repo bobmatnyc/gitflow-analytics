@@ -865,6 +865,15 @@ class GitAnalysisCache:
 
     def _commit_to_dict(self, commit: CachedCommit) -> dict[str, Any]:
         """Convert CachedCommit to dictionary."""
+        # Parse ticket_references JSON if it's a string
+        ticket_refs = commit.ticket_references or []
+        if isinstance(ticket_refs, str):
+            try:
+                import json
+                ticket_refs = json.loads(ticket_refs)
+            except (json.JSONDecodeError, TypeError):
+                ticket_refs = []
+
         return {
             "hash": commit.commit_hash,
             "author_name": commit.author_name,
@@ -878,7 +887,7 @@ class GitAnalysisCache:
             "deletions": commit.deletions,
             "complexity_delta": commit.complexity_delta,
             "story_points": commit.story_points,
-            "ticket_references": commit.ticket_references or [],
+            "ticket_references": ticket_refs,
         }
 
     def _pr_to_dict(self, pr: PullRequestCache) -> dict[str, Any]:
@@ -912,6 +921,30 @@ class GitAnalysisCache:
             "labels": issue.labels or [],
             "platform_data": issue.platform_data or {},
         }
+
+    def update_commits_story_points(self, repo_path: str, commits: list[dict[str, Any]]) -> None:
+        """Update story points for existing commits in the database.
+
+        Args:
+            repo_path: Repository path
+            commits: List of commit dictionaries with updated story points
+        """
+        if not commits:
+            return
+
+        with self.get_session() as session:
+            for commit in commits:
+                commit_hash = commit.get("hash")
+                story_points = commit.get("story_points", 0)
+
+                if commit_hash and story_points > 0:
+                    # Update the story_points field for this commit
+                    session.query(CachedCommit).filter(
+                        CachedCommit.repo_path == repo_path,
+                        CachedCommit.commit_hash == commit_hash
+                    ).update({"story_points": story_points})
+
+            session.commit()
 
     def bulk_store_commits(self, repo_path: str, commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Store multiple commits using SQLAlchemy bulk operations for maximum performance.
@@ -966,28 +999,73 @@ class GitAnalysisCache:
 
         # Process in configurable batch sizes for memory efficiency
         inserted_count = 0
+        failed_commits = []
+
         with self.get_session() as session:
             for i in range(0, len(mappings), self.batch_size):
                 batch = mappings[i : i + self.batch_size]
                 try:
+                    # Use a savepoint for this batch to allow partial rollback
+                    savepoint = session.begin_nested()
                     session.bulk_insert_mappings(CachedCommit, batch)
+                    savepoint.commit()
                     inserted_count += len(batch)
-                except Exception as e:
-                    # On error, fall back to individual inserts for this batch
-                    logger.warning(f"Bulk insert failed, falling back to individual inserts: {e}")
-                    session.rollback()  # Important: rollback failed transaction
 
+                    if self.debug_mode:
+                        logger.debug(f"Successfully bulk inserted batch of {len(batch)} commits")
+
+                except Exception as e:
+                    # Rollback only this batch, not the entire transaction
+                    try:
+                        savepoint.rollback()
+                    except Exception as rollback_error:
+                        logger.error(f"Failed to rollback savepoint: {rollback_error}")
+
+                    logger.warning(f"Bulk insert failed for batch {i//self.batch_size + 1}, falling back to individual inserts: {e}")
+
+                    # Log more details about the bulk insert failure
+                    if "UNIQUE constraint failed" in str(e):
+                        logger.warning("Bulk insert failed due to duplicate commits - this is expected for incremental updates")
+                    else:
+                        logger.error(f"Unexpected bulk insert failure: {type(e).__name__}: {e}")
+
+                    # Fall back to individual inserts for this batch
                     for mapping in batch:
                         try:
-                            # Create new record
+                            individual_savepoint = session.begin_nested()
                             new_commit = CachedCommit(**mapping)
                             session.add(new_commit)
-                            session.flush()  # Try to save this individual record
+                            session.flush()  # Validate the record
+                            individual_savepoint.commit()
                             inserted_count += 1
-                        except Exception:
-                            # Skip duplicate commits silently
-                            session.rollback()  # Rollback this specific failure
+
+                        except Exception as individual_error:
+                            # Rollback only this individual commit
+                            try:
+                                individual_savepoint.rollback()
+                            except Exception as rollback_error:
+                                logger.debug(f"Failed to rollback individual savepoint: {rollback_error}")
+
+                            # Check if this is a duplicate (expected) or a real error
+                            if "UNIQUE constraint failed" in str(individual_error) or "duplicate" in str(individual_error).lower():
+                                if self.debug_mode:
+                                    logger.debug(f"Skipping duplicate commit {mapping.get('commit_hash', 'unknown')[:8]}")
+                            else:
+                                failed_commits.append({
+                                    'hash': mapping.get('commit_hash', 'unknown')[:8],
+                                    'error': str(individual_error)
+                                })
+                                logger.warning(f"Failed to insert commit {mapping.get('commit_hash', 'unknown')[:8]}: {individual_error}")
                             continue
+
+            # Log summary of any failures
+            if failed_commits:
+                logger.warning(f"Failed to insert {len(failed_commits)} commits out of {len(mappings)} total")
+                if self.debug_mode:
+                    for failure in failed_commits[:5]:  # Log first 5 failures
+                        logger.debug(f"Failed commit {failure['hash']}: {failure['error']}")
+                    if len(failed_commits) > 5:
+                        logger.debug(f"... and {len(failed_commits) - 5} more failures")
 
         elapsed = time.time() - start_time
         self.bulk_operations_count += 1
@@ -999,11 +1077,83 @@ class GitAnalysisCache:
                 f"DEBUG: Bulk stored {inserted_count} commits in {elapsed:.3f}s ({rate:.0f} commits/sec)"
             )
 
+        # Final validation: verify all expected commits were actually stored
+        if inserted_count > 0:
+            validation_result = self._validate_bulk_storage(repo_path, mappings, inserted_count)
+            if not validation_result["is_valid"]:
+                logger.error(f"❌ CRITICAL: Bulk storage validation failed: {validation_result['error']}")
+                # Don't raise exception here as some commits may have been stored successfully
+
         return {
             "inserted": inserted_count,
             "time_seconds": elapsed,
             "commits_per_second": inserted_count / elapsed if elapsed > 0 else 0,
         }
+
+    def _validate_bulk_storage(self, repo_path: str, expected_mappings: list[dict], expected_inserted: int) -> dict:
+        """Validate that bulk storage operation actually stored the expected commits.
+
+        Args:
+            repo_path: Repository path for filtering
+            expected_mappings: List of commit mappings that were supposed to be stored
+            expected_inserted: Number of commits that were reported as inserted
+
+        Returns:
+            Dictionary with validation results:
+                - is_valid: Boolean indicating if validation passed
+                - error: Error message if validation failed
+                - actual_found: Number of commits actually found in database
+                - expected_hashes: Set of commit hashes that should exist
+        """
+        try:
+            # Extract expected commit hashes
+            expected_hashes = {mapping.get('commit_hash') for mapping in expected_mappings if mapping.get('commit_hash')}
+
+            if not expected_hashes:
+                return {"is_valid": True, "error": None, "actual_found": 0, "expected_hashes": set()}
+
+            # Query database to verify commits exist
+            with self.get_session() as session:
+                stored_commits = session.query(CachedCommit.commit_hash).filter(
+                    and_(
+                        CachedCommit.repo_path == repo_path,
+                        CachedCommit.commit_hash.in_(expected_hashes)
+                    )
+                ).all()
+
+                stored_hashes = {commit[0] for commit in stored_commits}
+                actual_found = len(stored_hashes)
+
+                # Check for missing commits
+                missing_hashes = expected_hashes - stored_hashes
+
+                if missing_hashes:
+                    missing_count = len(missing_hashes)
+                    missing_sample = list(missing_hashes)[:3]  # Show first 3 for debugging
+                    error_msg = f"Missing {missing_count} commits from database. Sample: {[h[:8] for h in missing_sample]}"
+
+                    return {
+                        "is_valid": False,
+                        "error": error_msg,
+                        "actual_found": actual_found,
+                        "expected_hashes": expected_hashes,
+                        "missing_hashes": missing_hashes
+                    }
+
+                return {
+                    "is_valid": True,
+                    "error": None,
+                    "actual_found": actual_found,
+                    "expected_hashes": expected_hashes
+                }
+
+        except Exception as e:
+            return {
+                "is_valid": False,
+                "error": f"Validation query failed: {e}",
+                "actual_found": 0,
+                "expected_hashes": expected_hashes if 'expected_hashes' in locals() else set()
+            }
 
     def bulk_update_commits(self, repo_path: str, commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Update multiple commits efficiently using bulk operations.

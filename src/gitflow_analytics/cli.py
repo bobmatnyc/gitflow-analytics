@@ -28,6 +28,44 @@ from .reports.json_exporter import ComprehensiveJSONExporter
 from .reports.narrative_writer import NarrativeReportGenerator
 from .reports.weekly_trends_writer import WeeklyTrendsWriter
 from .training.pipeline import CommitClassificationTrainer
+from .validation.checksum_validator import ChecksumValidator
+
+
+def get_local_timezone():
+    """Get the local timezone object."""
+    import time
+    from datetime import timezone as tz
+    local_tz_offset = time.timezone if time.daylight == 0 else time.altzone
+    return tz(timedelta(seconds=-local_tz_offset))
+
+
+def parse_local_date_to_utc(date_str: str, end_of_day: bool = False) -> datetime:
+    """Parse a date string in local timezone and convert to UTC.
+
+    Args:
+        date_str: Date string in YYYY-MM-DD format
+        end_of_day: If True, set time to 23:59:59, otherwise 00:00:00
+
+    Returns:
+        datetime object in UTC timezone
+    """
+    local_tz = get_local_timezone()
+
+    # Parse as local timezone
+    dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=local_tz)
+
+    if end_of_day:
+        dt = dt.replace(hour=23, minute=59, second=59)
+
+    # Convert to UTC
+    return dt.astimezone(timezone.utc)
+
+
+def format_local_date(dt: datetime) -> str:
+    """Format a UTC datetime as local date string."""
+    local_tz = get_local_timezone()
+    local_dt = dt.astimezone(local_tz)
+    return local_dt.strftime('%Y-%m-%d')
 
 
 def get_week_start(date: datetime) -> datetime:
@@ -206,6 +244,18 @@ def cli(ctx: click.Context) -> None:
     "--weeks", "-w", type=int, default=12, help="Number of weeks to analyze (default: 12)"
 )
 @click.option(
+    "--start-date",
+    type=str,
+    default=None,
+    help="Start date for analysis (YYYY-MM-DD). Overrides --weeks if provided."
+)
+@click.option(
+    "--end-date",
+    type=str,
+    default=None,
+    help="End date for analysis (YYYY-MM-DD). Overrides --weeks if provided."
+)
+@click.option(
     "--output",
     "-o",
     type=click.Path(path_type=Path),
@@ -272,6 +322,8 @@ def cli(ctx: click.Context) -> None:
 def analyze_subcommand(
     config: Path,
     weeks: int,
+    start_date: Optional[str],
+    end_date: Optional[str],
     output: Optional[Path],
     anonymize: bool,
     no_cache: bool,
@@ -297,6 +349,8 @@ def analyze_subcommand(
     analyze(
         config=config,
         weeks=weeks,
+        start_date=start_date,
+        end_date=end_date,
         output=output,
         anonymize=anonymize,
         no_cache=no_cache,
@@ -322,20 +376,22 @@ def analyze_subcommand(
 def analyze(
     config: Path,
     weeks: int,
-    output: Optional[Path],
-    anonymize: bool,
-    no_cache: bool,
-    validate_only: bool,
-    clear_cache: bool,
-    enable_qualitative: bool,
-    qualitative_only: bool,
-    enable_pm: bool,
-    pm_platform: tuple[str, ...],
-    disable_pm: bool,
-    rich: bool,
-    log: str,
-    skip_identity_analysis: bool,
-    apply_identity_suggestions: bool,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    output: Optional[Path] = None,
+    anonymize: bool = False,
+    no_cache: bool = False,
+    validate_only: bool = False,
+    clear_cache: bool = False,
+    enable_qualitative: bool = False,
+    qualitative_only: bool = False,
+    enable_pm: bool = False,
+    pm_platform: tuple[str, ...] = (),
+    disable_pm: bool = False,
+    rich: bool = True,
+    log: str = "none",
+    skip_identity_analysis: bool = False,
+    apply_identity_suggestions: bool = False,
     warm_cache: bool = False,
     validate_cache: bool = False,
     generate_csv: bool = False,
@@ -752,26 +808,61 @@ def analyze(
                 return
 
         # Analysis period (timezone-aware to match commit timestamps)
-        # Calculate week-aligned boundaries for exact N-week analysis period
-        current_time = datetime.now(timezone.utc)
+        if start_date is not None and end_date is not None:
+            # Parse string dates provided by user in LOCAL timezone, then convert to UTC
+            try:
+                start_date = parse_local_date_to_utc(start_date, end_of_day=False)
+                end_date = parse_local_date_to_utc(end_date, end_of_day=True)
 
-        # Calculate dates to use last N complete weeks (not including current week)
-        # Get the start of current week, then go back 1 week to get last complete week
-        current_week_start = get_week_start(current_time)
-        last_complete_week_start = current_week_start - timedelta(weeks=1)
+                if display:
+                    display.print_status(
+                        f"Date range: {format_local_date(start_date)} to {format_local_date(end_date)} (local time)",
+                        "info"
+                    )
+                    display.print_status(
+                        f"UTC range: {start_date.strftime('%Y-%m-%d %H:%M %Z')} to {end_date.strftime('%Y-%m-%d %H:%M %Z')}",
+                        "info"
+                    )
+                else:
+                    click.echo(f"📅 Date range: {format_local_date(start_date)} to {format_local_date(end_date)} (local time)")
+                    click.echo(f"📅 UTC range: {start_date.strftime('%Y-%m-%d %H:%M %Z')} to {end_date.strftime('%Y-%m-%d %H:%M %Z')}")
 
-        # Start date is N weeks back from the last complete week
-        start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
+            except ValueError as e:
+                if display:
+                    display.print_status(f"Invalid date format: {e}. Use YYYY-MM-DD format.", "error")
+                else:
+                    click.echo(f"❌ Invalid date format: {e}. Use YYYY-MM-DD format.")
+                return
+        else:
+            # Calculate week-aligned boundaries for exact N-week analysis period
+            current_time = datetime.now(timezone.utc)
 
-        # End date is the end of the last complete week (last Sunday)
-        end_date = get_week_end(last_complete_week_start + timedelta(days=6))
+            # Calculate dates to use last N complete weeks (not including current week)
+            # Get the start of current week, then go back 1 week to get last complete week
+            current_week_start = get_week_start(current_time)
+            last_complete_week_start = current_week_start - timedelta(weeks=1)
+
+            # Start date is N weeks back from the last complete week
+            start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
+
+            # End date is the end of the last complete week (last Sunday)
+            end_date = get_week_end(last_complete_week_start)
+
+            # Debug logging to verify date calculation
+            logger.debug(f"Date calculation debug:")
+            logger.debug(f"  current_time: {current_time}")
+            logger.debug(f"  current_week_start: {current_week_start}")
+            logger.debug(f"  last_complete_week_start: {last_complete_week_start}")
+            logger.debug(f"  weeks parameter: {weeks}")
+            logger.debug(f"  calculated start_date: {start_date}")
+            logger.debug(f"  calculated end_date: {end_date}")
 
         if display:
             display.print_status(
                 f"Analyzing {len(repositories_to_analyze)} repositories...", "info"
             )
             display.print_status(
-                f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
+                f"Period: {format_local_date(start_date)} to {format_local_date(end_date)} (local time)",
                 "info",
             )
             # Start live progress display
@@ -782,7 +873,7 @@ def analyze(
         else:
             click.echo(f"\n🚀 Analyzing {len(repositories_to_analyze)} repositories...")
             click.echo(
-                f"   Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+                f"   Period: {format_local_date(start_date)} to {format_local_date(end_date)} (local time)"
             )
 
         # Initialize variables for both batch and non-batch modes
@@ -1450,6 +1541,28 @@ def analyze(
                 else:
                     click.echo(f"✅ Loaded {len(all_commits)} classified commits from database")
 
+                # Enrich commits with JIRA story points after loading from database
+                if "jira" in orchestrator.integrations:
+                    jira_integration = orchestrator.integrations["jira"]
+                    commits_before = sum(1 for c in all_commits if (c.get("story_points") or 0) > 0)
+
+                    try:
+                        jira_integration.enrich_commits_with_jira_data(all_commits)
+                        commits_after = sum(1 for c in all_commits if (c.get("story_points") or 0) > 0)
+
+                        if commits_after > commits_before:
+                            if display:
+                                display.print_status(
+                                    f"Enriched {commits_after - commits_before} commits with JIRA story points", "success"
+                                )
+                            else:
+                                click.echo(f"📊 Enriched {commits_after - commits_before} commits with JIRA story points")
+                    except Exception as e:
+                        if display:
+                            display.print_status(f"JIRA enrichment failed: {e}", "warning")
+                        else:
+                            click.echo(f"⚠️  JIRA enrichment failed: {e}")
+
             # Process the loaded commits to generate required statistics
             # Update developer identities
             if display:
@@ -1618,7 +1731,7 @@ def analyze(
                         f"{health_summary.get('stale_branches', 0)} stale)"
                     )
 
-                # Enrich with integration data
+                # Enrich with integration data (for PRs and other data, not commits)
                 enrichment = orchestrator.enrich_repository_data(repo_config, commits, start_date)
                 all_enrichments[repo_config.name] = enrichment
 
@@ -1945,11 +2058,7 @@ def analyze(
 
             # Store metrics for each day in the analysis period
             current_date = start_date.date() if hasattr(start_date, "date") else start_date
-            end_date_obj = (
-                (start_date + timedelta(weeks=weeks)).date()
-                if hasattr(start_date, "date")
-                else (start_date + timedelta(weeks=weeks))
-            )
+            end_date_obj = end_date.date() if hasattr(end_date, "date") else end_date
 
             daily_commits = {}
             for commit in all_commits:
@@ -2802,9 +2911,7 @@ def analyze(
                     start_date.date() if hasattr(start_date, "date") else start_date
                 )
                 analysis_end_date = (
-                    (start_date + timedelta(weeks=weeks)).date()
-                    if hasattr(start_date, "date")
-                    else (start_date + timedelta(weeks=weeks))
+                    end_date.date() if hasattr(end_date, "date") else end_date
                 )
 
                 report_stats = db_report_gen.generate_qualitative_report(
@@ -2949,9 +3056,119 @@ def analyze(
 
         try:
             logger.debug("Starting final summary calculations")
-            total_story_points = sum(c.get("story_points", 0) or 0 for c in all_commits)
+
+            # Calculate story points per unique ticket to avoid double-counting
+            # when multiple commits reference the same JIRA ticket
+            unique_tickets = {}
+            for commit in all_commits:
+                story_points = commit.get("story_points", 0) or 0
+                if story_points > 0:
+                    # Extract ticket references from this commit
+                    ticket_refs = commit.get("ticket_references", [])
+                    for ref in ticket_refs:
+                        if isinstance(ref, dict) and ref.get("platform") == "jira":
+                            ticket_id = ref["id"]
+                            # Store the highest story point value for this ticket
+                            # (in case different commits have different values for same ticket)
+                            unique_tickets[ticket_id] = max(
+                                unique_tickets.get(ticket_id, 0), story_points
+                            )
+                        elif isinstance(ref, str):
+                            # Handle string ticket references
+                            unique_tickets[ref] = max(
+                                unique_tickets.get(ref, 0), story_points
+                            )
+
+            # Sum story points from unique tickets only
+            total_story_points = sum(unique_tickets.values())
+            logger.debug(f"Calculated story points from {len(unique_tickets)} unique tickets: {total_story_points}")
+
             qualitative_count = len(qualitative_results) if qualitative_results else 0
             logger.debug("Final summary calculations completed successfully")
+
+            # Perform checksum validation
+            logger.debug("Starting checksum validation")
+            try:
+                validator = ChecksumValidator()
+                validation_results = []
+
+                for repo_config in cfg.repositories:
+                    if repo_config.path.exists():
+                        # Count commits processed for this repository
+                        repo_commits = [c for c in all_commits if hasattr(c, 'repo_path') and str(c.repo_path) == str(repo_config.path)]
+                        if not repo_commits:
+                            # Fallback: count all commits if repo_path not available
+                            repo_commits = all_commits
+
+                        validation_result = validator.validate_repository_commits(
+                            repo_path=repo_config.path,
+                            processed_commits=len(repo_commits),
+                            start_date=start_date,
+                            end_date=end_date,
+                        )
+                        validation_results.append(validation_result)
+
+                # Generate validation report
+                if validation_results:
+                    validation_report = validator.generate_validation_report(validation_results)
+                    validation_report_path = output / f"validation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+
+                    with open(validation_report_path, 'w') as f:
+                        f.write(validation_report)
+
+                    generated_reports.append(validation_report_path.name)
+                    logger.info(f"Validation report generated: {validation_report_path}")
+
+                    # Show validation summary
+                    if display:
+                        display.print_status("🔍 Data Validation Summary", "info")
+                        for result in validation_results:
+                            if "error" not in result:
+                                repo_name = Path(result["repository_path"]).name
+                                status = result["validation_status"]
+                                status_emoji = {
+                                    "VALID": "✅",
+                                    "UNDER_PROCESSED": "⚠️",
+                                    "OVER_PROCESSED": "⚠️",
+                                    "ERROR": "❌",
+                                }.get(status, "❓")
+
+                                processed = result["processed_commits"]
+                                total = result["total_commits_all_branches"]
+                                in_range = result.get("commits_in_date_range")
+
+                                if in_range is not None:
+                                    display.print_status(
+                                        f"  {status_emoji} {repo_name}: {processed}/{in_range} commits in period ({total} total)",
+                                        "info" if status == "VALID" else "warning"
+                                    )
+                                else:
+                                    display.print_status(
+                                        f"  {status_emoji} {repo_name}: {processed}/{total} commits",
+                                        "info" if status == "VALID" else "warning"
+                                    )
+                    else:
+                        click.echo("\n🔍 Data Validation Summary:")
+                        for result in validation_results:
+                            if "error" not in result:
+                                repo_name = Path(result["repository_path"]).name
+                                status = result["validation_status"]
+                                processed = result["processed_commits"]
+                                total = result["total_commits_all_branches"]
+                                in_range = result.get("commits_in_date_range")
+
+                                if in_range is not None:
+                                    click.echo(f"   - {repo_name}: {processed}/{in_range} commits in period ({total} total) - {status}")
+                                else:
+                                    click.echo(f"   - {repo_name}: {processed}/{total} commits - {status}")
+
+                logger.debug("Checksum validation completed successfully")
+            except Exception as e:
+                logger.warning(f"Checksum validation failed: {e}")
+                if display:
+                    display.print_status(f"⚠️ Validation warning: {e}", "warning")
+                else:
+                    click.echo(f"   ⚠️ Validation warning: {e}")
 
             # Show results summary
             if display:
@@ -3562,7 +3779,7 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
         start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
 
         # End date is the end of the last complete week (last Sunday)
-        end_date = get_week_end(last_complete_week_start + timedelta(days=6))
+        end_date = get_week_end(last_complete_week_start)
 
         # Prepare ML categorization config for analyzer
         ml_config = None
@@ -4073,6 +4290,94 @@ def training_statistics(config: Path) -> None:
     except Exception as e:
         click.echo(f"❌ Error: {e}", err=True)
         sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--config",
+    type=click.Path(exists=True),
+    default="configs/config.yaml",
+    help="Path to configuration file",
+)
+@click.option(
+    "--weeks",
+    type=int,
+    default=4,
+    help="Number of weeks to validate (for date range validation)",
+)
+@click.option(
+    "--output",
+    type=click.Path(),
+    help="Output directory for validation report",
+)
+def validate(config, weeks, output):
+    """Validate processed data against actual git repository state."""
+    try:
+        # Load configuration
+        cfg = ConfigLoader.load(config)
+
+        # Set up output directory
+        if output:
+            output_path = Path(output)
+        else:
+            output_path = Path(cfg.output.directory) if cfg.output else Path("reports")
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Calculate date range
+        current_time = datetime.now(timezone.utc)
+        current_week_start = get_week_start(current_time)
+        last_complete_week_start = current_week_start - timedelta(days=7)
+        start_date = last_complete_week_start - timedelta(weeks=(weeks - 1))
+        end_date = get_week_end(last_complete_week_start)
+
+        click.echo(f"🔍 Validating {weeks} weeks of data ({start_date.date()} to {end_date.date()})")
+
+        # Initialize validator
+        validator = ChecksumValidator()
+        validation_results = []
+
+        # Validate each repository
+        for repo_config in cfg.repositories:
+            if repo_config.path.exists():
+                click.echo(f"   Validating repository: {repo_config.name}")
+
+                validation_result = validator.validate_repository_commits(
+                    repo_path=repo_config.path,
+                    processed_commits=0,  # We don't have processed data in standalone mode
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                validation_results.append(validation_result)
+            else:
+                click.echo(f"   ⚠️ Repository not found: {repo_config.path}")
+
+        # Generate validation report
+        if validation_results:
+            validation_report = validator.generate_validation_report(validation_results)
+            validation_report_path = output_path / f"validation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+
+            with open(validation_report_path, 'w') as f:
+                f.write(validation_report)
+
+            click.echo(f"✅ Validation report generated: {validation_report_path}")
+
+            # Show summary
+            click.echo("\n📊 Repository Summary:")
+            for result in validation_results:
+                if "error" not in result:
+                    repo_name = Path(result["repository_path"]).name
+                    total = result["total_commits_all_branches"]
+                    in_range = result.get("commits_in_date_range", 0)
+                    click.echo(f"   - {repo_name}: {in_range} commits in period ({total} total)")
+                else:
+                    repo_name = Path(result["repository_path"]).name
+                    click.echo(f"   - {repo_name}: ERROR - {result['error']}")
+        else:
+            click.echo("❌ No repositories found to validate")
+
+    except Exception as e:
+        click.echo(f"❌ Validation failed: {e}")
+        raise
 
 
 def main() -> None:

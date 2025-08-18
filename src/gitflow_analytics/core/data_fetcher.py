@@ -796,6 +796,12 @@ class GitDataFetcher:
             with session.no_autoflush:
                 for date_str, commits in daily_commits.items():
                     if not commits:
+                        logger.debug(f"🔍 DEBUG: Skipping empty date {date_str}")
+                        continue
+
+                    # Defensive check to ensure commits is properly defined
+                    if not isinstance(commits, list):
+                        logger.error(f"❌ Invalid commits data for {date_str}: {type(commits)}")
                         continue
 
                     logger.info(f"🔍 DEBUG: Processing {len(commits)} commits for {date_str}")
@@ -903,11 +909,44 @@ class GitDataFetcher:
             # Use bulk store operation for all commits at once for maximum performance
             if all_commits_to_store:
                 logger.info(f"Using bulk_store_commits for {len(all_commits_to_store)} commits")
-                bulk_stats = self.cache.bulk_store_commits(str(repo_path), all_commits_to_store)
-                commits_stored = bulk_stats["inserted"]
-                logger.info(
-                    f"Bulk stored {commits_stored} commits in {bulk_stats['time_seconds']:.2f}s ({bulk_stats['commits_per_second']:.0f} commits/sec)"
-                )
+
+                # Convert commits to the format expected by bulk_store_commits
+                # CRITICAL FIX: The cache expects "hash" field, not "commit_hash"
+                formatted_commits = []
+                for commit in all_commits_to_store:
+                    formatted_commit = {
+                        "hash": commit.get("commit_hash", commit.get("hash", "")),  # Handle both field names
+                        "author_name": commit.get("author_name", "Unknown"),
+                        "author_email": commit.get("author_email", "unknown@example.com"),
+                        "message": commit.get("message", ""),
+                        "timestamp": commit["timestamp"],
+                        "branch": commit.get("branch", "unknown"),
+                        "is_merge": commit.get("is_merge", False),
+                        "files_changed": len(commit.get("files_changed", [])) if isinstance(commit.get("files_changed"), list) else commit.get("files_changed", 0),
+                        "insertions": commit.get("insertions", 0),
+                        "deletions": commit.get("deletions", 0),
+                        "complexity_delta": commit.get("complexity_delta", 0.0),
+                        "story_points": commit.get("story_points"),
+                        "ticket_references": commit.get("ticket_references", []),
+                    }
+                    formatted_commits.append(formatted_commit)
+
+                try:
+                    bulk_stats = self.cache.bulk_store_commits(str(repo_path), formatted_commits)
+                    commits_stored = bulk_stats["inserted"]
+                    logger.info(
+                        f"Bulk stored {commits_stored} commits in {bulk_stats['time_seconds']:.2f}s ({bulk_stats['commits_per_second']:.0f} commits/sec)"
+                    )
+
+                    # Verify all commits were stored
+                    if commits_stored < len(formatted_commits):
+                        missing_count = len(formatted_commits) - commits_stored
+                        logger.error(f"❌ CRITICAL: Only {commits_stored}/{len(formatted_commits)} commits were stored! {missing_count} commits lost!")
+
+                except Exception as e:
+                    logger.error(f"❌ CRITICAL: Bulk storage completely failed: {e}")
+                    commits_stored = 0
+
             else:
                 commits_stored = 0
                 logger.info("No new commits to store")
@@ -999,25 +1038,31 @@ class GitDataFetcher:
             stored_hashes = {commit.commit_hash for commit in stored_commits}
             total_found = len(stored_hashes)
 
-            # For this verification, we assume all matching commits were stored successfully
-            # Since we only attempt to store commits that don't already exist,
-            # the number we "actually stored" equals what we expected to store
-            actual_stored = expected_new_commits
+            # CRITICAL FIX: Actually verify what was stored, don't assume success
+            # Check for missing commits (this indicates storage failure)
+            missing_hashes = expected_hashes - stored_hashes
+            actual_stored = total_found  # Use actual count, not assumption
 
             # Log detailed verification results
             logger.info(
-                f"🔍 DEBUG: Storage verification - Expected new: {expected_new_commits}, Total matching found: {total_found}"
+                f"🔍 DEBUG: Storage verification - Expected: {len(expected_hashes)}, Found: {total_found}, Missing: {len(missing_hashes)}"
             )
 
-            # Check for missing commits (this would indicate storage failure)
-            missing_hashes = expected_hashes - stored_hashes
             if missing_hashes:
                 missing_short = [h[:7] for h in list(missing_hashes)[:5]]  # First 5 for logging
                 logger.error(
-                    f"❌ Missing commits in database: {missing_short} (showing first 5 of {len(missing_hashes)})"
+                    f"❌ CRITICAL: {len(missing_hashes)} commits missing from database: {missing_short} (showing first 5)"
                 )
-                # If we have missing commits, we didn't store what we expected
-                actual_stored = total_found
+
+                # Log some details about the missing commits for debugging
+                for i, missing_hash in enumerate(list(missing_hashes)[:3]):
+                    for day_commits in daily_commits.values():
+                        for commit in day_commits:
+                            if commit["commit_hash"] == missing_hash:
+                                logger.error(f"Missing commit {i+1}: {missing_hash[:8]} - {commit.get('message', 'No message')[:50]}")
+                                break
+            else:
+                logger.info(f"✅ All {total_found} commits successfully verified in database")
 
             return {
                 "actual_stored": actual_stored,

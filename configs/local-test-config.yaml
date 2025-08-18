@@ -1,0 +1,142 @@
+version: "1.0"
+
+# Local GitFlow Analytics Repository Test Configuration
+# For testing timezone and date range functionality
+
+# Local repository analysis (current GitFlow Analytics repo)
+repositories:
+  - name: "gitflow-analytics"
+    path: "/Users/masa/Projects/managed/gitflow-analytics"
+    project_key: "GFA"
+    main_branch: "main"
+
+# JIRA integration for story points extraction (using EWTN credentials for testing)
+jira:
+  access_user: "${JIRA_ACCESS_USER}"
+  access_token: "${JIRA_ACCESS_TOKEN}"
+  base_url: "https://ewtn.atlassian.net"
+
+jira_integration:
+  enabled: true
+  fetch_story_points: true
+  story_point_fields:
+    - "customfield_10016"  # Story point estimate (primary field - confirmed working)
+    - "customfield_10063"  # Story Points (backup field)
+    - "Story Points"       # Field name fallback
+    - "timeestimate"       # Remaining Estimate
+    - "timeoriginalestimate"  # Original estimate
+
+analysis:
+  weeks: 1  # Will be overridden by CLI --weeks parameter
+  branch_strategy: "smart"
+  max_branches: 50
+  include_merges: true
+  exclude_bots: true
+  skip_remote_fetch: true  # Skip git fetch to avoid hanging on remote issues
+  
+  # Identity resolution settings
+  identity:
+    enabled: true
+    similarity_threshold: 0.8
+    manual_mappings: []
+
+  # Story point extraction patterns (text-based patterns for commit messages)
+  story_point_patterns:
+    - "(?:story\\s*points?|sp|pts?)\\s*[:=]\\s*(\\d+)"  # SP: 5, story points = 3
+    - "\\[(\\d+)\\s*(?:sp|pts?|points?)\\]"  # [3sp], [5 pts], [3 points]
+    - "\\((\\d+)\\s*(?:story\\s*points?|sp|pts?)\\)"  # (5 story points), (3 sp)
+    - "#(\\d+)sp"  # #3sp
+    - "estimate:\\s*(\\d+)"  # estimate: 5
+    - "\\bSP(\\d+)\\b"  # SP5, SP13
+    - "points?:\\s*(\\d+)"  # points: 8
+
+# Ticket analysis configuration
+ticket_analysis:
+  enabled: true
+  platforms:
+    jira:
+      enabled: true
+      patterns:
+        - "\\b([A-Z]{2,10}-\\d+)\\b"
+    github:
+      enabled: true
+      patterns:
+        - "#(\\d+)"
+        - "\\b(?:issue|fix|fixes|close|closes)\\s*#(\\d+)\\b"
+
+# Machine Learning and LLM Configuration
+ml_categorization:
+  enabled: true
+  confidence_threshold: 0.7
+  
+  # LLM Classification
+  llm:
+    enabled: false  # Disabled for testing
+    provider: "openai"
+    model: "gpt-3.5-turbo"
+    max_tokens: 150
+    temperature: 0.1
+    batch_size: 10
+    max_retries: 3
+    fallback_threshold: 0.15  # Use LLM for up to 15% of commits
+    
+  # Categories for classification
+  categories:
+    - name: "Engineering"
+      description: "Code changes, bug fixes, feature development"
+    - name: "Operations"
+      description: "DevOps, deployment, infrastructure, configuration"
+    - name: "Documentation"
+      description: "Documentation updates, README changes, comments"
+
+# Qualitative analysis
+qualitative:
+  enabled: false  # Disabled for testing
+  narrative_generation: false
+  sentiment_analysis: false
+  
+  # NLP settings
+  nlp:
+    enabled: false
+    language: "en"
+    confidence_threshold: 0.6
+
+# Report generation settings
+reports:
+  output_directory: "./local-test-reports"
+  formats: ["csv", "markdown", "json"]
+  
+  # Report types to generate
+  types:
+    - "summary"
+    - "developers"
+    - "activity_distribution"
+    - "developer_focus"
+    - "weekly_metrics"
+    - "narrative_report"
+    
+  # Report options
+  options:
+    include_charts: false
+    anonymize: false
+    detailed_commits: true
+    
+# Caching configuration
+cache:
+  enabled: true
+  directory: "./local-test-cache"
+  ttl_days: 7
+  warm_cache: false
+  
+# Logging configuration
+logging:
+  level: "INFO"
+  file: "./local-test-analysis.log"
+  console: true
+  
+# Performance settings
+performance:
+  batch_size: 1000
+  parallel_processing: true
+  max_workers: 4
+  memory_limit_mb: 2048

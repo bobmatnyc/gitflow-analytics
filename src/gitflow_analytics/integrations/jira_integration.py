@@ -237,6 +237,25 @@ class JIRAIntegration:
 
         return cached_tickets
 
+    def get_issue(self, ticket_id: str) -> Optional[dict[str, Any]]:
+        """Get a single JIRA issue by ticket ID.
+
+        This method is used by the data fetcher to get individual tickets.
+        It uses the existing batch fetching infrastructure for consistency.
+
+        Args:
+            ticket_id: JIRA ticket ID (e.g., "PROJ-123")
+
+        Returns:
+            Dictionary with ticket data or None if not found
+        """
+        if not ticket_id:
+            return None
+
+        # Use the existing batch fetch method for a single ticket
+        ticket_data = self._fetch_tickets_batch([ticket_id])
+        return ticket_data.get(ticket_id)
+
     def _extract_ticket_data(self, issue: dict[str, Any]) -> dict[str, Any]:
         """Extract relevant data from JIRA issue.
 
