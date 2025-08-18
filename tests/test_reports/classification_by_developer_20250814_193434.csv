@@ -1,0 +1,6 @@
+Developer Classification Analysis
+Total Developers:,1
+Developers with ≥5 commits:,1
+
+developer,total_commits,primary_classification,classification_diversity,avg_confidence,high_confidence_ratio,repository_count,repositories,avg_files_per_commit,avg_lines_per_commit,activity_span_days,unknown_count
+ecb4c3b8-add3-485c-9766-4043c282acad,39,unknown,1,0.000,0.000,1,gitflow-analytics,16.1,2542,12,39

@@ -36,7 +36,7 @@ from .jira_adapter import JIRAAdapter
 # from .clickup_adapter import ClickUpAdapter
 
 __all__: list[str] = [
-    'JIRAAdapter',
+    "JIRAAdapter",
     # Platform adapters will be added here as they are implemented
 ]
 

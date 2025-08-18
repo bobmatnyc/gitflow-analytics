@@ -1,0 +1,16 @@
+Classification Analysis Summary
+Generated:,2025-08-14T19:34:34.065365
+Analysis Period:,2025-07-15 to 2025-08-14
+Configuration:,N/A
+
+Overall Statistics
+Metric,Value
+Total Commits Analyzed,39
+Unique Developers,1
+Unique Repositories,1
+Average Confidence Score,0.000
+High Confidence Predictions,0 (0.0%)
+
+Classification Distribution
+Classification Type,Count,Percentage
+unknown,39,100.0%

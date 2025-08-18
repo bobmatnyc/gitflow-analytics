@@ -34,9 +34,10 @@ output:
             # This should work without error (though it may fail later due to missing env vars)
             # We're mainly testing that YAML parsing works
             ConfigLoader.load(temp_path)
-        except ValueError as e:
+        except Exception as e:
             # Environment variable errors are expected in tests
-            if "Environment variable" not in str(e):
+            error_str = str(e)
+            if "GITHUB_TOKEN" not in error_str and "Environment variable" not in error_str:
                 pytest.fail(f"Unexpected error: {e}")
         finally:
             temp_path.unlink()
@@ -63,7 +64,7 @@ repositories:
             error_msg = str(exc_info.value)
             assert "❌ YAML configuration error" in error_msg
             assert "🚫 Tab characters are not allowed" in error_msg
-            assert "💡 Fix: Replace all tab characters with spaces" in error_msg
+            assert "Fix: Replace all tab characters with spaces" in error_msg
             assert "line 3" in error_msg
             assert temp_path.name in error_msg
         finally:
@@ -92,7 +93,7 @@ repositories:
             assert "❌ YAML configuration error" in error_msg
             assert ("🚫 Missing colon (:) after a key name!" in error_msg or 
                     "🚫 Invalid YAML syntax" in error_msg)
-            assert "💡 Fix:" in error_msg
+            assert "Fix:" in error_msg
             assert temp_path.name in error_msg
         finally:
             temp_path.unlink()

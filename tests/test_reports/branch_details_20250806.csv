@@ -1,2 +1,0 @@
-repository,branch,age_days,health_score,status,total_commits,unique_authors,commits_ahead,commits_behind,divergence_total,daily_commit_avg,weekly_commit_avg,latest_activity,is_merged,is_stale
-gitflow-analytics,experiment/commit-classification,1,100.0,merged,32,1,0,0,0,5.33,37.33,2025-08-05T10:58:34-04:00,True,False

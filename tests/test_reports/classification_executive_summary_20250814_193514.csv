@@ -1,0 +1,22 @@
+Executive Summary - Commit Classification Analysis
+Generated:,2025-08-14 19:35:14
+Analysis Period:,2025-07-15 to 2025-08-14
+
+KEY METRICS
+Total Development Activity,39 commits
+Team Size,1 active developers
+Codebase Scope,1 repositories
+Analysis Timespan,12 days
+Average Code Changes per Commit,2542 lines
+Classification Confidence,0.0% average
+High Confidence Predictions,0.0%
+
+DEVELOPMENT FOCUS AREAS
+Activity Type,Commits,% of Total,Strategic Insight
+Unknown,39,100.0%,Unclassified development activity
+
+STRATEGIC RECOMMENDATIONS
+Recommendation 1,Low feature development - may indicate focus on maintenance or technical debt
+Recommendation 2,Low documentation activity - consider improving documentation practices
+Recommendation 3,Limited testing activity - consider strengthening testing practices
+Recommendation 4,Consider improving commit message clarity for better classification

@@ -1,6 +1,6 @@
 """DORA (DevOps Research and Assessment) metrics calculation."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 import numpy as np
@@ -382,3 +382,309 @@ class DORAMetricsCalculator:
             return "Medium"
         else:
             return "Low"
+
+    def calculate_weekly_dora_metrics(
+        self,
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
+        start_date: datetime,
+        end_date: datetime,
+    ) -> list[dict[str, Any]]:
+        """Calculate DORA metrics broken down by week.
+
+        WHY: Weekly breakdowns provide trend analysis and enable identification
+        of performance patterns over time. This helps teams track improvements
+        and identify periods of degraded performance.
+
+        DESIGN DECISION: Uses Monday-Sunday week boundaries for consistency
+        with other reporting functions. Includes rolling averages to smooth
+        out weekly variations and provide clearer trend indicators.
+
+        Args:
+            commits: List of commit data dictionaries
+            prs: List of pull request data dictionaries
+            start_date: Start of analysis period
+            end_date: End of analysis period
+
+        Returns:
+            List of weekly DORA metrics with trend analysis
+        """
+        # Normalize date range to timezone-aware UTC
+        start_date_utc = self._normalize_timestamp_to_utc(start_date)
+        end_date_utc = self._normalize_timestamp_to_utc(end_date)
+
+        if start_date_utc is None or end_date_utc is None:
+            return []
+
+        # Identify deployments and failures for the entire period
+        all_deployments = self._identify_deployments(commits, prs)
+        all_failures = self._identify_failures(commits, prs)
+
+        # Generate week boundaries
+        weeks = self._generate_week_boundaries(start_date_utc, end_date_utc)
+
+        weekly_metrics = []
+        previous_weeks_data = []  # For rolling averages
+
+        for week_start, week_end in weeks:
+            # Filter data for this week
+            week_deployments = [
+                d for d in all_deployments if week_start <= d["timestamp"] <= week_end
+            ]
+
+            week_failures = [f for f in all_failures if week_start <= f["timestamp"] <= week_end]
+
+            week_commits = [
+                c
+                for c in commits
+                if week_start <= self._normalize_timestamp_to_utc(c["timestamp"]) <= week_end
+            ]
+
+            week_prs = [
+                pr
+                for pr in prs
+                if pr.get("merged_at")
+                and week_start <= self._normalize_timestamp_to_utc(pr["merged_at"]) <= week_end
+            ]
+
+            # Calculate weekly metrics
+            deployment_frequency = len(week_deployments)
+
+            # Calculate lead time for PRs merged this week
+            lead_times = []
+            for pr in week_prs:
+                if pr.get("created_at") and pr.get("merged_at"):
+                    created_at = self._normalize_timestamp_to_utc(pr["created_at"])
+                    merged_at = self._normalize_timestamp_to_utc(pr["merged_at"])
+
+                    if created_at and merged_at:
+                        lead_time = (merged_at - created_at).total_seconds() / 3600
+                        lead_times.append(lead_time)
+
+            avg_lead_time = float(np.median(lead_times)) if lead_times else 0.0
+
+            # Calculate change failure rate
+            change_failure_rate = 0.0
+            if week_deployments:
+                failure_causing_deployments = 0
+                for deployment in week_deployments:
+                    deploy_time = deployment["timestamp"]
+
+                    # Check if any failure occurred within 24 hours
+                    for failure in week_failures:
+                        failure_time = failure["timestamp"]
+                        time_diff = abs((failure_time - deploy_time).total_seconds() / 3600)
+
+                        if time_diff <= 24:  # Within 24 hours
+                            failure_causing_deployments += 1
+                            break
+
+                change_failure_rate = (failure_causing_deployments / len(week_deployments)) * 100
+
+            # Calculate MTTR for failures this week
+            recovery_times = []
+            for failure in week_failures:
+                failure_time = failure["timestamp"]
+
+                # Look for recovery in subsequent commits within reasonable time
+                recovery_time = None
+                for commit in week_commits:
+                    commit_time = self._normalize_timestamp_to_utc(commit["timestamp"])
+
+                    if commit_time <= failure_time:
+                        continue
+
+                    message_lower = commit["message"].lower()
+                    recovery_patterns = ["fixed", "resolved", "recovery", "restored"]
+
+                    if any(pattern in message_lower for pattern in recovery_patterns):
+                        recovery_time = commit_time
+                        break
+
+                if recovery_time:
+                    mttr = (recovery_time - failure_time).total_seconds() / 3600
+                    recovery_times.append(mttr)
+                elif failure.get("is_hotfix"):
+                    recovery_times.append(2.0)  # Assume quick recovery for hotfixes
+
+            avg_mttr = float(np.mean(recovery_times)) if recovery_times else 0.0
+
+            # Store current week data
+            week_data = {
+                "week_start": week_start.strftime("%Y-%m-%d"),
+                "week_end": week_end.strftime("%Y-%m-%d"),
+                "deployment_frequency": deployment_frequency,
+                "lead_time_hours": round(avg_lead_time, 2),
+                "change_failure_rate": round(change_failure_rate, 2),
+                "mttr_hours": round(avg_mttr, 2),
+                "total_failures": len(week_failures),
+                "total_commits": len(week_commits),
+                "total_prs": len(week_prs),
+            }
+
+            # Calculate rolling averages (4-week window)
+            previous_weeks_data.append(week_data.copy())
+            if len(previous_weeks_data) > 4:
+                previous_weeks_data.pop(0)
+
+            # 4-week rolling averages
+            if len(previous_weeks_data) >= 2:
+                week_data["deployment_frequency_4w_avg"] = round(
+                    np.mean([w["deployment_frequency"] for w in previous_weeks_data]), 1
+                )
+
+                lead_times_4w = [
+                    w["lead_time_hours"] for w in previous_weeks_data if w["lead_time_hours"] > 0
+                ]
+                week_data["lead_time_4w_avg"] = round(
+                    np.mean(lead_times_4w) if lead_times_4w else 0, 1
+                )
+
+                cfr_4w = [
+                    w["change_failure_rate"]
+                    for w in previous_weeks_data
+                    if w["change_failure_rate"] > 0
+                ]
+                week_data["change_failure_rate_4w_avg"] = round(np.mean(cfr_4w) if cfr_4w else 0, 1)
+
+                mttr_4w = [w["mttr_hours"] for w in previous_weeks_data if w["mttr_hours"] > 0]
+                week_data["mttr_4w_avg"] = round(np.mean(mttr_4w) if mttr_4w else 0, 1)
+            else:
+                week_data["deployment_frequency_4w_avg"] = week_data["deployment_frequency"]
+                week_data["lead_time_4w_avg"] = week_data["lead_time_hours"]
+                week_data["change_failure_rate_4w_avg"] = week_data["change_failure_rate"]
+                week_data["mttr_4w_avg"] = week_data["mttr_hours"]
+
+            # Calculate week-over-week changes (if we have previous week)
+            if len(weekly_metrics) > 0:
+                prev_week = weekly_metrics[-1]
+
+                # Deployment frequency change
+                if prev_week["deployment_frequency"] > 0:
+                    df_change = (
+                        (week_data["deployment_frequency"] - prev_week["deployment_frequency"])
+                        / prev_week["deployment_frequency"]
+                        * 100
+                    )
+                    week_data["deployment_frequency_change_pct"] = round(df_change, 1)
+                else:
+                    week_data["deployment_frequency_change_pct"] = (
+                        0.0 if week_data["deployment_frequency"] == 0 else 100.0
+                    )
+
+                # Lead time change
+                if prev_week["lead_time_hours"] > 0:
+                    lt_change = (
+                        (week_data["lead_time_hours"] - prev_week["lead_time_hours"])
+                        / prev_week["lead_time_hours"]
+                        * 100
+                    )
+                    week_data["lead_time_change_pct"] = round(lt_change, 1)
+                else:
+                    week_data["lead_time_change_pct"] = (
+                        0.0 if week_data["lead_time_hours"] == 0 else 100.0
+                    )
+
+                # Change failure rate change
+                if prev_week["change_failure_rate"] > 0:
+                    cfr_change = (
+                        (week_data["change_failure_rate"] - prev_week["change_failure_rate"])
+                        / prev_week["change_failure_rate"]
+                        * 100
+                    )
+                    week_data["change_failure_rate_change_pct"] = round(cfr_change, 1)
+                else:
+                    week_data["change_failure_rate_change_pct"] = (
+                        0.0 if week_data["change_failure_rate"] == 0 else 100.0
+                    )
+
+                # MTTR change
+                if prev_week["mttr_hours"] > 0:
+                    mttr_change = (
+                        (week_data["mttr_hours"] - prev_week["mttr_hours"])
+                        / prev_week["mttr_hours"]
+                        * 100
+                    )
+                    week_data["mttr_change_pct"] = round(mttr_change, 1)
+                else:
+                    week_data["mttr_change_pct"] = 0.0 if week_data["mttr_hours"] == 0 else 100.0
+            else:
+                # First week - no changes to calculate
+                week_data["deployment_frequency_change_pct"] = 0.0
+                week_data["lead_time_change_pct"] = 0.0
+                week_data["change_failure_rate_change_pct"] = 0.0
+                week_data["mttr_change_pct"] = 0.0
+
+            # Add trend indicators
+            week_data["deployment_frequency_trend"] = self._get_trend_indicator(
+                week_data["deployment_frequency_change_pct"], "higher_better"
+            )
+            week_data["lead_time_trend"] = self._get_trend_indicator(
+                week_data["lead_time_change_pct"], "lower_better"
+            )
+            week_data["change_failure_rate_trend"] = self._get_trend_indicator(
+                week_data["change_failure_rate_change_pct"], "lower_better"
+            )
+            week_data["mttr_trend"] = self._get_trend_indicator(
+                week_data["mttr_change_pct"], "lower_better"
+            )
+
+            weekly_metrics.append(week_data)
+
+        return weekly_metrics
+
+    def _generate_week_boundaries(
+        self, start_date: datetime, end_date: datetime
+    ) -> list[tuple[datetime, datetime]]:
+        """Generate Monday-Sunday week boundaries for the given date range.
+
+        WHY: Consistent week boundaries ensure that weekly metrics align with
+        other reporting functions and provide predictable time buckets for analysis.
+
+        Args:
+            start_date: Start of analysis period (timezone-aware UTC)
+            end_date: End of analysis period (timezone-aware UTC)
+
+        Returns:
+            List of (week_start, week_end) tuples with Monday-Sunday boundaries
+        """
+        weeks = []
+
+        # Find the Monday of the week containing start_date
+        days_since_monday = start_date.weekday()
+        current_week_start = start_date - timedelta(days=days_since_monday)
+        current_week_start = current_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        while current_week_start <= end_date:
+            week_end = current_week_start + timedelta(
+                days=6, hours=23, minutes=59, seconds=59, microseconds=999999
+            )
+
+            # Only include weeks that overlap with our analysis period
+            if week_end >= start_date:
+                weeks.append((current_week_start, week_end))
+
+            current_week_start += timedelta(days=7)
+
+        return weeks
+
+    def _get_trend_indicator(self, change_pct: float, direction: str) -> str:
+        """Get trend indicator based on change percentage and desired direction.
+
+        WHY: Provides intuitive trend indicators that account for whether
+        increases or decreases are desirable for each metric.
+
+        Args:
+            change_pct: Percentage change from previous period
+            direction: "higher_better" or "lower_better"
+
+        Returns:
+            Trend indicator: "improving", "declining", or "stable"
+        """
+        if abs(change_pct) < 5:  # Less than 5% change considered stable
+            return "stable"
+
+        if direction == "higher_better":
+            return "improving" if change_pct > 0 else "declining"
+        else:  # lower_better
+            return "improving" if change_pct < 0 else "declining"

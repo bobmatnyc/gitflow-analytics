@@ -1,12 +1,13 @@
 """Advanced analytics report generation with percentage and qualitative metrics."""
 import csv
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
-from collections import defaultdict
-import pandas as pd
+from typing import Any, Dict, List, Tuple
+
 import numpy as np
+import pandas as pd
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
@@ -15,11 +16,117 @@ logger = logging.getLogger(__name__)
 class AnalyticsReportGenerator:
     """Generate advanced analytics reports with percentage breakdowns and qualitative insights."""
     
-    def __init__(self, anonymize: bool = False):
+    def __init__(self, anonymize: bool = False, exclude_authors: list[str] = None, identity_resolver=None):
         """Initialize analytics report generator."""
         self.anonymize = anonymize
         self._anonymization_map = {}
         self._anonymous_counter = 0
+        self.exclude_authors = exclude_authors or []
+        self.identity_resolver = identity_resolver
+
+    def _filter_excluded_authors(self, data_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Filter out excluded authors from any data list using canonical_id.
+        
+        WHY: Bot exclusion happens in Phase 2 (reporting) instead of Phase 1 (data collection)
+        to ensure manual identity mappings work correctly. This allows the system to see 
+        consolidated bot identities via canonical_id instead of just original author_email/author_name.
+        
+        Args:
+            data_list: List of data dictionaries containing canonical_id field
+            
+        Returns:
+            Filtered list with excluded authors removed
+        """
+        if not self.exclude_authors:
+            return data_list
+            
+        logger.debug(f"DEBUG EXCLUSION: Starting filter with {len(self.exclude_authors)} excluded authors: {self.exclude_authors}")
+        logger.debug(f"DEBUG EXCLUSION: Filtering {len(data_list)} items from data list")
+        
+        excluded_lower = [author.lower() for author in self.exclude_authors]
+        logger.debug(f"DEBUG EXCLUSION: Excluded authors (lowercase): {excluded_lower}")
+        
+        filtered_data = []
+        excluded_count = 0
+        
+        # Sample first 5 items to see data structure
+        for i, item in enumerate(data_list[:5]):
+            logger.debug(f"DEBUG EXCLUSION: Sample item {i}: canonical_id='{item.get('canonical_id', '')}', "
+                        f"author_email='{item.get('author_email', '')}', author_name='{item.get('author_name', '')}', "
+                        f"author='{item.get('author', '')}', primary_name='{item.get('primary_name', '')}', "
+                        f"name='{item.get('name', '')}', developer='{item.get('developer', '')}', "
+                        f"display_name='{item.get('display_name', '')}'")  
+        
+        for item in data_list:
+            canonical_id = item.get("canonical_id", "")
+            # Also check original author fields as fallback for data without canonical_id
+            author_email = item.get("author_email", "")
+            author_name = item.get("author_name", "")
+            
+            # Check all possible author fields to ensure we catch every variation
+            author = item.get("author", "")
+            primary_name = item.get("primary_name", "")
+            name = item.get("name", "")
+            developer = item.get("developer", "")  # Common in analytics data
+            display_name = item.get("display_name", "")  # Common in some data structures
+            
+            # Check canonical_id FIRST - this is the primary exclusion check
+            should_exclude = False
+            if canonical_id and canonical_id.lower() in excluded_lower:
+                should_exclude = True
+            # CRITICAL: Also check primary_email for manual mappings (e.g. bots mapped to bot@excluded.local)
+            elif item.get("primary_email", "") and item.get("primary_email", "").lower() in excluded_lower:
+                should_exclude = True
+            # Fall back to checking other fields only if canonical_id and primary_email don't match
+            elif not should_exclude:
+                should_exclude = (
+                    (author_email and author_email.lower() in excluded_lower) or
+                    (author_name and author_name.lower() in excluded_lower) or
+                    (author and author.lower() in excluded_lower) or
+                    (primary_name and primary_name.lower() in excluded_lower) or
+                    (name and name.lower() in excluded_lower) or
+                    (developer and developer.lower() in excluded_lower) or
+                    (display_name and display_name.lower() in excluded_lower)
+                )
+            
+            if should_exclude:
+                excluded_count += 1
+                logger.debug(f"DEBUG EXCLUSION: EXCLUDING item - canonical_id='{canonical_id}', "
+                           f"primary_email='{item.get('primary_email', '')}', "
+                           f"author_email='{author_email}', author_name='{author_name}', author='{author}', "
+                           f"primary_name='{primary_name}', name='{name}', developer='{developer}', "
+                           f"display_name='{display_name}'")
+            else:
+                filtered_data.append(item)
+                
+        logger.debug(f"DEBUG EXCLUSION: Excluded {excluded_count} items, kept {len(filtered_data)} items")
+        return filtered_data
+
+    def _get_canonical_display_name(self, canonical_id: str, fallback_name: str) -> str:
+        """
+        Get the canonical display name for a developer.
+        
+        WHY: Manual identity mappings may have updated display names that aren't
+        reflected in the developer_stats data passed to report generators. This
+        method ensures we get the most current display name from the identity resolver.
+        
+        Args:
+            canonical_id: The canonical ID to get the display name for
+            fallback_name: The fallback name to use if identity resolver is not available
+            
+        Returns:
+            The canonical display name or fallback name
+        """
+        if self.identity_resolver and canonical_id:
+            try:
+                canonical_name = self.identity_resolver.get_canonical_name(canonical_id)
+                if canonical_name and canonical_name != "Unknown":
+                    return canonical_name
+            except Exception as e:
+                logger.debug(f"Error getting canonical name for {canonical_id}: {e}")
+        
+        return fallback_name
     
     def _get_files_changed_count(self, commit: Dict[str, Any]) -> int:
         """Safely extract files_changed count from commit data.
@@ -116,6 +223,10 @@ class AnalyticsReportGenerator:
                                             developer_stats: List[Dict[str, Any]],
                                             output_path: Path) -> Path:
         """Generate activity distribution report with percentage breakdowns."""
+        # Apply exclusion filtering in Phase 2
+        commits = self._filter_excluded_authors(commits)
+        developer_stats = self._filter_excluded_authors(developer_stats)
+        
         # Build lookup maps
         dev_lookup = {dev['canonical_id']: dev for dev in developer_stats}
         
@@ -159,7 +270,12 @@ class AnalyticsReportGenerator:
         
         for dev_id, projects in dev_project_activity.items():
             developer = dev_lookup.get(dev_id, {})
-            dev_name = self._anonymize_value(developer.get('primary_name', 'Unknown'), 'name')
+            dev_name = self._anonymize_value(
+                self._get_canonical_display_name(
+                    dev_id, 
+                    developer.get('primary_name', 'Unknown')
+                ), 'name'
+            )
             
             # Calculate developer totals
             dev_total_commits = sum(p['commits'] for p in projects.values())
@@ -202,6 +318,9 @@ class AnalyticsReportGenerator:
                                            ticket_analysis: Dict[str, Any],
                                            output_path: Path) -> Path:
         """Generate qualitative insights and patterns report."""
+        # Apply exclusion filtering in Phase 2
+        commits = self._filter_excluded_authors(commits)
+        developer_stats = self._filter_excluded_authors(developer_stats)
         insights = []
         
         # Analyze commit patterns
@@ -231,6 +350,10 @@ class AnalyticsReportGenerator:
                                       output_path: Path,
                                       weeks: int = 12) -> Path:
         """Generate developer focus analysis showing concentration patterns and activity across all projects."""
+        # Apply exclusion filtering in Phase 2
+        commits = self._filter_excluded_authors(commits)
+        developer_stats = self._filter_excluded_authors(developer_stats)
+        
         # Calculate week boundaries (timezone-aware to match commit timestamps)
         end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(weeks=weeks)
@@ -257,7 +380,12 @@ class AnalyticsReportGenerator:
         
         for dev in developer_stats:
             dev_id = dev['canonical_id']
-            dev_name = self._anonymize_value(dev['primary_name'], 'name')
+            dev_name = self._anonymize_value(
+                self._get_canonical_display_name(
+                    dev_id, 
+                    dev['primary_name']
+                ), 'name'
+            )
             
             # Get developer's commits
             dev_commits = [c for c in commits if c.get('canonical_id') == dev_id]
@@ -395,6 +523,10 @@ class AnalyticsReportGenerator:
                                     output_path: Path,
                                     weeks: int = 12) -> Path:
         """Generate weekly trends analysis showing changes in activity patterns."""
+        # Apply exclusion filtering in Phase 2
+        commits = self._filter_excluded_authors(commits)
+        developer_stats = self._filter_excluded_authors(developer_stats)
+        
         # Calculate week boundaries
         end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(weeks=weeks)
@@ -481,7 +613,10 @@ class AnalyticsReportGenerator:
                     top_dev_id = dev_id
             
             top_dev_name = self._anonymize_value(
-                dev_lookup.get(top_dev_id, {}).get('primary_name', 'Unknown'), 'name'
+                self._get_canonical_display_name(
+                    top_dev_id, 
+                    dev_lookup.get(top_dev_id, {}).get('primary_name', 'Unknown')
+                ), 'name'
             ) if top_dev_id else 'None'
             
             # Calculate developer trends for active developers this week
@@ -492,7 +627,10 @@ class AnalyticsReportGenerator:
                 change = dev_data['commits'] - prev_dev_data['commits']
                 if change != 0:
                     dev_name = self._anonymize_value(
-                        dev_lookup.get(dev_id, {}).get('primary_name', 'Unknown'), 'name'
+                        self._get_canonical_display_name(
+                            dev_id, 
+                            dev_lookup.get(dev_id, {}).get('primary_name', 'Unknown')
+                        ), 'name'
                     )
                     dev_activity_changes[dev_name].append(change)
                     if abs(change) >= 3:  # Significant changes only
@@ -538,7 +676,10 @@ class AnalyticsReportGenerator:
         for dev_id, weekly_commits in developer_weekly.items():
             dev_info = dev_lookup.get(dev_id, {})
             dev_name = self._anonymize_value(
-                dev_info.get('primary_name', 'Unknown'), 'name'
+                self._get_canonical_display_name(
+                    dev_id, 
+                    dev_info.get('primary_name', 'Unknown')
+                ), 'name'
             )
             
             # Calculate summary statistics

@@ -55,59 +55,58 @@ from .registry import PlatformRegistry
 # Lazy initialization - registry created on first access
 _default_registry = None
 
+
 def get_default_registry() -> PlatformRegistry:
     """Get the default platform registry with built-in adapters registered.
-    
+
     WHY: Provides a convenient way to access a pre-configured registry with
     all available adapters already registered. Uses lazy initialization to
     avoid creating registry instances at import time before credentials are
     available.
-    
+
     DESIGN DECISION: Lazy initialization prevents authentication issues in
     training pipeline where imports happen before configuration is loaded.
     The registry is created when first accessed, ensuring credentials are
     available from the orchestrator configuration.
-    
+
     Returns:
         PlatformRegistry instance with built-in adapters registered.
     """
     global _default_registry
-    
+
     if _default_registry is None:
         import logging
+
         logger = logging.getLogger(__name__)
         logger.debug("Initializing default PM platform registry (lazy initialization)")
-        
+
         _default_registry = PlatformRegistry()
-        _default_registry.register_adapter('jira', JIRAAdapter)
-        
+        _default_registry.register_adapter("jira", JIRAAdapter)
+
         logger.debug("Default registry initialized with built-in adapters")
-    
+
     return _default_registry
+
 
 __all__ = [
     # Core orchestration
-    'PMFrameworkOrchestrator',
-    'PlatformRegistry',
-    'get_default_registry',
-    
+    "PMFrameworkOrchestrator",
+    "PlatformRegistry",
+    "get_default_registry",
     # Base classes for adapter development
-    'BasePlatformAdapter',
-    'PlatformCapabilities',
-    
+    "BasePlatformAdapter",
+    "PlatformCapabilities",
     # Available adapters
-    'JIRAAdapter',
-    
+    "JIRAAdapter",
     # Unified data models
-    'UnifiedIssue',
-    'UnifiedProject',
-    'UnifiedSprint',
-    'UnifiedUser',
-    
+    "UnifiedIssue",
+    "UnifiedProject",
+    "UnifiedSprint",
+    "UnifiedUser",
     # Enums for standardized values
-    'IssueType',
-    'IssueStatus',
-    'Priority',
+    "IssueType",
+    "IssueStatus",
+    "Priority",
 ]
 
 # Version information

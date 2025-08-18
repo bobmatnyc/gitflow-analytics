@@ -7,7 +7,7 @@ from .processor import QualitativeProcessor
 
 __all__ = [
     "QualitativeProcessor",
-    "NLPEngine", 
+    "NLPEngine",
     "LLMFallback",
     "PatternCache",
 ]

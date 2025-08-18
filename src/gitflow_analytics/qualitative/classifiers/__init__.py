@@ -8,6 +8,6 @@ from .risk_analyzer import RiskAnalyzer
 __all__ = [
     "ChangeTypeClassifier",
     "DomainClassifier",
-    "IntentAnalyzer", 
+    "IntentAnalyzer",
     "RiskAnalyzer",
 ]

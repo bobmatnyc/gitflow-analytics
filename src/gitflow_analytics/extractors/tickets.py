@@ -11,82 +11,89 @@ logger = logging.getLogger(__name__)
 
 def filter_git_artifacts(message: str) -> str:
     """Filter out git artifacts from commit messages before classification.
-    
+
     WHY: Git-generated content like Co-authored-by lines, Signed-off-by lines,
     and other metadata should not influence commit classification. This function
     removes such artifacts to provide cleaner input for categorization.
-    
+
     Args:
         message: Raw commit message that may contain git artifacts
-        
+
     Returns:
         Cleaned commit message with git artifacts removed
     """
     if not message or not message.strip():
         return ""
-    
+
     # Remove Co-authored-by lines (including standalone ones)
-    message = re.sub(r'^Co-authored-by:.*$', '', message, flags=re.MULTILINE | re.IGNORECASE)
-    
+    message = re.sub(r"^Co-authored-by:.*$", "", message, flags=re.MULTILINE | re.IGNORECASE)
+
     # Remove Signed-off-by lines
-    message = re.sub(r'^Signed-off-by:.*$', '', message, flags=re.MULTILINE | re.IGNORECASE)
-    
+    message = re.sub(r"^Signed-off-by:.*$", "", message, flags=re.MULTILINE | re.IGNORECASE)
+
     # Remove Reviewed-by lines (common in some workflows)
-    message = re.sub(r'^Reviewed-by:.*$', '', message, flags=re.MULTILINE | re.IGNORECASE)
-    
+    message = re.sub(r"^Reviewed-by:.*$", "", message, flags=re.MULTILINE | re.IGNORECASE)
+
     # Remove Tested-by lines
-    message = re.sub(r'^Tested-by:.*$', '', message, flags=re.MULTILINE | re.IGNORECASE)
-    
+    message = re.sub(r"^Tested-by:.*$", "", message, flags=re.MULTILINE | re.IGNORECASE)
+
     # Remove merge artifact lines (dashes, stars, or other separator patterns)
-    message = re.sub(r'^-+$', '', message, flags=re.MULTILINE)
-    message = re.sub(r'^\*\s*$', '', message, flags=re.MULTILINE)
-    message = re.sub(r'^#+$', '', message, flags=re.MULTILINE)
-    
+    message = re.sub(r"^-+$", "", message, flags=re.MULTILINE)
+    message = re.sub(r"^\*\s*$", "", message, flags=re.MULTILINE)
+    message = re.sub(r"^#+$", "", message, flags=re.MULTILINE)
+
     # Remove GitHub Copilot co-authorship lines
-    message = re.sub(r'^Co-authored-by:.*[Cc]opilot.*$', '', message, flags=re.MULTILINE | re.IGNORECASE)
-    
+    message = re.sub(
+        r"^Co-authored-by:.*[Cc]opilot.*$", "", message, flags=re.MULTILINE | re.IGNORECASE
+    )
+
     # Remove common merge commit artifacts
-    message = re.sub(r'^\s*Merge\s+(branch|pull request).*$', '', message, flags=re.MULTILINE | re.IGNORECASE)
-    message = re.sub(r'^\s*(into|from)\s+[a-zA-Z0-9/_-]+$', '', message, flags=re.MULTILINE | re.IGNORECASE)
-    
+    message = re.sub(
+        r"^\s*Merge\s+(branch|pull request).*$", "", message, flags=re.MULTILINE | re.IGNORECASE
+    )
+    message = re.sub(
+        r"^\s*(into|from)\s+[a-zA-Z0-9/_-]+$", "", message, flags=re.MULTILINE | re.IGNORECASE
+    )
+
     # Clean up whitespace while preserving meaningful blank lines
-    lines = message.split('\n')
+    lines = message.split("\n")
     cleaned_lines = []
-    
+
     for i, line in enumerate(lines):
         stripped = line.strip()
         if stripped:  # Non-empty line
             cleaned_lines.append(stripped)
         elif i > 0 and i < len(lines) - 1:  # Preserve blank lines in middle
             # Only preserve blank line if there's content both before and after
-            if any(l.strip() for l in lines[:i]) and any(l.strip() for l in lines[i+1:]):
-                cleaned_lines.append('')
-    
-    cleaned = '\n'.join(cleaned_lines)
-    
+            if any(l.strip() for l in lines[:i]) and any(l.strip() for l in lines[i + 1 :]):
+                cleaned_lines.append("")
+
+    cleaned = "\n".join(cleaned_lines)
+
     # Handle edge cases - empty or dots-only messages
     if not cleaned:
         return ""
-    
+
     # Check if message is only dots (with any whitespace)
-    dots_only = re.sub(r'[.\s\n]+', '', cleaned) == ''
-    if dots_only and '...' in cleaned:
+    dots_only = re.sub(r"[.\s\n]+", "", cleaned) == ""
+    if dots_only and "..." in cleaned:
         return ""
-    
+
     return cleaned.strip()
 
 
 class TicketExtractor:
     """Extract ticket references from various issue tracking systems.
-    
+
     Enhanced to support detailed untracked commit analysis including:
     - Commit categorization (maintenance, bug fix, refactor, docs, etc.)
     - Configurable file change thresholds
     - Extended untracked commit metadata collection
     """
 
-    def __init__(self, allowed_platforms: Optional[list[str]] = None, 
-                 untracked_file_threshold: int = 1) -> None:
+    def __init__(
+        self, allowed_platforms: Optional[list[str]] = None, untracked_file_threshold: int = 1
+    ) -> None:
         """Initialize with patterns for different platforms.
 
         Args:
@@ -127,7 +134,7 @@ class TicketExtractor:
                 re.compile(pattern, re.IGNORECASE if platform != "jira" else 0)
                 for pattern in patterns
             ]
-        
+
         # Commit categorization patterns
         self.category_patterns = {
             "bug_fix": [
@@ -141,7 +148,7 @@ class TicketExtractor:
                 r"\b(beacon|beacons)\b.*\b(fix|fixes|issue|problem)\b",
                 r"\bmissing\s+(space|field|data|property)\b",
                 r"\b(counting|allowing|episodes)\s+(was|not|issue)\b",
-                r"^fixes\s+\b(beacon|beacons|combo|issue|problem)\b"
+                r"^fixes\s+\b(beacon|beacons|combo|issue|problem)\b",
             ],
             "feature": [
                 r"^(feat|feature):",
@@ -157,7 +164,7 @@ class TicketExtractor:
                 r"adds?\s+(data|localization|beacon)\b",
                 r"\b(episode|episodes|audio|video)\s+(feature|support|implementation)\b",
                 r"\b(beacon)\s+(implementation|for|tracking)\b",
-                r"\b(localization)\s+(data|structure)\b"
+                r"\b(localization)\s+(data|structure)\b",
             ],
             "refactor": [
                 r"\b(refactor|restructure|reorganize|cleanup|clean up)\b",
@@ -168,14 +175,14 @@ class TicketExtractor:
                 r"\b(refine|ensure|replace)\b",
                 r"improves?\s+(performance|efficiency|structure)\b",
                 r"improves?\s+(combo|box|focus|behavior)\b",
-                r"using\s+\w+\s+instead\s+of\s+\w+\b"  # "using X instead of Y" pattern
+                r"using\s+\w+\s+instead\s+of\s+\w+\b",  # "using X instead of Y" pattern
             ],
             "documentation": [
                 r"\b(doc|docs|documentation|readme|comment|comments)\b",
                 r"\b(javadoc|jsdoc|docstring|sphinx)\b",
                 r"\b(manual|guide|tutorial|how-to|howto)\b",
                 r"\b(explain|clarify|describe)\b",
-                r"\b(changelog|notes|examples)\b"
+                r"\b(changelog|notes|examples)\b",
             ],
             "deployment": [
                 r"^deploy:",
@@ -183,7 +190,7 @@ class TicketExtractor:
                 r"\b(production|prod|staging|live)\b",
                 r"\b(go\s+live|launch|ship)\b",
                 r"\b(promote|migration|migrate)\b",
-                r"\brelease\s+(v\d+\.\d+|\d+\.\d+\.\d+)?\s+(to|on)\s+(production|staging|live)\b"
+                r"\brelease\s+(v\d+\.\d+|\d+\.\d+\.\d+)?\s+(to|on)\s+(production|staging|live)\b",
             ],
             "configuration": [
                 r"\b(config|configure|configuration|setup|settings)\b",
@@ -199,7 +206,7 @@ class TicketExtractor:
                 r"changing\s+(user|role|permission)\s+(roles?|settings?)\b",
                 r"\b(schema)\b(?!.*\b(test|spec)\b)",  # Schema but not test schemas
                 r"\bsanity\s+schema\b",
-                r"changing\s+(some)?\s*(user|role)\s+(roles?|permissions?)\b"
+                r"changing\s+(some)?\s*(user|role)\s+(roles?|permissions?)\b",
             ],
             "content": [
                 r"\b(content|copy|text|wording|messaging)\b",
@@ -211,7 +218,7 @@ class TicketExtractor:
                 r"\b(spanish|translations?)\b",
                 r"\b(blast|banner|video|media)\s+(content|update)\b",
                 r"added?\s+(spanish|translation|text|copy|label)\b",
-                r"\b(label|message)\s+(change|update|fix)\b"
+                r"\b(label|message)\s+(change|update|fix)\b",
             ],
             "ui": [
                 r"\b(ui|ux|design|layout|styling|visual)\b",
@@ -221,14 +228,14 @@ class TicketExtractor:
                 r"\b(component|widget|element|button|form)\b",
                 r"\b(frontend|front-end|client-side)\b",
                 r"\b(sticky|column)\b(?!.*\b(database|table)\b)",  # UI sticky, not database
-                r"\b(focus|behavior)\b.*\b(combo|box)\b"
+                r"\b(focus|behavior)\b.*\b(combo|box)\b",
             ],
             "infrastructure": [
                 r"\b(infra|infrastructure|aws|azure|gcp|cloud)\b",
                 r"\b(docker|k8s|kubernetes|container|pod)\b",
                 r"\b(terraform|ansible|chef|puppet)\b",
                 r"\b(server|hosting|network|load\s+balancer)\b",
-                r"\b(monitoring|logging|alerting|metrics)\b"
+                r"\b(monitoring|logging|alerting|metrics)\b",
             ],
             "security": [
                 r"\b(security|vulnerability|cve|exploit)\b",
@@ -236,7 +243,7 @@ class TicketExtractor:
                 r"\b(ssl|tls|https|certificate|cert)\b",
                 r"\b(encrypt|decrypt|hash|token|oauth)\b",
                 r"\b(access\s+control|rbac|cors|xss|csrf)\b",
-                r"\b(secure|safety|protect|prevent)\b"
+                r"\b(secure|safety|protect|prevent)\b",
             ],
             "performance": [
                 r"\b(perf|performance|optimize|speed|faster)\b",
@@ -244,7 +251,7 @@ class TicketExtractor:
                 r"\b(slow|lag|delay|timeout|bottleneck)\b",
                 r"\b(efficient|efficiency|throughput|latency)\b",
                 r"\b(load\s+time|response\s+time|benchmark)\b",
-                r"\b(improve|better)\s+(load|performance|speed)\b"
+                r"\b(improve|better)\s+(load|performance|speed)\b",
             ],
             "chore": [
                 r"^chore:",
@@ -255,7 +262,7 @@ class TicketExtractor:
                 r"\b(console|debug|log|logging)\s+(removal?|clean)\b",
                 r"\b(sync|auto-sync)\b",
                 r"\b(script\s+update|merge\s+main)\b",
-                r"removes?\s+(console|debug|log)\b"
+                r"removes?\s+(console|debug|log)\b",
             ],
             "wip": [
                 r"\b(wip|work\s+in\s+progress|temp|temporary|tmp)\b",
@@ -263,14 +270,14 @@ class TicketExtractor:
                 r"\b(placeholder|todo|fixme)\b",
                 r"^wip:",
                 r"\b(experiment|experimental|poc|proof\s+of\s+concept)\b",
-                r"\b(temporary|temp)\s+(fix|solution|workaround)\b"
+                r"\b(temporary|temp)\s+(fix|solution|workaround)\b",
             ],
             "version": [
                 r"\b(version|bump|tag)\b",
                 r"\b(v\d+\.\d+|version\s+\d+|\d+\.\d+\.\d+)\b",
                 r"\b(major|minor|patch)\s+(version|release|bump)\b",
                 r"^(version|bump):",
-                r"\b(prepare\s+for\s+release|pre-release)\b"
+                r"\b(prepare\s+for\s+release|pre-release)\b",
             ],
             "maintenance": [
                 r"\b(update|upgrade|bump|maintenance|maint)\b",
@@ -282,7 +289,7 @@ class TicketExtractor:
                 r"\b(temp|temporary|hack|hacking)\b",
                 r"\b(test|testing)\s+(change|update|fix)\b",
                 r"\b(more|only)\s+(combo|beacon)\s+(hacking|fires?)\b",
-                r"adds?\s+(console|debug|log)\b"
+                r"adds?\s+(console|debug|log)\b",
             ],
             "test": [
                 r"^test:",
@@ -290,14 +297,14 @@ class TicketExtractor:
                 r"\b(junit|pytest|mocha|jest|cypress|selenium)\b",
                 r"\b(mock|stub|fixture|factory)\b",
                 r"\b(e2e|end-to-end|acceptance|smoke)\b",
-                r"\b(coverage|assert|expect|should)\b"
+                r"\b(coverage|assert|expect|should)\b",
             ],
             "style": [
                 r"^style:",
                 r"\b(format|formatting|style|lint|linting)\b",
                 r"\b(prettier|eslint|black|autopep8|rubocop)\b",
                 r"\b(whitespace|indentation|spacing|tabs)\b",
-                r"\b(code\s+style|consistent|standardize)\b"
+                r"\b(code\s+style|consistent|standardize)\b",
             ],
             "build": [
                 r"^build:",
@@ -305,7 +312,7 @@ class TicketExtractor:
                 r"\b(ci|cd|pipeline|workflow|github\s+actions)\b",
                 r"\b(docker|dockerfile|makefile|npm\s+scripts)\b",
                 r"\b(jenkins|travis|circleci|gitlab)\b",
-                r"\b(artifact|binary|executable|jar|war)\b"
+                r"\b(artifact|binary|executable|jar|war)\b",
             ],
             "integration": [
                 r"\b(integrate|integration)\s+(with|posthog|iubenda|auth0)\b",
@@ -316,10 +323,10 @@ class TicketExtractor:
                 r"adding\s+(posthog|auth|integration)\b",
                 r"\b(third-party|external)\s+(service|integration|api)\b",
                 r"\bniveles\s+de\s+acceso\s+a\s+la\s+api\b",  # Spanish: API access levels
-                r"\b(implementation|removing)\s+(iubenda|posthog|auth0)\b"
-            ]
+                r"\b(implementation|removing)\s+(iubenda|posthog|auth0)\b",
+            ],
         }
-        
+
         # Compile categorization patterns
         self.compiled_category_patterns = {}
         for category, patterns in self.category_patterns.items():
@@ -390,20 +397,22 @@ class TicketExtractor:
         # Analyze commits
         commits_analyzed = 0
         commits_with_ticket_refs = 0
-        
+
         for commit in commits:
             # Debug: check if commit is actually a dictionary
             if not isinstance(commit, dict):
                 logger.error(f"Expected commit to be dict, got {type(commit)}: {commit}")
                 continue
-                
+
             commits_analyzed += 1
             ticket_refs = commit.get("ticket_references", [])
-            
+
             # Debug logging for the first few commits
             if commits_analyzed <= 5:
-                logger.debug(f"Commit {commits_analyzed}: hash={commit.get('hash', 'N/A')[:8]}, ticket_refs={ticket_refs}")
-            
+                logger.debug(
+                    f"Commit {commits_analyzed}: hash={commit.get('hash', 'N/A')[:8]}, ticket_refs={ticket_refs}"
+                )
+
             if ticket_refs:
                 commits_with_ticket_refs += 1
                 commits_with_tickets = cast(int, results["commits_with_tickets"])
@@ -426,12 +435,14 @@ class TicketExtractor:
                 if not commit.get("is_merge") and files_changed >= self.untracked_file_threshold:
                     # Categorize the commit
                     category = self.categorize_commit(commit.get("message", ""))
-                    
+
                     # Extract enhanced commit data
                     commit_data = {
                         "hash": commit.get("hash", "")[:7],
                         "full_hash": commit.get("hash", ""),
-                        "message": commit.get("message", "").split("\n")[0][:100],  # Increased from 60 to 100
+                        "message": commit.get("message", "").split("\n")[0][
+                            :100
+                        ],  # Increased from 60 to 100
                         "full_message": commit.get("message", ""),
                         "author": commit.get("author_name", "Unknown"),
                         "author_email": commit.get("author_email", ""),
@@ -443,9 +454,9 @@ class TicketExtractor:
                         "lines_removed": commit.get("deletions", 0),
                         "lines_changed": (commit.get("insertions", 0) + commit.get("deletions", 0)),
                         "category": category,
-                        "is_merge": commit.get("is_merge", False)
+                        "is_merge": commit.get("is_merge", False),
                     }
-                    
+
                     untracked_commits.append(commit_data)
 
         # Analyze PRs
@@ -493,40 +504,113 @@ class TicketExtractor:
                 if ts.tzinfo is None:
                     ts = ts.replace(tzinfo=timezone.utc)
             return ts
-        
+
         untracked_commits.sort(key=safe_timestamp_key, reverse=True)
-        
+
         # Debug logging for ticket coverage analysis
         final_commits_with_tickets = cast(int, results["commits_with_tickets"])
-        logger.debug(f"Ticket coverage analysis complete: {commits_analyzed} commits analyzed, {commits_with_ticket_refs} had ticket_refs, {final_commits_with_tickets} counted as with tickets")
+        logger.debug(
+            f"Ticket coverage analysis complete: {commits_analyzed} commits analyzed, {commits_with_ticket_refs} had ticket_refs, {final_commits_with_tickets} counted as with tickets"
+        )
         if commits_analyzed > 0 and final_commits_with_tickets == 0:
-            logger.warning(f"Zero commits with tickets found out of {commits_analyzed} commits analyzed")
-        
+            logger.warning(
+                f"Zero commits with tickets found out of {commits_analyzed} commits analyzed"
+            )
+
         return results
+
+    def calculate_developer_ticket_coverage(
+        self, commits: list[dict[str, Any]]
+    ) -> dict[str, float]:
+        """Calculate ticket coverage percentage per developer.
+
+        WHY: Individual developer ticket coverage was hardcoded to 0.0, causing
+        reports to show contradictory information where total coverage was >0%
+        but all individual developers showed 0%. This method provides the missing
+        per-developer calculation.
+
+        DESIGN DECISION: Uses canonical_id when available (post-identity resolution)
+        or falls back to author_email for consistent developer identification.
+        The coverage calculation only considers commits that meet the untracked
+        file threshold to maintain consistency with the overall analysis.
+
+        Args:
+            commits: List of commit dictionaries with ticket_references and identity info
+
+        Returns:
+            Dictionary mapping canonical_id/author_email to coverage percentage
+        """
+        if not commits:
+            return {}
+
+        # Group commits by developer (canonical_id preferred, fallback to author_email)
+        developer_commits = {}
+        developer_with_tickets = {}
+
+        for commit in commits:
+            # Skip merge commits (consistent with main analysis)
+            if commit.get("is_merge"):
+                continue
+
+            # Only count commits that meet the file threshold (consistent with untracked analysis)
+            files_changed = self._get_files_changed_count(commit)
+            if files_changed < self.untracked_file_threshold:
+                continue
+
+            # Determine developer identifier (canonical_id preferred)
+            developer_id = commit.get("canonical_id") or commit.get("author_email", "unknown")
+
+            # Initialize counters for this developer
+            if developer_id not in developer_commits:
+                developer_commits[developer_id] = 0
+                developer_with_tickets[developer_id] = 0
+
+            # Count total commits for this developer
+            developer_commits[developer_id] += 1
+
+            # Count commits with ticket references
+            ticket_refs = commit.get("ticket_references", [])
+            if ticket_refs:
+                developer_with_tickets[developer_id] += 1
+
+        # Calculate coverage percentages
+        coverage_by_developer = {}
+        for developer_id in developer_commits:
+            total_commits = developer_commits[developer_id]
+            commits_with_tickets = developer_with_tickets[developer_id]
+
+            if total_commits > 0:
+                coverage_pct = (commits_with_tickets / total_commits) * 100
+                coverage_by_developer[developer_id] = round(coverage_pct, 1)
+            else:
+                coverage_by_developer[developer_id] = 0.0
+
+        logger.debug(f"Calculated ticket coverage for {len(coverage_by_developer)} developers")
+        return coverage_by_developer
 
     def _get_files_changed_count(self, commit: dict[str, Any]) -> int:
         """Extract the number of files changed from commit data.
-        
+
         WHY: Commit data can have files_changed as either an integer count
         or a list of file paths. This method handles both cases correctly
         and provides a consistent integer count for analysis.
-        
+
         DESIGN DECISION: Priority order is:
         1. files_changed_count (if present, use directly)
-        2. files_changed as integer (use directly)  
+        2. files_changed as integer (use directly)
         3. files_changed as list (use length)
         4. Default to 0 if none available
-        
+
         Args:
             commit: Commit data dictionary
-            
+
         Returns:
             Integer count of files changed
         """
         # First priority: explicit count field
         if "files_changed_count" in commit:
             return commit["files_changed_count"]
-        
+
         # Second priority: files_changed field
         files_changed = commit.get("files_changed")
         if files_changed is not None:
@@ -534,157 +618,151 @@ class TicketExtractor:
                 return files_changed
             elif isinstance(files_changed, list):
                 return len(files_changed)
-        
+
         # Default fallback
         return 0
 
     def categorize_commit(self, message: str) -> str:
         """Categorize a commit based on its message.
-        
+
         WHY: Commit categorization helps identify patterns in untracked work,
         enabling better insights into what types of work are not being tracked
         through tickets. This supports improved process recommendations.
-        
+
         DESIGN DECISION: Categories are checked in priority order to ensure
-        more specific patterns match before general ones. For example, 
+        more specific patterns match before general ones. For example,
         "security" patterns are checked before "feature" patterns to prevent
         "add authentication" from being classified as a feature instead of security.
-        
+
         Args:
             message: The commit message to categorize
-            
+
         Returns:
-            String category (bug_fix, feature, refactor, documentation, 
+            String category (bug_fix, feature, refactor, documentation,
             maintenance, test, style, build, or other)
         """
         if not message:
             return "other"
-        
+
         # Filter git artifacts before categorization
         cleaned_message = filter_git_artifacts(message)
         if not cleaned_message:
             return "other"
-        
+
         # Remove ticket references to focus on content analysis
         # This helps classify commits with ticket references based on their actual content
         message_without_tickets = self._remove_ticket_references(cleaned_message)
         message_lower = message_without_tickets.lower()
-        
+
         # Define priority order - conventional commits first, then specific patterns
         priority_order = [
             # Conventional commit formats (start with specific prefixes)
-            "wip",          # ^wip: prefix
-            "chore",        # ^chore: prefix  
-            "style",        # ^style: prefix
-            "bug_fix",      # ^fix: prefix
-            "feature",      # ^feat: prefix
-            "test",         # ^test: prefix
-            "build",        # ^build: prefix
-            "deployment",   # ^deploy: prefix and specific deployment terms
-            
+            "wip",  # ^wip: prefix
+            "chore",  # ^chore: prefix
+            "style",  # ^style: prefix
+            "bug_fix",  # ^fix: prefix
+            "feature",  # ^feat: prefix
+            "test",  # ^test: prefix
+            "build",  # ^build: prefix
+            "deployment",  # ^deploy: prefix and specific deployment terms
             # Specific domain patterns (no conventional prefix conflicts)
-            "version",      # Version-specific patterns
-            "security",     # Security-specific terms
+            "version",  # Version-specific patterns
+            "security",  # Security-specific terms
             "performance",  # Performance-specific terms
-            "infrastructure", # Infrastructure-specific terms
+            "infrastructure",  # Infrastructure-specific terms
             "integration",  # Third-party integration terms
-            "configuration", # Configuration-specific terms
-            "content",      # Content-specific terms
-            "ui",          # UI-specific terms
-            "documentation", # Documentation terms
-            "refactor",    # Refactoring terms
-            "maintenance", # General maintenance terms
+            "configuration",  # Configuration-specific terms
+            "content",  # Content-specific terms
+            "ui",  # UI-specific terms
+            "documentation",  # Documentation terms
+            "refactor",  # Refactoring terms
+            "maintenance",  # General maintenance terms
         ]
-        
+
         # First, check for conventional commit patterns (^prefix:) which have absolute priority
         conventional_patterns = {
             "chore": r"^chore:",
-            "style": r"^style:", 
+            "style": r"^style:",
             "bug_fix": r"^fix:",
             "feature": r"^(feat|feature):",
             "test": r"^test:",
             "build": r"^build:",
             "deployment": r"^deploy:",
             "wip": r"^wip:",
-            "version": r"^(version|bump):"
+            "version": r"^(version|bump):",
         }
-        
+
         for category, pattern in conventional_patterns.items():
             if re.match(pattern, message_lower):
                 return category
-        
+
         # Then check categories in priority order for non-conventional patterns
         for category in priority_order:
             if category in self.compiled_category_patterns:
                 for pattern in self.compiled_category_patterns[category]:
                     if pattern.search(message_lower):
                         return category
-        
+
         return "other"
-    
+
     def _remove_ticket_references(self, message: str) -> str:
         """Remove ticket references from commit message to focus on content analysis.
-        
+
         WHY: Ticket references like 'RMVP-941' or '[CNA-482]' don't indicate the type
         of work being done. We need to analyze the actual description to properly
         categorize commits with ticket references.
-        
+
         Args:
             message: The commit message possibly containing ticket references
-            
+
         Returns:
             Message with ticket references removed, focusing on the actual description
         """
         if not message:
             return ""
-            
+
         # Remove common ticket patterns at the start of messages
         patterns_to_remove = [
             # JIRA-style patterns
-            r'^[A-Z]{2,10}-\d+:?\s*',           # RMVP-941: or RMVP-941 
-            r'^\[[A-Z]{2,10}-\d+\]\s*',         # [CNA-482]
-            
+            r"^[A-Z]{2,10}-\d+:?\s*",  # RMVP-941: or RMVP-941
+            r"^\[[A-Z]{2,10}-\d+\]\s*",  # [CNA-482]
             # GitHub issue patterns
-            r'^#\d+:?\s*',                       # #123: or #123
-            r'^GH-\d+:?\s*',                     # GH-123:
-            
-            # ClickUp patterns  
-            r'^CU-[a-z0-9]+:?\s*',               # CU-abc123:
-            
+            r"^#\d+:?\s*",  # #123: or #123
+            r"^GH-\d+:?\s*",  # GH-123:
+            # ClickUp patterns
+            r"^CU-[a-z0-9]+:?\s*",  # CU-abc123:
             # Linear patterns
-            r'^[A-Z]{2,5}-\d+:?\s*',             # ENG-123:
-            r'^LIN-\d+:?\s*',                    # LIN-123:
-            
+            r"^[A-Z]{2,5}-\d+:?\s*",  # ENG-123:
+            r"^LIN-\d+:?\s*",  # LIN-123:
             # GitHub PR patterns in messages
-            r'\(#\d+\)$',                        # (#115) at end
-            r'\(#\d+\)\s*\(#\d+\)*\s*$',        # (#131) (#133) (#134) at end
-            
+            r"\(#\d+\)$",  # (#115) at end
+            r"\(#\d+\)\s*\(#\d+\)*\s*$",  # (#131) (#133) (#134) at end
             # Other ticket-like patterns
-            r'^[A-Z]{2,10}\s+\d+\s*',           # NEWS 206
+            r"^[A-Z]{2,10}\s+\d+\s*",  # NEWS 206
         ]
-        
+
         cleaned_message = message
         for pattern in patterns_to_remove:
-            cleaned_message = re.sub(pattern, '', cleaned_message, flags=re.IGNORECASE).strip()
-        
+            cleaned_message = re.sub(pattern, "", cleaned_message, flags=re.IGNORECASE).strip()
+
         # If we removed everything, return the original message
         # This handles cases where the entire message was just a ticket reference
         if not cleaned_message.strip():
             return message
-            
+
         return cleaned_message
-    
+
     def analyze_untracked_patterns(self, untracked_commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Analyze patterns in untracked commits for insights.
-        
+
         WHY: Understanding patterns in untracked work helps identify:
         - Common types of work that bypass ticket tracking
         - Developers who need process guidance
         - Categories of work that should be tracked vs. allowed to be untracked
-        
+
         Args:
             untracked_commits: List of untracked commit data
-            
+
         Returns:
             Dictionary with pattern analysis results
         """
@@ -695,9 +773,9 @@ class TicketExtractor:
                 "top_contributors": [],
                 "projects": {},
                 "avg_commit_size": 0,
-                "recommendations": []
+                "recommendations": [],
             }
-        
+
         # Category analysis
         categories = {}
         for commit in untracked_commits:
@@ -707,12 +785,14 @@ class TicketExtractor:
             categories[category]["count"] += 1
             categories[category]["lines_changed"] += commit.get("lines_changed", 0)
             if len(categories[category]["examples"]) < 3:
-                categories[category]["examples"].append({
-                    "hash": commit.get("hash", ""),
-                    "message": commit.get("message", ""),
-                    "author": commit.get("author", "")
-                })
-        
+                categories[category]["examples"].append(
+                    {
+                        "hash": commit.get("hash", ""),
+                        "message": commit.get("message", ""),
+                        "author": commit.get("author", ""),
+                    }
+                )
+
         # Contributor analysis
         contributors = {}
         for commit in untracked_commits:
@@ -721,17 +801,18 @@ class TicketExtractor:
                 contributors[author] = {"count": 0, "categories": set()}
             contributors[author]["count"] += 1
             contributors[author]["categories"].add(commit.get("category", "other"))
-        
+
         # Convert sets to lists for JSON serialization
         for author_data in contributors.values():
             author_data["categories"] = list(author_data["categories"])
-        
+
         # Top contributors
         top_contributors = sorted(
             [(author, data["count"]) for author, data in contributors.items()],
-            key=lambda x: x[1], reverse=True
+            key=lambda x: x[1],
+            reverse=True,
         )[:5]
-        
+
         # Project analysis
         projects = {}
         for commit in untracked_commits:
@@ -740,83 +821,91 @@ class TicketExtractor:
                 projects[project] = {"count": 0, "categories": set()}
             projects[project]["count"] += 1
             projects[project]["categories"].add(commit.get("category", "other"))
-        
+
         # Convert sets to lists for JSON serialization
         for project_data in projects.values():
             project_data["categories"] = list(project_data["categories"])
-        
+
         # Calculate average commit size
         total_lines = sum(commit.get("lines_changed", 0) for commit in untracked_commits)
         avg_commit_size = total_lines / len(untracked_commits) if untracked_commits else 0
-        
+
         # Generate recommendations
         recommendations = self._generate_untracked_recommendations(
             categories, contributors, projects, len(untracked_commits)
         )
-        
+
         return {
             "total_untracked": len(untracked_commits),
             "categories": categories,
             "top_contributors": top_contributors,
             "projects": projects,
             "avg_commit_size": round(avg_commit_size, 1),
-            "recommendations": recommendations
+            "recommendations": recommendations,
         }
-    
+
     def _generate_untracked_recommendations(
-        self, 
-        categories: dict[str, Any], 
+        self,
+        categories: dict[str, Any],
         contributors: dict[str, Any],
         projects: dict[str, Any],
-        total_untracked: int
+        total_untracked: int,
     ) -> list[dict[str, str]]:
         """Generate recommendations based on untracked commit patterns."""
         recommendations = []
-        
+
         # Category-based recommendations
         if categories.get("feature", {}).get("count", 0) > total_untracked * 0.2:
-            recommendations.append({
-                "type": "process",
-                "title": "Track Feature Development",
-                "description": "Many feature commits lack ticket references. Consider requiring tickets for new features.",
-                "priority": "high"
-            })
-        
+            recommendations.append(
+                {
+                    "type": "process",
+                    "title": "Track Feature Development",
+                    "description": "Many feature commits lack ticket references. Consider requiring tickets for new features.",
+                    "priority": "high",
+                }
+            )
+
         if categories.get("bug_fix", {}).get("count", 0) > total_untracked * 0.15:
-            recommendations.append({
-                "type": "process",
-                "title": "Improve Bug Tracking",
-                "description": "Bug fixes should be tracked through issue management systems.",
-                "priority": "high"
-            })
-        
+            recommendations.append(
+                {
+                    "type": "process",
+                    "title": "Improve Bug Tracking",
+                    "description": "Bug fixes should be tracked through issue management systems.",
+                    "priority": "high",
+                }
+            )
+
         # Allow certain categories to be untracked
         low_priority_categories = ["style", "documentation", "maintenance"]
         low_priority_count = sum(
             categories.get(cat, {}).get("count", 0) for cat in low_priority_categories
         )
-        
+
         if low_priority_count > total_untracked * 0.6:
-            recommendations.append({
-                "type": "positive",
-                "title": "Appropriate Untracked Work",
-                "description": "Most untracked commits are maintenance/style/docs - this is acceptable.",
-                "priority": "low"
-            })
-        
+            recommendations.append(
+                {
+                    "type": "positive",
+                    "title": "Appropriate Untracked Work",
+                    "description": "Most untracked commits are maintenance/style/docs - this is acceptable.",
+                    "priority": "low",
+                }
+            )
+
         # Contributor-based recommendations
         if len(contributors) > 1:
             max_contributor_count = max(data["count"] for data in contributors.values())
             if max_contributor_count > total_untracked * 0.5:
-                recommendations.append({
-                    "type": "team",
-                    "title": "Provide Process Training",
-                    "description": "Some developers need guidance on ticket referencing practices.",
-                    "priority": "medium"
-                })
-        
+                recommendations.append(
+                    {
+                        "type": "team",
+                        "title": "Provide Process Training",
+                        "description": "Some developers need guidance on ticket referencing practices.",
+                        "priority": "medium",
+                    }
+                )
+
         return recommendations
-    
+
     def _format_ticket_id(self, platform: str, ticket_id: str) -> str:
         """Format ticket ID for display."""
         if platform == "github":

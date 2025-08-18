@@ -183,6 +183,7 @@ GitFlow Analytics generates comprehensive reports for different audiences:
 
 ### 📈 CSV Data Files
 - **weekly_metrics.csv** - Developer productivity trends by week
+- **weekly_velocity.csv** - Lines-per-story-point velocity analysis
 - **developers.csv** - Complete team profiles and statistics  
 - **summary.csv** - Project-wide statistics and benchmarks
 - **untracked_commits.csv** - ML-categorized uncommitted work analysis
@@ -254,8 +255,8 @@ gitflow-analytics identities -c config.yaml
 # Merge developer identities
 gitflow-analytics merge-identity -c config.yaml dev1_id dev2_id
 
-# Discover JIRA story point fields
-gitflow-analytics discover-jira-fields -c config.yaml
+# Discover story point fields in your PM platform
+gitflow-analytics discover-storypoint-fields -c config.yaml
 ```
 
 ### Options
@@ -356,17 +357,23 @@ The tool generates comprehensive CSV reports and markdown summaries:
    - Ticket coverage percentages
    - Per-project breakdown
 
-2. **Summary Statistics** (`summary_YYYYMMDD.csv`)
+2. **Weekly Velocity** (`weekly_velocity_YYYYMMDD.csv`)
+   - Lines of code per story point analysis
+   - Efficiency trends and velocity patterns
+   - PR-based vs commit-based story points breakdown
+   - Team velocity benchmarking and week-over-week trends
+
+3. **Summary Statistics** (`summary_YYYYMMDD.csv`)
    - Overall project statistics
    - Platform-specific ticket counts
    - Top contributors
 
-3. **Developer Report** (`developers_YYYYMMDD.csv`)
+4. **Developer Report** (`developers_YYYYMMDD.csv`)
    - Complete developer profiles
    - Total contributions
    - Identity aliases
 
-4. **Untracked Commits Report** (`untracked_commits_YYYYMMDD.csv`)
+5. **Untracked Commits Report** (`untracked_commits_YYYYMMDD.csv`)
    - Detailed analysis of commits without ticket references
    - Commit categorization (bug_fix, feature, refactor, documentation, maintenance, test, style, build)
    - Enhanced metadata: commit hash, author, timestamp, project, message, file/line changes
@@ -626,7 +633,7 @@ jira_integration:
 
 To discover your JIRA story point fields:
 ```bash
-gitflow-analytics discover-jira-fields -c config.yaml
+gitflow-analytics discover-storypoint-fields -c config.yaml
 ```
 
 ## Caching

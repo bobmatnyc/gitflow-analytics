@@ -1,0 +1,39 @@
+# Debug configuration to test bot exclusion
+version: "1.0"
+
+# Repository definitions (using local test repositories)
+repositories:
+  - name: "test-repo"
+    path: "."  # Current directory
+    project_key: "TEST"
+    branch: "main"
+
+# Analysis settings
+analysis:
+  weeks: 4
+  
+  # Explicitly exclude known bots
+  exclude:
+    authors:
+      - "dependabot[bot]"
+      - "renovate[bot]" 
+      - "github-actions[bot]"
+      - "ewtn-version-bumper[bot]"  # Add this one
+      - "CNA Studio Bot"           # Add this one
+      - "Automated Bot"           # Add this generic one
+      
+  # Identity resolution settings
+  identity:
+    similarity_threshold: 0.85
+    auto_analysis: false  # Disable auto analysis for debugging
+
+# Output settings
+output:
+  directory: "debug_test"
+  formats:
+    - csv
+    - markdown
+
+# Cache settings
+cache:
+  directory: ".gitflow-cache"

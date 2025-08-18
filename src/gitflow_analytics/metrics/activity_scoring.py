@@ -51,7 +51,12 @@ class ActivityScorer:
         prs = metrics.get("prs_involved", 0)
         lines_added = metrics.get("lines_added", 0)
         lines_removed = metrics.get("lines_removed", 0)
-        files_changed = metrics.get("files_changed_count", metrics.get("files_changed", 0) if isinstance(metrics.get("files_changed"), int) else len(metrics.get("files_changed", [])))
+        files_changed = metrics.get(
+            "files_changed_count",
+            metrics.get("files_changed", 0)
+            if isinstance(metrics.get("files_changed"), int)
+            else len(metrics.get("files_changed", [])),
+        )
         complexity = metrics.get("complexity_delta", 0)
 
         # Calculate component scores
@@ -115,7 +120,7 @@ class ActivityScorer:
 
     def _calculate_code_impact_score(self, lines_added: int, lines_removed: int) -> float:
         """Calculate code impact score with balanced add/remove consideration and enhanced diminishing returns.
-        
+
         WHY: Massive single commits can unfairly inflate scores. This implementation
         uses stronger diminishing returns to prevent score inflation from extremely
         large commits while still rewarding meaningful contributions.
@@ -233,51 +238,51 @@ class ActivityScorer:
         self, developer_scores: dict[str, float], curve_mean: float = 50.0, curve_std: float = 15.0
     ) -> dict[str, dict[str, Any]]:
         """Normalize activity scores on a bell curve with quintile grouping.
-        
+
         Args:
             developer_scores: Dictionary mapping developer IDs to raw scores
             curve_mean: Target mean for the normalized distribution (default: 50)
             curve_std: Target standard deviation for the distribution (default: 15)
-            
+
         Returns:
             Dictionary with normalized scores and quintile groupings
         """
         if not developer_scores:
             return {}
-        
+
         # Get all scores
         scores = list(developer_scores.values())
-        
+
         # Calculate current statistics
         current_mean = sum(scores) / len(scores)
         variance = sum((x - current_mean) ** 2 for x in scores) / len(scores)
         current_std = math.sqrt(variance) if variance > 0 else 1.0
-        
+
         # Normalize to bell curve
         normalized_scores = {}
         for dev_id, raw_score in developer_scores.items():
             # Z-score normalization
             z_score = (raw_score - current_mean) / current_std if current_std > 0 else 0
-            
+
             # Transform to target distribution
             curved_score = curve_mean + (z_score * curve_std)
-            
+
             # Ensure scores stay in reasonable range (0-100)
             curved_score = max(0, min(100, curved_score))
-            
+
             normalized_scores[dev_id] = curved_score
-        
+
         # Sort developers by normalized score for quintile assignment
         sorted_devs = sorted(normalized_scores.items(), key=lambda x: x[1])
-        
+
         # Assign quintiles
         results = {}
         quintile_size = len(sorted_devs) / 5
-        
+
         for idx, (dev_id, curved_score) in enumerate(sorted_devs):
             # Determine quintile (1-5)
             quintile = min(5, int(idx / quintile_size) + 1)
-            
+
             # Determine activity level based on quintile
             if quintile == 5:
                 activity_level = "exceptional"
@@ -294,10 +299,10 @@ class ActivityScorer:
             else:  # quintile == 1
                 activity_level = "minimal"
                 level_description = "Bottom 20%"
-            
+
             # Calculate exact percentile
             percentile = ((idx + 0.5) / len(sorted_devs)) * 100
-            
+
             results[dev_id] = {
                 "raw_score": developer_scores[dev_id],
                 "curved_score": round(curved_score, 1),
@@ -305,7 +310,9 @@ class ActivityScorer:
                 "activity_level": activity_level,
                 "level_description": level_description,
                 "percentile": round(percentile, 0),
-                "z_score": round((developer_scores[dev_id] - current_mean) / current_std, 2) if current_std > 0 else 0,
+                "z_score": round((developer_scores[dev_id] - current_mean) / current_std, 2)
+                if current_std > 0
+                else 0,
             }
-        
+
         return results

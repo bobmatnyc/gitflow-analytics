@@ -2,4 +2,4 @@
 
 from .pipeline import CommitClassificationTrainer
 
-__all__ = ['CommitClassificationTrainer']
+__all__ = ["CommitClassificationTrainer"]

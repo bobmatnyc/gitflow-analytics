@@ -16,7 +16,7 @@ __all__ = [
     "QualitativeCommitData",
     "QualitativeConfig",
     "NLPConfig",
-    "LLMConfig", 
+    "LLMConfig",
     "CacheConfig",
     "ChangeTypeConfig",
     "IntentConfig",

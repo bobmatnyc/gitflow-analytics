@@ -87,6 +87,39 @@
       "batch_size": 5,
       "success": true,
       "error_message": null
+    },
+    {
+      "timestamp": "2025-08-14T14:36:36.463737",
+      "model": "test-model",
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "processing_time_ms": 1500.0,
+      "estimated_cost": 0.00025,
+      "batch_size": 5,
+      "success": true,
+      "error_message": null
+    },
+    {
+      "timestamp": "2025-08-14T23:34:31.696857",
+      "model": "test-model",
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "processing_time_ms": 1500.0,
+      "estimated_cost": 0.00025,
+      "batch_size": 5,
+      "success": true,
+      "error_message": null
+    },
+    {
+      "timestamp": "2025-08-14T23:35:10.535703",
+      "model": "test-model",
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "processing_time_ms": 1500.0,
+      "estimated_cost": 0.00025,
+      "batch_size": 5,
+      "success": true,
+      "error_message": null
     }
   ]
 }

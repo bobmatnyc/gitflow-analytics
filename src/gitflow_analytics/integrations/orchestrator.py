@@ -75,39 +75,52 @@ class IntegrationOrchestrator:
 
                 # Convert PM platform configs to expected format
                 platforms_dict = config.pm_integration.platforms
-                if hasattr(platforms_dict, '__dict__'):
+                if hasattr(platforms_dict, "__dict__"):
                     # It's an AttrDict, convert to regular dict
                     platforms_dict = dict(platforms_dict)
-                
+
                 for platform_name, platform_config in platforms_dict.items():
-                    if hasattr(platform_config, 'enabled') and platform_config.enabled:
+                    if hasattr(platform_config, "enabled") and platform_config.enabled:
                         # Convert AttrDict to regular dict
-                        platform_config_dict = dict(platform_config.config) if hasattr(platform_config.config, '__dict__') else platform_config.config
+                        platform_config_dict = (
+                            dict(platform_config.config)
+                            if hasattr(platform_config.config, "__dict__")
+                            else platform_config.config
+                        )
                         platform_settings = {
                             "enabled": True,
                             **platform_config_dict,
                         }
-                        
+
                         # Special handling for JIRA - use credentials from top-level JIRA config
                         if platform_name == "jira" and hasattr(config, "jira"):
                             platform_settings["username"] = config.jira.access_user
                             platform_settings["api_token"] = config.jira.access_token
                             # Also ensure base_url matches if not set
-                            if not platform_settings.get("base_url") or platform_settings["base_url"] == "will_be_set_at_runtime":
+                            if (
+                                not platform_settings.get("base_url")
+                                or platform_settings["base_url"] == "will_be_set_at_runtime"
+                            ):
                                 platform_settings["base_url"] = config.jira.base_url
                             # Add cache directory for ticket caching (config file directory)
                             if hasattr(config, "cache") and hasattr(config.cache, "directory"):
                                 platform_settings["cache_dir"] = config.cache.directory
                             # Debug output to check credentials
-                            print(f"   🔍 JIRA config: username={platform_settings['username']}, has_token={bool(platform_settings['api_token'])}, base_url={platform_settings['base_url']}, cache_dir={platform_settings.get('cache_dir', 'not_set')}")
-                        
+                            print(
+                                f"   🔍 JIRA config: username={platform_settings['username']}, has_token={bool(platform_settings['api_token'])}, base_url={platform_settings['base_url']}, cache_dir={platform_settings.get('cache_dir', 'not_set')}"
+                            )
+
                         pm_config["pm_platforms"][platform_name] = platform_settings
 
                 # Debug output - show final PM config
-                print(f"   🔍 Final PM config platforms: {list(pm_config.get('pm_platforms', {}).keys())}")
-                for plat_name, plat_config in pm_config.get('pm_platforms', {}).items():
-                    print(f"   🔍 {plat_name}: enabled={plat_config.get('enabled')}, has_username={bool(plat_config.get('username'))}, has_token={bool(plat_config.get('api_token'))}")
-                
+                print(
+                    f"   🔍 Final PM config platforms: {list(pm_config.get('pm_platforms', {}).keys())}"
+                )
+                for plat_name, plat_config in pm_config.get("pm_platforms", {}).items():
+                    print(
+                        f"   🔍 {plat_name}: enabled={plat_config.get('enabled')}, has_username={bool(plat_config.get('username'))}, has_token={bool(plat_config.get('api_token'))}"
+                    )
+
                 self.pm_orchestrator = PMFrameworkOrchestrator(pm_config)
                 print(
                     f"📋 PM Framework initialized with {len(self.pm_orchestrator.get_active_platforms())} platforms"
@@ -182,7 +195,9 @@ class IntegrationOrchestrator:
 
                 # Only show correlations message if there are any correlations found
                 if correlations:
-                    print(f"   ✅ PM correlations found: {len(correlations)} commits linked to issues")
+                    print(
+                        f"   ✅ PM correlations found: {len(correlations)} commits linked to issues"
+                    )
                 else:
                     print("   📋 PM data processed (no correlations found)")
 

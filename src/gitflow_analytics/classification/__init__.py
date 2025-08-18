@@ -28,9 +28,4 @@ from .feature_extractor import FeatureExtractor
 from .linguist_analyzer import LinguistAnalyzer
 from .model import CommitClassificationModel
 
-__all__ = [
-    'CommitClassifier',
-    'FeatureExtractor', 
-    'LinguistAnalyzer',
-    'CommitClassificationModel'
-]
+__all__ = ["CommitClassifier", "FeatureExtractor", "LinguistAnalyzer", "CommitClassificationModel"]

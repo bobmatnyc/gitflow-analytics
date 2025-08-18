@@ -1,8 +1,0 @@
-Temporal Classification Patterns
-
-date,total_commits,developer_count,avg_confidence,unknown_count
-2025-07-29,1,1,0.000,1
-2025-07-31,6,1,0.000,6
-2025-08-01,11,1,0.000,11
-2025-08-04,6,1,0.000,6
-2025-08-05,8,1,0.000,8
