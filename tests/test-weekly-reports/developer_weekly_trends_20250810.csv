@@ -1,3 +1,0 @@
-week_start,developer,week_number,total_commits,feature_count,feature_pct_change,bug_fix_count,bug_fix_pct_change,refactor_count,refactor_pct_change,documentation_count,documentation_pct_change,maintenance_count,maintenance_pct_change,test_count,test_pct_change,style_count,style_pct_change,build_count,build_pct_change,other_count,other_pct_change
-2025-08-05,c40ffc62-1c41-40fa-beb4-5b17d2ea05b2,0,31,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0,31,3000.0
-2025-07-29,c40ffc62-1c41-40fa-beb4-5b17d2ea05b2,1,1,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0,0,0.0,1,0.0
