@@ -1,6 +1,102 @@
-# Advanced Configuration Guide
+# GitFlow Analytics Configuration Guide
 
-This guide covers advanced configuration features in GitFlow Analytics, including configuration profiles, extending base configurations, and modular configuration management.
+This comprehensive guide covers all configuration features in GitFlow Analytics, from basic setup to advanced features like configuration profiles, extending base configurations, and modular configuration management.
+
+## 🚀 Quick Start
+
+1. **Copy the example files:**
+   ```bash
+   cp config-sample.yaml my-config.yaml
+   cp .env.example .env
+   ```
+
+2. **Edit `.env` with your credentials:**
+   ```bash
+   GITHUB_TOKEN=your_github_personal_access_token
+   GITHUB_OWNER=your_github_username_or_org
+   ```
+
+3. **Run the analysis:**
+   ```bash
+   gitflow-analytics -c my-config.yaml
+   ```
+
+## 📋 Basic Configuration
+
+### GitHub Authentication
+
+The `github` section supports both direct tokens and environment variables, plus organization-based repository discovery:
+
+```yaml
+github:
+  token: "${GITHUB_TOKEN}"     # From environment variable
+  owner: "${GITHUB_OWNER}"     # Default owner for repository-based config
+  organization: "myorg"        # For organization-based discovery
+  # token: "ghp_direct_token_here"  # Or direct token (not recommended)
+```
+
+#### Organization-based Configuration
+
+When `organization` is specified, GitFlow Analytics automatically discovers all non-archived repositories:
+
+```yaml
+version: "1.0"
+
+github:
+  token: "${GITHUB_TOKEN}"
+  organization: "myorg"  # Automatically discovers repositories
+
+analysis:
+  weeks: 4
+
+reports:
+  output_directory: "./reports"
+```
+
+#### Repository-based Configuration
+
+For specific repositories, use the `repositories` list:
+
+```yaml
+version: "1.0"
+
+github:
+  token: "${GITHUB_TOKEN}"
+  repositories:
+    - owner: "myorg"
+      name: "repo1"
+      local_path: "./repos/repo1"
+    - owner: "myorg"
+      name: "repo2"
+      local_path: "./repos/repo2"
+
+analysis:
+  weeks: 4
+
+reports:
+  output_directory: "./reports"
+```
+
+### Analysis Configuration
+
+```yaml
+analysis:
+  weeks: 4                    # Number of weeks to analyze
+  branch_strategy: "smart"    # Branch analysis strategy: main_only, smart, all
+  max_branches: 50           # Maximum branches per repository (smart strategy)
+  include_merges: true       # Include merge commits in analysis
+  exclude_bots: true         # Exclude bot commits
+```
+
+### Reports Configuration
+
+```yaml
+reports:
+  output_directory: "./reports"
+  formats: ["csv", "markdown", "json"]  # Output formats
+  include_charts: true                  # Generate charts (requires matplotlib)
+  anonymize: false                      # Anonymize developer names
+```
 
 ## Configuration Profiles
 

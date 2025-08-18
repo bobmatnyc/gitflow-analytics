@@ -11,12 +11,12 @@ High-level architecture and component relationships:
 - External dependencies and integrations
 - Scalability and performance characteristics
 
-### [Data Flow](data-flow.md)  
-Detailed processing pipeline and data transformations:
-- Git repository analysis workflow
-- Commit processing and categorization pipeline
-- Identity resolution and developer consolidation
-- Report generation and output formatting
+### [Branch Analysis Optimization](branch-analysis-optimization.md)
+Smart branch analysis strategies for large repositories:
+- Main-only, smart, and all-branches strategies
+- Performance optimization for large organizations
+- Branch prioritization and filtering algorithms
+- Configuration options and trade-offs
 
 ### [ML Pipeline](ml-pipeline.md)
 Machine learning architecture and processing:
@@ -27,12 +27,12 @@ Machine learning architecture and processing:
 
 ## 🚀 System Components
 
-### [Caching Strategy](caching-strategy.md)
-Performance optimization through intelligent caching:
-- SQLite-based cache architecture
-- Cache invalidation and update strategies
-- Multi-level caching for different data types
-- Performance characteristics and limitations
+### [Incremental Processing](caching-strategy.md)
+Performance optimization through intelligent incremental processing:
+- Schema versioning and change detection
+- Component-level incremental updates
+- Avoiding reprocessing unchanged data
+- Performance characteristics and benefits
 
 ### [Integrations](integrations.md)
 External system integration patterns:

@@ -32,13 +32,18 @@ pip install -e ".[dev]"
 ## 📋 System Requirements
 
 ### Python Version
-- **Python 3.8 or higher** (3.9+ recommended)
+- **Python 3.9 or higher** (3.11+ recommended)
 - Check your version: `python --version`
 
 ### Operating System Support
 - ✅ **Linux** (Ubuntu 18.04+, CentOS 7+)
-- ✅ **macOS** (10.14+)  
+- ✅ **macOS** (10.14+)
 - ✅ **Windows** (10+, PowerShell or WSL recommended)
+
+### Hardware Requirements
+- **4GB+ RAM** (8GB+ recommended for large repositories)
+- **2GB+ disk space** for dependencies and cache
+- **Git 2.20+** for repository analysis
 
 ### Dependencies
 GitFlow Analytics will automatically install required dependencies:

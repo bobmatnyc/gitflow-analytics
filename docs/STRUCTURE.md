@@ -23,11 +23,10 @@ docs/
 │   └── first-analysis.md      # Your first repository analysis
 ├── guides/                     # Task-oriented user guides
 │   ├── README.md              # Guides index
-│   ├── configuration.md       # Complete configuration reference
+│   ├── chatgpt-setup.md       # LLM integration setup
 │   ├── ml-categorization.md   # ML features setup and usage
-│   ├── organization-setup.md  # Multi-repository organization analysis
-│   ├── report-customization.md # Customizing outputs and reports
-│   └── troubleshooting.md     # Common issues and solutions
+│   ├── troubleshooting.md     # Common issues and solutions
+│   └── LLM_CLASSIFICATION_GUIDE.md # LLM classification guide
 ├── examples/                   # Real-world usage examples
 │   ├── README.md              # Examples index
 │   ├── basic-analysis.md      # Simple single-repo analysis
@@ -39,30 +38,28 @@ docs/
 │   ├── cli-commands.md        # Complete CLI reference
 │   ├── configuration-schema.md # YAML configuration specification
 │   ├── json-export-schema.md  # JSON export format documentation
-│   ├── cache-system.md        # Caching implementation details
-│   └── api-reference.md       # Python API documentation
+│   └── cache-system.md        # Caching implementation details
 ├── developer/                  # Developer and contributor documentation
 │   ├── README.md              # Developer documentation index
 │   ├── contributing.md        # Contribution guidelines
 │   ├── development-setup.md   # Local development environment
-│   ├── testing-guide.md       # Testing procedures and standards
-│   ├── release-process.md     # Release and deployment procedures
-│   └── coding-standards.md    # Code quality and style guidelines
+│   └── training-guide.md      # ML training guide
 ├── architecture/              # System design and architecture
 │   ├── README.md              # Architecture documentation index
-│   ├── system-overview.md     # High-level system architecture
-│   ├── data-flow.md          # Data processing pipeline
+│   ├── branch-analysis-optimization.md # Branch analysis strategies
 │   ├── ml-pipeline.md        # Machine learning architecture
-│   ├── caching-strategy.md   # Caching design decisions
-│   └── integrations.md       # External system integrations
+│   ├── caching-strategy.md   # Incremental processing
+│   └── llm-classifier-refactoring.md # LLM classifier architecture
 ├── design/                    # Design documents and decisions
 │   ├── README.md              # Design documents index
-│   ├── commit-classification-design.md  # ML classification system design
-│   ├── identity-resolution.md # Developer identity consolidation
-│   ├── pm-framework.md       # Project management integrations
-│   └── reporting-engine.md   # Report generation architecture
+│   ├── commit-classification-design.md # ML classification system design
+│   ├── git_pm_correlation_design.md # Git-PM correlation design
+│   ├── platform-agnostic-pm-framework.md # PM framework design
+│   └── qualitative_data_extraction.md # Qualitative analysis design
+├── configuration/             # Configuration documentation
+│   └── configuration.md      # Comprehensive configuration guide
 └── deployment/                # Operations and deployment
-    ├── README.md              # Deployment documentation index
+    └── README.md              # Deployment documentation index
     ├── installation.md        # Production deployment guide
     ├── monitoring.md          # Performance monitoring and metrics
     ├── security.md           # Security considerations and best practices
