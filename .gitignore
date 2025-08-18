@@ -96,6 +96,31 @@ test_config_minimal.yaml
 test-*.yaml
 !tests/**/*.yaml
 
+# Test report directories and files
+tests/test-reports/
+tests/test-weekly-reports/
+tests/test_reports/
+tests/**/test-reports/
+tests/**/test_reports/
+**/test-reports/
+**/test_reports/
+**/test-weekly-reports/
+
+# Generated report files with timestamps
+*_20[0-9][0-9][0-9][0-9][0-9][0-9]*.csv
+*_20[0-9][0-9][0-9][0-9][0-9][0-9]*.json
+*_20[0-9][0-9][0-9][0-9][0-9][0-9]*.md
+classification_*_20[0-9][0-9][0-9][0-9][0-9][0-9]_*.csv
+classification_*_20[0-9][0-9][0-9][0-9][0-9][0-9]_*.json
+classification_*_20[0-9][0-9][0-9][0-9][0-9][0-9]_*.md
+narrative_report_*.md
+database_qualitative_report_*.md
+activity_distribution_*.csv
+developer_focus_*.csv
+qualitative_insights_*.csv
+validation_results_*.json
+mock_*_validation_*.json
+
 # Test database files 
 tests/**/*.db
 tests/**/gitflow_cache.db
@@ -121,6 +146,25 @@ YAML_*.md
 !CLAUDE.md
 !CONTRIBUTING.md
 !SECURITY.md
+
+# Debug and temporary files
+debug_*.py
+fix_*.py
+test_*.sh
+run_*.sh
+validate_*.sh
+analyze_*.py
+mock_*.py
+*_validation.py
+*_VALIDATION_*.md
+*_VALIDATION_*.sh
+*_SUMMARY.md
+*_READINESS_*.md
+*_REFACTORING_*.md
+*_RELEASE_NOTES.md
+*_DEMO.md
+debug_test/
+coverage.json
 
 # EWTN-specific files
 EWTN_*.md
