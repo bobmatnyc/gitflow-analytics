@@ -545,6 +545,9 @@ class GitAnalysisCache:
                 "bulk_operations_time_saved_seconds": bulk_time_saved,
                 "total_time_saved_seconds": total_time_saved,
                 "total_time_saved_minutes": total_time_saved / 60,
+                # Backward compatibility aliases for CLI
+                "time_saved_seconds": total_time_saved,
+                "time_saved_minutes": total_time_saved / 60,
                 "estimated_api_calls_avoided": total_issues + total_prs,
                 # Storage metrics
                 "database_size_mb": db_size_mb,
