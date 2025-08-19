@@ -166,11 +166,17 @@ mock_*.py
 debug_test/
 coverage.json
 
-# EWTN-specific files
+# EWTN-specific files (but allow testing documentation)
 EWTN_*.md
+!tests/EWTN-testing.md
+!tests/EWTN-*.md
 ewtn_*.py
 ewtn_*
 *ewtn*
+!tests/*ewtn*
+
+# EWTN test directory
+EWTN-test/
 
 # Tickets directory (if not intentional)
 tickets/
