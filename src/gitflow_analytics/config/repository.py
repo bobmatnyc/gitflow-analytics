@@ -1,7 +1,7 @@
 """Repository discovery and management for GitFlow Analytics."""
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from github import Github
 
@@ -21,7 +21,7 @@ class RepositoryManager:
 
     def discover_organization_repositories(
         self, clone_base_path: Optional[Path] = None
-    ) -> List[RepositoryConfig]:
+    ) -> list[RepositoryConfig]:
         """Discover repositories from GitHub organization.
 
         Args:

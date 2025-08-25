@@ -9,7 +9,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
@@ -44,9 +44,9 @@ class GitDataFetcher:
     def __init__(
         self,
         cache: GitAnalysisCache,
-        branch_mapping_rules: Optional[Dict[str, List[str]]] = None,
-        allowed_ticket_platforms: Optional[List[str]] = None,
-        exclude_paths: Optional[List[str]] = None,
+        branch_mapping_rules: Optional[dict[str, list[str]]] = None,
+        allowed_ticket_platforms: Optional[list[str]] = None,
+        exclude_paths: Optional[list[str]] = None,
     ):
         """Initialize the data fetcher.
 
@@ -73,12 +73,12 @@ class GitDataFetcher:
         repo_path: Path,
         project_key: str,
         weeks_back: int = 4,
-        branch_patterns: Optional[List[str]] = None,
+        branch_patterns: Optional[list[str]] = None,
         jira_integration: Optional[JIRAIntegration] = None,
         progress_callback: Optional[callable] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Fetch all data for a repository and organize by day.
 
         This method collects:
@@ -198,9 +198,9 @@ class GitDataFetcher:
         project_key: str,
         start_date: datetime,
         end_date: datetime,
-        branch_patterns: Optional[List[str]],
+        branch_patterns: Optional[list[str]],
         progress_callback: Optional[callable] = None,
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> dict[str, list[dict[str, Any]]]:
         """Fetch all commits organized by day with full metadata.
 
         Returns:
@@ -277,7 +277,7 @@ class GitDataFetcher:
 
     def _extract_commit_data(
         self, commit: Any, branch_name: str, project_key: str, repo_path: Path
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[dict[str, Any]]:
         """Extract comprehensive data from a Git commit.
 
         Returns:
@@ -372,8 +372,8 @@ class GitDataFetcher:
         return False
 
     def _get_branches_to_analyze(
-        self, repo: Any, branch_patterns: Optional[List[str]]
-    ) -> List[str]:
+        self, repo: Any, branch_patterns: Optional[list[str]]
+    ) -> list[str]:
         """Get list of branches to analyze based on patterns.
 
         WHY: Robust branch detection that handles missing remotes, missing default branches,
@@ -539,8 +539,8 @@ class GitDataFetcher:
             return False
 
     def _extract_all_ticket_references(
-        self, daily_commits: Dict[str, List[Dict[str, Any]]]
-    ) -> Set[str]:
+        self, daily_commits: dict[str, list[dict[str, Any]]]
+    ) -> set[str]:
         """Extract all unique ticket IDs from commits."""
         ticket_ids = set()
 
@@ -554,7 +554,7 @@ class GitDataFetcher:
 
     def _fetch_detailed_tickets(
         self,
-        ticket_ids: Set[str],
+        ticket_ids: set[str],
         jira_integration: JIRAIntegration,
         project_key: str,
         progress_callback: Optional[callable] = None,
@@ -627,7 +627,7 @@ class GitDataFetcher:
             session.close()
 
     def _create_detailed_ticket_record(
-        self, issue_data: Dict[str, Any], project_key: str, platform: str
+        self, issue_data: dict[str, Any], project_key: str, platform: str
     ) -> DetailedTicketData:
         """Create a detailed ticket record from JIRA issue data."""
         # Extract classification hints from issue type and labels
@@ -673,7 +673,7 @@ class GitDataFetcher:
         )
 
     def _build_commit_ticket_correlations(
-        self, daily_commits: Dict[str, List[Dict[str, Any]]], repo_path: Path
+        self, daily_commits: dict[str, list[dict[str, Any]]], repo_path: Path
     ) -> int:
         """Build and store commit-ticket correlations."""
         session = self.database.get_session()
@@ -733,7 +733,7 @@ class GitDataFetcher:
         return correlations_created
 
     def _store_daily_batches(
-        self, daily_commits: Dict[str, List[Dict[str, Any]]], repo_path: Path, project_key: str
+        self, daily_commits: dict[str, list[dict[str, Any]]], repo_path: Path, project_key: str
     ) -> int:
         """Store daily commit batches for efficient retrieval using bulk operations.
 
@@ -950,10 +950,10 @@ class GitDataFetcher:
     def _verify_commit_storage(
         self,
         session: Session,
-        daily_commits: Dict[str, List[Dict[str, Any]]],
+        daily_commits: dict[str, list[dict[str, Any]]],
         repo_path: Path,
         expected_new_commits: int,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """Verify that commits were actually stored in the database.
 
         WHY: Ensures that session.commit() actually persisted the data and didn't
@@ -1030,7 +1030,7 @@ class GitDataFetcher:
             # Re-raise as RuntimeError to indicate this is a critical failure
             raise RuntimeError(f"Storage verification failed: {e}") from e
 
-    def get_fetch_status(self, project_key: str, repo_path: Path) -> Dict[str, Any]:
+    def get_fetch_status(self, project_key: str, repo_path: Path) -> dict[str, Any]:
         """Get status of data fetching for a project."""
         session = self.database.get_session()
 

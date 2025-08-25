@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 import yaml
 from dotenv import load_dotenv
@@ -295,7 +295,7 @@ class ConfigLoader:
             print(f"📋 Loaded environment variables from {env_file}")
 
     @classmethod
-    def _load_yaml(cls, config_path: Path) -> Dict[str, Any]:
+    def _load_yaml(cls, config_path: Path) -> dict[str, Any]:
         """Load and parse YAML file.
 
         Args:
@@ -356,7 +356,7 @@ class ConfigLoader:
         return data
 
     @classmethod
-    def _load_base_config(cls, base_path: str, config_path: Path) -> Dict[str, Any]:
+    def _load_base_config(cls, base_path: str, config_path: Path) -> dict[str, Any]:
         """Load base configuration to extend from.
 
         Args:
@@ -375,7 +375,7 @@ class ConfigLoader:
         return cls._load_yaml(base_path)
 
     @classmethod
-    def _validate_version(cls, data: Dict[str, Any]) -> None:
+    def _validate_version(cls, data: dict[str, Any]) -> None:
         """Validate configuration version.
 
         Args:
@@ -391,7 +391,7 @@ class ConfigLoader:
             )
 
     @classmethod
-    def _process_github_config(cls, github_data: Dict[str, Any], config_path: Path) -> GitHubConfig:
+    def _process_github_config(cls, github_data: dict[str, Any], config_path: Path) -> GitHubConfig:
         """Process GitHub configuration section.
 
         Args:
@@ -417,8 +417,8 @@ class ConfigLoader:
 
     @classmethod
     def _process_repositories(
-        cls, data: Dict[str, Any], github_config: GitHubConfig, config_path: Path
-    ) -> List[RepositoryConfig]:
+        cls, data: dict[str, Any], github_config: GitHubConfig, config_path: Path
+    ) -> list[RepositoryConfig]:
         """Process repositories configuration.
 
         Args:
@@ -462,7 +462,7 @@ class ConfigLoader:
 
     @classmethod
     def _process_analysis_config(
-        cls, analysis_data: Dict[str, Any], config_path: Path
+        cls, analysis_data: dict[str, Any], config_path: Path
     ) -> AnalysisConfig:
         """Process analysis configuration section.
 
@@ -562,7 +562,7 @@ class ConfigLoader:
         )
 
     @classmethod
-    def _process_output_config(cls, output_data: Dict[str, Any], config_path: Path) -> OutputConfig:
+    def _process_output_config(cls, output_data: dict[str, Any], config_path: Path) -> OutputConfig:
         """Process output configuration section.
 
         Args:
@@ -598,7 +598,7 @@ class ConfigLoader:
         )
 
     @classmethod
-    def _process_cache_config(cls, cache_data: Dict[str, Any], config_path: Path) -> CacheConfig:
+    def _process_cache_config(cls, cache_data: dict[str, Any], config_path: Path) -> CacheConfig:
         """Process cache configuration section.
 
         Args:
@@ -622,7 +622,7 @@ class ConfigLoader:
 
     @classmethod
     def _process_jira_config(
-        cls, jira_data: Dict[str, Any], config_path: Path
+        cls, jira_data: dict[str, Any], config_path: Path
     ) -> Optional[JIRAConfig]:
         """Process JIRA configuration section.
 
@@ -654,7 +654,7 @@ class ConfigLoader:
 
     @classmethod
     def _process_jira_integration_config(
-        cls, jira_integration_data: Dict[str, Any]
+        cls, jira_integration_data: dict[str, Any]
     ) -> Optional[JIRAIntegrationConfig]:
         """Process JIRA integration configuration section.
 
@@ -677,7 +677,7 @@ class ConfigLoader:
         )
 
     @classmethod
-    def _process_qualitative_config(cls, qualitative_data: Dict[str, Any]) -> Optional[Any]:
+    def _process_qualitative_config(cls, qualitative_data: dict[str, Any]) -> Optional[Any]:
         """Process qualitative analysis configuration section.
 
         Args:
@@ -785,7 +785,7 @@ class ConfigLoader:
             return None
 
     @classmethod
-    def _process_pm_config(cls, pm_data: Dict[str, Any]) -> Optional[Any]:
+    def _process_pm_config(cls, pm_data: dict[str, Any]) -> Optional[Any]:
         """Process PM configuration section.
 
         Args:
@@ -821,7 +821,7 @@ class ConfigLoader:
 
     @classmethod
     def _process_pm_integration_config(
-        cls, pm_integration_data: Dict[str, Any]
+        cls, pm_integration_data: dict[str, Any]
     ) -> Optional[PMIntegrationConfig]:
         """Process PM integration configuration section.
 
@@ -888,7 +888,7 @@ class ConfigLoader:
         return value
 
     @staticmethod
-    def validate_config(config: Config) -> List[str]:
+    def validate_config(config: Config) -> list[str]:
         """Validate configuration and return list of warnings.
 
         This method is kept for backward compatibility.

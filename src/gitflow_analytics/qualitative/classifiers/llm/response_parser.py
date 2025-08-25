@@ -16,7 +16,7 @@ DESIGN DECISIONS:
 
 import logging
 import re
-from typing import Optional, Tuple
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class ResponseParser:
 
     def parse_response(
         self, response: str, valid_categories: dict[str, str]
-    ) -> Tuple[str, float, str]:
+    ) -> tuple[str, float, str]:
         """Parse LLM response to extract classification components.
 
         Args:
@@ -78,7 +78,7 @@ class ResponseParser:
 
     def _process_match(
         self, match: re.Match, pattern_name: str, valid_categories: dict[str, str]
-    ) -> Tuple[str, float, str]:
+    ) -> tuple[str, float, str]:
         """Process a regex match to extract classification components.
 
         Args:
@@ -238,7 +238,7 @@ class ResponseParser:
 
         return reasoning
 
-    def _fallback_result(self, error_context: str) -> Tuple[str, float, str]:
+    def _fallback_result(self, error_context: str) -> tuple[str, float, str]:
         """Generate a fallback result when parsing fails.
 
         Args:
@@ -251,7 +251,7 @@ class ResponseParser:
 
     def validate_classification(
         self, category: str, confidence: float, valid_categories: dict[str, str]
-    ) -> Tuple[str, float, bool]:
+    ) -> tuple[str, float, bool]:
         """Validate and potentially correct a classification.
 
         Args:

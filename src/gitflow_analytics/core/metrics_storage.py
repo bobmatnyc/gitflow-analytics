@@ -10,7 +10,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
@@ -52,8 +52,8 @@ class DailyMetricsStorage:
     def store_daily_metrics(
         self,
         analysis_date: date,
-        commits: List[Dict[str, Any]],
-        developer_identities: Dict[str, Dict[str, str]],
+        commits: list[dict[str, Any]],
+        developer_identities: dict[str, dict[str, str]],
     ) -> int:
         """Store daily metrics from commit analysis.
 
@@ -166,9 +166,9 @@ class DailyMetricsStorage:
         self,
         start_date: date,
         end_date: date,
-        developer_ids: Optional[List[str]] = None,
-        project_keys: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
+        developer_ids: Optional[list[str]] = None,
+        project_keys: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
         """Retrieve daily metrics for a date range.
 
         Args:
@@ -197,7 +197,7 @@ class DailyMetricsStorage:
 
     def calculate_weekly_trends(
         self, start_date: date, end_date: date
-    ) -> Dict[Tuple[str, str], Dict[str, float]]:
+    ) -> dict[tuple[str, str], dict[str, float]]:
         """Calculate week-over-week trends for developer-project combinations.
 
         WHY: Pre-calculated trends improve report performance and provide
@@ -234,7 +234,7 @@ class DailyMetricsStorage:
 
     def get_classification_summary(
         self, start_date: date, end_date: date
-    ) -> Dict[str, Dict[str, int]]:
+    ) -> dict[str, dict[str, int]]:
         """Get classification summary across all developers and projects.
 
         Args:
@@ -296,10 +296,10 @@ class DailyMetricsStorage:
 
     def _aggregate_commits_by_day(
         self,
-        commits: List[Dict[str, Any]],
-        developer_identities: Dict[str, Dict[str, str]],
+        commits: list[dict[str, Any]],
+        developer_identities: dict[str, dict[str, str]],
         target_date: date,
-    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    ) -> dict[tuple[str, str], dict[str, Any]]:
         """Aggregate commits into daily metrics by developer-project.
 
         WHY: Groups commits by developer and project for the target date,
@@ -411,13 +411,13 @@ class DailyMetricsStorage:
 
         return dict(daily_groups)
 
-    def _update_metrics_record(self, record: DailyMetrics, metrics: Dict[str, Any]) -> None:
+    def _update_metrics_record(self, record: DailyMetrics, metrics: dict[str, Any]) -> None:
         """Update an existing DailyMetrics record with new data."""
         for key, value in metrics.items():
             if hasattr(record, key) and key not in ["developer_name", "developer_email"]:
                 setattr(record, key, value)
 
-    def _metrics_record_to_dict(self, record: DailyMetrics) -> Dict[str, Any]:
+    def _metrics_record_to_dict(self, record: DailyMetrics) -> dict[str, Any]:
         """Convert DailyMetrics SQLAlchemy record to dictionary."""
         return {
             "date": record.date,
@@ -450,7 +450,7 @@ class DailyMetricsStorage:
 
     def _calculate_developer_project_trend(
         self, session: Session, dev_id: str, project_key: str, start_date: date, end_date: date
-    ) -> Optional[Dict[str, float]]:
+    ) -> Optional[dict[str, float]]:
         """Calculate trend data for a specific developer-project combination."""
         # Get weekly aggregates
         weekly_data = self._get_weekly_aggregates(
@@ -490,7 +490,7 @@ class DailyMetricsStorage:
 
     def _get_weekly_aggregates(
         self, session: Session, dev_id: str, project_key: str, start_date: date, end_date: date
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get weekly aggregated data for trend calculation."""
         # Query daily metrics and group by week
         results = (

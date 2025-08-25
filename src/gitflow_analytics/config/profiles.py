@@ -1,6 +1,6 @@
 """Configuration profiles and presets for GitFlow Analytics."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
 class ConfigurationProfile:
@@ -10,7 +10,7 @@ class ConfigurationProfile:
     description: str = ""
 
     @classmethod
-    def get_settings(cls) -> Dict[str, Any]:
+    def get_settings(cls) -> dict[str, Any]:
         """Get the profile settings.
 
         Returns:
@@ -30,7 +30,7 @@ class PerformanceProfile(ConfigurationProfile):
     description = "Optimized for speed with large repositories"
 
     @classmethod
-    def get_settings(cls) -> Dict[str, Any]:
+    def get_settings(cls) -> dict[str, Any]:
         """Get performance-optimized settings."""
         return {
             "analysis": {
@@ -71,7 +71,7 @@ class QualityProfile(ConfigurationProfile):
     description = "Maximum analysis depth and accuracy"
 
     @classmethod
-    def get_settings(cls) -> Dict[str, Any]:
+    def get_settings(cls) -> dict[str, Any]:
         """Get quality-focused settings."""
         return {
             "analysis": {
@@ -115,7 +115,7 @@ class BalancedProfile(ConfigurationProfile):
     description = "Balanced performance and quality (default)"
 
     @classmethod
-    def get_settings(cls) -> Dict[str, Any]:
+    def get_settings(cls) -> dict[str, Any]:
         """Get balanced settings."""
         return {
             "analysis": {
@@ -157,7 +157,7 @@ class MinimalProfile(ConfigurationProfile):
     description = "Essential features only"
 
     @classmethod
-    def get_settings(cls) -> Dict[str, Any]:
+    def get_settings(cls) -> dict[str, Any]:
         """Get minimal settings."""
         return {
             "analysis": {
@@ -188,7 +188,7 @@ class ProfileManager:
     """Manages configuration profiles."""
 
     # Registry of available profiles
-    _profiles: Dict[str, type[ConfigurationProfile]] = {
+    _profiles: dict[str, type[ConfigurationProfile]] = {
         "performance": PerformanceProfile,
         "quality": QualityProfile,
         "balanced": BalancedProfile,
@@ -208,7 +208,7 @@ class ProfileManager:
         return cls._profiles.get(name.lower())
 
     @classmethod
-    def list_profiles(cls) -> Dict[str, str]:
+    def list_profiles(cls) -> dict[str, str]:
         """List available profiles.
 
         Returns:
@@ -217,7 +217,7 @@ class ProfileManager:
         return {name: profile.description for name, profile in cls._profiles.items()}
 
     @classmethod
-    def apply_profile(cls, config_data: Dict[str, Any], profile_name: str) -> Dict[str, Any]:
+    def apply_profile(cls, config_data: dict[str, Any], profile_name: str) -> dict[str, Any]:
         """Apply a profile to configuration data.
 
         Args:
@@ -243,7 +243,7 @@ class ProfileManager:
         return cls._deep_merge(profile_settings, config_data)
 
     @staticmethod
-    def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
         """Deep merge two dictionaries.
 
         Args:

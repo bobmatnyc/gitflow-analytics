@@ -1,7 +1,6 @@
 """Configuration validation logic for GitFlow Analytics."""
 
 from pathlib import Path
-from typing import List
 
 from .schema import Config
 
@@ -10,7 +9,7 @@ class ConfigValidator:
     """Validates configuration settings."""
 
     @staticmethod
-    def validate_config(config: Config) -> List[str]:
+    def validate_config(config: Config) -> list[str]:
         """Validate configuration and return list of warnings.
 
         Args:

@@ -30,7 +30,7 @@ import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from tqdm import tqdm
 
@@ -80,10 +80,10 @@ class ProgressService:
         """Initialize the progress service."""
         self._enabled = True
         self._lock = threading.Lock()
-        self._active_contexts: List[ProgressContext] = []
+        self._active_contexts: list[ProgressContext] = []
         self._position_counter = 0
         self._capture_events = False
-        self._captured_events: List[ProgressEvent] = []
+        self._captured_events: list[ProgressEvent] = []
 
         # Check environment for testing mode
         self._check_testing_environment()
@@ -307,7 +307,7 @@ class ProgressService:
             self._capture_events = True
             self._captured_events = []
 
-    def stop_event_capture(self) -> List[ProgressEvent]:
+    def stop_event_capture(self) -> list[ProgressEvent]:
         """Stop capturing events and return captured events.
 
         Returns:
@@ -319,7 +319,7 @@ class ProgressService:
             self._captured_events = []
             return events
 
-    def get_captured_events(self) -> List[ProgressEvent]:
+    def get_captured_events(self) -> list[ProgressEvent]:
         """Get currently captured events without stopping capture.
 
         Returns:
