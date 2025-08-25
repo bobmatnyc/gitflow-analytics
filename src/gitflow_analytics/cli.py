@@ -652,7 +652,7 @@ def analyze(
             click.echo("     export GITFLOW_CACHE_DIR=/tmp/gitflow-cache")
             click.echo("   • Run in readonly mode (analysis will work, no persistence):")
             click.echo(f"     chmod -w {cache_dir}")
-            raise click.ClickException(f"Identity resolver initialization failed: {e}")
+            raise click.ClickException(f"Identity resolver initialization failed: {e}") from e
 
         # Prepare ML categorization config for analyzer
         ml_config = None

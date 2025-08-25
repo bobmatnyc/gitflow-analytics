@@ -67,44 +67,49 @@ def test_story_point_extractor():
     config = ConfigLoader.load(config_path)
     patterns = getattr(config.analysis, 'story_point_patterns', None)
     if patterns:
-            extractor = StoryPointExtractor(patterns=patterns)
-            print(f"✅ Story point extractor created with {len(patterns)} patterns")
+        extractor = StoryPointExtractor(patterns=patterns)
+        print(f"✅ Story point extractor created with {len(patterns)} patterns")
+    else:
+        extractor = StoryPointExtractor()  # Use default patterns
+        print("⚠️  Using default patterns (config patterns not found)")
+    
+    # Test extraction with various text formats
+    test_texts = [
+        "RMVP-1030: Fix login issue [3 points]",
+        "Story Points: 5 - Update user interface", 
+        "SP: 8 - Refactor authentication module",
+        "Points: 2 - Bug fix for payment processing",
+        "RMVP-1075 (5 story points) - New feature implementation",
+        "estimate: 13 - Large refactoring task",
+        "SP5 - Quick bug fix",
+        "#8sp - Performance optimization"
+    ]
+    
+    successful_extractions = 0
+    for text in test_texts:
+        points = extractor.extract_from_text(text)
+        if points:
+            print(f"✅ '{text[:50]}...' → {points} points")
+            successful_extractions += 1
         else:
-            extractor = StoryPointExtractor()  # Use default patterns
-            print("⚠️  Using default patterns (config patterns not found)")
-        
-        # Test extraction with various text formats
-        test_texts = [
-            "RMVP-1030: Fix login issue [3 points]",
-            "Story Points: 5 - Update user interface", 
-            "SP: 8 - Refactor authentication module",
-            "Points: 2 - Bug fix for payment processing",
-            "RMVP-1075 (5 story points) - New feature implementation",
-            "estimate: 13 - Large refactoring task",
-            "SP5 - Quick bug fix",
-            "#8sp - Performance optimization"
-        ]
-        
-        successful_extractions = 0
-        for text in test_texts:
-            points = extractor.extract_from_text(text)
-            if points:
-                print(f"✅ '{text[:50]}...' → {points} points")
-                successful_extractions += 1
-            else:
-                print(f"❌ '{text[:50]}...' → No points extracted")
-        
-        print(f"\n📊 Extraction success rate: {successful_extractions}/{len(test_texts)}")
-        return successful_extractions > 0
-        
-    except Exception as e:
-        print(f"❌ Error testing story point extractor: {e}")
-        return False
+            print(f"❌ '{text[:50]}...' → No points extracted")
+    
+    print(f"\n📊 Extraction success rate: {successful_extractions}/{len(test_texts)}")
+    return successful_extractions > 0
 
 
 def test_jira_integration_setup():
     """Test JIRA integration setup (without making actual API calls)."""
     print("\n🔍 Testing JIRA Integration Setup...")
+    
+    config_path = "configs/ewtn-test-config.yaml"
+    
+    # Skip test if config file doesn't exist
+    if not Path(config_path).exists():
+        import pytest
+        pytest.skip(f"Config file {config_path} not found")
+    
+    config = ConfigLoader.load(config_path)
     
     try:
         if not config.jira or not config.jira_integration:
