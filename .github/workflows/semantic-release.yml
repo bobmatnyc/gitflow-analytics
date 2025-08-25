@@ -42,7 +42,7 @@ jobs:
     - name: Run semantic release (dry-run first)
       run: |
         echo "Running semantic release dry-run to check what would happen..."
-        semantic-release version --dry-run
+        semantic-release version --noop
         
     - name: Run semantic release
       env:
