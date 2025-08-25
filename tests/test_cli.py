@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 from click.testing import CliRunner
 
-from gitflow_analytics.cli import analyze, cli
+from gitflow_analytics.cli import analyze_subcommand as analyze, cli
 
 
 class TestCLI:
@@ -122,7 +122,7 @@ class TestCLI:
 class TestVersionDisplay:
     """Test version display functionality."""
 
-    @patch("gitflow_analytics._version.__version__", "1.2.3")
+    @patch("gitflow_analytics.cli.__version__", "1.2.3")
     def test_version_display(self):
         """Test that version is displayed correctly."""
         runner = CliRunner()

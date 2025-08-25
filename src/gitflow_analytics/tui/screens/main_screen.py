@@ -209,7 +209,7 @@ class MainScreen(Screen):
                         cache_size += os.path.getsize(os.path.join(root, f))
                 cache_size_mb = cache_size / 1024 / 1024
                 lines.append(f"• Cache size: {cache_size_mb:.1f} MB")
-            except:
+            except Exception:
                 pass
 
             return "\n".join(lines)
@@ -314,7 +314,7 @@ class MainScreen(Screen):
             try:
                 stats = self._get_quick_stats()
                 self.query_one("#quick-stats", Static).update(stats)
-            except:
+            except Exception:
                 pass
 
         # Refresh to rebuild buttons with new state

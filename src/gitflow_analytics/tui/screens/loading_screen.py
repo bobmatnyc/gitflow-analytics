@@ -183,7 +183,7 @@ class LoadingScreen(Screen):
         try:
             loading_message = self.query_one("#loading-message", Label)
             loading_message.update(message)
-        except:
+        except Exception:
             pass  # Ignore if element not found
 
     def update_progress(self, percentage: float, status: str) -> None:
@@ -196,7 +196,7 @@ class LoadingScreen(Screen):
         try:
             progress_widget = self.query_one("#startup-progress", AnalysisProgressWidget)
             progress_widget.update_progress(percentage, status)
-        except:
+        except Exception:
             pass  # Ignore if element not found
 
     def update_status(self, status: str) -> None:
@@ -208,7 +208,7 @@ class LoadingScreen(Screen):
         try:
             status_message = self.query_one("#status-message", Static)
             status_message.update(status)
-        except:
+        except Exception:
             pass  # Ignore if element not found
 
     def action_cancel(self) -> None:

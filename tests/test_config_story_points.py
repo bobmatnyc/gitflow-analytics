@@ -28,53 +28,45 @@ except ImportError as e:
 
 def test_config_loading():
     """Test loading the updated EWTN config."""
-    print("🔍 Testing Config Loading...")
-    
     config_path = "configs/ewtn-test-config.yaml"
     
-    try:
-        config = ConfigLoader.load(config_path)
-        print("✅ Config loaded successfully")
-        
-        # Check JIRA configuration
-        if config.jira:
-            print(f"✅ JIRA config found: {config.jira.base_url}")
-            print(f"   - User: {config.jira.access_user}")
-            print(f"   - Token: {'***' if config.jira.access_token else 'Not set'}")
-        else:
-            print("❌ JIRA config not found")
-            
-        # Check JIRA integration
-        if config.jira_integration:
-            print(f"✅ JIRA integration enabled: {config.jira_integration.enabled}")
-            print(f"   - Fetch story points: {config.jira_integration.fetch_story_points}")
-            print(f"   - Story point fields: {config.jira_integration.story_point_fields}")
-        else:
-            print("❌ JIRA integration config not found")
-            
-        # Check story point patterns
-        if hasattr(config.analysis, 'story_point_patterns') and config.analysis.story_point_patterns:
-            print(f"✅ Story point patterns found: {len(config.analysis.story_point_patterns)} patterns")
-            for i, pattern in enumerate(config.analysis.story_point_patterns, 1):
-                print(f"   {i}. {pattern}")
-        else:
-            print("❌ Story point patterns not found in analysis config")
-            
-        return config
-        
-    except Exception as e:
-        print(f"❌ Error loading config: {e}")
-        return None
-
-
-def test_story_point_extractor(config):
-    """Test the story point extractor with the configured patterns."""
-    print("\n🔍 Testing Story Point Extractor...")
+    # Skip test if config file doesn't exist
+    if not Path(config_path).exists():
+        import pytest
+        pytest.skip(f"Config file {config_path} not found")
     
-    try:
-        # Create extractor with patterns from config
-        patterns = getattr(config.analysis, 'story_point_patterns', None)
-        if patterns:
+    config = ConfigLoader.load(config_path)
+    assert config is not None, "Config should load successfully"
+    
+    # Check JIRA configuration
+    assert config.jira is not None, "JIRA config should be present"
+    assert config.jira.base_url == "https://ewtn.atlassian.net"
+    assert config.jira.access_user is not None
+    assert config.jira.access_token is not None
+    
+    # Check JIRA integration
+    assert config.jira_integration is not None, "JIRA integration config should be present"
+    assert config.jira_integration.enabled is True
+    assert config.jira_integration.fetch_story_points is True
+    assert len(config.jira_integration.story_point_fields) > 0
+    
+    # Check story point patterns
+    assert hasattr(config.analysis, 'story_point_patterns')
+    assert len(config.analysis.story_point_patterns) > 0
+
+
+def test_story_point_extractor():
+    """Test the story point extractor with the configured patterns."""
+    config_path = "configs/ewtn-test-config.yaml"
+    
+    # Skip test if config file doesn't exist
+    if not Path(config_path).exists():
+        import pytest
+        pytest.skip(f"Config file {config_path} not found")
+    
+    config = ConfigLoader.load(config_path)
+    patterns = getattr(config.analysis, 'story_point_patterns', None)
+    if patterns:
             extractor = StoryPointExtractor(patterns=patterns)
             print(f"✅ Story point extractor created with {len(patterns)} patterns")
         else:
@@ -110,7 +102,7 @@ def test_story_point_extractor(config):
         return False
 
 
-def test_jira_integration_setup(config):
+def test_jira_integration_setup():
     """Test JIRA integration setup (without making actual API calls)."""
     print("\n🔍 Testing JIRA Integration Setup...")
     

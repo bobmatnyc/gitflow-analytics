@@ -852,7 +852,7 @@ class GitAnalysisCache:
         try:
             branches = repo.git.branch("--contains", commit.hexsha).split("\n")
             commit_data["branch"] = branches[0].strip("* ") if branches else "unknown"
-        except:
+        except Exception:
             commit_data["branch"] = "unknown"
 
         return commit_data

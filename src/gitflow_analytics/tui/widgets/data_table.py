@@ -154,7 +154,7 @@ class EnhancedDataTable(DataTable):
         if isinstance(value, str):
             try:
                 value = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            except:
+            except Exception:
                 return str(value)
         return value.strftime("%Y-%m-%d %H:%M")
 

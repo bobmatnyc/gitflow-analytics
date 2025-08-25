@@ -61,6 +61,7 @@ class TestGitAnalyzer:
         mock_repo.iter_commits.return_value = iter([mock_commit])
         mock_repo.remote_refs = [mock_refs]
         mock_repo.refs = [mock_refs]
+        mock_repo.branches = []  # Add branches attribute for the analyzer
 
         repo_path = temp_dir / "test_repo"
         repo_path.mkdir()
@@ -111,6 +112,7 @@ class TestGitAnalyzer:
         mock_repo.iter_commits.return_value = iter([recent_commit])  # Only recent commits returned by git
         mock_repo.remote_refs = []
         mock_repo.refs = []
+        mock_repo.branches = []  # Add branches attribute for the analyzer
 
         repo_path = temp_dir / "test_repo"
         repo_path.mkdir()

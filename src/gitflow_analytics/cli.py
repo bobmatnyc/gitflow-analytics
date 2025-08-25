@@ -957,7 +957,7 @@ def analyze(
                                 error_message=str(e),
                                 config_hash=config_hash,
                             )
-                        except:
+                        except Exception:
                             pass  # Don't fail if we can't mark as failed
                         continue
 
@@ -2260,7 +2260,7 @@ def analyze(
                     handle_timezone_error(
                         e, "developer activity summary report", all_commits, logger
                     )
-                except:
+                except Exception:
                     pass  # Let the original error handling below take over
                 click.echo(f"   ❌ Error generating weekly metrics report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
@@ -2399,7 +2399,7 @@ def analyze(
             logger.error(f"Error in activity distribution report generation: {e}")
             try:
                 handle_timezone_error(e, "activity distribution report", all_commits, logger)
-            except:
+            except Exception:
                 pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error generating activity distribution report: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
@@ -2425,7 +2425,7 @@ def analyze(
             logger.error(f"Error in developer focus report generation: {e}")
             try:
                 handle_timezone_error(e, "developer focus report", all_commits, logger)
-            except:
+            except Exception:
                 pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error generating developer focus report: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
@@ -2553,7 +2553,7 @@ def analyze(
             logger.error(f"Error in DORA metrics calculation: {e}")
             try:
                 handle_timezone_error(e, "DORA metrics calculation", all_commits, logger)
-            except:
+            except Exception:
                 pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error calculating DORA metrics: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
@@ -2577,7 +2577,7 @@ def analyze(
             logger.error(f"Error in PR metrics aggregation: {e}")
             try:
                 handle_timezone_error(e, "PR metrics aggregation", all_commits, logger)
-            except:
+            except Exception:
                 pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error aggregating PR metrics: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
@@ -2605,7 +2605,7 @@ def analyze(
                 logger.error(f"Error in weekly velocity report generation: {e}")
                 try:
                     handle_timezone_error(e, "weekly velocity report", all_commits, logger)
-                except:
+                except Exception:
                     pass  # Let the original error handling below take over
                 click.echo(f"   ❌ Error generating weekly velocity report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
@@ -2633,7 +2633,7 @@ def analyze(
                 logger.error(f"Error in weekly DORA metrics report generation: {e}")
                 try:
                     handle_timezone_error(e, "weekly DORA metrics report", all_commits, logger)
-                except:
+                except Exception:
                     pass  # Let the original error handling below take over
                 click.echo(f"   ❌ Error generating weekly DORA metrics report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
@@ -2767,7 +2767,7 @@ def analyze(
                 logger.error(f"Error in narrative report generation: {e}")
                 try:
                     handle_timezone_error(e, "narrative report generation", all_commits, logger)
-                except:
+                except Exception:
                     pass  # Let the original error handling below take over
                 click.echo(f"   ❌ Error generating narrative report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
@@ -2937,7 +2937,7 @@ def analyze(
                     handle_timezone_error(
                         e, "comprehensive JSON export generation", all_commits, logger
                     )
-                except:
+                except Exception:
                     pass  # Let the original error handling below take over
                 click.echo(f"   ❌ Error generating comprehensive JSON export: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
@@ -3042,7 +3042,7 @@ def analyze(
             logger.error(f"Error in final summary/display: {e}")
             try:
                 handle_timezone_error(e, "final summary/display", all_commits, logger)
-            except:
+            except Exception:
                 pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error in final summary/display: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")

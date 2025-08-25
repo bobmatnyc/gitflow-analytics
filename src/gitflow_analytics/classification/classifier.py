@@ -443,7 +443,7 @@ class CommitClassifier:
                 timestamp_str = row.get("timestamp", "")
                 try:
                     timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-                except:
+                except (ValueError, AttributeError):
                     timestamp = datetime.now()
 
                 # Create commit data structure

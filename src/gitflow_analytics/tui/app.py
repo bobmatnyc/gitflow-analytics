@@ -412,7 +412,7 @@ class GitFlowAnalyticsApp(App):
         # Transition to main screen by popping loading screen and pushing main screen
         try:
             self.pop_screen()  # Remove loading screen
-        except:
+        except Exception:
             pass  # Ignore if no screen to pop
 
         main_screen = MainScreen(self.config, self.config_path, id="main-screen")
@@ -438,7 +438,7 @@ class GitFlowAnalyticsApp(App):
         # Transition to main screen without configuration
         try:
             self.pop_screen()  # Remove loading screen
-        except:
+        except Exception:
             pass  # Ignore if no screen to pop
 
         main_screen = MainScreen(None, None, id="main-screen")
@@ -508,7 +508,7 @@ class GitFlowAnalyticsApp(App):
                     for f in files:
                         cache_size += os.path.getsize(os.path.join(root, f))
                 cache_size_mb = cache_size / 1024 / 1024
-            except:
+            except Exception:
                 cache_size_mb = 0
 
             message_text = f"""Cache Statistics:
@@ -624,7 +624,7 @@ For more information: https://github.com/bobmatnyc/gitflow-analytics"""
             if analysis_screen:
                 # TODO: Show confirmation dialog
                 pass
-        except:
+        except Exception:
             pass
 
         self.exit()
@@ -635,7 +635,7 @@ For more information: https://github.com/bobmatnyc/gitflow-analytics"""
         try:
             main_screen = self.query_one("#main-screen", MainScreen)
             main_screen.action_help()
-        except:
+        except Exception:
             # Fallback to direct help
             self.on_main_screen_help_requested(MainScreen.HelpRequested())
 
@@ -683,7 +683,7 @@ For more information: https://github.com/bobmatnyc/gitflow-analytics"""
         try:
             main_screen = self.query_one("#main-screen", MainScreen)
             main_screen.update_config(config, config_path)
-        except:
+        except Exception:
             pass
 
     async def run_analysis_async(
