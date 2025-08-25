@@ -786,12 +786,16 @@ class NarrativeReportGenerator:
         
         # Generate ALL weeks in the analysis period (not just weeks with commits)
         # This ensures complete week coverage from start to end
+        # FIX: Only include complete weeks (Monday-Sunday) within the analysis period
         analysis_weeks = []
         current_week_start = self._get_week_start(analysis_start)
-        end_week_start = self._get_week_start(analysis_end)
         
-        while current_week_start <= end_week_start:
-            analysis_weeks.append(current_week_start)
+        # Only include weeks where the entire week (including Sunday) is within the analysis period
+        while current_week_start <= analysis_end:
+            week_end = current_week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+            # Only include this week if it ends before or on the analysis end date
+            if week_end <= analysis_end:
+                analysis_weeks.append(current_week_start)
             current_week_start += timedelta(weeks=1)
         
         # Group commits by week
