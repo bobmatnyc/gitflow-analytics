@@ -645,7 +645,9 @@ def analyze(
                 click.style("❌ Error: ", fg="red", bold=True)
                 + f"Failed to initialize identity resolver: {e}"
             )
-            click.echo(click.style("💡 Fix: ", fg="blue", bold=True) + "Try one of these solutions:")
+            click.echo(
+                click.style("💡 Fix: ", fg="blue", bold=True) + "Try one of these solutions:"
+            )
             click.echo(f"   • Check directory permissions: {cache_dir}")
             click.echo(f"   • Check available disk space: {cache_dir}")
             click.echo("   • Run with different cache directory:")
@@ -943,12 +945,14 @@ def analyze(
 
                     except Exception as e:
                         if display:
-                            display.print_status(f"   ❌ Error fetching {project_key}: {e}", "error")
+                            display.print_status(
+                                f"   ❌ Error fetching {project_key}: {e}", "error"
+                            )
                         else:
                             click.echo(f"   ❌ Error fetching {project_key}: {e}")
 
                         # Mark repository analysis as failed
-                        try:
+                        with contextlib.suppress(Exception):
                             cache.mark_repository_analysis_failed(
                                 repo_path=str(repo_path),
                                 repo_name=repo_config.name,
@@ -957,8 +961,6 @@ def analyze(
                                 error_message=str(e),
                                 config_hash=config_hash,
                             )
-                        except Exception:
-                            pass  # Don't fail if we can't mark as failed
                         continue
 
                 if display:
@@ -2256,12 +2258,10 @@ def analyze(
                     click.echo(f"   ✅ Developer activity summary: {activity_summary_report}")
             except Exception as e:
                 logger.error(f"Error in developer activity summary report generation: {e}")
-                try:
+                with contextlib.suppress(Exception):
                     handle_timezone_error(
                         e, "developer activity summary report", all_commits, logger
                     )
-                except Exception:
-                    pass  # Let the original error handling below take over
                 click.echo(f"   ❌ Error generating weekly metrics report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
@@ -2397,10 +2397,8 @@ def analyze(
                     click.echo(f"   ✅ Activity distribution: {activity_report}")
         except Exception as e:
             logger.error(f"Error in activity distribution report generation: {e}")
-            try:
+            with contextlib.suppress(Exception):
                 handle_timezone_error(e, "activity distribution report", all_commits, logger)
-            except Exception:
-                pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error generating activity distribution report: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
@@ -2423,10 +2421,8 @@ def analyze(
                     click.echo(f"   ✅ Developer focus: {focus_report}")
         except Exception as e:
             logger.error(f"Error in developer focus report generation: {e}")
-            try:
+            with contextlib.suppress(Exception):
                 handle_timezone_error(e, "developer focus report", all_commits, logger)
-            except Exception:
-                pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error generating developer focus report: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
@@ -2551,10 +2547,8 @@ def analyze(
             logger.debug("DORA metrics calculation completed successfully")
         except Exception as e:
             logger.error(f"Error in DORA metrics calculation: {e}")
-            try:
+            with contextlib.suppress(Exception):
                 handle_timezone_error(e, "DORA metrics calculation", all_commits, logger)
-            except Exception:
-                pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error calculating DORA metrics: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
@@ -2575,10 +2569,8 @@ def analyze(
             logger.debug("PR metrics aggregation completed successfully")
         except Exception as e:
             logger.error(f"Error in PR metrics aggregation: {e}")
-            try:
+            with contextlib.suppress(Exception):
                 handle_timezone_error(e, "PR metrics aggregation", all_commits, logger)
-            except Exception:
-                pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error aggregating PR metrics: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
@@ -2603,10 +2595,8 @@ def analyze(
                     click.echo(f"   ✅ Weekly velocity: {weekly_velocity_report}")
             except Exception as e:
                 logger.error(f"Error in weekly velocity report generation: {e}")
-                try:
+                with contextlib.suppress(Exception):
                     handle_timezone_error(e, "weekly velocity report", all_commits, logger)
-                except Exception:
-                    pass  # Let the original error handling below take over
                 click.echo(f"   ❌ Error generating weekly velocity report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
@@ -2631,10 +2621,8 @@ def analyze(
                     click.echo(f"   ✅ Weekly DORA metrics: {weekly_dora_report}")
             except Exception as e:
                 logger.error(f"Error in weekly DORA metrics report generation: {e}")
-                try:
+                with contextlib.suppress(Exception):
                     handle_timezone_error(e, "weekly DORA metrics report", all_commits, logger)
-                except Exception:
-                    pass  # Let the original error handling below take over
                 click.echo(f"   ❌ Error generating weekly DORA metrics report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
@@ -2765,10 +2753,8 @@ def analyze(
                     click.echo(f"   ✅ Narrative report: {narrative_report}")
             except Exception as e:
                 logger.error(f"Error in narrative report generation: {e}")
-                try:
+                with contextlib.suppress(Exception):
                     handle_timezone_error(e, "narrative report generation", all_commits, logger)
-                except Exception:
-                    pass  # Let the original error handling below take over
                 click.echo(f"   ❌ Error generating narrative report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
@@ -2933,12 +2919,10 @@ def analyze(
                 #         click.echo(f"   ⚠️ Warning: HTML report generation failed: {e}")
             except Exception as e:
                 logger.error(f"Error in comprehensive JSON export generation: {e}")
-                try:
+                with contextlib.suppress(Exception):
                     handle_timezone_error(
                         e, "comprehensive JSON export generation", all_commits, logger
                     )
-                except Exception:
-                    pass  # Let the original error handling below take over
                 click.echo(f"   ❌ Error generating comprehensive JSON export: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
@@ -3040,10 +3024,8 @@ def analyze(
                 logger.debug("Cache statistics display completed")
         except Exception as e:
             logger.error(f"Error in final summary/display: {e}")
-            try:
+            with contextlib.suppress(Exception):
                 handle_timezone_error(e, "final summary/display", all_commits, logger)
-            except Exception:
-                pass  # Let the original error handling below take over
             click.echo(f"   ❌ Error in final summary/display: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
@@ -3313,6 +3295,20 @@ def fetch(
                     click.echo(f"   ❌ Failed to discover repositories: {e}")
                 return
 
+        # Calculate analysis period with week-aligned boundaries
+        current_time = datetime.now(timezone.utc)
+
+        # Calculate dates to use last N complete weeks (not including current week)
+        # Get the start of current week, then go back 1 week to get last complete week
+        current_week_start = get_week_start(current_time)
+        last_complete_week_start = current_week_start - timedelta(weeks=1)
+
+        # Start date is N weeks back from the last complete week
+        start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
+
+        # End date is the end of the last complete week (last Sunday)
+        end_date = get_week_end(last_complete_week_start + timedelta(days=6))
+
         # Progress tracking
         total_repos = len(repositories_to_fetch)
         processed_repos = 0
@@ -3321,8 +3317,15 @@ def fetch(
 
         if display:
             display.print_status(f"Starting data fetch for {total_repos} repositories...", "info")
+            display.print_status(
+                f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
+                "info",
+            )
         else:
             click.echo(f"🔄 Starting data fetch for {total_repos} repositories...")
+            click.echo(
+                f"📅 Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+            )
 
         # Process each repository
         for repo_config in repositories_to_fetch:
@@ -3560,9 +3563,6 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
 
         # Start date is N weeks back from the last complete week
         start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
-
-        # End date is the end of the last complete week (last Sunday)
-        end_date = get_week_end(last_complete_week_start + timedelta(days=6))
 
         # Prepare ML categorization config for analyzer
         ml_config = None
