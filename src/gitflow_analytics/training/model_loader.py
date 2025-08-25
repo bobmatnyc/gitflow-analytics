@@ -123,7 +123,7 @@ class TrainingModelLoader:
             return model, model_info
 
         except Exception as e:
-            raise ValueError(f"Failed to load model from {model_path}: {e}")
+            raise ValueError(f"Failed to load model from {model_path}: {e}") from e
 
     def _get_model_by_id(self, model_id: str) -> Optional[dict[str, Any]]:
         """Get model metadata by ID.
