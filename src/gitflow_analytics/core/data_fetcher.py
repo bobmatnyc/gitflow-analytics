@@ -6,11 +6,14 @@ without performing any LLM-based classification.
 """
 
 import logging
+import os
+import subprocess
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+import git
 from sqlalchemy.orm import Session
 
 from ..extractors.story_points import StoryPointExtractor
@@ -511,18 +514,71 @@ class GitDataFetcher:
         """
         try:
             if repo.remotes:
-                origin = repo.remotes.origin
                 logger.info("Fetching latest changes from remote")
-                origin.fetch()
+                
+                # Use subprocess for git fetch to prevent password prompts
+                env = os.environ.copy()
+                env['GIT_TERMINAL_PROMPT'] = '0'
+                env['GIT_ASKPASS'] = ''
+                env['GCM_INTERACTIVE'] = 'never'
+                
+                # Run git fetch with timeout
+                try:
+                    result = subprocess.run(
+                        ['git', 'fetch', '--all', '--config', 'credential.helper='],
+                        cwd=repo.working_dir,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=30  # 30 second timeout
+                    )
+                    
+                    if result.returncode != 0:
+                        error_str = result.stderr.lower()
+                        if any(x in error_str for x in ['authentication', 'permission denied', '401', '403']):
+                            logger.error(
+                                "GitHub authentication failed. Please check your token is valid and has appropriate permissions. "
+                                "You can verify with: gh auth status"
+                            )
+                            # Skip fetch but continue with local analysis
+                            return False
+                        logger.warning(f"Git fetch failed: {result.stderr}")
+                        return False
+                        
+                except subprocess.TimeoutExpired:
+                    logger.error("Git fetch timed out (likely authentication failure). Continuing with local repository state.")
+                    return False
 
                 # Only try to pull if not in detached HEAD state
                 if not repo.head.is_detached:
                     current_branch = repo.active_branch
                     tracking = current_branch.tracking_branch()
                     if tracking:
-                        # Pull latest changes
-                        origin.pull()
-                        logger.debug(f"Pulled latest changes for {current_branch.name}")
+                        # Pull latest changes using subprocess
+                        try:
+                            result = subprocess.run(
+                                ['git', 'pull', '--config', 'credential.helper='],
+                                cwd=repo.working_dir,
+                                env=env,
+                                capture_output=True,
+                                text=True,
+                                timeout=30
+                            )
+                            
+                            if result.returncode != 0:
+                                error_str = result.stderr.lower()
+                                if any(x in error_str for x in ['authentication', 'permission denied', '401', '403']):
+                                    logger.error(
+                                        "GitHub authentication failed during pull. Continuing with local repository state."
+                                    )
+                                    return False
+                                logger.warning(f"Git pull failed: {result.stderr}")
+                                return False
+                            logger.debug(f"Pulled latest changes for {current_branch.name}")
+                            
+                        except subprocess.TimeoutExpired:
+                            logger.error("Git pull timed out. Continuing with local repository state.")
+                            return False
                     else:
                         logger.debug(
                             f"Branch {current_branch.name} has no tracking branch, skipping pull"

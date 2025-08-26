@@ -2,6 +2,7 @@
 
 import logging
 import time
+from datetime import datetime
 from typing import Any
 
 from ..classifiers.change_type import ChangeTypeClassifier
@@ -230,7 +231,7 @@ class NLPEngine:
             message=message,
             author_name=commit.get("author_name", ""),
             author_email=commit.get("author_email", ""),
-            timestamp=commit.get("timestamp", time.time()),
+            timestamp=commit.get("timestamp", datetime.now()),
             files_changed=files_changed,
             insertions=commit.get("insertions", 0),
             deletions=commit.get("deletions", 0),

@@ -3,6 +3,8 @@
 import builtins
 import contextlib
 import logging
+import os
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -1498,22 +1500,22 @@ def analyze(
         # Note: In batch mode, these are already populated from database
 
         if not skip_repository_analysis:
-            for repo_config in repositories_to_analyze:
+            for idx, repo_config in enumerate(repositories_to_analyze, 1):
                 if display:
                     display.update_progress_task(
-                        "repos", description=f"Analyzing {repo_config.name}..."
+                        "repos", description=f"Analyzing {repo_config.name}... ({idx}/{len(repositories_to_analyze)})"
                     )
                 else:
-                    click.echo(f"\n📁 Analyzing {repo_config.name}...")
+                    click.echo(f"\n📁 Analyzing {repo_config.name}... ({idx}/{len(repositories_to_analyze)})")
 
                 # Check if repo exists, clone if needed
                 if not repo_config.path.exists():
                     # Try to clone if we have a github_repo configured
                     if repo_config.github_repo and cfg.github.organization:
                         if display:
-                            display.print_status("Cloning repository from GitHub...", "info")
+                            display.print_status(f"Cloning {repo_config.github_repo} from GitHub...", "info")
                         else:
-                            click.echo("   📥 Cloning repository from GitHub...")
+                            click.echo(f"   📥 Cloning {repo_config.github_repo} from GitHub...")
                         try:
                             # Ensure parent directory exists
                             repo_config.path.parent.mkdir(parents=True, exist_ok=True)
@@ -1526,17 +1528,54 @@ def analyze(
 
                             # Try to clone with specified branch, fall back to default if it fails
                             try:
+                                # Use subprocess for better control over git command
+                                env = os.environ.copy()
+                                env['GIT_TERMINAL_PROMPT'] = '0'
+                                env['GIT_ASKPASS'] = ''
+                                env['GCM_INTERACTIVE'] = 'never'
+                                
+                                # Build git clone command
+                                cmd = ['git', 'clone', '--config', 'credential.helper=']
                                 if repo_config.branch:
-                                    git.Repo.clone_from(
-                                        clone_url, repo_config.path, branch=repo_config.branch
+                                    cmd.extend(['-b', repo_config.branch])
+                                cmd.extend([clone_url, str(repo_config.path)])
+                                
+                                # Run with timeout to prevent hanging
+                                result = subprocess.run(
+                                    cmd,
+                                    env=env,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=30  # 30 second timeout
+                                )
+                                
+                                if result.returncode != 0:
+                                    raise git.GitCommandError(cmd, result.returncode, stderr=result.stderr)
+                            except subprocess.TimeoutExpired:
+                                if display:
+                                    display.print_status(
+                                        f"Clone timeout for {repo_config.github_repo} (authentication may have failed)",
+                                        "error",
                                     )
                                 else:
-                                    git.Repo.clone_from(clone_url, repo_config.path)
+                                    click.echo(f"   ❌ Clone timeout - likely authentication failure")
+                                continue
                             except git.GitCommandError as e:
-                                if (
+                                error_str = str(e)
+                                # Check for authentication failures
+                                if any(x in error_str.lower() for x in ['authentication', 'permission denied', '401', '403']):
+                                    if display:
+                                        display.print_status(
+                                            f"Authentication failed for {repo_config.github_repo}. Check GitHub token.",
+                                            "error",
+                                        )
+                                    else:
+                                        click.echo(f"   ❌ Authentication failed. Check GitHub token.")
+                                    continue
+                                elif (
                                     repo_config.branch
-                                    and "Remote branch" in str(e)
-                                    and "not found" in str(e)
+                                    and "Remote branch" in error_str
+                                    and "not found" in error_str
                                 ):
                                     # Branch doesn't exist, try cloning without specifying branch
                                     if display:
@@ -1548,7 +1587,18 @@ def analyze(
                                         click.echo(
                                             f"   ⚠️  Branch '{repo_config.branch}' not found, using repository default"
                                         )
-                                    git.Repo.clone_from(clone_url, repo_config.path)
+                                    # Try again without branch specification
+                                    cmd = ['git', 'clone', '--config', 'credential.helper=', 
+                                           clone_url, str(repo_config.path)]
+                                    result = subprocess.run(
+                                        cmd,
+                                        env=env,
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=30
+                                    )
+                                    if result.returncode != 0:
+                                        raise git.GitCommandError(cmd, result.returncode, stderr=result.stderr)
                                 else:
                                     raise
                             if display:
@@ -1563,84 +1613,84 @@ def analyze(
                             else:
                                 click.echo(f"   ❌ Failed to clone repository: {e}")
                             continue
-                else:
+                    else:
+                        if display:
+                            display.print_status(
+                                f"Repository path not found: {repo_config.path}", "error"
+                            )
+                        else:
+                            click.echo(f"   ❌ Repository path not found: {repo_config.path}")
+                        continue
+
+                # Analyze repository
+                try:
+                    commits = analyzer.analyze_repository(
+                        repo_config.path, start_date, repo_config.branch
+                    )
+
+                    # Add project key and resolve developer identities
+                    for commit in commits:
+                        # Use configured project key or fall back to inferred project
+                        if repo_config.project_key and repo_config.project_key != "UNKNOWN":
+                            commit["project_key"] = repo_config.project_key
+                        else:
+                            commit["project_key"] = commit.get("inferred_project", "UNKNOWN")
+
+                        commit["canonical_id"] = identity_resolver.resolve_developer(
+                            commit["author_name"], commit["author_email"]
+                        )
+
+                    all_commits.extend(commits)
+                    if display:
+                        display.print_status(f"Found {len(commits)} commits", "success")
+                    else:
+                        click.echo(f"   ✅ Found {len(commits)} commits")
+
+                    # Analyze branch health
+                    from .metrics.branch_health import BranchHealthAnalyzer
+
+                    branch_analyzer = BranchHealthAnalyzer()
+                    branch_metrics = branch_analyzer.analyze_repository_branches(str(repo_config.path))
+                    branch_health_metrics[repo_config.name] = branch_metrics
+
+                    # Log branch health summary
+                    health_summary = branch_metrics.get("summary", {})
+                    health_indicators = branch_metrics.get("health_indicators", {})
                     if display:
                         display.print_status(
-                            f"Repository path not found: {repo_config.path}", "error"
+                            f"Branch health: {health_indicators.get('overall_health', 'unknown')} "
+                            f"({health_summary.get('total_branches', 0)} branches, "
+                            f"{health_summary.get('stale_branches', 0)} stale)",
+                            "info",
                         )
                     else:
-                        click.echo(f"   ❌ Repository path not found: {repo_config.path}")
-                    continue
+                        click.echo(
+                            f"   📊 Branch health: {health_indicators.get('overall_health', 'unknown')} "
+                            f"({health_summary.get('total_branches', 0)} branches, "
+                            f"{health_summary.get('stale_branches', 0)} stale)"
+                        )
 
-            # Analyze repository
-            try:
-                commits = analyzer.analyze_repository(
-                    repo_config.path, start_date, repo_config.branch
-                )
+                    # Enrich with integration data
+                    enrichment = orchestrator.enrich_repository_data(repo_config, commits, start_date)
+                    all_enrichments[repo_config.name] = enrichment
 
-                # Add project key and resolve developer identities
-                for commit in commits:
-                    # Use configured project key or fall back to inferred project
-                    if repo_config.project_key and repo_config.project_key != "UNKNOWN":
-                        commit["project_key"] = repo_config.project_key
-                    else:
-                        commit["project_key"] = commit.get("inferred_project", "UNKNOWN")
+                    if enrichment["prs"]:
+                        all_prs.extend(enrichment["prs"])
+                        if display:
+                            display.print_status(
+                                f"Found {len(enrichment['prs'])} pull requests", "success"
+                            )
+                        else:
+                            click.echo(f"   ✅ Found {len(enrichment['prs'])} pull requests")
 
-                    commit["canonical_id"] = identity_resolver.resolve_developer(
-                        commit["author_name"], commit["author_email"]
-                    )
-
-                all_commits.extend(commits)
-                if display:
-                    display.print_status(f"Found {len(commits)} commits", "success")
-                else:
-                    click.echo(f"   ✅ Found {len(commits)} commits")
-
-                # Analyze branch health
-                from .metrics.branch_health import BranchHealthAnalyzer
-
-                branch_analyzer = BranchHealthAnalyzer()
-                branch_metrics = branch_analyzer.analyze_repository_branches(str(repo_config.path))
-                branch_health_metrics[repo_config.name] = branch_metrics
-
-                # Log branch health summary
-                health_summary = branch_metrics.get("summary", {})
-                health_indicators = branch_metrics.get("health_indicators", {})
-                if display:
-                    display.print_status(
-                        f"Branch health: {health_indicators.get('overall_health', 'unknown')} "
-                        f"({health_summary.get('total_branches', 0)} branches, "
-                        f"{health_summary.get('stale_branches', 0)} stale)",
-                        "info",
-                    )
-                else:
-                    click.echo(
-                        f"   📊 Branch health: {health_indicators.get('overall_health', 'unknown')} "
-                        f"({health_summary.get('total_branches', 0)} branches, "
-                        f"{health_summary.get('stale_branches', 0)} stale)"
-                    )
-
-                # Enrich with integration data
-                enrichment = orchestrator.enrich_repository_data(repo_config, commits, start_date)
-                all_enrichments[repo_config.name] = enrichment
-
-                if enrichment["prs"]:
-                    all_prs.extend(enrichment["prs"])
+                except Exception as e:
                     if display:
-                        display.print_status(
-                            f"Found {len(enrichment['prs'])} pull requests", "success"
-                        )
+                        display.print_status(f"Error: {e}", "error")
                     else:
-                        click.echo(f"   ✅ Found {len(enrichment['prs'])} pull requests")
-
-            except Exception as e:
-                if display:
-                    display.print_status(f"Error: {e}", "error")
-                else:
-                    click.echo(f"   ❌ Error: {e}")
-            finally:
-                if display:
-                    display.update_progress_task("repos", advance=1)
+                        click.echo(f"   ❌ Error: {e}")
+                finally:
+                    if display:
+                        display.update_progress_task("repos", advance=1)
 
         # Stop repository progress and clean up display
         if display:
@@ -2036,17 +2086,31 @@ def analyze(
                 # Convert commits to qualitative format
                 commits_for_qual = []
                 for commit in all_commits:
-                    commit_dict = {
-                        "hash": commit.hash,
-                        "message": commit.message,
-                        "author_name": commit.author_name,
-                        "author_email": commit.author_email,
-                        "timestamp": commit.timestamp,
-                        "files_changed": commit.files_changed or [],
-                        "insertions": commit.insertions,
-                        "deletions": commit.deletions,
-                        "branch": getattr(commit, "branch", "main"),
-                    }
+                    # Handle both dict and object formats
+                    if isinstance(commit, dict):
+                        commit_dict = {
+                            "hash": commit.get("hash") or commit.get("commit_hash"),
+                            "message": commit.get("message"),
+                            "author_name": commit.get("author_name"),
+                            "author_email": commit.get("author_email"),
+                            "timestamp": commit.get("timestamp"),
+                            "files_changed": commit.get("files_changed") or [],
+                            "insertions": commit.get("insertions", 0),
+                            "deletions": commit.get("deletions", 0),
+                            "branch": commit.get("branch", "main"),
+                        }
+                    else:
+                        commit_dict = {
+                            "hash": commit.hash,
+                            "message": commit.message,
+                            "author_name": commit.author_name,
+                            "author_email": commit.author_email,
+                            "timestamp": commit.timestamp,
+                            "files_changed": commit.files_changed or [],
+                            "insertions": commit.insertions,
+                            "deletions": commit.deletions,
+                            "branch": getattr(commit, "branch", "main"),
+                        }
                     commits_for_qual.append(commit_dict)
 
                 # Perform qualitative analysis with progress tracking

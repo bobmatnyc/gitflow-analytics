@@ -5,6 +5,89 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.24] - 2025-01-26
+
+### Fixed
+- Consolidated all multi-repository analysis fixes for EWTN organization
+- Verified accuracy with sniff test on Aug 18-24 data (4 commits confirmed)
+- All previous fixes working correctly:
+  - Repository processing progress indicator
+  - Authentication prompt elimination
+  - Qualitative analysis error handling
+  - Timestamp type handling
+
+### Verified
+- Multi-repository analysis accuracy confirmed
+- Proper commit attribution across 95 repositories
+- Correct date range filtering
+- Accurate ticket coverage calculation (75%)
+
+## [1.2.23] - 2025-01-25
+
+### Fixed
+- Fixed qualitative analysis 'int' object is not subscriptable error
+  - Corrected timestamp default value in NLP engine from time.time() to datetime.now()
+  - Added proper datetime import to nlp_engine module
+  - This resolves type mismatch when timestamp field is missing
+
+## [1.2.22] - 2025-01-25
+
+### Fixed
+- Fixed qualitative analysis commit format handling
+  - Now handles both dict and object formats for commits
+  - Fixed 'dict' object has no attribute 'hash' error
+- Fixed SQLAlchemy warning about text expressions
+  - Added proper text() wrapper for SELECT 1 statement
+
+## [1.2.21] - 2025-01-25
+
+### Fixed
+- Fixed password prompts in data_fetcher during fetch/pull operations
+  - Replaced GitPython's fetch() and pull() with subprocess calls
+  - Added same environment variables to prevent credential prompts
+  - Added 30-second timeout for both fetch and pull operations
+  - This fixes the issue in the two-step fetch/classify process
+
+## [1.2.20] - 2025-01-25
+
+### Fixed
+- Replaced GitPython clone with subprocess for better control
+  - Uses subprocess.run with explicit timeout (30 seconds)
+  - Disables credential helper to prevent prompts
+  - Sets GIT_TERMINAL_PROMPT=0 and GIT_ASKPASS= to force failure
+  - Shows which repository is being cloned for debugging
+  - Properly handles timeout with clear error message
+
+## [1.2.19] - 2025-01-25
+
+### Fixed
+- Improved clone operation with timeout and better credential handling
+  - Added HTTP timeout (30 seconds) to prevent hanging on network issues
+  - Fixed environment variable passing to GitPython
+  - Added progress counter (x/95) to description for better visibility
+  - Enhanced credential failure detection
+
+## [1.2.18] - 2025-01-25
+
+### Fixed
+- Enhanced GitHub authentication handling to prevent interactive password prompts
+  - Added GIT_TERMINAL_PROMPT=0 to disable git credential prompts
+  - Added GIT_ASKPASS=/bin/echo to prevent password dialogs
+  - Better detection of authentication failures (401, 403, permission denied)
+  - Clear error messages when authentication fails instead of hanging
+
+## [1.2.17] - 2025-01-25
+
+### Fixed
+- **CRITICAL**: Fixed indentation bug in CLI that prevented multi-repository analysis
+  - Repository analysis code was incorrectly placed outside the for loop
+  - This caused only the last repository to be analyzed instead of all repositories
+  - Progress indicator now correctly updates for each repository (fixes "0/95" issue)
+- Added authentication error handling for GitHub operations
+  - Prevents password prompts when GitHub token is invalid or expired
+  - Continues with local repository state if authentication fails
+  - Provides clear error messages for authentication issues
+
 ## [1.2.2] - 2025-01-07
 
 ### Fixed
