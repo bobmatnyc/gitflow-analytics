@@ -15,6 +15,7 @@ import click
 import git
 import pandas as pd
 import yaml
+from difflib import get_close_matches
 
 from ._version import __version__
 from .cli_rich import create_rich_display
@@ -30,6 +31,38 @@ from .reports.json_exporter import ComprehensiveJSONExporter
 from .reports.narrative_writer import NarrativeReportGenerator
 from .reports.weekly_trends_writer import WeeklyTrendsWriter
 from .training.pipeline import CommitClassificationTrainer
+
+
+class RichHelpFormatter:
+    """Rich help formatter for enhanced CLI help display."""
+
+    @staticmethod
+    def format_command_help(command: str, description: str, examples: list[str]) -> str:
+        """Format command help with examples."""
+        help_text = description
+        if examples:
+            help_text += "\n\nExamples:\n"
+            for example in examples:
+                help_text += f"  {example}\n"
+        return help_text
+
+    @staticmethod
+    def format_option_help(description: str, default: Any = None, choices: list = None) -> str:
+        """Format option help with default and choices."""
+        help_text = description
+        if default is not None:
+            help_text += f" [default: {default}]"
+        if choices:
+            help_text += f" [choices: {', '.join(map(str, choices))}]"
+        return help_text
+
+    @staticmethod
+    def suggest_command(invalid_cmd: str, available_cmds: list[str]) -> str:
+        """Suggest similar commands for typos."""
+        matches = get_close_matches(invalid_cmd, available_cmds, n=3, cutoff=0.6)
+        if matches:
+            return f"Did you mean: {', '.join(matches)}?"
+        return ""
 
 
 def get_week_start(date: datetime) -> datetime:
@@ -120,6 +153,77 @@ def handle_timezone_error(
         raise
 
 
+class ImprovedErrorHandler:
+    """Enhanced error handling with helpful suggestions."""
+    
+    @staticmethod
+    def handle_command_error(ctx: click.Context, error: Exception) -> None:
+        """Handle command errors with helpful suggestions."""
+        error_msg = str(error)
+        
+        # Check for common errors and provide suggestions
+        if "no such option" in error_msg.lower():
+            # Extract the invalid option
+            import re
+            match = re.search(r"no such option: (--?[\w-]+)", error_msg.lower())
+            if match:
+                invalid_option = match.group(1)
+                available_options = ['--config', '--weeks', '--output', '--format', '--clear-cache',
+                                   '--validate-only', '--anonymize', '--help']
+                suggestion = RichHelpFormatter.suggest_command(invalid_option, available_options)
+                if suggestion:
+                    click.echo(f"\n❗ {error_msg}", err=True)
+                    click.echo(f"\n💡 {suggestion}", err=True)
+                    click.echo("\nUse 'gitflow-analytics --help' for available options.", err=True)
+                    return
+        
+        elif "no such command" in error_msg.lower():
+            # Extract the invalid command
+            import re
+            match = re.search(r"no such command[:'] (\w+)", error_msg.lower())
+            if match:
+                invalid_cmd = match.group(1)
+                available_cmds = ['analyze', 'fetch', 'identities', 'train', 'cache-stats',
+                                 'list-developers', 'merge-identity', 'help', 'train-stats']
+                suggestion = RichHelpFormatter.suggest_command(invalid_cmd, available_cmds)
+                if suggestion:
+                    click.echo(f"\n❗ Unknown command: '{invalid_cmd}'", err=True)
+                    click.echo(f"\n💡 {suggestion}", err=True)
+                    click.echo("\nAvailable commands:", err=True)
+                    for cmd in available_cmds[:5]:  # Show first 5
+                        click.echo(f"  • {cmd}", err=True)
+                    click.echo("\nUse 'gitflow-analytics help' for more information.", err=True)
+                    return
+        
+        elif "file not found" in error_msg.lower() or "no such file" in error_msg.lower():
+            click.echo(f"\n❗ {error_msg}", err=True)
+            click.echo("\n💡 Suggestions:", err=True)
+            click.echo("  • Check if the file path is correct", err=True)
+            click.echo("  • Use absolute paths for clarity", err=True)
+            click.echo("  • Create a config file: cp config-sample.yaml myconfig.yaml", err=True)
+            return
+            
+        elif "permission denied" in error_msg.lower():
+            click.echo(f"\n❗ {error_msg}", err=True)
+            click.echo("\n💡 Suggestions:", err=True)
+            click.echo("  • Check file/directory permissions", err=True)
+            click.echo("  • Ensure you have read access to repositories", err=True)
+            click.echo("  • Try running with appropriate user permissions", err=True)
+            return
+            
+        elif "git repository" in error_msg.lower():
+            click.echo(f"\n❗ {error_msg}", err=True)
+            click.echo("\n💡 Suggestions:", err=True)
+            click.echo("  • Verify repository paths in configuration", err=True)
+            click.echo("  • Ensure repositories are cloned locally", err=True)
+            click.echo("  • Check that .git directory exists", err=True)
+            return
+        
+        # Default error display
+        click.echo(f"\n❗ Error: {error_msg}", err=True)
+        click.echo("\nFor help: gitflow-analytics help", err=True)
+
+
 class AnalyzeAsDefaultGroup(click.Group):
     """
     Custom Click group that treats unrecognized options as analyze command arguments.
@@ -181,10 +285,37 @@ class AnalyzeAsDefaultGroup(click.Group):
 @click.help_option("-h", "--help")
 @click.pass_context
 def cli(ctx: click.Context) -> None:
-    """GitFlow Analytics - Analyze Git repositories for productivity insights.
+    """GitFlow Analytics - Developer productivity insights from Git history.
 
-    If no subcommand is provided, the analyze command will be executed by default.
-    You can use analysis options directly: gitflow-analytics -c config.yaml --weeks 2
+    \b
+    A comprehensive tool for analyzing Git repositories to generate developer
+    productivity metrics, DORA metrics, and team insights without requiring
+    external project management tools.
+
+    \b
+    QUICK START:
+      1. Create a configuration file (see config-sample.yaml)
+      2. Run analysis: gitflow-analytics -c config.yaml --weeks 4
+      3. View reports in the output directory
+
+    \b
+    COMMON WORKFLOWS:
+      Analyze last 4 weeks:     gitflow-analytics -c config.yaml --weeks 4
+      Generate specific report: gitflow-analytics -c config.yaml --format csv
+      Clear cache and analyze:  gitflow-analytics -c config.yaml --clear-cache
+      Validate configuration:   gitflow-analytics -c config.yaml --validate-only
+
+    \b
+    COMMANDS:
+      analyze    Analyze repositories and generate reports (default)
+      identities Manage developer identity resolution
+      train      Train ML models for commit classification
+      fetch      Fetch external data (GitHub PRs, PM tickets)
+      help       Show detailed help and documentation
+
+    \b
+    For detailed command help: gitflow-analytics COMMAND --help
+    For documentation: https://github.com/yourusername/gitflow-analytics
     """
     # If no subcommand was invoked, show help
     if ctx.invoked_subcommand is None:
@@ -294,7 +425,44 @@ def analyze_subcommand(
     use_batch_classification: bool,
     force_fetch: bool,
 ) -> None:
-    """Analyze Git repositories using configuration file (explicit command)."""
+    """Analyze Git repositories and generate comprehensive productivity reports.
+    
+    \b
+    This is the main command for GitFlow Analytics. It:
+    - Analyzes commit history from configured repositories
+    - Resolves developer identities across different email addresses
+    - Extracts ticket references and categorizes commits
+    - Calculates productivity metrics and DORA metrics
+    - Generates reports in various formats
+    
+    \b
+    EXAMPLES:
+      # Basic analysis of last 4 weeks
+      gitflow-analytics analyze -c config.yaml --weeks 4
+      
+      # Generate CSV reports with fresh data
+      gitflow-analytics analyze -c config.yaml --generate-csv --clear-cache
+      
+      # Quick validation of configuration
+      gitflow-analytics analyze -c config.yaml --validate-only
+      
+      # Analyze with qualitative insights
+      gitflow-analytics analyze -c config.yaml --enable-qualitative
+    
+    \b
+    OUTPUT FILES:
+      - developer_metrics_YYYYMMDD.csv: Individual developer statistics
+      - weekly_metrics_YYYYMMDD.csv: Week-by-week team metrics
+      - narrative_report_YYYYMMDD.md: Executive summary and insights
+      - comprehensive_export_YYYYMMDD.json: Complete data export
+    
+    \b
+    PERFORMANCE TIPS:
+      - Use --no-cache for latest data but slower performance
+      - Use --clear-cache when configuration changes
+      - Smaller --weeks values analyze faster
+      - Enable caching for repeated analyses
+    """
     # Call the main analyze function
     analyze(
         config=config,
@@ -3189,6 +3357,9 @@ def analyze(
 
             click.echo(f"\n✅ Analysis complete! Reports saved to {output}")
 
+    except click.ClickException:
+        # Let Click handle its own exceptions
+        raise
     except Exception as e:
         error_msg = str(e)
 
@@ -3200,11 +3371,12 @@ def analyze(
             else:
                 click.echo(f"\n{error_msg}", err=True)
         else:
-            # This is a generic error, add the standard error formatting
-            if display:
+            # Use improved error handler for better suggestions
+            ImprovedErrorHandler.handle_command_error(click.get_current_context(), e)
+            
+            # Still show rich display error if available
+            if display and "--debug" not in sys.argv:
                 display.show_error(error_msg, show_debug_hint=True)
-            else:
-                click.echo(f"\n❌ Error: {error_msg}", err=True)
 
         if "--debug" in sys.argv:
             raise
@@ -3245,13 +3417,44 @@ def fetch(
     log: str,
     rich: bool,
 ) -> None:
-    """Fetch raw Git commits and ticket data without classification (Step 1 of 2).
-
-    This command collects all git commits and ticket data, organizing them by day
-    for efficient batch processing. No LLM classification is performed, making this
-    step fast and cost-effective.
-
-    Use 'gitflow-analytics analyze' afterwards to classify the fetched data.
+    """Fetch data from external platforms for enhanced analysis.
+    
+    \b
+    This command retrieves data from:
+    - Git repositories: Commits, branches, authors
+    - GitHub: Pull requests, issues, reviews (if configured)
+    - JIRA: Tickets, story points, sprint data (if configured)
+    - ClickUp: Tasks, time tracking (if configured)
+    
+    \b
+    The fetched data enhances reports with:
+    - DORA metrics (deployment frequency, lead time)
+    - Story point velocity and estimation accuracy
+    - PR review turnaround times
+    - Issue resolution metrics
+    
+    \b
+    EXAMPLES:
+      # Fetch last 4 weeks of data
+      gitflow-analytics fetch -c config.yaml --weeks 4
+      
+      # Fetch fresh data, clearing old cache
+      gitflow-analytics fetch -c config.yaml --clear-cache
+      
+      # Debug API connectivity issues
+      gitflow-analytics fetch -c config.yaml --log DEBUG
+    
+    \b
+    REQUIREMENTS:
+      - API credentials in configuration or environment
+      - Network access to platform APIs
+      - Appropriate permissions for repositories/projects
+    
+    \b
+    PERFORMANCE:
+      - First fetch may take several minutes for large repos
+      - Subsequent fetches use cache for unchanged data
+      - Use --clear-cache to force fresh fetch
     """
     # Initialize display
     display = create_rich_display() if rich else None
@@ -3484,7 +3687,27 @@ def fetch(
     help="Path to YAML configuration file",
 )
 def cache_stats(config: Path) -> None:
-    """Show cache statistics."""
+    """Display cache statistics and performance metrics.
+    
+    \b
+    Shows detailed information about:
+    - Cache hit/miss rates
+    - Number of cached commits, PRs, and issues
+    - Database size and storage usage
+    - Time saved through caching
+    - Stale entries that need refresh
+    
+    \b
+    EXAMPLES:
+      # Check cache status
+      gitflow-analytics cache-stats -c config.yaml
+    
+    \b
+    Use this to:
+    - Monitor cache performance
+    - Decide when to clear cache
+    - Troubleshoot slow analyses
+    """
     try:
         cfg = ConfigLoader.load(config)
         cache = GitAnalysisCache(cfg.cache.directory)
@@ -3520,10 +3743,27 @@ def cache_stats(config: Path) -> None:
     required=True,
     help="Path to YAML configuration file",
 )
-@click.argument("dev1")
-@click.argument("dev2")
+@click.argument("dev1", metavar="PRIMARY_EMAIL")
+@click.argument("dev2", metavar="ALIAS_EMAIL")
 def merge_identity(config: Path, dev1: str, dev2: str) -> None:
-    """Merge two developer identities."""
+    """Merge two developer identities into one.
+    
+    \b
+    Consolidates commits from ALIAS_EMAIL under PRIMARY_EMAIL.
+    This is useful when a developer has multiple email addresses
+    that weren't automatically detected.
+    
+    \b
+    EXAMPLES:
+      # Merge john's gmail into his work email
+      gitflow-analytics merge-identity -c config.yaml john@work.com john@gmail.com
+    
+    \b
+    The merge:
+    - Updates all historical commits
+    - Refreshes cached statistics
+    - Updates identity mappings
+    """
     try:
         cfg = ConfigLoader.load(config)
         identity_resolver = DeveloperIdentityResolver(cfg.cache.directory / "identities.db")
@@ -3612,7 +3852,36 @@ def discover_storypoint_fields(config: Path) -> None:
 )
 @click.option("--apply", is_flag=True, help="Apply suggestions to configuration")
 def identities(config: Path, weeks: int, apply: bool) -> None:
-    """Analyze and manage developer identities."""
+    """Analyze and manage developer identity resolution.
+    
+    \b
+    This command helps consolidate multiple email addresses and names
+    that belong to the same developer. It uses intelligent analysis to:
+    - Detect similar names (John Smith vs J. Smith)
+    - Identify GitHub noreply addresses
+    - Find bot accounts to exclude
+    - Suggest identity mappings for your configuration
+    
+    \b
+    EXAMPLES:
+      # Analyze identities from last 12 weeks
+      gitflow-analytics identities -c config.yaml --weeks 12
+      
+      # Auto-apply identity suggestions
+      gitflow-analytics identities -c config.yaml --apply
+    
+    \b
+    IDENTITY RESOLUTION PROCESS:
+      1. Analyzes commit authors from recent history
+      2. Groups similar identities using fuzzy matching
+      3. Suggests consolidated mappings
+      4. Updates configuration with approved mappings
+    
+    \b
+    CONFIGURATION:
+      Mappings are saved to 'analysis.identity.manual_mappings'
+      Bot exclusions go to 'analysis.exclude.authors'
+    """
     try:
         cfg = ConfigLoader.load(config)
         cache = GitAnalysisCache(cfg.cache.directory)
@@ -3763,7 +4032,26 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
     help="Path to YAML configuration file",
 )
 def list_developers(config: Path) -> None:
-    """List all known developers."""
+    """List all known developers with statistics.
+    
+    \b
+    Displays a table of developers showing:
+    - Primary name and email
+    - Total commit count
+    - Story points delivered
+    - Number of identity aliases
+    
+    \b
+    EXAMPLES:
+      # List all developers
+      gitflow-analytics list-developers -c config.yaml
+    
+    \b
+    Useful for:
+    - Verifying identity resolution
+    - Finding developer email addresses
+    - Checking contribution statistics
+    """
     try:
         cfg = ConfigLoader.load(config)
         identity_resolver = DeveloperIdentityResolver(cfg.cache.directory / "identities.db")
@@ -3852,23 +4140,50 @@ def train(
     clear_cache: bool,
     log: str,
 ) -> None:
-    """Train a commit classification model using PM platform data.
-
-    This command analyzes repositories to extract commits with ticket references,
-    uses PM platform data to label commits by ticket type, and trains a machine
-    learning model to classify commits automatically.
-
-    The training process:
-    1. Extracts commits from configured repositories
-    2. Matches commits with tickets from PM platforms (JIRA, GitHub Issues, etc.)
-    3. Maps ticket types to classification categories
-    4. Trains and validates a classification model
-    5. Saves the model with performance metrics
-
-    Requirements:
-    - PM platform integration must be configured and enabled
-    - Sufficient commits with ticket references (minimum specified by --min-examples)
-    - scikit-learn dependencies for model training
+    """Train custom ML models for improved commit classification.
+    
+    \b
+    This command trains machine learning models on your repository's
+    commit history to improve classification accuracy. The models learn:
+    - Project-specific commit message patterns
+    - Team coding conventions and terminology
+    - Domain-specific keywords and concepts
+    - File path patterns for different change types
+    
+    \b
+    EXAMPLES:
+      # Train on last 12 weeks of commits
+      gitflow-analytics train -c config.yaml --weeks 12
+      
+      # Train with custom session name
+      gitflow-analytics train -c config.yaml --session-name "q4-training"
+      
+      # Save training data for inspection
+      gitflow-analytics train -c config.yaml --save-training-data
+      
+      # Incremental training on new data
+      gitflow-analytics train -c config.yaml --incremental
+    
+    \b
+    MODEL TYPES:
+      - random_forest: Best general performance (default)
+      - svm: Good for clear category boundaries
+      - naive_bayes: Fast, works well with small datasets
+    
+    \b
+    TRAINING PROCESS:
+      1. Extracts commits with ticket references
+      2. Fetches ticket types from PM platforms
+      3. Maps ticket types to commit categories
+      4. Trains model with cross-validation
+      5. Saves model with performance metrics
+    
+    \b
+    REQUIREMENTS:
+      - PM platform integration configured
+      - Minimum 50 commits with ticket references
+      - scikit-learn and pandas dependencies
+      - ~100MB disk space for model storage
     """
 
     # Configure logging
@@ -4087,6 +4402,136 @@ def train(
         sys.exit(1)
 
 
+@cli.command(name="help")
+def show_help() -> None:
+    """Show comprehensive help and usage guide.
+    
+    \b
+    Displays detailed information about:
+    - Getting started with GitFlow Analytics
+    - Common workflows and use cases
+    - Configuration file setup
+    - Troubleshooting tips
+    - Available commands and options
+    """
+    help_text = """
+╔════════════════════════════════════════════════════════════════════╗
+║                    GitFlow Analytics Help Guide                    ║
+╚════════════════════════════════════════════════════════════════════╝
+
+📚 QUICK START GUIDE
+────────────────────
+  1. Create a configuration file:
+     cp config-sample.yaml myconfig.yaml
+     
+  2. Edit configuration with your repositories:
+     repositories:
+       - path: /path/to/repo
+         branch: main
+     
+  3. Run your first analysis:
+     gitflow-analytics -c myconfig.yaml --weeks 4
+     
+  4. View reports in the output directory
+
+🔧 COMMON WORKFLOWS
+──────────────────
+  Weekly team report:
+    gitflow-analytics -c config.yaml --weeks 1
+    
+  Monthly metrics with all formats:
+    gitflow-analytics -c config.yaml --weeks 4 --generate-csv
+    
+  Identity resolution:
+    gitflow-analytics identities -c config.yaml
+    
+  Fresh analysis (bypass cache):
+    gitflow-analytics -c config.yaml --clear-cache
+    
+  Quick config validation:
+    gitflow-analytics -c config.yaml --validate-only
+
+⚙️ CONFIGURATION TIPS
+────────────────────
+  • Use environment variables: ${GITHUB_TOKEN}
+  • Store credentials in .env file (same directory as config)
+  • Enable ML categorization for better accuracy
+  • Configure identity mappings to consolidate developers
+  • Set appropriate cache TTL for your workflow
+
+🐛 TROUBLESHOOTING
+─────────────────
+  Slow analysis?
+    → Use caching (default) or reduce --weeks
+    → Check cache stats: cache-stats command
+    
+  Wrong developer names?
+    → Run: identities command
+    → Add manual mappings to config
+    
+  Missing ticket references?
+    → Check ticket_platforms configuration
+    → Verify commit message format
+    
+  API errors?
+    → Verify credentials in config or .env
+    → Check rate limits
+    → Use --log DEBUG for details
+
+📊 REPORT TYPES
+──────────────
+  CSV Reports (--generate-csv):
+    • developer_metrics: Individual statistics
+    • weekly_metrics: Time-based trends
+    • activity_distribution: Work patterns
+    • untracked_commits: Process gaps
+    
+  Narrative Report (default):
+    • Executive summary
+    • Team composition analysis
+    • Development patterns
+    • Recommendations
+    
+  JSON Export:
+    • Complete data for integration
+    • All metrics and metadata
+
+🔗 INTEGRATIONS
+──────────────
+  GitHub:
+    • Pull requests and reviews
+    • Issues and milestones
+    • DORA metrics
+    
+  JIRA:
+    • Story points and velocity
+    • Sprint tracking
+    • Issue types
+    
+  ClickUp:
+    • Task tracking
+    • Time estimates
+
+📖 DOCUMENTATION
+───────────────
+  • README: https://github.com/yourusername/gitflow-analytics
+  • Config Guide: docs/configuration.md
+  • API Reference: docs/api.md
+  • Contributing: docs/contributing.md
+
+💡 TIPS
+──────
+  • Use --weeks wisely: smaller = faster
+  • Enable rich output for better visuals
+  • Save different configs for different teams
+  • Use --anonymize for external reports
+  • Regular identity resolution improves accuracy
+
+For detailed command help: gitflow-analytics COMMAND --help
+    """
+    click.echo(help_text)
+
+
 @cli.command(name="train-stats")
 @click.option(
     "--config",
@@ -4096,7 +4541,27 @@ def train(
     help="Path to YAML configuration file",
 )
 def training_statistics(config: Path) -> None:
-    """Show training session statistics and model performance history."""
+    """Display ML model training statistics and performance history.
+    
+    \b
+    Shows comprehensive training metrics:
+    - Total training sessions and success rate
+    - Model accuracy and validation scores
+    - Training data statistics
+    - Best performing model details
+    - Recent training session results
+    
+    \b
+    EXAMPLES:
+      # View training statistics
+      gitflow-analytics train-stats -c config.yaml
+    
+    \b
+    Use this to:
+    - Monitor model performance over time
+    - Identify when retraining is needed
+    - Compare different model versions
+    """
     try:
         cfg = ConfigLoader.load(config)
         cache = GitAnalysisCache(cfg.cache.directory)

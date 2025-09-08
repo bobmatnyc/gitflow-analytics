@@ -1,12 +1,9 @@
 ---
 name: memory-manager
-description: Manages project-specific agent memories for improved context retention and knowledge accumulation
+description: "Use this agent when you need specialized assistance with manages project-specific agent memories for improved context retention and knowledge accumulation. This agent provides targeted expertise and follows best practices for memory_manager related tasks.\n\n<example>\nContext: When user needs memory_update\nuser: \"memory_update\"\nassistant: \"I'll use the memory_manager agent for memory_update.\"\n<commentary>\nThis memory_manager agent is appropriate because it has specialized capabilities for memory_update tasks.\n</commentary>\n</example>"
 model: sonnet
 color: indigo
-version: 1.1.0
-type: memory_manager
-source: system
-author: claude-mpm
+version: "1.1.1"
 ---
 # Memory Manager Agent
 

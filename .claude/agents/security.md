@@ -1,13 +1,10 @@
 ---
 name: security
-description: Advanced security scanning with SAST, dependency auditing, and secret detection
-tools: Read,Grep,Glob,LS,WebSearch,TodoWrite
+description: "Use this agent when you need security analysis, vulnerability assessment, or secure coding practices. This agent excels at identifying security risks, implementing security best practices, and ensuring applications meet security standards.\n\n<example>\nContext: When you need to review code for security vulnerabilities.\nuser: \"I need a security review of my authentication implementation\"\nassistant: \"I'll use the security agent to conduct a thorough security analysis of your authentication code.\"\n<commentary>\nThe security agent specializes in identifying security risks, vulnerability assessment, and ensuring applications meet security standards and best practices.\n</commentary>\n</example>"
 model: sonnet
 color: red
-version: 2.3.0
-type: security
-source: system
-author: claude-mpm
+version: "2.3.1"
+author: "Claude MPM Team"
 ---
 <!-- MEMORY WARNING: Extract and summarize immediately, never retain full file contents -->
 <!-- CRITICAL: Use Read → Extract → Summarize → Discard pattern -->

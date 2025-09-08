@@ -1,0 +1,441 @@
+2025-09-08 19:13:20,644 - claude_mpm.startup - INFO - startup_logging.py:518 - ============================================================
+2025-09-08 19:13:20,644 - claude_mpm.startup - INFO - startup_logging.py:519 - Claude MPM Startup - 2025-09-08T19:13:20.644763
+2025-09-08 19:13:20,644 - claude_mpm.startup - INFO - startup_logging.py:520 - Log file: /Users/masa/Projects/managed/gitflow-analytics/.claude-mpm/logs/startup/startup-2025-09-08-19-13-20.log
+2025-09-08 19:13:20,644 - claude_mpm.startup - INFO - startup_logging.py:521 - ============================================================
+2025-09-08 19:13:20,644 - claude_mpm.startup - INFO - startup_logging.py:524 - Python: 3.13.5 (main, Jun 11 2025, 15:36:57) [Clang 17.0.0 (clang-1700.0.13.3)]
+2025-09-08 19:13:20,644 - claude_mpm.startup - INFO - startup_logging.py:525 - Platform: darwin
+2025-09-08 19:13:20,644 - claude_mpm.startup - INFO - startup_logging.py:526 - CWD: /Users/masa/Projects/managed/gitflow-analytics
+2025-09-08 19:13:20,645 - claude_mpm.startup - INFO - startup_logging.py:527 - Project root: /Users/masa/Projects/managed/gitflow-analytics
+2025-09-08 19:13:20,645 - claude_mpm.startup - INFO - startup_logging.py:544 - Initial Memory: RSS=139.9MB
+2025-09-08 19:13:20,645 - claude_mpm.cli - INFO - run.py:604 - Starting Claude MPM session
+2025-09-08 19:13:20,648 - claude_mpm.core.log_manager - INFO - log_manager.py:345 - Cleaned up 4 old log files from /Users/masa/Projects/managed/gitflow-analytics/.claude-mpm/logs/startup
+2025-09-08 19:13:20,648 - claude_mpm.cli - DEBUG - run.py:611 - Cleaned up 4 old startup log files
+2025-09-08 19:13:20,648 - claude_mpm.cli - INFO - startup_logging.py:68 - Memory Usage: RSS=139.9MB, System=0.4%
+2025-09-08 19:13:20,649 - claude_mpm.cli - INFO - startup_logging.py:115 - MCP Server: Installed at /opt/homebrew/bin/claude-mpm-mcp
+2025-09-08 19:13:25,657 - claude_mpm.cli - INFO - startup_logging.py:122 - MCP Server: Version unknown
+2025-09-08 19:13:25,722 - claude_mpm.cli - INFO - startup_logging.py:129 - MCP Server: Configuration found in ~/.claude.json
+2025-09-08 19:13:25,722 - claude_mpm.cli - INFO - startup_logging.py:131 - MCP Server: 1 server(s) configured
+2025-09-08 19:13:25,722 - claude_mpm.cli - INFO - startup_logging.py:144 - MCP Gateway: Claude MPM gateway configured
+2025-09-08 19:13:25,722 - claude_mpm.cli - INFO - startup_logging.py:222 - Monitor: Mode disabled
+2025-09-08 19:13:25,724 - claude_mpm.cli - INFO - startup_logging.py:227 - Monitor: Background Socket.IO server detected on port 8765
+2025-09-08 19:13:25,725 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,725 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,725 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,725 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,727 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,727 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,727 - claude_mpm.services.command_deployment_service.CommandDeploymentService.command_deployment - DEBUG - base_service.py:165 - Initialized command_deployment service
+2025-09-08 19:13:25,727 - claude_mpm.services.command_deployment_service.CommandDeploymentService.command_deployment - DEBUG - command_deployment_service.py:71 - Ensured target directory exists: /Users/masa/.claude/commands
+2025-09-08 19:13:25,728 - claude_mpm.services.command_deployment_service.CommandDeploymentService.command_deployment - DEBUG - command_deployment_service.py:90 - Skipping mpm.md - target is up to date
+2025-09-08 19:13:25,728 - claude_mpm.services.command_deployment_service.CommandDeploymentService.command_deployment - DEBUG - command_deployment_service.py:90 - Skipping mpm-help.md - target is up to date
+2025-09-08 19:13:25,729 - claude_mpm.services.command_deployment_service.CommandDeploymentService.command_deployment - DEBUG - command_deployment_service.py:90 - Skipping mpm-init.md - target is up to date
+2025-09-08 19:13:25,729 - claude_mpm.services.command_deployment_service.CommandDeploymentService.command_deployment - DEBUG - command_deployment_service.py:90 - Skipping mpm-tickets.md - target is up to date
+2025-09-08 19:13:25,729 - claude_mpm.services.command_deployment_service.CommandDeploymentService.command_deployment - DEBUG - command_deployment_service.py:90 - Skipping mpm-doctor.md - target is up to date
+2025-09-08 19:13:25,729 - claude_mpm.services.command_deployment_service.CommandDeploymentService.command_deployment - DEBUG - command_deployment_service.py:90 - Skipping mpm-status.md - target is up to date
+2025-09-08 19:13:25,729 - claude_mpm.services.command_deployment_service.CommandDeploymentService.command_deployment - DEBUG - command_deployment_service.py:90 - Skipping mpm-config.md - target is up to date
+2025-09-08 19:13:25,730 - claude_mpm.services.command_deployment_service.CommandDeploymentService.command_deployment - DEBUG - command_deployment_service.py:90 - Skipping mpm-agents.md - target is up to date
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: agent-manager
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: code_analyzer
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: vercel_ops_agent
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: ops
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: data_engineer
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: version_control
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: qa
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: web_ui
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: project_organizer
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: memory_manager
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: api_qa
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: research
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: engineer
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: documentation
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: refactoring_engineer
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: web_qa
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: security
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: imagemagick
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: ticketing
+2025-09-08 19:13:25,737 - claude_mpm.claude_mpm.utils.agent_dependency_loader - INFO - agent_dependency_loader.py:71 - Discovered 19 deployed agents
+2025-09-08 19:13:25,738 - claude_mpm.claude_mpm.utils.agent_dependency_loader - INFO - agent_dependency_loader.py:837 - Agent deployment has changed since last check
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.dependency_cache - DEBUG - dependency_cache.py:148 - Cache miss for key 4e53d8c14cc6f323d01bd57bd67328cd
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.environment_context - DEBUG - environment_context.py:87 - Environment context detected: {'is_tty': True, 'is_ci': False, 'is_docker': False, 'is_interactive': True, 'is_automated': False, 'is_jupyter': False, 'is_ssh': False}
+2025-09-08 19:13:25,739 - claude_mpm.cli - DEBUG - run.py:716 - Dependency check needed: No valid cache, checking needed
+2025-09-08 19:13:25,739 - claude_mpm.cli - DEBUG - run.py:717 - Interactive prompting: True (Interactive TTY environment detected)
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - INFO - agent_dependency_loader.py:837 - Agent deployment has changed since last check
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.dependency_cache - INFO - dependency_cache.py:359 - Performing dependency check...
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: agent-manager
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: code_analyzer
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: vercel_ops_agent
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: ops
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: data_engineer
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: version_control
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: qa
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: web_ui
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: project_organizer
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: memory_manager
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: api_qa
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: research
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: engineer
+2025-09-08 19:13:25,739 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: documentation
+2025-09-08 19:13:25,740 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: refactoring_engineer
+2025-09-08 19:13:25,740 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: web_qa
+2025-09-08 19:13:25,740 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: security
+2025-09-08 19:13:25,740 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: imagemagick
+2025-09-08 19:13:25,740 - claude_mpm.claude_mpm.utils.agent_dependency_loader - DEBUG - agent_dependency_loader.py:69 - Found deployed agent: ticketing
+2025-09-08 19:13:25,740 - claude_mpm.claude_mpm.utils.agent_dependency_loader - INFO - agent_dependency_loader.py:71 - Discovered 19 deployed agents
+2025-09-08 19:13:25,740 - claude_mpm.claude_mpm.utils.agent_dependency_loader - INFO - agent_dependency_loader.py:107 - Loaded dependencies for 0 agents
+2025-09-08 19:13:25,740 - claude_mpm.claude_mpm.utils.dependency_cache - DEBUG - dependency_cache.py:248 - Cleaned up 3 expired cache entries
+2025-09-08 19:13:25,741 - claude_mpm.claude_mpm.utils.dependency_cache - DEBUG - dependency_cache.py:194 - Cached results for key 4e53d8c14cc6f323d01bd57bd67328cd
+2025-09-08 19:13:25,741 - claude_mpm.cli - DEBUG - run.py:807 - All dependencies satisfied
+2025-09-08 19:13:25,741 - claude_mpm.cli - DEBUG - run.py:831 - Pre-filter claude_args: []
+2025-09-08 19:13:25,741 - claude_mpm.cli - INFO - run.py:840 - Final claude_args being passed: []
+2025-09-08 19:13:25,742 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,742 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,742 - claude_mpm.services.runner_configuration_service.RunnerConfigurationService.runner_configuration_service - DEBUG - base_service.py:165 - Initialized runner_configuration_service service
+2025-09-08 19:13:25,742 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,742 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,742 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,743 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,745 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,745 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,745 - claude_mpm.services.memory_hook_service.MemoryHookService.memory_hook_service - DEBUG - base_service.py:165 - Initialized memory_hook_service service
+2025-09-08 19:13:25,745 - claude_mpm.claude_mpm.services.hook_service - INFO - logging_config.py:113 - Registered pre-delegation hook: memory_load (priority: 10)
+2025-09-08 19:13:25,745 - claude_mpm.claude_mpm.services.hook_service - INFO - logging_config.py:113 - Registered post-delegation hook: memory_save (priority: 90)
+2025-09-08 19:13:25,745 - claude_mpm.services.memory_hook_service.MemoryHookService.memory_hook_service - DEBUG - memory_hook_service.py:93 - Memory hooks registered successfully
+2025-09-08 19:13:25,746 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,746 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,746 - claude_mpm.services.agent_capabilities_service.AgentCapabilitiesService.agent_capabilities_service - DEBUG - base_service.py:165 - Initialized agent_capabilities_service service
+2025-09-08 19:13:25,746 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,746 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,746 - claude_mpm.services.system_instructions_service.SystemInstructionsService.system_instructions_service - DEBUG - base_service.py:165 - Initialized system_instructions_service service
+2025-09-08 19:13:25,750 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,750 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,750 - claude_mpm.services.subprocess_launcher_service.SubprocessLauncherService.subprocess_launcher_service - DEBUG - base_service.py:165 - Initialized subprocess_launcher_service service
+2025-09-08 19:13:25,750 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,750 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,750 - claude_mpm.services.version_service.VersionService.version_service - DEBUG - base_service.py:165 - Initialized version_service service
+2025-09-08 19:13:25,751 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,751 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,751 - claude_mpm.services.command_handler_service.CommandHandlerService.command_handler_service - DEBUG - base_service.py:165 - Initialized command_handler_service service
+2025-09-08 19:13:25,751 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,751 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,751 - claude_mpm.services.session_management_service.SessionManagementService.session_management_service - DEBUG - base_service.py:165 - Initialized session_management_service service
+2025-09-08 19:13:25,752 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:25,752 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:25,752 - claude_mpm.services.utility_service.UtilityService.utility_service - DEBUG - base_service.py:165 - Initialized utility_service service
+2025-09-08 19:13:25,752 - claude_mpm.service_container - DEBUG - service_container.py:187 - Registered instance of ServiceContainer for ServiceContainer
+2025-09-08 19:13:25,752 - claude_mpm.service_container - DEBUG - service_container.py:117 - Service container initialized
+2025-09-08 19:13:25,752 - claude_mpm.service_container - DEBUG - service_container.py:161 - Registered CacheManager for ICacheManager with singleton lifetime
+2025-09-08 19:13:25,752 - claude_mpm.cache_manager - DEBUG - cache_manager.py:98 - Cache manager initialized with TTLs: capabilities=60s, deployed_agents=30s, metadata=60s, memories=60s
+2025-09-08 19:13:25,752 - claude_mpm.service_container - DEBUG - service_container.py:187 - Registered instance of PathResolver for IPathResolver
+2025-09-08 19:13:25,752 - claude_mpm.service_container - DEBUG - service_container.py:187 - Registered instance of MemoryManager for IMemoryManager
+2025-09-08 19:13:25,752 - claude_mpm.services.core.path_resolver - INFO - path_resolver.py:360 - Using claude-mpm development installation at: /Users/masa/Projects/claude-mpm
+2025-09-08 19:13:25,753 - claude_mpm.framework_loader - INFO - framework_loader.py:275 - Loaded framework INSTRUCTIONS.md from: /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/INSTRUCTIONS.md
+2025-09-08 19:13:25,753 - claude_mpm.framework_loader - INFO - framework_loader.py:285 - Framework version: 0011
+2025-09-08 19:13:25,753 - claude_mpm.framework_loader - INFO - framework_loader.py:294 - Last modified: 2025-08-30T00:00:00Z
+2025-09-08 19:13:25,753 - claude_mpm.framework_loader - INFO - framework_loader.py:275 - Loaded BASE_PM framework requirements from: /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_PM.md
+2025-09-08 19:13:25,754 - claude_mpm.framework_loader - INFO - framework_loader.py:275 - Loaded system WORKFLOW.md from: /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/WORKFLOW.md
+2025-09-08 19:13:25,754 - claude_mpm.framework_loader - INFO - framework_loader.py:294 - Last modified: 2025-08-30T00:00:00Z
+2025-09-08 19:13:25,754 - claude_mpm.framework_loader - INFO - framework_loader.py:401 - Using system workflow instructions
+2025-09-08 19:13:25,754 - claude_mpm.framework_loader - INFO - framework_loader.py:275 - Loaded system MEMORY.md from: /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/MEMORY.md
+2025-09-08 19:13:25,754 - claude_mpm.framework_loader - INFO - framework_loader.py:457 - Using system memory instructions
+2025-09-08 19:13:25,754 - claude_mpm.cache_manager - DEBUG - cache_manager.py:193 - Cache miss: memories
+2025-09-08 19:13:25,754 - claude_mpm.memory_manager - DEBUG - memory_manager.py:110 - Loading memories from disk (cache miss)
+2025-09-08 19:13:25,754 - claude_mpm.cache_manager - DEBUG - cache_manager.py:146 - Cache miss: deployed agents
+2025-09-08 19:13:25,754 - claude_mpm.memory_manager - DEBUG - memory_manager.py:622 - Scanning for deployed agents (cache miss)
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: agent-manager
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: code_analyzer
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: vercel_ops_agent
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: ops
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: data_engineer
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: version_control
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: qa
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: web_ui
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: project_organizer
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: memory_manager
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: api_qa
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: research
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: engineer
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: documentation
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: refactoring_engineer
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: web_qa
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: security
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: imagemagick
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - DEBUG - memory_manager.py:632 - Found deployed agent: ticketing
+2025-09-08 19:13:25,755 - claude_mpm.cache_manager - DEBUG - cache_manager.py:154 - Updated deployed agents cache with 19 agents
+2025-09-08 19:13:25,755 - claude_mpm.memory_manager - INFO - memory_manager.py:300 - Loading user-level memory files from: /Users/masa/.claude-mpm/memories
+2025-09-08 19:13:25,756 - claude_mpm.memory_manager - INFO - memory_manager.py:414 - Loaded user PM memory: /Users/masa/.claude-mpm/memories/PM_memories.md (179 bytes)
+2025-09-08 19:13:25,756 - claude_mpm.memory_manager - INFO - memory_manager.py:317 - Loading project-level memory files from: /Users/masa/Projects/managed/gitflow-analytics/.claude-mpm/memories
+2025-09-08 19:13:25,756 - claude_mpm.memory_manager - INFO - memory_manager.py:485 - Skipped project memory: data-engineer_memories.md (agent 'data-engineer' not deployed)
+2025-09-08 19:13:25,756 - claude_mpm.memory_manager - WARNING - memory_manager.py:496 - Naming mismatch detected: Memory file uses 'data-engineer' but deployed agent is 'data_engineer'. Consider renaming data-engineer_memories.md to data_engineer_memories.md
+2025-09-08 19:13:25,756 - claude_mpm.memory_manager - INFO - memory_manager.py:475 - Loaded project memory for qa: qa_memories.md (1,769 bytes)
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - INFO - memory_manager.py:475 - Loaded project memory for documentation: documentation_memories.md (2,096 bytes)
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - INFO - memory_manager.py:475 - Loaded project memory for research: research_memories.md (1,782 bytes)
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - INFO - memory_manager.py:475 - Loaded project memory for data_engineer: data_engineer_memories.md (2,154 bytes)
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - INFO - memory_manager.py:475 - Loaded project memory for ops: ops_memories.md (2,028 bytes)
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - INFO - memory_manager.py:475 - Loaded project memory for engineer: engineer_memories.md (1,781 bytes)
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - INFO - memory_manager.py:475 - Loaded project memory for security: security_memories.md (2,084 bytes)
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - INFO - memory_manager.py:339 - Aggregated PM memory (179 bytes) from 1 source(s)
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - DEBUG - memory_manager.py:348 - Aggregated qa memory: 1,769 bytes
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - DEBUG - memory_manager.py:348 - Aggregated documentation memory: 2,096 bytes
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - DEBUG - memory_manager.py:348 - Aggregated research memory: 1,782 bytes
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - DEBUG - memory_manager.py:348 - Aggregated data_engineer memory: 2,154 bytes
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - DEBUG - memory_manager.py:348 - Aggregated ops memory: 2,028 bytes
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - DEBUG - memory_manager.py:348 - Aggregated engineer memory: 1,781 bytes
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - DEBUG - memory_manager.py:348 - Aggregated security memory: 2,084 bytes
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - INFO - memory_manager.py:367 - Memory loading complete: PM memory loaded | 7 agent memories loaded | 1 non-deployed agent memories skipped
+2025-09-08 19:13:25,757 - claude_mpm.memory_manager - DEBUG - memory_manager.py:370 - Deployed agents available for memory loading: agent-manager, api_qa, code_analyzer, data_engineer, documentation, engineer, imagemagick, memory_manager, ops, project_organizer, qa, refactoring_engineer, research, security, ticketing, vercel_ops_agent, version_control, web_qa, web_ui
+2025-09-08 19:13:25,757 - claude_mpm.cache_manager - DEBUG - cache_manager.py:201 - Updated memories cache
+2025-09-08 19:13:25,758 - claude_mpm.services.core.path_resolver - INFO - path_resolver.py:275 - Using agents from templates directory: /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates
+2025-09-08 19:13:25,758 - claude_mpm.framework_loader - DEBUG - framework_loader.py:536 - Loaded agent: agent-manager
+2025-09-08 19:13:25,758 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:200 - Discovery paths configured: ['/Users/masa/Projects/managed/gitflow-analytics/.claude-mpm/agents', '/Users/masa/.claude-mpm/agents', '/Users/masa/Projects/claude-mpm/src/claude_mpm/agents']
+2025-09-08 19:13:25,758 - claude_mpm.core.unified_agent_registry - INFO - unified_agent_registry.py:159 - UnifiedAgentRegistry initialized with cache=enabled
+2025-09-08 19:13:25,764 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: base_documentation (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_DOCUMENTATION.md
+2025-09-08 19:13:25,765 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: base_ops (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_OPS.md
+2025-09-08 19:13:25,765 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: base_engineer (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_ENGINEER.md
+2025-09-08 19:13:25,765 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: base_research (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_RESEARCH.md
+2025-09-08 19:13:25,765 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: base_qa (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_QA.md
+2025-09-08 19:13:25,766 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: agent_manager (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/agent-manager.md
+2025-09-08 19:13:25,767 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: web_qa (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/web_qa.json
+2025-09-08 19:13:25,767 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: engineer (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/engineer.json
+2025-09-08 19:13:25,767 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: agentic_coder_optimizer (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/agentic_coder_optimizer.json
+2025-09-08 19:13:25,768 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: qa (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/qa.json
+2025-09-08 19:13:25,768 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: project_organizer (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/project_organizer.json
+2025-09-08 19:13:25,768 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: version_control (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/version_control.json
+2025-09-08 19:13:25,768 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: data_engineer (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/data_engineer.json
+2025-09-08 19:13:25,769 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: test_non_mpm (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/test-non-mpm.json
+2025-09-08 19:13:25,769 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: security (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/security.json
+2025-09-08 19:13:25,769 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: gcp_ops_agent (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/gcp_ops_agent.json
+2025-09-08 19:13:25,770 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: imagemagick (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/imagemagick.json
+2025-09-08 19:13:25,770 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: ticketing (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/ticketing.json
+2025-09-08 19:13:25,770 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: api_qa (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/api_qa.json
+2025-09-08 19:13:25,771 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: refactoring_engineer (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/refactoring_engineer.json
+2025-09-08 19:13:25,771 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: research (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/research.json
+2025-09-08 19:13:25,771 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: web_ui (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/web_ui.json
+2025-09-08 19:13:25,772 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: code_analyzer (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/code_analyzer.json
+2025-09-08 19:13:25,772 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: memory_manager (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/memory_manager.json
+2025-09-08 19:13:25,772 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: vercel_ops_agent (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/vercel_ops_agent.json
+2025-09-08 19:13:25,773 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: agent_manager (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/agent-manager.json
+2025-09-08 19:13:25,773 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: documentation (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/documentation.json
+2025-09-08 19:13:25,774 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: ops (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/ops.json
+2025-09-08 19:13:25,774 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: engineer_memories (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/.claude-mpm/memories/engineer_memories.md
+2025-09-08 19:13:25,775 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: agent_engineer_20250826_014258_728 (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/logs/prompts/agent_engineer_20250826_014258_728.md
+2025-09-08 19:13:25,775 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:285 - Discovered agent: agent_engineer_20250901_010124_142 (system) at /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates/logs/prompts/agent_engineer_20250901_010124_142.md
+2025-09-08 19:13:25,776 - claude_mpm.core.unified_agent_registry - DEBUG - unified_agent_registry.py:583 - Integrated memory file /Users/masa/Projects/managed/gitflow-analytics/.claude-mpm/memories/engineer_memories.md with agent engineer_memories
+2025-09-08 19:13:25,776 - claude_mpm.core.unified_agent_registry - INFO - unified_agent_registry.py:248 - Discovered 30 agents in 0.02s
+2025-09-08 19:13:25,776 - claude_mpm.services.system_instructions_service.SystemInstructionsService.system_instructions_service - DEBUG - system_instructions_service.py:69 - Created new FrameworkLoader instance
+2025-09-08 19:13:26,414 - claude_mpm.output_style_manager - INFO - output_style_manager.py:83 - Detected Claude version: 1.0.108
+2025-09-08 19:13:26,415 - claude_mpm.framework_loader - INFO - framework_loader.py:231 - Claude Code version detected: 1.0.108
+2025-09-08 19:13:26,415 - claude_mpm.framework_loader - INFO - framework_loader.py:235 - ✅ Claude Code supports output styles (>= 1.0.83)
+2025-09-08 19:13:26,416 - claude_mpm.framework_loader - INFO - framework_loader.py:240 - 📁 Output style file exists: /Users/masa/.claude/output-styles/claude-mpm.md
+2025-09-08 19:13:26,417 - claude_mpm.output_style_manager - INFO - output_style_manager.py:377 - Saved output style to /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/OUTPUT_STYLE.md
+2025-09-08 19:13:26,417 - claude_mpm.output_style_manager - INFO - output_style_manager.py:407 - Deployed output style to /Users/masa/.claude/output-styles/claude-mpm.md
+2025-09-08 19:13:26,417 - claude_mpm.output_style_manager - DEBUG - output_style_manager.py:456 - Claude MPM output style already active
+2025-09-08 19:13:26,418 - claude_mpm.framework_loader - INFO - framework_loader.py:213 - ✅ Output style deployed to Claude Code >= 1.0.83
+2025-09-08 19:13:26,418 - claude_mpm.cache_manager - DEBUG - cache_manager.py:123 - Cache miss: agent capabilities
+2025-09-08 19:13:26,418 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1165 - Generating agent capabilities (cache miss or expired)
+2025-09-08 19:13:26,418 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1192 - Found agents directory at: /Users/masa/Projects/managed/gitflow-analytics/.claude/agents
+2025-09-08 19:13:26,418 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/agent-manager.md
+2025-09-08 19:13:26,418 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for agent-manager.md (cache miss or expired)
+2025-09-08 19:13:26,419 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/agent-manager.md
+2025-09-08 19:13:26,419 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent agent-manager from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,419 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/code_analyzer.md
+2025-09-08 19:13:26,419 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for code_analyzer.md (cache miss or expired)
+2025-09-08 19:13:26,420 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/code_analyzer.md
+2025-09-08 19:13:26,420 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent code-analyzer from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,420 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/vercel_ops_agent.md
+2025-09-08 19:13:26,420 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for vercel_ops_agent.md (cache miss or expired)
+2025-09-08 19:13:26,421 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/vercel_ops_agent.md
+2025-09-08 19:13:26,421 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent vercel-ops-agent from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,421 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/ops.md
+2025-09-08 19:13:26,421 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for ops.md (cache miss or expired)
+2025-09-08 19:13:26,422 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/ops.md
+2025-09-08 19:13:26,422 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent ops from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,422 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/data_engineer.md
+2025-09-08 19:13:26,422 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for data_engineer.md (cache miss or expired)
+2025-09-08 19:13:26,422 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/data_engineer.md
+2025-09-08 19:13:26,422 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent data-engineer from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,422 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/version_control.md
+2025-09-08 19:13:26,422 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for version_control.md (cache miss or expired)
+2025-09-08 19:13:26,423 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/version_control.md
+2025-09-08 19:13:26,423 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent version-control from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,423 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/qa.md
+2025-09-08 19:13:26,423 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for qa.md (cache miss or expired)
+2025-09-08 19:13:26,424 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/qa.md
+2025-09-08 19:13:26,424 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent qa from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,424 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/web_ui.md
+2025-09-08 19:13:26,424 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for web_ui.md (cache miss or expired)
+2025-09-08 19:13:26,425 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/web_ui.md
+2025-09-08 19:13:26,425 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent web-ui from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,425 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/project_organizer.md
+2025-09-08 19:13:26,425 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for project_organizer.md (cache miss or expired)
+2025-09-08 19:13:26,426 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/project_organizer.md
+2025-09-08 19:13:26,426 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent project-organizer from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,426 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/memory_manager.md
+2025-09-08 19:13:26,426 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for memory_manager.md (cache miss or expired)
+2025-09-08 19:13:26,426 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/memory_manager.md
+2025-09-08 19:13:26,426 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent memory-manager from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,426 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/api_qa.md
+2025-09-08 19:13:26,426 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for api_qa.md (cache miss or expired)
+2025-09-08 19:13:26,427 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/api_qa.md
+2025-09-08 19:13:26,427 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent api-qa from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,427 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/research.md
+2025-09-08 19:13:26,427 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for research.md (cache miss or expired)
+2025-09-08 19:13:26,428 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/research.md
+2025-09-08 19:13:26,428 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent research from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,428 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/engineer.md
+2025-09-08 19:13:26,428 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for engineer.md (cache miss or expired)
+2025-09-08 19:13:26,429 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/engineer.md
+2025-09-08 19:13:26,429 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent engineer from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,429 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/documentation.md
+2025-09-08 19:13:26,429 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for documentation.md (cache miss or expired)
+2025-09-08 19:13:26,429 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/documentation.md
+2025-09-08 19:13:26,429 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent documentation from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,429 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/refactoring_engineer.md
+2025-09-08 19:13:26,429 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for refactoring_engineer.md (cache miss or expired)
+2025-09-08 19:13:26,430 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/refactoring_engineer.md
+2025-09-08 19:13:26,430 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent refactoring-engineer from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,430 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/web_qa.md
+2025-09-08 19:13:26,430 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for web_qa.md (cache miss or expired)
+2025-09-08 19:13:26,431 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/web_qa.md
+2025-09-08 19:13:26,431 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent web-qa from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,431 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/security.md
+2025-09-08 19:13:26,431 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for security.md (cache miss or expired)
+2025-09-08 19:13:26,431 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/security.md
+2025-09-08 19:13:26,431 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent security from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,431 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/imagemagick.md
+2025-09-08 19:13:26,432 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for imagemagick.md (cache miss or expired)
+2025-09-08 19:13:26,432 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/imagemagick.md
+2025-09-08 19:13:26,432 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent imagemagick from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,432 - claude_mpm.cache_manager - DEBUG - cache_manager.py:171 - Cache miss: metadata for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/ticketing.md
+2025-09-08 19:13:26,432 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1519 - Parsing metadata for ticketing.md (cache miss or expired)
+2025-09-08 19:13:26,433 - claude_mpm.cache_manager - DEBUG - cache_manager.py:180 - Updated metadata cache for /Users/masa/Projects/managed/gitflow-analytics/.claude/agents/ticketing.md
+2025-09-08 19:13:26,433 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1210 - Added/Updated agent ticketing from /Users/masa/Projects/managed/gitflow-analytics/.claude/agents (priority 0)
+2025-09-08 19:13:26,434 - claude_mpm.framework_loader - INFO - framework_loader.py:1234 - Loaded 19 project agents: agent-manager, api-qa, code-analyzer, data-engineer, documentation, engineer, imagemagick, memory-manager, ops, project-organizer, qa, refactoring-engineer, research, security, ticketing, vercel-ops-agent, version-control, web-qa, web-ui
+2025-09-08 19:13:26,434 - claude_mpm.cache_manager - DEBUG - cache_manager.py:131 - Updated agent capabilities cache
+2025-09-08 19:13:26,434 - claude_mpm.framework_loader - DEBUG - framework_loader.py:1341 - Cached agent capabilities section (4523 chars)
+2025-09-08 19:13:26,435 - claude_mpm.core.log_manager - DEBUG - log_manager.py:455 - Queued prompt logging to /Users/masa/Projects/managed/gitflow-analytics/logs/prompts/system_prompt_20250908_191326_435.md
+2025-09-08 19:13:26,435 - claude_mpm.framework_loader - DEBUG - framework_loader.py:891 - System prompt logged to prompts directory
+2025-09-08 19:13:26,435 - claude_mpm.services.system_instructions_service.SystemInstructionsService.system_instructions_service - INFO - system_instructions_service.py:76 - Loaded and cached framework instructions via FrameworkLoader
+2025-09-08 19:13:26,436 - claude_mpm.claude_mpm.core.claude_runner - DEBUG - logging_config.py:113 - Output style 'Claude MPM' already deployed and active
+2025-09-08 19:13:26,436 - claude_mpm.SessionManager - INFO - session_manager.py:233 - Created session 9f6fb349-273f-4a5f-a41e-d309b732d8e0 for context: default
+2025-09-08 19:13:26,436 - claude_mpm.cli - INFO - run.py:946 - Created new session 9f6fb349-273f-4a5f-a41e-d309b732d8e0
+2025-09-08 19:13:26,437 - claude_mpm.services.version_service.VersionService.version_service - DEBUG - version_service.py:57 - Version obtained via package import: 4.2.21+build.347
+2025-09-08 19:13:26,437 - claude_mpm.services.version_service.VersionService.version_service - DEBUG - version_service.py:63 - Extracted base version: 4.2.21, build: 347
+2025-09-08 19:13:26,437 - claude_mpm.services.version_service.VersionService.version_service - DEBUG - version_service.py:113 - Final version: 4.2.21 (method: package_import)
+2025-09-08 19:13:26,438 - claude_mpm.core.config - DEBUG - config.py:63 - Reusing existing Config singleton instance
+2025-09-08 19:13:26,438 - claude_mpm.core.config - DEBUG - config.py:83 - Config already initialized, skipping re-initialization
+2025-09-08 19:13:26,448 - claude_mpm.claude_mpm.services.agents.deployment.agent_configuration_manager - INFO - logging_config.py:113 - Loaded base agent from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/base_agent.json
+2025-09-08 19:13:26,449 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Discovering agents from system source: /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/templates
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 - Discovered 22 system agent templates from templates
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Discovering agents from project source: /Users/masa/Projects/managed/gitflow-analytics/.claude-mpm/agents
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 - Discovered 0 project agent templates from agents
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Discovering agents from user source: /Users/masa/.claude-mpm/agents
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 - Discovered 0 user agent templates from agents
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'API QA Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Agent Manager' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Agentic Coder Optimizer' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Code Analysis Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Data Engineer Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Documentation Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Engineer Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Google Cloud Ops Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'ImageMagick Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Memory Manager Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Ops Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Project Organizer Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Qa Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Refactoring Engineer Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Research Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Security Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Test Non-MPM Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Ticketing Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Vercel Ops Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Version Control Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Web QA Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Agent 'Web UI Agent' has single source: system
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'API QA Agent' -> 'api_qa'
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Agent Manager' -> 'agent-manager'
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Agentic Coder Optimizer' -> 'agentic_coder_optimizer'
+2025-09-08 19:13:26,451 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Code Analysis Agent' -> 'code_analyzer'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Data Engineer Agent' -> 'data_engineer'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Documentation Agent' -> 'documentation'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Engineer Agent' -> 'engineer'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Google Cloud Ops Agent' -> 'gcp_ops_agent'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'ImageMagick Agent' -> 'imagemagick'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Memory Manager Agent' -> 'memory_manager'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Ops Agent' -> 'ops'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Project Organizer Agent' -> 'project_organizer'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Qa Agent' -> 'qa'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Refactoring Engineer Agent' -> 'refactoring_engineer'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Research Agent' -> 'research'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Security Agent' -> 'security'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Test Non-MPM Agent' -> 'test-non-mpm'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Ticketing Agent' -> 'ticketing'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Vercel Ops Agent' -> 'vercel_ops_agent'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Version Control Agent' -> 'version_control'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Web QA Agent' -> 'web_qa'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - DEBUG - logging_config.py:113 - Mapping 'Web UI Agent' -> 'web_ui'
+2025-09-08 19:13:26,452 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 - Selected 22 agents for deployment (system: 22, project: 0, user: 0)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 - Version comparison complete: 22 need updates, 0 up to date, 3 new agents
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: api_qa 1.2.0 -> 1.2.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: agent-manager 1.0.0 -> 2.0.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: code_analyzer 2.5.0 -> 2.6.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: data_engineer 2.4.0 -> 2.4.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: documentation 3.3.0 -> 3.3.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: engineer 3.8.0 -> 3.8.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: imagemagick 1.0.0 -> 1.0.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: memory_manager 1.1.0 -> 1.1.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: ops 2.2.1 -> 2.2.3 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: project_organizer 1.1.0 -> 1.1.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: qa 3.5.0 -> 3.5.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: refactoring_engineer 1.1.1 -> 1.1.2 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: research 4.4.0 -> 4.4.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: security 2.3.0 -> 2.3.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: ticketing 2.4.0 -> 2.4.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: vercel_ops_agent 1.1.0 -> 1.1.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: version_control 2.3.0 -> 2.3.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: web_qa 1.5.0 -> 1.8.1 (from system)
+2025-09-08 19:13:26,456 - claude_mpm.claude_mpm.services.agents.deployment.multi_source_deployment_service - INFO - logging_config.py:113 -   Upgrade: web_ui 1.4.0 -> 1.4.1 (from system)
+2025-09-08 19:13:26,457 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_QA.md
+2025-09-08 19:13:26,457 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for qa
+2025-09-08 19:13:26,459 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - No BASE instructions found for type: system
+2025-09-08 19:13:26,460 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_OPS.md
+2025-09-08 19:13:26,460 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for ops
+2025-09-08 19:13:26,461 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_RESEARCH.md
+2025-09-08 19:13:26,461 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for research
+2025-09-08 19:13:26,462 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_ENGINEER.md
+2025-09-08 19:13:26,462 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for engineer
+2025-09-08 19:13:26,463 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_DOCUMENTATION.md
+2025-09-08 19:13:26,463 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for documentation
+2025-09-08 19:13:26,463 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_ENGINEER.md
+2025-09-08 19:13:26,463 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for engineer
+2025-09-08 19:13:26,464 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_OPS.md
+2025-09-08 19:13:26,464 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for ops
+2025-09-08 19:13:26,464 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - No BASE instructions found for type: imagemagick
+2025-09-08 19:13:26,465 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - No BASE instructions found for type: memory_manager
+2025-09-08 19:13:26,466 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_OPS.md
+2025-09-08 19:13:26,466 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for ops
+2025-09-08 19:13:26,467 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_OPS.md
+2025-09-08 19:13:26,467 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for ops
+2025-09-08 19:13:26,467 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_QA.md
+2025-09-08 19:13:26,467 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for qa
+2025-09-08 19:13:26,468 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - No BASE instructions found for type: refactoring
+2025-09-08 19:13:26,469 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_RESEARCH.md
+2025-09-08 19:13:26,469 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for research
+2025-09-08 19:13:26,470 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - No BASE instructions found for type: security
+2025-09-08 19:13:26,471 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - No BASE instructions found for type: general
+2025-09-08 19:13:26,471 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_DOCUMENTATION.md
+2025-09-08 19:13:26,471 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for documentation
+2025-09-08 19:13:26,472 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_OPS.md
+2025-09-08 19:13:26,472 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for ops
+2025-09-08 19:13:26,472 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_OPS.md
+2025-09-08 19:13:26,472 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for ops
+2025-09-08 19:13:26,473 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_QA.md
+2025-09-08 19:13:26,473 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for qa
+2025-09-08 19:13:26,474 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Loading BASE instructions from /Users/masa/Projects/claude-mpm/src/claude_mpm/agents/BASE_ENGINEER.md
+2025-09-08 19:13:26,474 - claude_mpm.claude_mpm.services.agents.deployment.agent_template_builder - DEBUG - logging_config.py:113 - Combined BASE instructions with agent-specific instructions for engineer
+2025-09-08 19:13:26,475 - claude_mpm.claude_mpm.services.agents.deployment.agent_environment_manager - DEBUG - logging_config.py:113 - Set environment variable: CLAUDE_CONFIG_DIR=/Users/masa/Projects/managed/gitflow-analytics/.claude
+2025-09-08 19:13:26,475 - claude_mpm.claude_mpm.services.agents.deployment.agent_environment_manager - DEBUG - logging_config.py:113 - Set environment variable: CLAUDE_MAX_PARALLEL_SUBAGENTS=3
+2025-09-08 19:13:26,475 - claude_mpm.claude_mpm.services.agents.deployment.agent_environment_manager - DEBUG - logging_config.py:113 - Set environment variable: CLAUDE_TIMEOUT=300
+2025-09-08 19:13:26,475 - claude_mpm.claude_mpm.services.agents.deployment.agent_environment_manager - INFO - logging_config.py:113 - Claude environment configured for agent discovery in /Users/masa/Projects/managed/gitflow-analytics/.claude
+2025-09-08 19:13:26,475 - claude_mpm.claude_mpm.core.claude_runner - DEBUG - logging_config.py:113 - No JSON agents in project
+2025-09-08 19:13:26,475 - claude_mpm.interactive_session - DEBUG - interactive_session.py:395 - ℹ️ --resume flag NOT included in final command
