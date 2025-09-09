@@ -131,6 +131,17 @@
       "batch_size": 5,
       "success": true,
       "error_message": null
+    },
+    {
+      "timestamp": "2025-09-09T00:41:16.900482",
+      "model": "test-model",
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "processing_time_ms": 1500.0,
+      "estimated_cost": 0.00025,
+      "batch_size": 5,
+      "success": true,
+      "error_message": null
     }
   ]
 }

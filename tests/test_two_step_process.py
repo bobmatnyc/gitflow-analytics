@@ -214,7 +214,7 @@ def test_cli_commands():
         # Test fetch command help
         result = runner.invoke(cli, ['fetch', '--help'])
         assert result.exit_code == 0
-        assert 'Step 1 of 2' in result.output
+        assert 'Fetch data from external platforms' in result.output
         print("   ✅ Fetch command help works")
         
         # Test analyze command help  

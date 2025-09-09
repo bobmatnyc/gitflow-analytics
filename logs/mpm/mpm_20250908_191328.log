@@ -10,3 +10,6 @@
 2025-09-08 19:13:29,169 - claude_mpm.Tool-ticket - INFO - base.py:106 - [Tool-ticket] Initializing tool: ticket
 2025-09-08 19:13:29,169 - claude_mpm.MCPStdioServer - INFO - stdio_server.py:636 - Unified ticket tool initialized successfully
 2025-09-08 19:13:29,169 - claude_mpm.MCPStdioServer - INFO - stdio_server.py:527 - Listing 3 available tools
+2025-09-08 20:16:03,315 - claude_mpm.MCPGatewayManager - INFO - singleton_manager.py:77 - Received signal 15, cleaning up gateway
+2025-09-08 20:16:03,338 - claude_mpm.MCPGatewayManager - INFO - singleton_manager.py:221 - Gateway cleanup completed
+2025-09-08 20:16:03,648 - claude_mpm.MCPStdioServer - INFO - stdio_server.py:670 - Server shutting down normally

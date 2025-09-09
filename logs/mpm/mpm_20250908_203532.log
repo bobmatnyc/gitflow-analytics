@@ -1,0 +1,12 @@
+2025-09-08 20:35:32,725 - claude_mpm.cli.mcp - INFO - mcp_server_commands.py:29 - MCP server start command called
+2025-09-08 20:35:32,730 - claude_mpm.cli.mcp - INFO - mcp_server_commands.py:108 - Starting MCP Gateway Server directly...
+2025-09-08 20:35:32,731 - claude_mpm.MCPStdioServer - INFO - stdio_server.py:157 - Initializing MCP server claude-mpm-gateway v1.0.0
+2025-09-08 20:35:32,731 - claude_mpm.MCPPatcher - INFO - stdio_server.py:53 - Applying MCP Server message handling patch for backward compatibility
+2025-09-08 20:35:32,731 - claude_mpm.MCPPatcher - INFO - stdio_server.py:113 - Applied MCP Server message handling patch
+2025-09-08 20:35:32,731 - claude_mpm.MCPStdioServer - INFO - stdio_server.py:171 - MCP server initialized in 0.00 seconds
+2025-09-08 20:35:32,731 - claude_mpm.MCPStdioServer - INFO - stdio_server.py:651 - Starting claude-mpm-gateway v1.0.0
+2025-09-08 20:35:32,736 - claude_mpm.MCPStdioServer - INFO - stdio_server.py:655 - Stdio connection established
+2025-09-08 20:35:32,753 - claude_mpm.MCPStdioServer - INFO - stdio_server.py:630 - Initializing unified ticket tool...
+2025-09-08 20:35:32,753 - claude_mpm.Tool-ticket - INFO - base.py:106 - [Tool-ticket] Initializing tool: ticket
+2025-09-08 20:35:32,753 - claude_mpm.MCPStdioServer - INFO - stdio_server.py:636 - Unified ticket tool initialized successfully
+2025-09-08 20:35:32,753 - claude_mpm.MCPStdioServer - INFO - stdio_server.py:527 - Listing 3 available tools
