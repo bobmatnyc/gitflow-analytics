@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from difflib import get_close_matches
 from pathlib import Path
 from typing import Any, Optional, cast
 
@@ -15,7 +16,6 @@ import click
 import git
 import pandas as pd
 import yaml
-from difflib import get_close_matches
 
 from ._version import __version__
 from .cli_rich import create_rich_display
@@ -1726,7 +1726,7 @@ def analyze(
                                         "error",
                                     )
                                 else:
-                                    click.echo(f"   ❌ Clone timeout - likely authentication failure")
+                                    click.echo("   ❌ Clone timeout - likely authentication failure")
                                 continue
                             except git.GitCommandError as e:
                                 error_str = str(e)
@@ -1738,7 +1738,7 @@ def analyze(
                                             "error",
                                         )
                                     else:
-                                        click.echo(f"   ❌ Authentication failed. Check GitHub token.")
+                                        click.echo("   ❌ Authentication failed. Check GitHub token.")
                                     continue
                                 elif (
                                     repo_config.branch
@@ -1766,7 +1766,7 @@ def analyze(
                                         timeout=30
                                     )
                                     if result.returncode != 0:
-                                        raise git.GitCommandError(cmd, result.returncode, stderr=result.stderr)
+                                        raise git.GitCommandError(cmd, result.returncode, stderr=result.stderr) from e
                                 else:
                                     raise
                             if display:
@@ -1928,8 +1928,6 @@ def analyze(
                 should_prompt = True
 
                 if last_prompt_file.exists():
-                    import os
-
                     last_prompt_age = datetime.now() - datetime.fromtimestamp(
                         os.path.getmtime(last_prompt_file)
                     )
@@ -2893,9 +2891,8 @@ def analyze(
 
                 # Try to generate ChatGPT summary
                 chatgpt_summary = None
-                import os as os_module
 
-                openai_key = os_module.getenv("OPENROUTER_API_KEY") or os_module.getenv(
+                openai_key = os.getenv("OPENROUTER_API_KEY") or os.getenv(
                     "OPENAI_API_KEY"
                 )
                 if openai_key:
@@ -3721,8 +3718,6 @@ def cache_stats(config: Path) -> None:
         click.echo(f"   - Stale entries: {stats['stale_commits']}")
 
         # Calculate cache size
-        import os
-
         cache_size = 0
         for root, _dirs, files in os.walk(cfg.cache.directory):
             for f in files:

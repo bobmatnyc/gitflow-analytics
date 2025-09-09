@@ -300,8 +300,7 @@ class QualitativeConfig:
         if (
             self.llm_config.openrouter_api_key
             and self.llm_config.openrouter_api_key != "${OPENROUTER_API_KEY}"
-        ):
-            if self.llm_config.max_daily_cost < 1.0:
-                warnings.append("Very low daily cost limit may restrict LLM usage")
+        ) and self.llm_config.max_daily_cost < 1.0:
+            warnings.append("Very low daily cost limit may restrict LLM usage")
 
         return warnings

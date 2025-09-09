@@ -14,6 +14,7 @@ DESIGN DECISIONS:
 - Support for cache warming and export
 """
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -149,10 +150,8 @@ class LLMCache:
                     # Parse alternatives from JSON
                     alternatives = []
                     if row["alternatives"]:
-                        try:
+                        with contextlib.suppress(json.JSONDecodeError):
                             alternatives = json.loads(row["alternatives"])
-                        except json.JSONDecodeError:
-                            pass
 
                     return {
                         "category": row["category"],

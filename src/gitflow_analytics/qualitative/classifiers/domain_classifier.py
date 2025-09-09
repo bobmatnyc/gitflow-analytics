@@ -1,5 +1,6 @@
 """Domain classifier for identifying technical domains of commits."""
 
+import importlib.util
 import logging
 import re
 from collections import defaultdict
@@ -7,13 +8,12 @@ from typing import Any
 
 from ..models.schemas import DomainConfig
 
-try:
-    import spacy
-    from spacy.tokens import Doc
+# Check if spacy is available without importing it
+SPACY_AVAILABLE = importlib.util.find_spec("spacy") is not None
 
-    SPACY_AVAILABLE = True
-except ImportError:
-    SPACY_AVAILABLE = False
+if SPACY_AVAILABLE:
+    from spacy.tokens import Doc
+else:
     Doc = Any
 
 

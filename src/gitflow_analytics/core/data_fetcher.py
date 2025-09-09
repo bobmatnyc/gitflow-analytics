@@ -5,6 +5,7 @@ focusing purely on data collection from Git repositories and ticket systems
 without performing any LLM-based classification.
 """
 
+import contextlib
 import logging
 import os
 import subprocess
@@ -13,7 +14,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-import git
 from sqlalchemy.orm import Session
 
 from ..extractors.story_points import StoryPointExtractor
@@ -369,10 +369,7 @@ class GitDataFetcher:
         """Check if a file should be excluded based on exclude patterns."""
         import fnmatch
 
-        for pattern in self.exclude_paths:
-            if fnmatch.fnmatch(file_path, pattern):
-                return True
-        return False
+        return any(fnmatch.fnmatch(file_path, pattern) for pattern in self.exclude_paths)
 
     def _get_branches_to_analyze(
         self, repo: Any, branch_patterns: Optional[list[str]]
@@ -457,10 +454,8 @@ class GitDataFetcher:
         available_branches = []
 
         # Collect all branches (local and remote)
-        try:
+        with contextlib.suppress(Exception):
             available_branches.extend([branch.name for branch in repo.branches])
-        except Exception:
-            pass
 
         try:
             if repo.remotes and hasattr(repo.remotes, "origin"):

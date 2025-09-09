@@ -1,5 +1,6 @@
 """Main TUI application for GitFlow Analytics."""
 
+import contextlib
 from pathlib import Path
 from typing import Optional
 
@@ -410,10 +411,8 @@ class GitFlowAnalyticsApp(App):
         self.initialization_complete = True
 
         # Transition to main screen by popping loading screen and pushing main screen
-        try:
+        with contextlib.suppress(Exception):
             self.pop_screen()  # Remove loading screen
-        except Exception:
-            pass  # Ignore if no screen to pop
 
         main_screen = MainScreen(self.config, self.config_path, id="main-screen")
         self.push_screen(main_screen)
@@ -436,10 +435,8 @@ class GitFlowAnalyticsApp(App):
         self.initialization_complete = True
 
         # Transition to main screen without configuration
-        try:
+        with contextlib.suppress(Exception):
             self.pop_screen()  # Remove loading screen
-        except Exception:
-            pass  # Ignore if no screen to pop
 
         main_screen = MainScreen(None, None, id="main-screen")
         self.push_screen(main_screen)
