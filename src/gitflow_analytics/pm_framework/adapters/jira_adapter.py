@@ -1303,13 +1303,13 @@ class JIRAAdapter(BasePlatformAdapter):
                 "status_id": status_data.get("id", ""),
                 "status_category": status_data.get("statusCategory", {}).get("name", ""),
                 "priority_id": priority_data.get("id", "") if priority_data else "",
-                "resolution": fields.get("resolution", {}).get("name", "")
-                if fields.get("resolution")
-                else "",
+                "resolution": (
+                    fields.get("resolution", {}).get("name", "") if fields.get("resolution") else ""
+                ),
                 "environment": fields.get("environment", ""),
-                "security_level": fields.get("security", {}).get("name", "")
-                if fields.get("security")
-                else "",
+                "security_level": (
+                    fields.get("security", {}).get("name", "") if fields.get("security") else ""
+                ),
                 "votes": fields.get("votes", {}).get("votes", 0),
                 "watches": fields.get("watches", {}).get("watchCount", 0),
                 "custom_fields": self._extract_custom_fields(fields),
@@ -1671,28 +1671,32 @@ class JIRAAdapter(BasePlatformAdapter):
             "issue_type": issue.issue_type.value if issue.issue_type else None,
             "status": issue.status.value if issue.status else None,
             "priority": issue.priority.value if issue.priority else None,
-            "assignee": {
-                "id": issue.assignee.id,
-                "email": issue.assignee.email,
-                "display_name": issue.assignee.display_name,
-                "username": issue.assignee.username,
-                "platform": issue.assignee.platform,
-                "is_active": issue.assignee.is_active,
-                "platform_data": issue.assignee.platform_data,
-            }
-            if issue.assignee
-            else None,
-            "reporter": {
-                "id": issue.reporter.id,
-                "email": issue.reporter.email,
-                "display_name": issue.reporter.display_name,
-                "username": issue.reporter.username,
-                "platform": issue.reporter.platform,
-                "is_active": issue.reporter.is_active,
-                "platform_data": issue.reporter.platform_data,
-            }
-            if issue.reporter
-            else None,
+            "assignee": (
+                {
+                    "id": issue.assignee.id,
+                    "email": issue.assignee.email,
+                    "display_name": issue.assignee.display_name,
+                    "username": issue.assignee.username,
+                    "platform": issue.assignee.platform,
+                    "is_active": issue.assignee.is_active,
+                    "platform_data": issue.assignee.platform_data,
+                }
+                if issue.assignee
+                else None
+            ),
+            "reporter": (
+                {
+                    "id": issue.reporter.id,
+                    "email": issue.reporter.email,
+                    "display_name": issue.reporter.display_name,
+                    "username": issue.reporter.username,
+                    "platform": issue.reporter.platform,
+                    "is_active": issue.reporter.is_active,
+                    "platform_data": issue.reporter.platform_data,
+                }
+                if issue.reporter
+                else None
+            ),
             "resolved_date": issue.resolved_date.isoformat() if issue.resolved_date else None,
             "due_date": issue.due_date.isoformat() if issue.due_date else None,
             "story_points": issue.story_points,

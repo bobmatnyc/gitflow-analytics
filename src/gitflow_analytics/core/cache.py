@@ -178,9 +178,11 @@ class GitAnalysisCache:
                     is_merge=commit_data.get("is_merge", False),
                     files_changed=commit_data.get(
                         "files_changed_count",
-                        commit_data.get("files_changed", 0)
-                        if isinstance(commit_data.get("files_changed"), int)
-                        else len(commit_data.get("files_changed", [])),
+                        (
+                            commit_data.get("files_changed", 0)
+                            if isinstance(commit_data.get("files_changed"), int)
+                            else len(commit_data.get("files_changed", []))
+                        ),
                     ),
                     insertions=commit_data.get("insertions", 0),
                     deletions=commit_data.get("deletions", 0),
@@ -245,9 +247,11 @@ class GitAnalysisCache:
                         is_merge=commit_data.get("is_merge", False),
                         files_changed=commit_data.get(
                             "files_changed_count",
-                            commit_data.get("files_changed", 0)
-                            if isinstance(commit_data.get("files_changed"), int)
-                            else len(commit_data.get("files_changed", [])),
+                            (
+                                commit_data.get("files_changed", 0)
+                                if isinstance(commit_data.get("files_changed"), int)
+                                else len(commit_data.get("files_changed", []))
+                            ),
                         ),
                         insertions=commit_data.get("insertions", 0),
                         deletions=commit_data.get("deletions", 0),
@@ -951,9 +955,11 @@ class GitAnalysisCache:
                 "is_merge": commit_data.get("is_merge", False),
                 "files_changed": commit_data.get(
                     "files_changed_count",
-                    commit_data.get("files_changed", 0)
-                    if isinstance(commit_data.get("files_changed"), int)
-                    else len(commit_data.get("files_changed", [])),
+                    (
+                        commit_data.get("files_changed", 0)
+                        if isinstance(commit_data.get("files_changed"), int)
+                        else len(commit_data.get("files_changed", []))
+                    ),
                 ),
                 "insertions": commit_data.get("insertions", 0),
                 "deletions": commit_data.get("deletions", 0),
@@ -1060,9 +1066,11 @@ class GitAnalysisCache:
                         "is_merge": commit_data.get("is_merge"),
                         "files_changed": commit_data.get(
                             "files_changed_count",
-                            commit_data.get("files_changed", 0)
-                            if isinstance(commit_data.get("files_changed"), int)
-                            else len(commit_data.get("files_changed", [])),
+                            (
+                                commit_data.get("files_changed", 0)
+                                if isinstance(commit_data.get("files_changed"), int)
+                                else len(commit_data.get("files_changed", []))
+                            ),
                         ),
                         "insertions": commit_data.get("insertions"),
                         "deletions": commit_data.get("deletions"),

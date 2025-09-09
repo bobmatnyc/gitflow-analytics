@@ -269,10 +269,11 @@ class BatchProcessor:
                 "avg_batch_time_seconds": avg_batch_time,
                 "items_per_second": items_per_second,
                 "batches_completed": len(stats["batch_times"]),
-                "error_rate": stats["total_errors"]
-                / (stats["total_processed"] + stats["total_errors"])
-                if (stats["total_processed"] + stats["total_errors"]) > 0
-                else 0.0,
+                "error_rate": (
+                    stats["total_errors"] / (stats["total_processed"] + stats["total_errors"])
+                    if (stats["total_processed"] + stats["total_errors"]) > 0
+                    else 0.0
+                ),
             }
         else:
             return {

@@ -262,14 +262,14 @@ class PerformanceMetrics:
             "total_errors_24h": len(recent_errors),
             "error_rate": error_rate,
             "error_types": dict(error_type_counts),
-            "most_common_error": max(error_type_counts.keys(), key=error_type_counts.get)
-            if error_type_counts
-            else None,
-            "system_health": "healthy"
-            if error_rate < 0.01
-            else "degraded"
-            if error_rate < 0.05
-            else "unhealthy",
+            "most_common_error": (
+                max(error_type_counts.keys(), key=error_type_counts.get)
+                if error_type_counts
+                else None
+            ),
+            "system_health": (
+                "healthy" if error_rate < 0.01 else "degraded" if error_rate < 0.05 else "unhealthy"
+            ),
         }
 
     def get_performance_alerts(self) -> list[str]:

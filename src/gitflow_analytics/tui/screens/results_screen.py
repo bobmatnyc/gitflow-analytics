@@ -237,13 +237,17 @@ class ResultsScreen(Screen):
         commits_data = []
         for commit in self.commits[:1000]:  # Limit to 1000 for performance
             commit_row = {
-                "date": commit.get("timestamp", "").strftime("%Y-%m-%d")
-                if commit.get("timestamp")
-                else "",
+                "date": (
+                    commit.get("timestamp", "").strftime("%Y-%m-%d")
+                    if commit.get("timestamp")
+                    else ""
+                ),
                 "author": commit.get("author_name", ""),
-                "message": commit.get("message", "")[:80] + "..."
-                if len(commit.get("message", "")) > 80
-                else commit.get("message", ""),
+                "message": (
+                    commit.get("message", "")[:80] + "..."
+                    if len(commit.get("message", "")) > 80
+                    else commit.get("message", "")
+                ),
                 "files_changed": commit.get("files_changed_count", 0),
                 "insertions": commit.get("insertions", 0),
                 "deletions": commit.get("deletions", 0),
@@ -282,17 +286,19 @@ class ResultsScreen(Screen):
         prs_data = []
         for pr in self.prs:
             pr_row = {
-                "title": pr.get("title", "")[:60] + "..."
-                if len(pr.get("title", "")) > 60
-                else pr.get("title", ""),
+                "title": (
+                    pr.get("title", "")[:60] + "..."
+                    if len(pr.get("title", "")) > 60
+                    else pr.get("title", "")
+                ),
                 "author": pr.get("author", ""),
                 "state": pr.get("state", ""),
-                "created_date": pr.get("created_at", "").strftime("%Y-%m-%d")
-                if pr.get("created_at")
-                else "",
-                "merged_date": pr.get("merged_at", "").strftime("%Y-%m-%d")
-                if pr.get("merged_at")
-                else "",
+                "created_date": (
+                    pr.get("created_at", "").strftime("%Y-%m-%d") if pr.get("created_at") else ""
+                ),
+                "merged_date": (
+                    pr.get("merged_at", "").strftime("%Y-%m-%d") if pr.get("merged_at") else ""
+                ),
                 "commits": pr.get("commits_count", 0),
                 "changed_files": pr.get("changed_files", 0),
                 "additions": pr.get("additions", 0),

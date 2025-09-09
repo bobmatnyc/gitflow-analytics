@@ -665,6 +665,7 @@ class QualitativeProcessor:
         try:
             with self.database.get_session() as session:
                 from sqlalchemy import text
+
                 session.execute(text("SELECT 1"))
         except Exception as e:
             issues.append(f"Database: Connection failed - {e}")

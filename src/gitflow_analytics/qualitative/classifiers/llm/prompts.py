@@ -366,8 +366,8 @@ Response (format: CATEGORY confidence reasoning):""",
         return {
             "version": self.version.value,
             "has_few_shot": bool(self.template.few_shot_examples),
-            "num_examples": len(self.template.few_shot_examples)
-            if self.template.few_shot_examples
-            else 0,
+            "num_examples": (
+                len(self.template.few_shot_examples) if self.template.few_shot_examples else 0
+            ),
             "categories": list(self.CATEGORIES.keys()),
         }

@@ -2,7 +2,7 @@
 
 This module provides sophisticated qualitative analysis across four key dimensions:
 1. Executive Summary Analysis - High-level team health and strategic insights
-2. Project Analysis - Project-specific momentum and health assessment  
+2. Project Analysis - Project-specific momentum and health assessment
 3. Developer Analysis - Individual contribution patterns and career development
 4. Workflow Analysis - Process effectiveness and Git-PM correlation analysis
 
@@ -903,20 +903,20 @@ class EnhancedQualitativeAnalyzer:
             "activity_level": {
                 "score": round(activity_score, 1),
                 "description": f"{weekly_commits:.1f} commits per week",
-                "status": "excellent"
-                if activity_score >= 80
-                else "good"
-                if activity_score >= 60
-                else "needs_improvement",
+                "status": (
+                    "excellent"
+                    if activity_score >= 80
+                    else "good" if activity_score >= 60 else "needs_improvement"
+                ),
             },
             "contributor_diversity": {
                 "score": round(diversity_score, 1),
                 "description": f"{len(contributors)} active contributors",
-                "status": "excellent"
-                if len(contributors) >= 4
-                else "good"
-                if len(contributors) >= 2
-                else "concerning",
+                "status": (
+                    "excellent"
+                    if len(contributors) >= 4
+                    else "good" if len(contributors) >= 2 else "concerning"
+                ),
             },
             "pr_velocity": {
                 "score": pr_velocity_score,
@@ -926,11 +926,11 @@ class EnhancedQualitativeAnalyzer:
             "ticket_coverage": {
                 "score": round(ticket_coverage, 1),
                 "description": f"{ticket_coverage:.1f}% commits linked to tickets",
-                "status": "excellent"
-                if ticket_coverage >= 80
-                else "good"
-                if ticket_coverage >= 60
-                else "needs_improvement",
+                "status": (
+                    "excellent"
+                    if ticket_coverage >= 80
+                    else "good" if ticket_coverage >= 60 else "needs_improvement"
+                ),
             },
         }
 
@@ -945,11 +945,11 @@ class EnhancedQualitativeAnalyzer:
 
         indicators["overall_health"] = {
             "score": round(overall_score, 1),
-            "status": "excellent"
-            if overall_score >= 80
-            else "good"
-            if overall_score >= 60
-            else "needs_improvement",
+            "status": (
+                "excellent"
+                if overall_score >= 80
+                else "good" if overall_score >= 60 else "needs_improvement"
+            ),
         }
 
         return indicators
@@ -1462,9 +1462,9 @@ class EnhancedQualitativeAnalyzer:
             "trajectory": trajectory,
             "confidence": confidence,
             "description": description,
-            "complexity_trend": round(complexity_trend * 100, 1)
-            if "complexity_trend" in locals()
-            else 0,
+            "complexity_trend": (
+                round(complexity_trend * 100, 1) if "complexity_trend" in locals() else 0
+            ),
             "project_expansion": project_trend if "project_trend" in locals() else 0,
         }
 
@@ -1915,27 +1915,27 @@ class EnhancedQualitativeAnalyzer:
             "overall_score": round(overall_compliance, 1),
             "ticket_coverage": {
                 "score": round(ticket_coverage, 1),
-                "status": "excellent"
-                if ticket_coverage >= 80
-                else "good"
-                if ticket_coverage >= 60
-                else "needs_improvement",
+                "status": (
+                    "excellent"
+                    if ticket_coverage >= 80
+                    else "good" if ticket_coverage >= 60 else "needs_improvement"
+                ),
             },
             "message_quality": {
                 "score": round(message_quality, 1),
-                "status": "excellent"
-                if message_quality >= 80
-                else "good"
-                if message_quality >= 60
-                else "needs_improvement",
+                "status": (
+                    "excellent"
+                    if message_quality >= 80
+                    else "good" if message_quality >= 60 else "needs_improvement"
+                ),
             },
             "commit_size_compliance": {
                 "score": round(size_compliance, 1),
-                "status": "excellent"
-                if size_compliance >= 80
-                else "good"
-                if size_compliance >= 60
-                else "needs_improvement",
+                "status": (
+                    "excellent"
+                    if size_compliance >= 80
+                    else "good" if size_compliance >= 60 else "needs_improvement"
+                ),
             },
             "pr_approval_rate": {"score": pr_approval_rate, "status": "good"},  # Placeholder
         }
@@ -1983,11 +1983,11 @@ class EnhancedQualitativeAnalyzer:
             "cross_project_contributors": cross_project_devs,
             "cross_collaboration_rate": round(cross_collaboration_rate, 1),
             "avg_contributors_per_project": round(avg_contributors_per_project, 1),
-            "collaboration_level": "high"
-            if collaboration_score >= 70
-            else "medium"
-            if collaboration_score >= 40
-            else "low",
+            "collaboration_level": (
+                "high"
+                if collaboration_score >= 70
+                else "medium" if collaboration_score >= 40 else "low"
+            ),
             "patterns": {
                 "multi_project_engagement": cross_collaboration_rate >= 50,
                 "team_project_distribution": avg_contributors_per_project >= 2,

@@ -16,7 +16,7 @@ DESIGN DECISIONS:
 
 USAGE:
     from gitflow_analytics.core.progress import get_progress_service
-    
+
     progress = get_progress_service()
     context = progress.create_progress(100, "Processing items")
     for item in items:

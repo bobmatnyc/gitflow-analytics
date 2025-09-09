@@ -12,7 +12,7 @@ Key Components:
 
 Example Usage:
     from gitflow_analytics.pm_framework import PMFrameworkOrchestrator
-    
+
     config = {
         'pm_platforms': {
             'jira': {
@@ -29,7 +29,7 @@ Example Usage:
             }
         }
     }
-    
+
     orchestrator = PMFrameworkOrchestrator(config)
     if orchestrator.is_enabled():
         issues = orchestrator.get_all_issues(since=datetime.now() - timedelta(weeks=12))

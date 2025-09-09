@@ -1362,30 +1362,30 @@ class GitAnalyzer:
                             file_path = diff.b_path if diff.b_path else diff.a_path
                             if file_path and file_path in files_changed and diff.diff:
                                 # Calculate insertions and deletions per file
-                                    diff_text = (
-                                        diff.diff
-                                        if isinstance(diff.diff, str)
-                                        else diff.diff.decode("utf-8", errors="ignore")
-                                    )
-                                    insertions = len(
-                                        [
-                                            line
-                                            for line in diff_text.split("\n")
-                                            if line.startswith("+") and not line.startswith("+++")
-                                        ]
-                                    )
-                                    deletions = len(
-                                        [
-                                            line
-                                            for line in diff_text.split("\n")
-                                            if line.startswith("-") and not line.startswith("---")
-                                        ]
-                                    )
+                                diff_text = (
+                                    diff.diff
+                                    if isinstance(diff.diff, str)
+                                    else diff.diff.decode("utf-8", errors="ignore")
+                                )
+                                insertions = len(
+                                    [
+                                        line
+                                        for line in diff_text.split("\n")
+                                        if line.startswith("+") and not line.startswith("+++")
+                                    ]
+                                )
+                                deletions = len(
+                                    [
+                                        line
+                                        for line in diff_text.split("\n")
+                                        if line.startswith("-") and not line.startswith("---")
+                                    ]
+                                )
 
-                                    file_details[file_path] = {
-                                        "insertions": insertions,
-                                        "deletions": deletions,
-                                    }
+                                file_details[file_path] = {
+                                    "insertions": insertions,
+                                    "deletions": deletions,
+                                }
 
                         enhanced_commit["file_details"] = file_details
                     except Exception as detail_error:

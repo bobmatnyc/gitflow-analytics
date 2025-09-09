@@ -586,12 +586,12 @@ class PMFrameworkOrchestrator:
             "pm_total_story_points": pm_story_points,
             "git_total_story_points": git_story_points,
             "issues_with_story_points": issues_with_story_points,
-            "story_point_coverage_pct": (issues_with_story_points / total_issues * 100)
-            if total_issues > 0
-            else 0,
-            "correlation_accuracy": min(git_story_points / pm_story_points, 1.0)
-            if pm_story_points > 0
-            else 0,
+            "story_point_coverage_pct": (
+                (issues_with_story_points / total_issues * 100) if total_issues > 0 else 0
+            ),
+            "correlation_accuracy": (
+                min(git_story_points / pm_story_points, 1.0) if pm_story_points > 0 else 0
+            ),
         }
 
         # Issue type distribution
@@ -617,9 +617,9 @@ class PMFrameworkOrchestrator:
                 "total_issues": len(issues),
                 "linked_issues": len(unique_linked),
                 "coverage_percentage": coverage_pct,
-                "correlation_rate": len(linked_issues) / len(correlations) * 100
-                if correlations
-                else 0,
+                "correlation_rate": (
+                    len(linked_issues) / len(correlations) * 100 if correlations else 0
+                ),
             }
 
         metrics["platform_coverage"] = platform_coverage

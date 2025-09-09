@@ -8,7 +8,7 @@ Available Adapters:
 - JIRAAdapter: JIRA Cloud and Server integration
 
 Planned Adapters:
-- AzureDevOpsAdapter: Azure DevOps Services and Server integration  
+- AzureDevOpsAdapter: Azure DevOps Services and Server integration
 - LinearAdapter: Linear workspace integration
 - AsanaAdapter: Asana project integration
 - GitHubIssuesAdapter: GitHub Issues integration
@@ -17,7 +17,7 @@ Planned Adapters:
 Example Adapter Registration:
     from gitflow_analytics.pm_framework import PlatformRegistry
     from .jira_adapter import JIRAAdapter
-    
+
     registry = PlatformRegistry()
     registry.register_adapter('jira', JIRAAdapter)
 

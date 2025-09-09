@@ -382,11 +382,9 @@ class IntentAnalyzer:
 
         return {
             "score": confidence_score,
-            "level": "high"
-            if confidence_score > 0.7
-            else "medium"
-            if confidence_score > 0.4
-            else "low",
+            "level": (
+                "high" if confidence_score > 0.7 else "medium" if confidence_score > 0.4 else "low"
+            ),
             "signals": signals,
         }
 

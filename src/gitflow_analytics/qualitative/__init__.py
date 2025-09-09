@@ -7,7 +7,7 @@ file changes.
 Key Components:
 - QualitativeProcessor: Main orchestrator for qualitative analysis
 - EnhancedQualitativeAnalyzer: Advanced multi-dimensional analysis for executives, projects, developers, and workflows
-- NLPEngine: spaCy-based fast processing for most commits  
+- NLPEngine: spaCy-based fast processing for most commits
 - LLMFallback: Strategic use of LLMs for uncertain cases
 - Various classifiers for change type, domain, risk, and intent analysis
 """

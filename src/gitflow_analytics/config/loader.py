@@ -741,9 +741,11 @@ class ConfigLoader:
                 max_retries=llm_data.get("max_retries", 3),
                 max_daily_cost=cost_tracking_data.get("daily_budget_usd")
                 or llm_data.get("max_daily_cost", 5.0),
-                enable_cost_tracking=cost_tracking_data.get("enabled")
-                if cost_tracking_data.get("enabled") is not None
-                else llm_data.get("enable_cost_tracking", True),
+                enable_cost_tracking=(
+                    cost_tracking_data.get("enabled")
+                    if cost_tracking_data.get("enabled") is not None
+                    else llm_data.get("enable_cost_tracking", True)
+                ),
             )
 
             # Parse cache configuration

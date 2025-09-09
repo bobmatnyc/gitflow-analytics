@@ -4,7 +4,7 @@
 This example demonstrates how to use the EnhancedQualitativeAnalyzer to generate
 comprehensive qualitative insights across four key dimensions:
 1. Executive Summary Analysis
-2. Project Analysis  
+2. Project Analysis
 3. Developer Analysis
 4. Workflow Analysis
 

@@ -982,9 +982,9 @@ class MLPredictionCache:
                         "confidence": row["confidence"],
                         "method": "cached",  # Override method to indicate cached result
                         "features": json.loads(row["features"]) if row["features"] else {},
-                        "alternatives": json.loads(row["alternatives"])
-                        if row["alternatives"]
-                        else [],
+                        "alternatives": (
+                            json.loads(row["alternatives"]) if row["alternatives"] else []
+                        ),
                     }
 
         except Exception as e:
@@ -1081,9 +1081,11 @@ class MLPredictionCache:
                         "active_entries": row[1],
                         "expired_entries": row[2],
                         "unique_methods": row[3],
-                        "cache_file_size_mb": self.cache_path.stat().st_size / (1024 * 1024)
-                        if self.cache_path.exists()
-                        else 0,
+                        "cache_file_size_mb": (
+                            self.cache_path.stat().st_size / (1024 * 1024)
+                            if self.cache_path.exists()
+                            else 0
+                        ),
                     }
 
         except Exception as e:

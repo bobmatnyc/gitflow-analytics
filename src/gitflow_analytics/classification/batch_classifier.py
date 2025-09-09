@@ -532,9 +532,9 @@ class BatchCommitClassifier:
             for ticket in tickets:
                 ticket_context[ticket.ticket_id] = {
                     "title": ticket.title,
-                    "description": ticket.summary or ticket.description[:200]
-                    if ticket.description
-                    else "",
+                    "description": (
+                        ticket.summary or ticket.description[:200] if ticket.description else ""
+                    ),
                     "ticket_type": ticket.ticket_type,
                     "status": ticket.status,
                     "labels": ticket.labels or [],

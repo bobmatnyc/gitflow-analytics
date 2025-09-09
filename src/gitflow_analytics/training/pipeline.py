@@ -133,9 +133,11 @@ class CommitClassificationTrainer:
 
         # Initialize classifier
         self.classifier = CommitClassifier(
-            config=config.analysis.commit_classification.__dict__
-            if hasattr(config.analysis, "commit_classification")
-            else {},
+            config=(
+                config.analysis.commit_classification.__dict__
+                if hasattr(config.analysis, "commit_classification")
+                else {}
+            ),
             cache_dir=cache.cache_dir,
         )
 

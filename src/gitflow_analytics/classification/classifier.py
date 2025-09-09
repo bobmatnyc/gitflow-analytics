@@ -295,9 +295,9 @@ class CommitClassifier:
             / total_commits,
             "language_usage_patterns": language_usage,
             "activity_patterns": activity_patterns,
-            "most_common_class": max(class_counts.items(), key=lambda x: x[1])[0]
-            if class_counts
-            else None,
+            "most_common_class": (
+                max(class_counts.items(), key=lambda x: x[1])[0] if class_counts else None
+            ),
             "classification_diversity": len(class_counts),
             "supported_categories": list(self.classification_categories.keys()),
         }

@@ -155,36 +155,55 @@ def handle_timezone_error(
 
 class ImprovedErrorHandler:
     """Enhanced error handling with helpful suggestions."""
-    
+
     @staticmethod
     def handle_command_error(ctx: click.Context, error: Exception) -> None:
         """Handle command errors with helpful suggestions."""
         error_msg = str(error)
-        
+
         # Check for common errors and provide suggestions
         if "no such option" in error_msg.lower():
             # Extract the invalid option
             import re
+
             match = re.search(r"no such option: (--?[\w-]+)", error_msg.lower())
             if match:
                 invalid_option = match.group(1)
-                available_options = ['--config', '--weeks', '--output', '--format', '--clear-cache',
-                                   '--validate-only', '--anonymize', '--help']
+                available_options = [
+                    "--config",
+                    "--weeks",
+                    "--output",
+                    "--format",
+                    "--clear-cache",
+                    "--validate-only",
+                    "--anonymize",
+                    "--help",
+                ]
                 suggestion = RichHelpFormatter.suggest_command(invalid_option, available_options)
                 if suggestion:
                     click.echo(f"\n❗ {error_msg}", err=True)
                     click.echo(f"\n💡 {suggestion}", err=True)
                     click.echo("\nUse 'gitflow-analytics --help' for available options.", err=True)
                     return
-        
+
         elif "no such command" in error_msg.lower():
             # Extract the invalid command
             import re
+
             match = re.search(r"no such command[:'] (\w+)", error_msg.lower())
             if match:
                 invalid_cmd = match.group(1)
-                available_cmds = ['analyze', 'fetch', 'identities', 'train', 'cache-stats',
-                                 'list-developers', 'merge-identity', 'help', 'train-stats']
+                available_cmds = [
+                    "analyze",
+                    "fetch",
+                    "identities",
+                    "train",
+                    "cache-stats",
+                    "list-developers",
+                    "merge-identity",
+                    "help",
+                    "train-stats",
+                ]
                 suggestion = RichHelpFormatter.suggest_command(invalid_cmd, available_cmds)
                 if suggestion:
                     click.echo(f"\n❗ Unknown command: '{invalid_cmd}'", err=True)
@@ -194,7 +213,7 @@ class ImprovedErrorHandler:
                         click.echo(f"  • {cmd}", err=True)
                     click.echo("\nUse 'gitflow-analytics help' for more information.", err=True)
                     return
-        
+
         elif "file not found" in error_msg.lower() or "no such file" in error_msg.lower():
             click.echo(f"\n❗ {error_msg}", err=True)
             click.echo("\n💡 Suggestions:", err=True)
@@ -202,7 +221,7 @@ class ImprovedErrorHandler:
             click.echo("  • Use absolute paths for clarity", err=True)
             click.echo("  • Create a config file: cp config-sample.yaml myconfig.yaml", err=True)
             return
-            
+
         elif "permission denied" in error_msg.lower():
             click.echo(f"\n❗ {error_msg}", err=True)
             click.echo("\n💡 Suggestions:", err=True)
@@ -210,7 +229,7 @@ class ImprovedErrorHandler:
             click.echo("  • Ensure you have read access to repositories", err=True)
             click.echo("  • Try running with appropriate user permissions", err=True)
             return
-            
+
         elif "git repository" in error_msg.lower():
             click.echo(f"\n❗ {error_msg}", err=True)
             click.echo("\n💡 Suggestions:", err=True)
@@ -218,7 +237,7 @@ class ImprovedErrorHandler:
             click.echo("  • Ensure repositories are cloned locally", err=True)
             click.echo("  • Check that .git directory exists", err=True)
             return
-        
+
         # Default error display
         click.echo(f"\n❗ Error: {error_msg}", err=True)
         click.echo("\nFor help: gitflow-analytics help", err=True)
@@ -426,7 +445,7 @@ def analyze_subcommand(
     force_fetch: bool,
 ) -> None:
     """Analyze Git repositories and generate comprehensive productivity reports.
-    
+
     \b
     This is the main command for GitFlow Analytics. It:
     - Analyzes commit history from configured repositories
@@ -434,28 +453,28 @@ def analyze_subcommand(
     - Extracts ticket references and categorizes commits
     - Calculates productivity metrics and DORA metrics
     - Generates reports in various formats
-    
+
     \b
     EXAMPLES:
       # Basic analysis of last 4 weeks
       gitflow-analytics analyze -c config.yaml --weeks 4
-      
+
       # Generate CSV reports with fresh data
       gitflow-analytics analyze -c config.yaml --generate-csv --clear-cache
-      
+
       # Quick validation of configuration
       gitflow-analytics analyze -c config.yaml --validate-only
-      
+
       # Analyze with qualitative insights
       gitflow-analytics analyze -c config.yaml --enable-qualitative
-    
+
     \b
     OUTPUT FILES:
       - developer_metrics_YYYYMMDD.csv: Individual developer statistics
       - weekly_metrics_YYYYMMDD.csv: Week-by-week team metrics
       - narrative_report_YYYYMMDD.md: Executive summary and insights
       - comprehensive_export_YYYYMMDD.json: Complete data export
-    
+
     \b
     PERFORMANCE TIPS:
       - Use --no-cache for latest data but slower performance
@@ -1671,17 +1690,22 @@ def analyze(
             for idx, repo_config in enumerate(repositories_to_analyze, 1):
                 if display:
                     display.update_progress_task(
-                        "repos", description=f"Analyzing {repo_config.name}... ({idx}/{len(repositories_to_analyze)})"
+                        "repos",
+                        description=f"Analyzing {repo_config.name}... ({idx}/{len(repositories_to_analyze)})",
                     )
                 else:
-                    click.echo(f"\n📁 Analyzing {repo_config.name}... ({idx}/{len(repositories_to_analyze)})")
+                    click.echo(
+                        f"\n📁 Analyzing {repo_config.name}... ({idx}/{len(repositories_to_analyze)})"
+                    )
 
                 # Check if repo exists, clone if needed
                 if not repo_config.path.exists():
                     # Try to clone if we have a github_repo configured
                     if repo_config.github_repo and cfg.github.organization:
                         if display:
-                            display.print_status(f"Cloning {repo_config.github_repo} from GitHub...", "info")
+                            display.print_status(
+                                f"Cloning {repo_config.github_repo} from GitHub...", "info"
+                            )
                         else:
                             click.echo(f"   📥 Cloning {repo_config.github_repo} from GitHub...")
                         try:
@@ -1698,27 +1722,29 @@ def analyze(
                             try:
                                 # Use subprocess for better control over git command
                                 env = os.environ.copy()
-                                env['GIT_TERMINAL_PROMPT'] = '0'
-                                env['GIT_ASKPASS'] = ''
-                                env['GCM_INTERACTIVE'] = 'never'
-                                
+                                env["GIT_TERMINAL_PROMPT"] = "0"
+                                env["GIT_ASKPASS"] = ""
+                                env["GCM_INTERACTIVE"] = "never"
+
                                 # Build git clone command
-                                cmd = ['git', 'clone', '--config', 'credential.helper=']
+                                cmd = ["git", "clone", "--config", "credential.helper="]
                                 if repo_config.branch:
-                                    cmd.extend(['-b', repo_config.branch])
+                                    cmd.extend(["-b", repo_config.branch])
                                 cmd.extend([clone_url, str(repo_config.path)])
-                                
+
                                 # Run with timeout to prevent hanging
                                 result = subprocess.run(
                                     cmd,
                                     env=env,
                                     capture_output=True,
                                     text=True,
-                                    timeout=30  # 30 second timeout
+                                    timeout=30,  # 30 second timeout
                                 )
-                                
+
                                 if result.returncode != 0:
-                                    raise git.GitCommandError(cmd, result.returncode, stderr=result.stderr)
+                                    raise git.GitCommandError(
+                                        cmd, result.returncode, stderr=result.stderr
+                                    )
                             except subprocess.TimeoutExpired:
                                 if display:
                                     display.print_status(
@@ -1726,19 +1752,26 @@ def analyze(
                                         "error",
                                     )
                                 else:
-                                    click.echo("   ❌ Clone timeout - likely authentication failure")
+                                    click.echo(
+                                        "   ❌ Clone timeout - likely authentication failure"
+                                    )
                                 continue
                             except git.GitCommandError as e:
                                 error_str = str(e)
                                 # Check for authentication failures
-                                if any(x in error_str.lower() for x in ['authentication', 'permission denied', '401', '403']):
+                                if any(
+                                    x in error_str.lower()
+                                    for x in ["authentication", "permission denied", "401", "403"]
+                                ):
                                     if display:
                                         display.print_status(
                                             f"Authentication failed for {repo_config.github_repo}. Check GitHub token.",
                                             "error",
                                         )
                                     else:
-                                        click.echo("   ❌ Authentication failed. Check GitHub token.")
+                                        click.echo(
+                                            "   ❌ Authentication failed. Check GitHub token."
+                                        )
                                     continue
                                 elif (
                                     repo_config.branch
@@ -1756,17 +1789,21 @@ def analyze(
                                             f"   ⚠️  Branch '{repo_config.branch}' not found, using repository default"
                                         )
                                     # Try again without branch specification
-                                    cmd = ['git', 'clone', '--config', 'credential.helper=', 
-                                           clone_url, str(repo_config.path)]
+                                    cmd = [
+                                        "git",
+                                        "clone",
+                                        "--config",
+                                        "credential.helper=",
+                                        clone_url,
+                                        str(repo_config.path),
+                                    ]
                                     result = subprocess.run(
-                                        cmd,
-                                        env=env,
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=30
+                                        cmd, env=env, capture_output=True, text=True, timeout=30
                                     )
                                     if result.returncode != 0:
-                                        raise git.GitCommandError(cmd, result.returncode, stderr=result.stderr) from e
+                                        raise git.GitCommandError(
+                                            cmd, result.returncode, stderr=result.stderr
+                                        ) from e
                                 else:
                                     raise
                             if display:
@@ -1818,7 +1855,9 @@ def analyze(
                     from .metrics.branch_health import BranchHealthAnalyzer
 
                     branch_analyzer = BranchHealthAnalyzer()
-                    branch_metrics = branch_analyzer.analyze_repository_branches(str(repo_config.path))
+                    branch_metrics = branch_analyzer.analyze_repository_branches(
+                        str(repo_config.path)
+                    )
                     branch_health_metrics[repo_config.name] = branch_metrics
 
                     # Log branch health summary
@@ -1839,7 +1878,9 @@ def analyze(
                         )
 
                     # Enrich with integration data
-                    enrichment = orchestrator.enrich_repository_data(repo_config, commits, start_date)
+                    enrichment = orchestrator.enrich_repository_data(
+                        repo_config, commits, start_date
+                    )
                     all_enrichments[repo_config.name] = enrichment
 
                     if enrichment["prs"]:
@@ -2892,9 +2933,7 @@ def analyze(
                 # Try to generate ChatGPT summary
                 chatgpt_summary = None
 
-                openai_key = os.getenv("OPENROUTER_API_KEY") or os.getenv(
-                    "OPENAI_API_KEY"
-                )
+                openai_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
                 if openai_key:
                     try:
                         # Create temporary comprehensive data for ChatGPT
@@ -3370,7 +3409,7 @@ def analyze(
         else:
             # Use improved error handler for better suggestions
             ImprovedErrorHandler.handle_command_error(click.get_current_context(), e)
-            
+
             # Still show rich display error if available
             if display and "--debug" not in sys.argv:
                 display.show_error(error_msg, show_debug_hint=True)
@@ -3415,38 +3454,38 @@ def fetch(
     rich: bool,
 ) -> None:
     """Fetch data from external platforms for enhanced analysis.
-    
+
     \b
     This command retrieves data from:
     - Git repositories: Commits, branches, authors
     - GitHub: Pull requests, issues, reviews (if configured)
     - JIRA: Tickets, story points, sprint data (if configured)
     - ClickUp: Tasks, time tracking (if configured)
-    
+
     \b
     The fetched data enhances reports with:
     - DORA metrics (deployment frequency, lead time)
     - Story point velocity and estimation accuracy
     - PR review turnaround times
     - Issue resolution metrics
-    
+
     \b
     EXAMPLES:
       # Fetch last 4 weeks of data
       gitflow-analytics fetch -c config.yaml --weeks 4
-      
+
       # Fetch fresh data, clearing old cache
       gitflow-analytics fetch -c config.yaml --clear-cache
-      
+
       # Debug API connectivity issues
       gitflow-analytics fetch -c config.yaml --log DEBUG
-    
+
     \b
     REQUIREMENTS:
       - API credentials in configuration or environment
       - Network access to platform APIs
       - Appropriate permissions for repositories/projects
-    
+
     \b
     PERFORMANCE:
       - First fetch may take several minutes for large repos
@@ -3685,7 +3724,7 @@ def fetch(
 )
 def cache_stats(config: Path) -> None:
     """Display cache statistics and performance metrics.
-    
+
     \b
     Shows detailed information about:
     - Cache hit/miss rates
@@ -3693,12 +3732,12 @@ def cache_stats(config: Path) -> None:
     - Database size and storage usage
     - Time saved through caching
     - Stale entries that need refresh
-    
+
     \b
     EXAMPLES:
       # Check cache status
       gitflow-analytics cache-stats -c config.yaml
-    
+
     \b
     Use this to:
     - Monitor cache performance
@@ -3742,17 +3781,17 @@ def cache_stats(config: Path) -> None:
 @click.argument("dev2", metavar="ALIAS_EMAIL")
 def merge_identity(config: Path, dev1: str, dev2: str) -> None:
     """Merge two developer identities into one.
-    
+
     \b
     Consolidates commits from ALIAS_EMAIL under PRIMARY_EMAIL.
     This is useful when a developer has multiple email addresses
     that weren't automatically detected.
-    
+
     \b
     EXAMPLES:
       # Merge john's gmail into his work email
       gitflow-analytics merge-identity -c config.yaml john@work.com john@gmail.com
-    
+
     \b
     The merge:
     - Updates all historical commits
@@ -3848,7 +3887,7 @@ def discover_storypoint_fields(config: Path) -> None:
 @click.option("--apply", is_flag=True, help="Apply suggestions to configuration")
 def identities(config: Path, weeks: int, apply: bool) -> None:
     """Analyze and manage developer identity resolution.
-    
+
     \b
     This command helps consolidate multiple email addresses and names
     that belong to the same developer. It uses intelligent analysis to:
@@ -3856,22 +3895,22 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
     - Identify GitHub noreply addresses
     - Find bot accounts to exclude
     - Suggest identity mappings for your configuration
-    
+
     \b
     EXAMPLES:
       # Analyze identities from last 12 weeks
       gitflow-analytics identities -c config.yaml --weeks 12
-      
+
       # Auto-apply identity suggestions
       gitflow-analytics identities -c config.yaml --apply
-    
+
     \b
     IDENTITY RESOLUTION PROCESS:
       1. Analyzes commit authors from recent history
       2. Groups similar identities using fuzzy matching
       3. Suggests consolidated mappings
       4. Updates configuration with approved mappings
-    
+
     \b
     CONFIGURATION:
       Mappings are saved to 'analysis.identity.manual_mappings'
@@ -4028,19 +4067,19 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
 )
 def list_developers(config: Path) -> None:
     """List all known developers with statistics.
-    
+
     \b
     Displays a table of developers showing:
     - Primary name and email
     - Total commit count
     - Story points delivered
     - Number of identity aliases
-    
+
     \b
     EXAMPLES:
       # List all developers
       gitflow-analytics list-developers -c config.yaml
-    
+
     \b
     Useful for:
     - Verifying identity resolution
@@ -4136,7 +4175,7 @@ def train(
     log: str,
 ) -> None:
     """Train custom ML models for improved commit classification.
-    
+
     \b
     This command trains machine learning models on your repository's
     commit history to improve classification accuracy. The models learn:
@@ -4144,27 +4183,27 @@ def train(
     - Team coding conventions and terminology
     - Domain-specific keywords and concepts
     - File path patterns for different change types
-    
+
     \b
     EXAMPLES:
       # Train on last 12 weeks of commits
       gitflow-analytics train -c config.yaml --weeks 12
-      
+
       # Train with custom session name
       gitflow-analytics train -c config.yaml --session-name "q4-training"
-      
+
       # Save training data for inspection
       gitflow-analytics train -c config.yaml --save-training-data
-      
+
       # Incremental training on new data
       gitflow-analytics train -c config.yaml --incremental
-    
+
     \b
     MODEL TYPES:
       - random_forest: Best general performance (default)
       - svm: Good for clear category boundaries
       - naive_bayes: Fast, works well with small datasets
-    
+
     \b
     TRAINING PROCESS:
       1. Extracts commits with ticket references
@@ -4172,7 +4211,7 @@ def train(
       3. Maps ticket types to commit categories
       4. Trains model with cross-validation
       5. Saves model with performance metrics
-    
+
     \b
     REQUIREMENTS:
       - PM platform integration configured
@@ -4400,7 +4439,7 @@ def train(
 @cli.command(name="help")
 def show_help() -> None:
     """Show comprehensive help and usage guide.
-    
+
     \b
     Displays detailed information about:
     - Getting started with GitFlow Analytics
@@ -4537,7 +4576,7 @@ For detailed command help: gitflow-analytics COMMAND --help
 )
 def training_statistics(config: Path) -> None:
     """Display ML model training statistics and performance history.
-    
+
     \b
     Shows comprehensive training metrics:
     - Total training sessions and success rate
@@ -4545,12 +4584,12 @@ def training_statistics(config: Path) -> None:
     - Training data statistics
     - Best performing model details
     - Recent training session results
-    
+
     \b
     EXAMPLES:
       # View training statistics
       gitflow-analytics train-stats -c config.yaml
-    
+
     \b
     Use this to:
     - Monitor model performance over time

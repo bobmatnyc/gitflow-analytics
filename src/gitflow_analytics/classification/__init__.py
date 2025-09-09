@@ -18,7 +18,7 @@ The classification system uses a combination of:
 
 Usage:
     from gitflow_analytics.classification import CommitClassifier
-    
+
     classifier = CommitClassifier(config)
     predictions = classifier.predict_batch(commits)
 """

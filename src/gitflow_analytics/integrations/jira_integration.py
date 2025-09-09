@@ -317,12 +317,12 @@ class JIRAIntegration:
                     "status": cached_ticket.status or "",
                     "story_points": cached_ticket.story_points or 0,
                     "assignee": cached_ticket.assignee or "",
-                    "created": cached_ticket.created_at.isoformat()
-                    if cached_ticket.created_at
-                    else "",
-                    "updated": cached_ticket.updated_at.isoformat()
-                    if cached_ticket.updated_at
-                    else "",
+                    "created": (
+                        cached_ticket.created_at.isoformat() if cached_ticket.created_at else ""
+                    ),
+                    "updated": (
+                        cached_ticket.updated_at.isoformat() if cached_ticket.updated_at else ""
+                    ),
                     "platform_data": cached_ticket.platform_data or {},
                 }
 

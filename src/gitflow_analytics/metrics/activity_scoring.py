@@ -53,9 +53,11 @@ class ActivityScorer:
         lines_removed = metrics.get("lines_removed", 0)
         files_changed = metrics.get(
             "files_changed_count",
-            metrics.get("files_changed", 0)
-            if isinstance(metrics.get("files_changed"), int)
-            else len(metrics.get("files_changed", [])),
+            (
+                metrics.get("files_changed", 0)
+                if isinstance(metrics.get("files_changed"), int)
+                else len(metrics.get("files_changed", []))
+            ),
         )
         complexity = metrics.get("complexity_delta", 0)
 
@@ -310,9 +312,11 @@ class ActivityScorer:
                 "activity_level": activity_level,
                 "level_description": level_description,
                 "percentile": round(percentile, 0),
-                "z_score": round((developer_scores[dev_id] - current_mean) / current_std, 2)
-                if current_std > 0
-                else 0,
+                "z_score": (
+                    round((developer_scores[dev_id] - current_mean) / current_std, 2)
+                    if current_std > 0
+                    else 0
+                ),
             }
 
         return results
