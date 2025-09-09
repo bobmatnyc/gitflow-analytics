@@ -138,9 +138,9 @@ class ProgressService:
 
             # Determine position for nested progress bars
             if position is None:
-                position = self._position_counter
                 if nested:
                     self._position_counter += 1
+                position = self._position_counter
 
             # Create context
             context = ProgressContext(
@@ -229,14 +229,15 @@ class ProgressService:
                     ProgressEvent("complete", context.description, current=context.current)
                 )
 
+            # Remove from active contexts BEFORE modifying progress_bar
+            # to avoid comparison issues with None
+            if context in self._active_contexts:
+                self._active_contexts.remove(context)
+
             # Close actual progress bar if it exists
             if context.progress_bar:
                 context.progress_bar.close()
                 context.progress_bar = None
-
-            # Remove from active contexts
-            if context in self._active_contexts:
-                self._active_contexts.remove(context)
 
             # Reset position counter if no nested contexts remain
             if context.is_nested and not any(c.is_nested for c in self._active_contexts):

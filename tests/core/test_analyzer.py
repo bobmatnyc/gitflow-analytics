@@ -109,10 +109,28 @@ class TestGitAnalyzer:
             commit.parents = []
             commit.diff.return_value = []
 
+        # Setup a mock branch for the repository
+        mock_branch = Mock()
+        mock_branch.name = "main"
+        
+        # Setup mock remote for update
+        mock_remote = Mock()
+        mock_remote.fetch.return_value = None
+        mock_repo.remotes = [mock_remote]
+        
+        # Setup mock head
+        mock_repo.head.is_detached = False
+        mock_repo.active_branch = mock_branch
+        mock_repo.active_branch.tracking_branch.return_value = mock_branch
+        
+        # Add the main branch to refs so it can be found
+        mock_ref = Mock()
+        mock_ref.name = "refs/heads/main"
+        
         mock_repo.iter_commits.return_value = iter([recent_commit])  # Only recent commits returned by git
         mock_repo.remote_refs = []
-        mock_repo.refs = []
-        mock_repo.branches = []  # Add branches attribute for the analyzer
+        mock_repo.refs = [mock_ref]  # Include the main branch ref
+        mock_repo.branches = [mock_branch]  # Add a main branch for the analyzer
 
         repo_path = temp_dir / "test_repo"
         repo_path.mkdir()

@@ -99,7 +99,7 @@ class TestCSVReportGenerator:
             
             # Check column names
             if rows:
-                expected_columns = {"week_start", "developer", "name", "commits", "story_points"}
+                expected_columns = {"week_start", "developer_id", "developer_name", "commits", "story_points"}
                 assert expected_columns.issubset(set(rows[0].keys()))
 
     def test_generate_developer_report(self, temp_dir):

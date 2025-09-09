@@ -92,7 +92,7 @@ class CSVReportGenerator(BaseReportGenerator):
                 # Default to generating weekly report in memory
                 if data.commits:
                     # Create temporary dataframe
-                    df = pd.DataFrame(self._aggregate_weekly_data(data.commits, data.developer_stats, 
+                    df = pd.DataFrame(self._aggregate_weekly_data(data.commits,
                                                                  datetime.now(timezone.utc) - timedelta(weeks=52),
                                                                  datetime.now(timezone.utc)))
                     df.to_csv(buffer, index=False)
@@ -135,7 +135,7 @@ class CSVReportGenerator(BaseReportGenerator):
         """
         return ReportFormat.CSV.value
 
-    def _filter_excluded_authors(self, data_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _filter_excluded_authors_list(self, data_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Filter out excluded authors from any data list using canonical_id and enhanced bot detection.
         
@@ -389,8 +389,8 @@ class CSVReportGenerator(BaseReportGenerator):
     ) -> Path:
         """Generate weekly metrics CSV report."""
         # Apply exclusion filtering in Phase 2
-        commits = self._filter_excluded_authors(commits)
-        developer_stats = self._filter_excluded_authors(developer_stats)
+        commits = self._filter_excluded_authors_list(commits)
+        developer_stats = self._filter_excluded_authors_list(developer_stats)
         # Calculate week boundaries (timezone-aware to match commit timestamps)
         end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(weeks=weeks)
@@ -528,8 +528,8 @@ class CSVReportGenerator(BaseReportGenerator):
     ) -> Path:
         """Generate summary statistics CSV."""
         # Apply exclusion filtering in Phase 2
-        commits = self._filter_excluded_authors(commits)
-        developer_stats = self._filter_excluded_authors(developer_stats)
+        commits = self._filter_excluded_authors_list(commits)
+        developer_stats = self._filter_excluded_authors_list(developer_stats)
         
         summary_data = []
 
@@ -714,7 +714,7 @@ class CSVReportGenerator(BaseReportGenerator):
                 ),
                 "total_commits": dev["total_commits"],
                 "total_story_points": dev["total_story_points"],
-                "alias_count": dev["alias_count"],
+                "alias_count": dev.get("alias_count", 1),
                 "first_seen": (
                     self._safe_datetime_format(dev["first_seen"], "%Y-%m-%d")
                     if dev["first_seen"]
@@ -961,8 +961,8 @@ class CSVReportGenerator(BaseReportGenerator):
         curve-normalized scores that allow for fair comparison across the team.
         """
         # Apply exclusion filtering in Phase 2
-        commits = self._filter_excluded_authors(commits)
-        developer_stats = self._filter_excluded_authors(developer_stats)
+        commits = self._filter_excluded_authors_list(commits)
+        developer_stats = self._filter_excluded_authors_list(developer_stats)
         
         # Calculate date range
         end_date = datetime.now(timezone.utc)
@@ -1419,7 +1419,7 @@ class CSVReportGenerator(BaseReportGenerator):
             )
             
             # Apply exclusion filtering consistent with other reports
-            commits = self._filter_excluded_authors(commits)
+            commits = self._filter_excluded_authors_list(commits)
             
             # Generate the correlation report
             logger.debug(f"Generating story point correlation report: {output_path}")
@@ -1472,7 +1472,7 @@ class CSVReportGenerator(BaseReportGenerator):
             Path to the generated CSV file
         """
         # Apply exclusion filtering in Phase 2
-        commits = self._filter_excluded_authors(commits)
+        commits = self._filter_excluded_authors_list(commits)
 
         # Calculate date range (timezone-aware to match commit timestamps)
         end_date = datetime.now(timezone.utc)
@@ -1715,7 +1715,7 @@ class CSVReportGenerator(BaseReportGenerator):
         from ..metrics.dora import DORAMetricsCalculator
 
         # Apply exclusion filtering in Phase 2
-        commits = self._filter_excluded_authors(commits)
+        commits = self._filter_excluded_authors_list(commits)
 
         # Calculate date range
         end_date = datetime.now(timezone.utc)

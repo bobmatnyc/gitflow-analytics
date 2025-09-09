@@ -460,15 +460,15 @@ class ComprehensiveJSONExporter(BaseReportGenerator):
                     "canonical_id": dev_id,
                     "primary_email": self._anonymize_value(dev['primary_email'], 'email'),
                     "github_username": self._anonymize_value(dev.get('github_username', ''), 'username') if dev.get('github_username') else None,
-                    "aliases_count": dev['alias_count']
+                    "aliases_count": dev.get('alias_count', 1)
                 },
                 "summary": {
                     "total_commits": dev['total_commits'],
                     "total_story_points": dev['total_story_points'],
                     "projects_contributed": len(projects_worked),
-                    "first_seen": dev['first_seen'].isoformat() if dev['first_seen'] else None,
-                    "last_seen": dev['last_seen'].isoformat() if dev['last_seen'] else None,
-                    "days_active": (dev['last_seen'] - dev['first_seen']).days if dev['first_seen'] and dev['last_seen'] else 0
+                    "first_seen": dev.get('first_seen').isoformat() if dev.get('first_seen') else None,
+                    "last_seen": dev.get('last_seen').isoformat() if dev.get('last_seen') else None,
+                    "days_active": (dev.get('last_seen') - dev.get('first_seen')).days if dev.get('first_seen') and dev.get('last_seen') else 0
                 },
                 "health_score": health_score,
                 "projects": projects_worked,
