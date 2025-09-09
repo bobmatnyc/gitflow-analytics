@@ -63,10 +63,13 @@ def filter_git_artifacts(message: str) -> str:
         stripped = line.strip()
         if stripped:  # Non-empty line
             cleaned_lines.append(stripped)
-        elif i > 0 and i < len(lines) - 1:  # Preserve blank lines in middle
-            # Only preserve blank line if there's content both before and after
-            if any(l.strip() for l in lines[:i]) and any(l.strip() for l in lines[i + 1 :]):
-                cleaned_lines.append("")
+        elif (
+            i > 0
+            and i < len(lines) - 1
+            and any(line.strip() for line in lines[:i])
+            and any(line.strip() for line in lines[i + 1 :])
+        ):  # Preserve blank lines in middle if there's content both before and after
+            cleaned_lines.append("")
 
     cleaned = "\n".join(cleaned_lines)
 
@@ -499,10 +502,9 @@ class TicketExtractor:
             if ts is None:
                 return ""
             # If it's a datetime object, handle timezone issues
-            if hasattr(ts, "tzinfo"):
+            if hasattr(ts, "tzinfo") and ts.tzinfo is None:
                 # Make timezone-naive datetime UTC-aware for consistent comparison
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
+                ts = ts.replace(tzinfo=timezone.utc)
             return ts
 
         untracked_commits.sort(key=safe_timestamp_key, reverse=True)

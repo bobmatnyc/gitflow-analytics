@@ -303,12 +303,8 @@ class GitDataFetcher:
 
             # Calculate file changes
             try:
-                if commit.parents:
-                    # Compare with first parent
-                    diff = commit.parents[0].diff(commit)
-                else:
-                    # Initial commit - compare with empty tree
-                    diff = commit.diff(None)
+                # Compare with first parent or empty tree for initial commit
+                diff = commit.parents[0].diff(commit) if commit.parents else commit.diff(None)
 
                 # Get file paths with filtering
                 files_changed = []
@@ -836,7 +832,7 @@ class GitDataFetcher:
             commit_hashes_to_check = []
 
             # First, collect all commit hashes to check existence in bulk
-            for date_str, commits in daily_commits.items():
+            for _date_str, commits in daily_commits.items():
                 for commit in commits:
                     commit_hashes_to_check.append(commit["commit_hash"])
 

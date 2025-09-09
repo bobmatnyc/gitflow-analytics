@@ -1209,18 +1209,16 @@ class GitAnalyzer:
 
             # Last part should match the filename/end pattern
             end_pattern = parts[-1].lstrip("/")
-            if end_pattern:
+            if end_pattern and not fnmatch.fnmatch(path.name, end_pattern):
                 # Check if filename matches the end pattern
-                if not fnmatch.fnmatch(path.name, end_pattern):
-                    return False
+                return False
 
             # Middle parts should exist somewhere in the path between start and end
             for i in range(1, len(parts) - 1):
                 middle_pattern = parts[i].strip("/")
-                if middle_pattern:
+                if middle_pattern and middle_pattern not in path.parts:
                     # Check if this directory exists in the path
-                    if middle_pattern not in path.parts:
-                        return False
+                    return False
 
             return True
 
@@ -1362,9 +1360,8 @@ class GitAnalyzer:
 
                         for diff in commit.diff(parent):
                             file_path = diff.b_path if diff.b_path else diff.a_path
-                            if file_path and file_path in files_changed:
+                            if file_path and file_path in files_changed and diff.diff:
                                 # Calculate insertions and deletions per file
-                                if diff.diff:
                                     diff_text = (
                                         diff.diff
                                         if isinstance(diff.diff, str)

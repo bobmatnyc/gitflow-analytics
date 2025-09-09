@@ -320,10 +320,8 @@ class RiskAnalyzer:
         # Check file count thresholds
         if files_changed >= self.config.size_thresholds["large_commit_files"]:
             factors.append(f"large_file_count:{files_changed}")
-            if files_changed >= 50:  # Very large
-                risk_score = max(risk_score, 0.8)
-            else:
-                risk_score = max(risk_score, 0.6)
+            # Very large commits get higher risk score
+            risk_score = max(risk_score, 0.8) if files_changed >= 50 else max(risk_score, 0.6)
 
         # Check line change thresholds
         if total_changes >= self.config.size_thresholds["massive_commit_lines"]:

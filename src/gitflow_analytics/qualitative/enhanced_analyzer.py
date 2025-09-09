@@ -1498,9 +1498,9 @@ class EnhancedQualitativeAnalyzer:
         late_night_commits = 0
         for commit in dev_commits:
             timestamp = commit.get("timestamp")
-            if hasattr(timestamp, "hour"):
-                if timestamp.hour >= 22 or timestamp.hour <= 5:  # 10 PM to 5 AM
-                    late_night_commits += 1
+            if hasattr(timestamp, "hour") and (timestamp.hour >= 22 or timestamp.hour <= 5):
+                # 10 PM to 5 AM
+                late_night_commits += 1
 
         late_night_percentage = (late_night_commits / len(dev_commits)) * 100 if dev_commits else 0
         if late_night_percentage > 30:
