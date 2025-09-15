@@ -555,6 +555,7 @@ class ConfigLoader:
             branch_mapping_rules=analysis_data.get("branch_mapping_rules", {}),
             ticket_platforms=analysis_data.get("ticket_platforms"),
             auto_identity_analysis=analysis_data.get("identity", {}).get("auto_analysis", True),
+            branch_patterns=analysis_data.get("branch_patterns"),
             branch_analysis=branch_analysis_config,
             ml_categorization=ml_categorization_config,
             commit_classification=commit_classification_config,

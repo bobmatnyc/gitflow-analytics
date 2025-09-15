@@ -1069,6 +1069,7 @@ def analyze(
 
                 # Perform data fetch for repositories that need analysis
                 from .core.data_fetcher import GitDataFetcher
+                from .core.progress import get_progress_service
 
                 data_fetcher = GitDataFetcher(
                     cache=cache,
@@ -1083,74 +1084,105 @@ def analyze(
                 orchestrator = IntegrationOrchestrator(cfg, cache)
                 jira_integration = orchestrator.integrations.get("jira")
 
+                # Get progress service for overall repository progress
+                progress = get_progress_service()
+
                 # Fetch data for repositories that need analysis
                 total_commits = 0
                 total_tickets = 0
 
-                for repo_config in repos_needing_analysis:
-                    try:
-                        repo_path = Path(repo_config.path)
-                        project_key = repo_config.project_key or repo_path.name
+                # Create top-level progress for all repositories
+                with progress.progress(
+                    total=len(repos_needing_analysis),
+                    description="Processing repositories",
+                    unit="repos"
+                ) as repos_progress_ctx:
 
-                        # Progress callback for fetch
-                        def progress_callback(message: str):
+                    for idx, repo_config in enumerate(repos_needing_analysis, 1):
+                        try:
+                            repo_path = Path(repo_config.path)
+                            project_key = repo_config.project_key or repo_path.name
+
+                            # Update overall progress description
+                            progress.set_description(
+                                repos_progress_ctx,
+                                f"Repository {idx}/{len(repos_needing_analysis)}: {project_key}"
+                            )
+
+                            # Progress callback for fetch
+                            def progress_callback(message: str):
+                                if display:
+                                    display.print_status(f"   {message}", "info")
+
+                            # Fetch repository data
+                            # For organization discovery, use branch patterns from analysis config
+                            # Default to ["*"] to analyze all branches when not specified
+                            branch_patterns = None
+                            if hasattr(cfg.analysis, 'branch_patterns'):
+                                branch_patterns = cfg.analysis.branch_patterns
+                            elif cfg.github.organization:
+                                # For organization discovery, default to analyzing all branches
+                                branch_patterns = ["*"]
+
+                            result = data_fetcher.fetch_repository_data(
+                                repo_path=repo_path,
+                                project_key=project_key,
+                                weeks_back=weeks,
+                                branch_patterns=branch_patterns,
+                                jira_integration=jira_integration,
+                                progress_callback=progress_callback,
+                                start_date=start_date,
+                                end_date=end_date,
+                            )
+
+                            total_commits += result["stats"]["total_commits"]
+                            total_tickets += result["stats"]["unique_tickets"]
+
                             if display:
-                                display.print_status(f"   {message}", "info")
+                                display.print_status(
+                                    f"   ✅ {project_key}: {result['stats']['total_commits']} commits, "
+                                    f"{result['stats']['unique_tickets']} tickets",
+                                    "success",
+                                )
 
-                        # Fetch repository data
-                        result = data_fetcher.fetch_repository_data(
-                            repo_path=repo_path,
-                            project_key=project_key,
-                            weeks_back=weeks,
-                            branch_patterns=getattr(repo_config, "branch_patterns", None),
-                            jira_integration=jira_integration,
-                            progress_callback=progress_callback,
-                            start_date=start_date,
-                            end_date=end_date,
-                        )
-
-                        total_commits += result["stats"]["total_commits"]
-                        total_tickets += result["stats"]["unique_tickets"]
-
-                        if display:
-                            display.print_status(
-                                f"   ✅ {project_key}: {result['stats']['total_commits']} commits, "
-                                f"{result['stats']['unique_tickets']} tickets",
-                                "success",
-                            )
-
-                        # Mark repository analysis as complete
-                        cache.mark_repository_analysis_complete(
-                            repo_path=str(repo_path),
-                            repo_name=repo_config.name,
-                            project_key=project_key,
-                            analysis_start=start_date,
-                            analysis_end=end_date,
-                            weeks_analyzed=weeks,
-                            commit_count=result["stats"]["total_commits"],
-                            ticket_count=result["stats"]["unique_tickets"],
-                            config_hash=config_hash,
-                        )
-
-                    except Exception as e:
-                        if display:
-                            display.print_status(
-                                f"   ❌ Error fetching {project_key}: {e}", "error"
-                            )
-                        else:
-                            click.echo(f"   ❌ Error fetching {project_key}: {e}")
-
-                        # Mark repository analysis as failed
-                        with contextlib.suppress(Exception):
-                            cache.mark_repository_analysis_failed(
+                            # Mark repository analysis as complete
+                            cache.mark_repository_analysis_complete(
                                 repo_path=str(repo_path),
                                 repo_name=repo_config.name,
+                                project_key=project_key,
                                 analysis_start=start_date,
                                 analysis_end=end_date,
-                                error_message=str(e),
+                                weeks_analyzed=weeks,
+                                commit_count=result["stats"]["total_commits"],
+                                ticket_count=result["stats"]["unique_tickets"],
                                 config_hash=config_hash,
                             )
-                        continue
+
+                            # Update overall repository progress
+                            progress.update(repos_progress_ctx)
+
+                        except Exception as e:
+                            if display:
+                                display.print_status(
+                                    f"   ❌ Error fetching {project_key}: {e}", "error"
+                                )
+                            else:
+                                click.echo(f"   ❌ Error fetching {project_key}: {e}")
+
+                            # Mark repository analysis as failed
+                            with contextlib.suppress(Exception):
+                                cache.mark_repository_analysis_failed(
+                                    repo_path=str(repo_path),
+                                    repo_name=repo_config.name,
+                                    analysis_start=start_date,
+                                    analysis_end=end_date,
+                                    error_message=str(e),
+                                    config_hash=config_hash,
+                                )
+
+                            # Update progress even on failure
+                            progress.update(repos_progress_ctx)
+                            continue
 
                 if display:
                     display.print_status(
@@ -1322,11 +1354,20 @@ def analyze(
                                     display.print_status(f"   {message}", "info")
 
                             # Fetch repository data
+                            # For organization discovery, use branch patterns from analysis config
+                            # Default to ["*"] to analyze all branches when not specified
+                            branch_patterns = None
+                            if hasattr(cfg.analysis, 'branch_patterns'):
+                                branch_patterns = cfg.analysis.branch_patterns
+                            elif cfg.github.organization:
+                                # For organization discovery, default to analyzing all branches
+                                branch_patterns = ["*"]
+
                             result = data_fetcher.fetch_repository_data(
                                 repo_path=repo_path,
                                 project_key=project_key,
                                 weeks_back=weeks,
-                                branch_patterns=getattr(repo_config, "branch_patterns", None),
+                                branch_patterns=branch_patterns,
                                 jira_integration=jira_integration,
                                 progress_callback=progress_callback,
                                 start_date=start_date,
@@ -3649,11 +3690,20 @@ def fetch(
                         click.echo(f"   {message}")
 
                 # Fetch repository data
+                # For organization discovery, use branch patterns from analysis config
+                # Default to ["*"] to analyze all branches when not specified
+                branch_patterns = None
+                if hasattr(cfg.analysis, 'branch_patterns'):
+                    branch_patterns = cfg.analysis.branch_patterns
+                elif cfg.github.organization:
+                    # For organization discovery, default to analyzing all branches
+                    branch_patterns = ["*"]
+
                 result = data_fetcher.fetch_repository_data(
                     repo_path=repo_path,
                     project_key=project_key,
                     weeks_back=weeks,
-                    branch_patterns=getattr(repo_config, "branch_patterns", None),
+                    branch_patterns=branch_patterns,
                     jira_integration=jira_integration,
                     progress_callback=progress_callback,
                     start_date=start_date,

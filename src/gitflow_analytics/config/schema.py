@@ -305,6 +305,7 @@ class AnalysisConfig:
     branch_mapping_rules: dict[str, list[str]] = field(default_factory=dict)
     ticket_platforms: Optional[list[str]] = None
     auto_identity_analysis: bool = True  # Enable automatic identity analysis by default
+    branch_patterns: Optional[list[str]] = None  # Branch patterns to analyze (e.g., ["*"] for all branches)
     branch_analysis: BranchAnalysisConfig = field(default_factory=BranchAnalysisConfig)
     ml_categorization: MLCategorization = field(default_factory=MLCategorization)
     commit_classification: CommitClassificationConfig = field(

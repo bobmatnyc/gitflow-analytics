@@ -117,37 +117,55 @@ class GitDataFetcher:
                 f"🔍 DEBUG: Calculated date range from weeks_back: {start_date} to {end_date}"
             )
 
-        # Step 1: Collect all commits organized by day
+        # Get progress service for top-level progress tracking
+        progress = get_progress_service()
+
+        # Step 1: Collect all commits organized by day with enhanced progress tracking
         logger.info("🔍 DEBUG: About to fetch commits by day")
         logger.info("Fetching commits organized by day...")
-        daily_commits = self._fetch_commits_by_day(
-            repo_path, project_key, start_date, end_date, branch_patterns, progress_callback
-        )
-        logger.info(f"🔍 DEBUG: Fetched {len(daily_commits)} days of commits")
 
-        # Step 2: Extract and fetch all referenced tickets
-        logger.info("🔍 DEBUG: About to extract ticket references")
-        logger.info("Extracting ticket references...")
-        ticket_ids = self._extract_all_ticket_references(daily_commits)
-        logger.info(f"🔍 DEBUG: Extracted {len(ticket_ids)} ticket IDs")
+        # Create top-level progress for this repository
+        with progress.progress(
+            total=3,  # Three main steps: fetch commits, extract tickets, store data
+            description=f"Processing {project_key}",
+            unit="steps"
+        ) as repo_progress_ctx:
 
-        if jira_integration and ticket_ids:
-            logger.info(f"Fetching {len(ticket_ids)} unique tickets from JIRA...")
-            self._fetch_detailed_tickets(
-                ticket_ids, jira_integration, project_key, progress_callback
+            # Step 1: Fetch commits
+            progress.set_description(repo_progress_ctx, f"{project_key}: Fetching commits")
+            daily_commits = self._fetch_commits_by_day(
+                repo_path, project_key, start_date, end_date, branch_patterns, progress_callback
             )
+            logger.info(f"🔍 DEBUG: Fetched {len(daily_commits)} days of commits")
+            progress.update(repo_progress_ctx)
 
-        # Step 3: Store commit-ticket correlations
-        logger.info("Building commit-ticket correlations...")
-        correlations_created = self._build_commit_ticket_correlations(daily_commits, repo_path)
+            # Step 2: Extract and fetch all referenced tickets
+            progress.set_description(repo_progress_ctx, f"{project_key}: Processing tickets")
+            logger.info("🔍 DEBUG: About to extract ticket references")
+            logger.info("Extracting ticket references...")
+            ticket_ids = self._extract_all_ticket_references(daily_commits)
+            logger.info(f"🔍 DEBUG: Extracted {len(ticket_ids)} ticket IDs")
 
-        # Step 4: Store daily commit batches
-        logger.info(
-            f"🔍 DEBUG: About to store daily batches. Daily commits has {len(daily_commits)} days"
-        )
-        logger.info("Storing daily commit batches...")
-        batches_created = self._store_daily_batches(daily_commits, repo_path, project_key)
-        logger.info(f"🔍 DEBUG: Storage complete. Batches created: {batches_created}")
+            if jira_integration and ticket_ids:
+                logger.info(f"Fetching {len(ticket_ids)} unique tickets from JIRA...")
+                self._fetch_detailed_tickets(
+                    ticket_ids, jira_integration, project_key, progress_callback
+                )
+
+            # Build commit-ticket correlations
+            logger.info("Building commit-ticket correlations...")
+            correlations_created = self._build_commit_ticket_correlations(daily_commits, repo_path)
+            progress.update(repo_progress_ctx)
+
+            # Step 3: Store daily commit batches
+            progress.set_description(repo_progress_ctx, f"{project_key}: Storing data")
+            logger.info(
+                f"🔍 DEBUG: About to store daily batches. Daily commits has {len(daily_commits)} days"
+            )
+            logger.info("Storing daily commit batches...")
+            batches_created = self._store_daily_batches(daily_commits, repo_path, project_key)
+            logger.info(f"🔍 DEBUG: Storage complete. Batches created: {batches_created}")
+            progress.update(repo_progress_ctx)
 
         # CRITICAL FIX: Verify actual storage before reporting success
         session = self.database.get_session()
@@ -219,8 +237,7 @@ class GitDataFetcher:
             logger.error(f"Failed to open repository at {repo_path}: {e}")
             return {}
 
-        # Collect commits from all relevant branches
-        all_commits = []
+        # Get branches to analyze
         branches_to_analyze = self._get_branches_to_analyze(repo, branch_patterns)
 
         if not branches_to_analyze:
@@ -229,54 +246,95 @@ class GitDataFetcher:
 
         logger.info(f"Analyzing branches: {branches_to_analyze}")
 
-        for branch_name in branches_to_analyze:
-            try:
-                branch_commits = list(
-                    repo.iter_commits(branch_name, since=start_date, until=end_date, reverse=False)
-                )
+        # Calculate days to process
+        current_date = start_date.date()
+        end_date_only = end_date.date()
+        days_to_process = []
+        while current_date <= end_date_only:
+            days_to_process.append(current_date)
+            current_date += timedelta(days=1)
 
-                logger.debug(
-                    f"Found {len(branch_commits)} commits in branch {branch_name} for date range"
-                )
+        logger.info(f"Processing {len(days_to_process)} days from {start_date.date()} to {end_date.date()}")
 
-                for commit in branch_commits:
-                    # Include merge commits like the original analyzer
-                    # The original analyzer marks merge commits with is_merge=True but doesn't skip them
+        # Get progress service for nested progress tracking
+        progress = get_progress_service()
 
-                    # Extract commit data with full metadata
-                    commit_data = self._extract_commit_data(
-                        commit, branch_name, project_key, repo_path
-                    )
-                    if commit_data:
-                        all_commits.append(commit_data)
+        # Dictionary to store commits by day
+        daily_commits = {}
+        all_commit_hashes = set()  # Track all hashes for deduplication
 
-            except Exception as e:
-                logger.warning(f"Error processing branch {branch_name}: {e}")
-                continue
+        # Create nested progress for day-by-day processing
+        with progress.progress(
+            total=len(days_to_process),
+            description=f"Fetching commits for {project_key}",
+            unit="days",
+            nested=True
+        ) as day_progress_ctx:
 
-        # Deduplicate commits (same commit may appear in multiple branches)
-        seen_hashes = set()
-        unique_commits = []
-        for commit_data in all_commits:
-            commit_hash = commit_data["commit_hash"]
-            if commit_hash not in seen_hashes:
-                seen_hashes.add(commit_hash)
-                unique_commits.append(commit_data)
+            for day_date in days_to_process:
+                # Update description to show current day
+                day_str = day_date.strftime("%Y-%m-%d")
+                progress.set_description(day_progress_ctx, f"{project_key}: Processing {day_str}")
 
-        # Organize commits by day
-        daily_commits = defaultdict(list)
-        for commit_data in unique_commits:
-            # Convert timestamp to date key
-            commit_date = commit_data["timestamp"].date()
-            date_key = commit_date.strftime("%Y-%m-%d")
-            daily_commits[date_key].append(commit_data)
+                # Calculate day boundaries
+                day_start = datetime.combine(day_date, datetime.min.time(), tzinfo=timezone.utc)
+                day_end = datetime.combine(day_date, datetime.max.time(), tzinfo=timezone.utc)
 
-        # Sort commits within each day by timestamp
-        for date_key in daily_commits:
-            daily_commits[date_key].sort(key=lambda c: c["timestamp"])
+                day_commits = []
+                commits_found_today = 0
 
-        logger.info(f"Collected {len(unique_commits)} commits across {len(daily_commits)} days")
-        return dict(daily_commits)
+                # Process each branch for this specific day
+                for branch_name in branches_to_analyze:
+                    try:
+                        # Fetch commits for this specific day and branch
+                        branch_commits = list(
+                            repo.iter_commits(
+                                branch_name,
+                                since=day_start,
+                                until=day_end,
+                                reverse=False
+                            )
+                        )
+
+                        for commit in branch_commits:
+                            # Skip if we've already processed this commit
+                            if commit.hexsha in all_commit_hashes:
+                                continue
+
+                            # Extract commit data with full metadata
+                            commit_data = self._extract_commit_data(
+                                commit, branch_name, project_key, repo_path
+                            )
+                            if commit_data:
+                                day_commits.append(commit_data)
+                                all_commit_hashes.add(commit.hexsha)
+                                commits_found_today += 1
+
+                    except Exception as e:
+                        logger.warning(f"Error processing branch {branch_name} for day {day_str}: {e}")
+                        continue
+
+                # Store commits for this day if any were found
+                if day_commits:
+                    # Sort commits by timestamp
+                    day_commits.sort(key=lambda c: c["timestamp"])
+                    daily_commits[day_str] = day_commits
+
+                    # Incremental caching - store commits for this day immediately
+                    self._store_day_commits_incremental(repo_path, day_str, day_commits, project_key)
+
+                    logger.debug(f"Found {commits_found_today} commits on {day_str}")
+
+                # Update progress callback if provided
+                if progress_callback:
+                    progress_callback(f"Processed {day_str}: {commits_found_today} commits")
+
+                # Update progress bar
+                progress.update(day_progress_ctx)
+
+        total_commits = sum(len(commits) for commits in daily_commits.values())
+        logger.info(f"Collected {total_commits} unique commits across {len(daily_commits)} days")
+        return daily_commits
 
     def _extract_commit_data(
         self, commit: Any, branch_name: str, project_key: str, repo_path: Path
@@ -373,114 +431,100 @@ class GitDataFetcher:
         """Get list of branches to analyze based on patterns.
 
         WHY: Robust branch detection that handles missing remotes, missing default branches,
-        and provides good fallback behavior. Based on the approach used in the existing analyzer.
+        and provides good fallback behavior. When no patterns specified, analyzes ALL branches
+        to capture the complete development picture.
 
         DESIGN DECISION:
-        - Try default branches first, fall back to all available branches
+        - When no patterns: analyze ALL accessible branches (not just main)
+        - When patterns specified: match against those patterns only
         - Handle missing remotes gracefully
         - Skip remote tracking branches to avoid duplicates
         - Use actual branch existence checking rather than assuming branches exist
         """
-        if not branch_patterns:
-            # Get all available branches (local branches preferred)
-            available_branches = []
-
-            # First, try local branches
-            try:
-                local_branches = [branch.name for branch in repo.branches]
-                available_branches.extend(local_branches)
-                logger.debug(f"Found local branches: {local_branches}")
-            except Exception as e:
-                logger.debug(f"Error getting local branches: {e}")
-
-            # If we have remotes, also consider remote branches (but clean the names)
-            try:
-                if repo.remotes and hasattr(repo.remotes, "origin"):
-                    remote_branches = [
-                        ref.name.replace("origin/", "")
-                        for ref in repo.remotes.origin.refs
-                        if not ref.name.endswith("HEAD")  # Skip HEAD ref
-                    ]
-                    # Only add remote branches that aren't already in local branches
-                    for branch in remote_branches:
-                        if branch not in available_branches:
-                            available_branches.append(branch)
-                    logger.debug(f"Found remote branches: {remote_branches}")
-            except Exception as e:
-                logger.debug(f"Error getting remote branches: {e}")
-
-            # If no branches found, fallback to trying common names directly
-            if not available_branches:
-                logger.warning(
-                    "No branches found via normal detection, falling back to common names"
-                )
-                available_branches = ["main", "master", "develop", "dev"]
-
-            # Try default main branches first, in order of preference
-            main_branches = ["main", "master", "develop", "dev"]
-            for branch in main_branches:
-                if branch in available_branches:
-                    # Test that we can actually access this branch
-                    try:
-                        # Just try to get the commit object to verify branch exists and is accessible
-                        next(iter(repo.iter_commits(branch, max_count=1)), None)
-                        logger.info(f"Using main branch: {branch}")
-                        return [branch]
-                    except Exception as e:
-                        logger.debug(f"Branch {branch} exists but not accessible: {e}")
-                        continue
-
-            # If no main branches work, try the first available branch that actually works
-            for branch in available_branches:
-                try:
-                    next(iter(repo.iter_commits(branch, max_count=1)), None)
-                    logger.info(f"Using fallback branch: {branch}")
-                    return [branch]
-                except Exception as e:
-                    logger.debug(f"Branch {branch} not accessible: {e}")
-                    continue
-
-            # Last resort: return empty list (will be handled gracefully by caller)
-            logger.warning("No accessible branches found")
-            return []
-
-        # Use specified patterns - match against all available branches
-        import fnmatch
-
+        # Collect all available branches (local branches preferred)
         available_branches = []
 
-        # Collect all branches (local and remote)
-        with contextlib.suppress(Exception):
-            available_branches.extend([branch.name for branch in repo.branches])
+        # First, try local branches
+        try:
+            local_branches = [branch.name for branch in repo.branches]
+            available_branches.extend(local_branches)
+            logger.debug(f"Found local branches: {local_branches}")
+        except Exception as e:
+            logger.debug(f"Error getting local branches: {e}")
 
+        # If we have remotes, also consider remote branches (but clean the names)
         try:
             if repo.remotes and hasattr(repo.remotes, "origin"):
                 remote_branches = [
                     ref.name.replace("origin/", "")
                     for ref in repo.remotes.origin.refs
-                    if not ref.name.endswith("HEAD")
+                    if not ref.name.endswith("HEAD")  # Skip HEAD ref
                 ]
+                # Only add remote branches that aren't already in local branches
                 for branch in remote_branches:
                     if branch not in available_branches:
                         available_branches.append(branch)
-        except Exception:
-            pass
+                logger.debug(f"Found remote branches: {remote_branches}")
+        except Exception as e:
+            logger.debug(f"Error getting remote branches: {e}")
 
-        # Match patterns against available branches
-        matching_branches = []
-        for pattern in branch_patterns:
-            matching = [branch for branch in available_branches if fnmatch.fnmatch(branch, pattern)]
-            matching_branches.extend(matching)
+        # If no branches found, fallback to trying common names directly
+        if not available_branches:
+            logger.warning(
+                "No branches found via normal detection, falling back to common names"
+            )
+            available_branches = ["main", "master", "develop", "dev"]
 
-        # Test that matched branches are actually accessible
+        # Filter branches based on patterns if provided
+        if branch_patterns:
+            import fnmatch
+
+            matching_branches = []
+            for pattern in branch_patterns:
+                matching = [branch for branch in available_branches if fnmatch.fnmatch(branch, pattern)]
+                matching_branches.extend(matching)
+            # Remove duplicates while preserving order
+            branches_to_test = list(dict.fromkeys(matching_branches))
+        else:
+            # No patterns specified - analyze ALL branches for complete coverage
+            branches_to_test = available_branches
+            logger.info(f"No branch patterns specified - will analyze all {len(branches_to_test)} branches")
+
+        # Test that branches are actually accessible
         accessible_branches = []
-        for branch in list(set(matching_branches)):  # Remove duplicates
+        for branch in branches_to_test:
             try:
                 next(iter(repo.iter_commits(branch, max_count=1)), None)
                 accessible_branches.append(branch)
             except Exception as e:
-                logger.debug(f"Matched branch {branch} not accessible: {e}")
+                logger.debug(f"Branch {branch} not accessible: {e}")
 
+        if not accessible_branches:
+            # Last resort: try to find ANY working branch
+            logger.warning("No accessible branches found from patterns/default, trying fallback")
+            main_branches = ["main", "master", "develop", "dev"]
+            for branch in main_branches:
+                if branch in available_branches:
+                    try:
+                        next(iter(repo.iter_commits(branch, max_count=1)), None)
+                        logger.info(f"Using fallback main branch: {branch}")
+                        return [branch]
+                    except Exception:
+                        continue
+
+            # Try any available branch
+            for branch in available_branches:
+                try:
+                    next(iter(repo.iter_commits(branch, max_count=1)), None)
+                    logger.info(f"Using fallback branch: {branch}")
+                    return [branch]
+                except Exception:
+                    continue
+
+            logger.warning("No accessible branches found")
+            return []
+
+        logger.info(f"Will analyze {len(accessible_branches)} branches: {accessible_branches}")
         return accessible_branches
 
     def _update_repository(self, repo) -> bool:
@@ -516,7 +560,7 @@ class GitDataFetcher:
                 # Run git fetch with timeout
                 try:
                     result = subprocess.run(
-                        ["git", "fetch", "--all", "--config", "credential.helper="],
+                        ["git", "fetch", "--all"],
                         cwd=repo.working_dir,
                         env=env,
                         capture_output=True,
@@ -553,7 +597,7 @@ class GitDataFetcher:
                         # Pull latest changes using subprocess
                         try:
                             result = subprocess.run(
-                                ["git", "pull", "--config", "credential.helper="],
+                                ["git", "pull"],
                                 cwd=repo.working_dir,
                                 env=env,
                                 capture_output=True,
@@ -1191,3 +1235,52 @@ class GitDataFetcher:
             logger.warning(f"Error calculating commit stats for {commit.hexsha[:8]}: {e}")
 
         return stats
+
+    def _store_day_commits_incremental(
+        self,
+        repo_path: Path,
+        date_str: str,
+        commits: list[dict[str, Any]],
+        project_key: str
+    ) -> None:
+        """Store commits for a single day incrementally to enable progress tracking.
+
+        This method stores commits immediately after fetching them for a day,
+        allowing for better progress tracking and recovery from interruptions.
+
+        Args:
+            repo_path: Path to the repository
+            date_str: Date string in YYYY-MM-DD format
+            commits: List of commit data for the day
+            project_key: Project identifier
+        """
+        try:
+            # Transform commits to cache format
+            cache_format_commits = []
+            for commit in commits:
+                cache_format_commit = {
+                    "hash": commit["commit_hash"],
+                    "author_name": commit.get("author_name", ""),
+                    "author_email": commit.get("author_email", ""),
+                    "message": commit.get("message", ""),
+                    "timestamp": commit["timestamp"],
+                    "branch": commit.get("branch", "main"),
+                    "is_merge": commit.get("is_merge", False),
+                    "files_changed_count": commit.get("files_changed_count", 0),
+                    "insertions": commit.get("lines_added", 0),
+                    "deletions": commit.get("lines_deleted", 0),
+                    "story_points": commit.get("story_points"),
+                    "ticket_references": commit.get("ticket_references", []),
+                }
+                cache_format_commits.append(cache_format_commit)
+
+            # Use bulk store for efficiency
+            if cache_format_commits:
+                bulk_stats = self.cache.bulk_store_commits(str(repo_path), cache_format_commits)
+                logger.debug(
+                    f"Incrementally stored {bulk_stats['inserted']} commits for {date_str} "
+                    f"({bulk_stats['skipped']} already cached)"
+                )
+        except Exception as e:
+            # Log error but don't fail - commits will be stored again in batch at the end
+            logger.warning(f"Failed to incrementally store commits for {date_str}: {e}")
