@@ -5,11 +5,9 @@ focusing purely on data collection from Git repositories and ticket systems
 without performing any LLM-based classification.
 """
 
-import contextlib
 import logging
 import os
 import subprocess
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
