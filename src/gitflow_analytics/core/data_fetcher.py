@@ -126,7 +126,7 @@ class GitDataFetcher:
         with progress.progress(
             total=3,  # Three main steps: fetch commits, extract tickets, store data
             description=f"Processing {project_key}",
-            unit="steps"
+            unit="steps",
         ) as repo_progress_ctx:
 
             # Step 1: Fetch commits
@@ -252,7 +252,9 @@ class GitDataFetcher:
             days_to_process.append(current_date)
             current_date += timedelta(days=1)
 
-        logger.info(f"Processing {len(days_to_process)} days from {start_date.date()} to {end_date.date()}")
+        logger.info(
+            f"Processing {len(days_to_process)} days from {start_date.date()} to {end_date.date()}"
+        )
 
         # Get progress service for nested progress tracking
         progress = get_progress_service()
@@ -266,7 +268,7 @@ class GitDataFetcher:
             total=len(days_to_process),
             description=f"Fetching commits for {project_key}",
             unit="days",
-            nested=True
+            nested=True,
         ) as day_progress_ctx:
 
             for day_date in days_to_process:
@@ -287,10 +289,7 @@ class GitDataFetcher:
                         # Fetch commits for this specific day and branch
                         branch_commits = list(
                             repo.iter_commits(
-                                branch_name,
-                                since=day_start,
-                                until=day_end,
-                                reverse=False
+                                branch_name, since=day_start, until=day_end, reverse=False
                             )
                         )
 
@@ -309,7 +308,9 @@ class GitDataFetcher:
                                 commits_found_today += 1
 
                     except Exception as e:
-                        logger.warning(f"Error processing branch {branch_name} for day {day_str}: {e}")
+                        logger.warning(
+                            f"Error processing branch {branch_name} for day {day_str}: {e}"
+                        )
                         continue
 
                 # Store commits for this day if any were found
@@ -319,7 +320,9 @@ class GitDataFetcher:
                     daily_commits[day_str] = day_commits
 
                     # Incremental caching - store commits for this day immediately
-                    self._store_day_commits_incremental(repo_path, day_str, day_commits, project_key)
+                    self._store_day_commits_incremental(
+                        repo_path, day_str, day_commits, project_key
+                    )
 
                     logger.debug(f"Found {commits_found_today} commits on {day_str}")
 
@@ -468,9 +471,7 @@ class GitDataFetcher:
 
         # If no branches found, fallback to trying common names directly
         if not available_branches:
-            logger.warning(
-                "No branches found via normal detection, falling back to common names"
-            )
+            logger.warning("No branches found via normal detection, falling back to common names")
             available_branches = ["main", "master", "develop", "dev"]
 
         # Filter branches based on patterns if provided
@@ -479,14 +480,18 @@ class GitDataFetcher:
 
             matching_branches = []
             for pattern in branch_patterns:
-                matching = [branch for branch in available_branches if fnmatch.fnmatch(branch, pattern)]
+                matching = [
+                    branch for branch in available_branches if fnmatch.fnmatch(branch, pattern)
+                ]
                 matching_branches.extend(matching)
             # Remove duplicates while preserving order
             branches_to_test = list(dict.fromkeys(matching_branches))
         else:
             # No patterns specified - analyze ALL branches for complete coverage
             branches_to_test = available_branches
-            logger.info(f"No branch patterns specified - will analyze all {len(branches_to_test)} branches")
+            logger.info(
+                f"No branch patterns specified - will analyze all {len(branches_to_test)} branches"
+            )
 
         # Test that branches are actually accessible
         accessible_branches = []
@@ -1235,11 +1240,7 @@ class GitDataFetcher:
         return stats
 
     def _store_day_commits_incremental(
-        self,
-        repo_path: Path,
-        date_str: str,
-        commits: list[dict[str, Any]],
-        project_key: str
+        self, repo_path: Path, date_str: str, commits: list[dict[str, Any]], project_key: str
     ) -> None:
         """Store commits for a single day incrementally to enable progress tracking.
 

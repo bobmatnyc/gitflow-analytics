@@ -1095,7 +1095,7 @@ def analyze(
                 with progress.progress(
                     total=len(repos_needing_analysis),
                     description="Processing repositories",
-                    unit="repos"
+                    unit="repos",
                 ) as repos_progress_ctx:
 
                     for idx, repo_config in enumerate(repos_needing_analysis, 1):
@@ -1106,7 +1106,7 @@ def analyze(
                             # Update overall progress description
                             progress.set_description(
                                 repos_progress_ctx,
-                                f"Repository {idx}/{len(repos_needing_analysis)}: {project_key}"
+                                f"Repository {idx}/{len(repos_needing_analysis)}: {project_key}",
                             )
 
                             # Progress callback for fetch
@@ -1118,7 +1118,7 @@ def analyze(
                             # For organization discovery, use branch patterns from analysis config
                             # Default to ["*"] to analyze all branches when not specified
                             branch_patterns = None
-                            if hasattr(cfg.analysis, 'branch_patterns'):
+                            if hasattr(cfg.analysis, "branch_patterns"):
                                 branch_patterns = cfg.analysis.branch_patterns
                             elif cfg.github.organization:
                                 # For organization discovery, default to analyzing all branches
@@ -1357,7 +1357,7 @@ def analyze(
                             # For organization discovery, use branch patterns from analysis config
                             # Default to ["*"] to analyze all branches when not specified
                             branch_patterns = None
-                            if hasattr(cfg.analysis, 'branch_patterns'):
+                            if hasattr(cfg.analysis, "branch_patterns"):
                                 branch_patterns = cfg.analysis.branch_patterns
                             elif cfg.github.organization:
                                 # For organization discovery, default to analyzing all branches
@@ -3693,7 +3693,7 @@ def fetch(
                 # For organization discovery, use branch patterns from analysis config
                 # Default to ["*"] to analyze all branches when not specified
                 branch_patterns = None
-                if hasattr(cfg.analysis, 'branch_patterns'):
+                if hasattr(cfg.analysis, "branch_patterns"):
                     branch_patterns = cfg.analysis.branch_patterns
                 elif cfg.github.organization:
                     # For organization discovery, default to analyzing all branches
