@@ -842,10 +842,14 @@ class ConfigLoader:
         platforms_data = pm_integration_data.get("platforms", {})
 
         for platform_name, platform_data in platforms_data.items():
+            # Recursively resolve environment variables in config dictionary
+            config_data = platform_data.get("config", {})
+            resolved_config = cls._resolve_config_dict(config_data)
+
             platforms_config[platform_name] = PMPlatformConfig(
                 enabled=platform_data.get("enabled", True),
                 platform_type=platform_data.get("platform_type", platform_name),
-                config=platform_data.get("config", {}),
+                config=resolved_config,
             )
 
         # Parse correlation settings with defaults
@@ -889,6 +893,37 @@ class ConfigLoader:
             return resolved
 
         return value
+
+    @classmethod
+    def _resolve_config_dict(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
+        """Recursively resolve environment variables in a configuration dictionary.
+
+        Args:
+            config_dict: Dictionary that may contain environment variable references
+
+        Returns:
+            Dictionary with resolved environment variables
+        """
+        resolved = {}
+        for key, value in config_dict.items():
+            if isinstance(value, str):
+                # Resolve string values that might be environment variables
+                resolved[key] = cls._resolve_env_var(value)
+            elif isinstance(value, dict):
+                # Recursively resolve nested dictionaries
+                resolved[key] = cls._resolve_config_dict(value)
+            elif isinstance(value, list):
+                # Handle lists that might contain strings or nested dicts
+                resolved[key] = [
+                    cls._resolve_env_var(item) if isinstance(item, str)
+                    else cls._resolve_config_dict(item) if isinstance(item, dict)
+                    else item
+                    for item in value
+                ]
+            else:
+                # Keep other types as-is (numbers, booleans, None, etc.)
+                resolved[key] = value
+        return resolved
 
     @staticmethod
     def validate_config(config: Config) -> list[str]:
