@@ -93,14 +93,17 @@ class IntegrationOrchestrator:
                         }
 
                         # Special handling for JIRA - use credentials from top-level JIRA config
-                        if platform_name == "jira" and hasattr(config, "jira"):
-                            platform_settings["username"] = config.jira.access_user
-                            platform_settings["api_token"] = config.jira.access_token
+                        if platform_name == "jira" and hasattr(config, "jira") and config.jira:
+                            # Safely access JIRA config attributes
+                            if hasattr(config.jira, "access_user") and config.jira.access_user:
+                                platform_settings["username"] = config.jira.access_user
+                            if hasattr(config.jira, "access_token") and config.jira.access_token:
+                                platform_settings["api_token"] = config.jira.access_token
                             # Also ensure base_url matches if not set
                             if (
                                 not platform_settings.get("base_url")
                                 or platform_settings["base_url"] == "will_be_set_at_runtime"
-                            ):
+                            ) and hasattr(config.jira, "base_url"):
                                 platform_settings["base_url"] = config.jira.base_url
                             # Add cache directory for ticket caching (config file directory)
                             if hasattr(config, "cache") and hasattr(config.cache, "directory"):

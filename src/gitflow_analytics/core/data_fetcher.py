@@ -131,6 +131,18 @@ class GitDataFetcher:
         # Get progress service for top-level progress tracking
         progress = get_progress_service()
 
+        # Start Rich display for this repository if enabled
+        if hasattr(progress, '_use_rich') and progress._use_rich:
+            # Count total commits for progress estimation
+            try:
+                import git
+                repo = git.Repo(repo_path)
+                # Rough estimate based on weeks
+                estimated_commits = weeks_back * 50  # Estimate ~50 commits per week
+                progress.start_repository(project_key, estimated_commits)
+            except Exception:
+                progress.start_repository(project_key, 100)  # Default estimate
+
         # Step 1: Collect all commits organized by day with enhanced progress tracking
         logger.info("🔍 DEBUG: About to fetch commits by day")
         logger.info("Fetching commits organized by day...")
@@ -258,10 +270,20 @@ class GitDataFetcher:
             logger.info(
                 f"✅ Data fetch completed successfully for {project_key}: {actual_stored_commits}/{expected_commits} commits stored, {len(ticket_ids)} tickets"
             )
+            # Finish repository in Rich display with success
+            if hasattr(progress, '_use_rich') and progress._use_rich:
+                progress.finish_repository(project_key, success=True)
         else:
             logger.error(
                 f"⚠️ Data fetch completed with storage issues for {project_key}: {actual_stored_commits}/{expected_commits} commits stored, {len(ticket_ids)} tickets"
             )
+            # Finish repository in Rich display with error
+            if hasattr(progress, '_use_rich') and progress._use_rich:
+                progress.finish_repository(
+                    project_key,
+                    success=False,
+                    error_message=f"Storage issue: {actual_stored_commits}/{expected_commits} commits"
+                )
 
         return results
 

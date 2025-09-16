@@ -115,6 +115,7 @@ class ProgressService:
         self._init_display()
 
         # Check environment for testing mode
+        # Note: If user explicitly requested rich mode, don't disable it
         self._check_testing_environment()
 
     def _init_display(self):
@@ -139,6 +140,9 @@ class ProgressService:
         WHY: Progress bars interfere with test output and can cause issues in CI/CD.
         This automatically detects common testing scenarios and disables progress.
         """
+        # Don't auto-disable if user explicitly requested rich mode
+        explicit_rich = self._display_style == "rich"
+
         # Disable in pytest
         if "pytest" in sys.modules:
             self._enabled = False
@@ -150,7 +154,8 @@ class ProgressService:
             self._use_rich = False
 
         # Disable if not in a TTY (e.g., CI/CD, piped output)
-        if not sys.stdout.isatty():
+        # BUT: Keep enabled if user explicitly requested rich mode
+        if not sys.stdout.isatty() and not explicit_rich:
             self._enabled = False
             self._use_rich = False
 
@@ -496,8 +501,30 @@ def get_progress_service(display_style: Optional[str] = None, version: Optional[
         The singleton ProgressService instance
 
     Thread-safe singleton pattern ensures only one progress service exists.
+    If display_style is provided and differs from current style, the service is reconfigured.
     """
     global _progress_service
+
+    # Check if we need to reconfigure an existing service
+    if _progress_service is not None and display_style is not None:
+        with _service_lock:
+            # If display style changed, reconfigure the service
+            if _progress_service._display_style != display_style:
+                # Close any active displays
+                if _progress_service._use_rich and _progress_service._rich_display:
+                    _progress_service.stop_rich_display()
+
+                # Reconfigure with new display style
+                _progress_service._display_style = display_style
+                _progress_service._use_rich = False
+                _progress_service._rich_display = None
+
+                # Re-enable if user explicitly requested rich mode
+                if display_style == "rich":
+                    _progress_service._enabled = True
+
+                # Reinitialize display
+                _progress_service._init_display()
 
     if _progress_service is None:
         with _service_lock:

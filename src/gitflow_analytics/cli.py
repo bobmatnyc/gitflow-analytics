@@ -542,6 +542,17 @@ def analyze(
 ) -> None:
     """Analyze Git repositories using configuration file."""
 
+    # Initialize progress service early with the correct style
+    from .core.progress import get_progress_service
+    try:
+        from ._version import __version__
+        version = __version__
+    except ImportError:
+        version = "1.3.11"
+
+    # Initialize progress service with user's preference
+    progress = get_progress_service(display_style=progress_style, version=version)
+
     # Initialize display - use rich by default, fall back to simple output if needed
     display = create_rich_display() if rich else None
 
@@ -1093,14 +1104,8 @@ def analyze(
                 orchestrator = IntegrationOrchestrator(cfg, cache)
                 jira_integration = orchestrator.integrations.get("jira")
 
-                # Get progress service for overall repository progress
-                # Pass version from configuration or package
-                try:
-                    from ._version import __version__
-                    version = __version__
-                except ImportError:
-                    version = "1.3.11"
-                progress = get_progress_service(display_style=progress_style, version=version)
+                # Progress service already initialized at the start of the function
+                # We can use the progress instance that was created earlier
 
                 # Start Rich display if enabled
                 if progress_style == "rich" or (progress_style == "auto" and progress._use_rich):
@@ -1175,7 +1180,7 @@ def analyze(
                                     total_repositories=len(repos_needing_analysis),
                                     processed_repositories=idx
                                 )
-                                progress.finish_repository(project_key, success=True)
+                                # Note: finish_repository is now called in data_fetcher
 
                             if display:
                                 display.print_status(
@@ -1429,7 +1434,7 @@ def analyze(
                                     total_repositories=len(repos_needing_analysis),
                                     processed_repositories=idx
                                 )
-                                progress.finish_repository(project_key, success=True)
+                                # Note: finish_repository is now called in data_fetcher
 
                             if display:
                                 display.print_status(

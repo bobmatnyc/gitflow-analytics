@@ -122,7 +122,8 @@ class RichProgressDisplay:
 
         self.version = version
         self.update_frequency = update_frequency
-        self.console = Console()
+        # Force terminal mode to ensure Rich works even when output is piped
+        self.console = Console(force_terminal=True)
 
         # Progress tracking
         self.overall_progress = Progress(
@@ -353,11 +354,12 @@ class RichProgressDisplay:
             )
 
             self._layout = self._create_layout()
+            # Use screen=False when forcing terminal mode to avoid display issues
             self._live = Live(
                 self._layout,
                 console=self.console,
                 refresh_per_second=1 / self.update_frequency,
-                screen=True,
+                screen=False,  # Changed from True to avoid conflicts with force_terminal
             )
             self._live.start()
 
