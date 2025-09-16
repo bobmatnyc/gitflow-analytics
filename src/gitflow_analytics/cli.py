@@ -2343,8 +2343,8 @@ def analyze(
                             "author_email": commit.get("author_email"),
                             "timestamp": commit.get("timestamp"),
                             "files_changed": commit.get("files_changed") or [],
-                            "insertions": commit.get("insertions", 0),
-                            "deletions": commit.get("deletions", 0),
+                            "insertions": commit.get("filtered_insertions", commit.get("insertions", 0)),
+                            "deletions": commit.get("filtered_deletions", commit.get("deletions", 0)),
                             "branch": commit.get("branch", "main"),
                         }
                     else:
@@ -2355,8 +2355,8 @@ def analyze(
                             "author_email": commit.author_email,
                             "timestamp": commit.timestamp,
                             "files_changed": commit.files_changed or [],
-                            "insertions": commit.insertions,
-                            "deletions": commit.deletions,
+                            "insertions": getattr(commit, "filtered_insertions", commit.insertions),
+                            "deletions": getattr(commit, "filtered_deletions", commit.deletions),
                             "branch": getattr(commit, "branch", "main"),
                         }
                     commits_for_qual.append(commit_dict)
@@ -4483,6 +4483,72 @@ def train(
             import traceback
 
             traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command(name="verify-activity")
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to YAML configuration file",
+)
+@click.option(
+    "--weeks",
+    "-w",
+    type=int,
+    default=4,
+    help="Number of weeks to analyze (default: 4)",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Optional path to save the report",
+)
+def verify_activity(config: Path, weeks: int, output: Optional[Path]) -> None:
+    """Verify day-by-day project activity without pulling code.
+
+    \b
+    This command helps verify if reports showing "No Activity" are accurate by:
+    - Querying repositories for activity summaries
+    - Showing day-by-day activity for each project
+    - Listing all branches and their last activity dates
+    - Highlighting days with zero activity
+    - Using GitHub API for remote repos or git commands for local repos
+
+    \b
+    EXAMPLES:
+      # Verify activity for last 4 weeks
+      gitflow-analytics verify-activity -c config.yaml --weeks 4
+
+      # Save report to file
+      gitflow-analytics verify-activity -c config.yaml --weeks 8 -o activity_report.txt
+
+    \b
+    OUTPUT:
+      - Daily activity matrix showing commits per day per project
+      - Branch summary with last activity dates
+      - Days with zero activity highlighted
+      - Total statistics and inactive projects
+
+    \b
+    NOTE: This command does NOT pull or fetch code, it only queries metadata.
+    """
+    try:
+        from .verify_activity import verify_activity_command
+
+        verify_activity_command(config, weeks, output)
+
+    except ImportError as e:
+        click.echo(f"❌ Missing dependency for activity verification: {e}")
+        click.echo("Please install required packages: pip install tabulate")
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"❌ Error during activity verification: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 

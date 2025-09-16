@@ -52,6 +52,9 @@ class CachedCommit(Base):
     files_changed = Column(Integer)
     insertions = Column(Integer)
     deletions = Column(Integer)
+    # Filtered metrics (after exclusions applied)
+    filtered_insertions = Column(Integer, default=0)
+    filtered_deletions = Column(Integer, default=0)
     complexity_delta = Column(Float)
 
     # Extracted data
@@ -936,6 +939,8 @@ class Database:
             # Test the connection and create tables
             Base.metadata.create_all(self.engine)
             self.SessionLocal = sessionmaker(bind=self.engine)
+            # Apply migrations for existing databases
+            self._apply_migrations()
 
             # Test that we can actually write to the database
             self._test_database_write()
@@ -972,6 +977,8 @@ class Database:
 
             Base.metadata.create_all(self.engine)
             self.SessionLocal = sessionmaker(bind=self.engine)
+            # Apply migrations for existing databases
+            self._apply_migrations()
 
             # Test write capability
             self._test_database_write()
@@ -1005,6 +1012,8 @@ class Database:
 
             Base.metadata.create_all(self.engine)
             self.SessionLocal = sessionmaker(bind=self.engine)
+            # Apply migrations for existing databases
+            self._apply_migrations()
 
             self.is_readonly_fallback = True
 
@@ -1094,5 +1103,57 @@ class Database:
         return self.SessionLocal()
 
     def init_db(self) -> None:
-        """Initialize database tables."""
+        """Initialize database tables and apply migrations."""
         Base.metadata.create_all(self.engine)
+        self._apply_migrations()
+
+    def _apply_migrations(self) -> None:
+        """Apply database migrations for backward compatibility.
+
+        This method adds new columns to existing tables without losing data.
+        """
+        try:
+            with self.engine.connect() as conn:
+                # Check if filtered columns exist in cached_commits table
+                result = conn.execute(text("PRAGMA table_info(cached_commits)"))
+                columns = {row[1] for row in result}
+
+                # Add filtered_insertions column if it doesn't exist
+                if "filtered_insertions" not in columns:
+                    logger.info("Adding filtered_insertions column to cached_commits table")
+                    try:
+                        conn.execute(text(
+                            "ALTER TABLE cached_commits ADD COLUMN filtered_insertions INTEGER DEFAULT 0"
+                        ))
+                        conn.commit()
+                    except Exception as e:
+                        logger.debug(f"Column may already exist or database is readonly: {e}")
+
+                # Add filtered_deletions column if it doesn't exist
+                if "filtered_deletions" not in columns:
+                    logger.info("Adding filtered_deletions column to cached_commits table")
+                    try:
+                        conn.execute(text(
+                            "ALTER TABLE cached_commits ADD COLUMN filtered_deletions INTEGER DEFAULT 0"
+                        ))
+                        conn.commit()
+                    except Exception as e:
+                        logger.debug(f"Column may already exist or database is readonly: {e}")
+
+                # Initialize filtered columns with existing values for backward compatibility
+                if "filtered_insertions" not in columns or "filtered_deletions" not in columns:
+                    logger.info("Initializing filtered columns with existing values")
+                    try:
+                        conn.execute(text("""
+                            UPDATE cached_commits
+                            SET filtered_insertions = COALESCE(filtered_insertions, insertions),
+                                filtered_deletions = COALESCE(filtered_deletions, deletions)
+                            WHERE filtered_insertions IS NULL OR filtered_deletions IS NULL
+                        """))
+                        conn.commit()
+                    except Exception as e:
+                        logger.debug(f"Could not initialize filtered columns: {e}")
+
+        except Exception as e:
+            # Don't fail if migrations can't be applied (e.g., in-memory database)
+            logger.debug(f"Could not apply migrations (may be normal for new/memory databases): {e}")

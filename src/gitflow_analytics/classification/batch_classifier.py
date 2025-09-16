@@ -45,6 +45,7 @@ class BatchCommitClassifier:
         batch_size: int = 50,
         confidence_threshold: float = 0.7,
         fallback_enabled: bool = True,
+        max_processing_time_minutes: int = 30,  # Maximum time for classification
     ):
         """Initialize the batch classifier.
 
@@ -60,6 +61,8 @@ class BatchCommitClassifier:
         self.batch_size = min(batch_size, 50)  # Limit for token constraints
         self.confidence_threshold = confidence_threshold
         self.fallback_enabled = fallback_enabled
+        self.max_processing_time_minutes = max_processing_time_minutes
+        self.classification_start_time = None
 
         # Initialize LLM classifier
         # Handle different config types
@@ -84,9 +87,20 @@ class BatchCommitClassifier:
             llm_config_obj = LLMConfig()
 
         self.llm_classifier = LLMCommitClassifier(config=llm_config_obj, cache_dir=cache_dir)
-        logger.info(
-            f"LLM Classifier initialized with API key: {'Yes' if llm_config_obj.api_key else 'No'}"
-        )
+
+        # Warn if no API key is configured
+        if not llm_config_obj.api_key:
+            logger.warning(
+                "No API key configured for LLM classification. "
+                "Will fall back to rule-based classification."
+            )
+            # Set a flag to skip LLM calls entirely
+            self.llm_enabled = False
+        else:
+            self.llm_enabled = True
+            logger.info(
+                f"LLM Classifier initialized with API key: Yes (model: {llm_config_obj.model})"
+            )
 
         # Rule-based fallback patterns for when LLM fails
         self.fallback_patterns = {
@@ -165,6 +179,7 @@ class BatchCommitClassifier:
             Dictionary containing classification results and statistics
         """
         logger.info(f"Starting batch classification from {start_date.date()} to {end_date.date()}")
+        self.classification_start_time = datetime.utcnow()
 
         # Get daily batches to process
         batches_to_process = self._get_batches_to_process(
@@ -205,6 +220,16 @@ class BatchCommitClassifier:
                 logger.info(
                     f"Processing repository {repo_num}/{len(repo_batches)}: {repo_name} ({len(repo_batch_list)} batches, {repo_commit_count} commits)"
                 )
+
+                # Check if we've exceeded max processing time
+                if self.classification_start_time:
+                    elapsed_minutes = (datetime.utcnow() - self.classification_start_time).total_seconds() / 60
+                    if elapsed_minutes > self.max_processing_time_minutes:
+                        logger.error(
+                            f"Classification exceeded maximum time limit of {self.max_processing_time_minutes} minutes. "
+                            f"Stopping classification to prevent hanging."
+                        )
+                        break
 
                 # Process this repository's batches by week for optimal context
                 weekly_batches = self._group_batches_by_week(repo_batch_list)
@@ -403,6 +428,29 @@ class BatchCommitClassifier:
                 leave=False,
             ) as batch_ctx:
                 for i in range(0, len(week_commits), self.batch_size):
+                    # Check for timeout before processing each batch
+                    if self.classification_start_time:
+                        elapsed_minutes = (datetime.utcnow() - self.classification_start_time).total_seconds() / 60
+                        if elapsed_minutes > self.max_processing_time_minutes:
+                            logger.error(
+                                f"Classification timeout after {elapsed_minutes:.1f} minutes. "
+                                f"Processed {len(classified_commits)}/{len(week_commits)} commits."
+                            )
+                            # Use fallback for remaining commits
+                            remaining_commits = week_commits[i:]
+                            for commit in remaining_commits:
+                                classified_commits.append(
+                                    {
+                                        "commit_hash": commit["commit_hash"],
+                                        "category": "maintenance",
+                                        "confidence": 0.2,
+                                        "method": "timeout_fallback",
+                                        "error": "Classification timeout",
+                                        "batch_id": batch_id,
+                                    }
+                                )
+                            break
+
                     batch_num = i // self.batch_size + 1
                     batch_commits = week_commits[i : i + self.batch_size]
                     progress.set_description(
@@ -558,6 +606,13 @@ class BatchCommitClassifier:
         batch_id = str(uuid.uuid4())
         logger.info(f"Starting LLM classification for batch {batch_id} with {len(commits)} commits")
 
+        # Add timeout warning for large batches
+        if len(commits) > 20:
+            logger.warning(
+                f"Large batch size ({len(commits)} commits) may take longer to process. "
+                f"Consider reducing batch_size if timeouts occur."
+            )
+
         # Prepare batch for LLM classification
         enhanced_commits = []
         for commit in commits:
@@ -573,11 +628,36 @@ class BatchCommitClassifier:
             enhanced_commit["ticket_context"] = relevant_tickets
             enhanced_commits.append(enhanced_commit)
 
+        # Check if LLM is enabled before attempting classification
+        if not self.llm_enabled:
+            logger.debug(f"LLM disabled, using fallback for batch {batch_id[:8]}")
+            # Skip directly to fallback
+            fallback_results = []
+            for commit in commits:
+                category = self._fallback_classify_commit(commit)
+                fallback_results.append(
+                    {
+                        "commit_hash": commit["commit_hash"],
+                        "category": category,
+                        "confidence": 0.3,  # Low confidence for fallback
+                        "method": "fallback_only",
+                        "error": "LLM not configured",
+                        "batch_id": batch_id,
+                    }
+                )
+            return fallback_results
+
         try:
             # Use LLM classifier with enhanced context
+            logger.debug(f"Calling LLM classifier for batch {batch_id[:8]}...")
+            start_time = datetime.utcnow()
+
             llm_results = self.llm_classifier.classify_commits_batch(
                 enhanced_commits, batch_id=batch_id, include_confidence=True
             )
+
+            elapsed = (datetime.utcnow() - start_time).total_seconds()
+            logger.info(f"LLM classification for batch {batch_id[:8]} took {elapsed:.2f}s")
 
             # Process LLM results and add fallbacks
             processed_results = []
@@ -617,6 +697,22 @@ class BatchCommitClassifier:
 
         except Exception as e:
             logger.error(f"LLM classification failed for batch {batch_id}: {e}")
+
+            # Provide more context about the failure
+            if "timeout" in str(e).lower():
+                logger.error(
+                    f"Classification timed out. Consider: \n"
+                    f"  1. Reducing batch_size (current: {self.batch_size})\n"
+                    f"  2. Increasing timeout_seconds in LLM config\n"
+                    f"  3. Checking API service status"
+                )
+            elif "connection" in str(e).lower():
+                logger.error(
+                    f"Connection error. Check:\n"
+                    f"  1. Internet connectivity\n"
+                    f"  2. API endpoint availability\n"
+                    f"  3. Firewall/proxy settings"
+                )
 
             # Fall back to rule-based classification for entire batch
             if self.fallback_enabled:

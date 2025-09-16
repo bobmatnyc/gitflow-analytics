@@ -378,8 +378,9 @@ class DailyMetricsStorage:
             else:
                 # Fallback for unexpected types
                 metrics["files_changed"] += 0
-            metrics["lines_added"] += commit.get("insertions", 0)
-            metrics["lines_deleted"] += commit.get("deletions", 0)
+            # Use filtered values if available, fallback to raw values
+            metrics["lines_added"] += commit.get("filtered_insertions", commit.get("insertions", 0))
+            metrics["lines_deleted"] += commit.get("filtered_deletions", commit.get("deletions", 0))
             metrics["story_points"] += commit.get("story_points", 0) or 0
 
             # Classification counts

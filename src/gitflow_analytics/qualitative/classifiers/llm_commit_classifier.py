@@ -45,7 +45,7 @@ class LLMConfig:
     confidence_threshold: float = 0.7  # Minimum confidence for LLM predictions
     max_tokens: int = 50  # Keep responses short
     temperature: float = 0.1  # Low temperature for consistent results
-    timeout_seconds: float = 30.0  # API timeout
+    timeout_seconds: float = 10.0  # API timeout - reduced to prevent hanging
 
     # Caching configuration
     cache_duration_days: int = 90  # Long cache duration for cost optimization
@@ -54,6 +54,7 @@ class LLMConfig:
     # Cost optimization
     batch_size: int = 1  # Process one at a time for simplicity
     max_daily_requests: int = 1000  # Rate limiting
+    max_retries: int = 2  # Reduce retries to fail faster on unresponsive APIs
 
     # Domain-specific terms for organization
     domain_terms: dict[str, list[str]] = None
@@ -163,6 +164,7 @@ class LLMCommitClassifier:
             max_tokens=self.config.max_tokens,
             timeout_seconds=self.config.timeout_seconds,
             max_daily_requests=self.config.max_daily_requests,
+            max_retries=getattr(self.config, 'max_retries', 2),  # Use config or default to 2
             use_openrouter=True,  # Default to OpenRouter
         )
 

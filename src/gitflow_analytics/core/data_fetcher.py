@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..extractors.story_points import StoryPointExtractor
@@ -64,6 +65,18 @@ class GitDataFetcher:
         self.ticket_extractor = TicketExtractor(allowed_platforms=allowed_ticket_platforms)
         self.branch_mapper = BranchToProjectMapper(branch_mapping_rules)
         self.exclude_paths = exclude_paths or []
+
+        # Log exclusion configuration
+        if self.exclude_paths:
+            logger.info(
+                f"GitDataFetcher initialized with {len(self.exclude_paths)} exclusion patterns:"
+            )
+            for pattern in self.exclude_paths[:5]:  # Show first 5 patterns
+                logger.debug(f"  - {pattern}")
+            if len(self.exclude_paths) > 5:
+                logger.debug(f"  ... and {len(self.exclude_paths) - 5} more patterns")
+        else:
+            logger.info("GitDataFetcher initialized with no file exclusions")
 
         # Initialize identity resolver
         identity_db_path = cache.cache_dir / "identities.db"
@@ -183,6 +196,46 @@ class GitDataFetcher:
         # Return summary statistics with ACTUAL stored counts
         # expected_commits already calculated above
 
+        # Calculate exclusion impact summary if exclusions are configured
+        exclusion_stats = {
+            "patterns_applied": len(self.exclude_paths),
+            "enabled": bool(self.exclude_paths),
+        }
+
+        if self.exclude_paths and expected_commits > 0:
+            # Get aggregate stats from daily_commit_batches
+            session = self.database.get_session()
+            try:
+                batch_stats = (
+                    session.query(
+                        func.sum(DailyCommitBatch.total_lines_added).label("total_added"),
+                        func.sum(DailyCommitBatch.total_lines_deleted).label("total_deleted"),
+                    )
+                    .filter(
+                        DailyCommitBatch.project_key == project_key,
+                        DailyCommitBatch.repo_path == str(repo_path),
+                    )
+                    .first()
+                )
+
+                if batch_stats and batch_stats.total_added:
+                    total_lines = (batch_stats.total_added or 0) + (batch_stats.total_deleted or 0)
+                    exclusion_stats["total_lines_after_filtering"] = total_lines
+                    exclusion_stats["lines_added"] = batch_stats.total_added or 0
+                    exclusion_stats["lines_deleted"] = batch_stats.total_deleted or 0
+
+                    logger.info(
+                        f"📊 Exclusion Impact Summary for {project_key}:\n"
+                        f"  - Exclusion patterns applied: {len(self.exclude_paths)}\n"
+                        f"  - Total lines after filtering: {total_lines:,}\n"
+                        f"  - Lines added: {batch_stats.total_added:,}\n"
+                        f"  - Lines deleted: {batch_stats.total_deleted:,}"
+                    )
+            except Exception as e:
+                logger.debug(f"Could not calculate exclusion impact summary: {e}")
+            finally:
+                session.close()
+
         results = {
             "project_key": project_key,
             "repo_path": str(repo_path),
@@ -196,6 +249,7 @@ class GitDataFetcher:
                 "correlations_created": correlations_created,
                 "batches_created": batches_created,
             },
+            "exclusions": exclusion_stats,
             "daily_commits": daily_commits,  # For immediate use if needed
         }
 
@@ -376,13 +430,19 @@ class GitDataFetcher:
                 line_stats = self._calculate_commit_stats(commit)
                 total_insertions = line_stats["insertions"]
                 total_deletions = line_stats["deletions"]
+                raw_insertions = line_stats.get("raw_insertions", total_insertions)
+                raw_deletions = line_stats.get("raw_deletions", total_deletions)
 
                 commit_data.update(
                     {
                         "files_changed": files_changed,
                         "files_changed_count": len(files_changed),
-                        "lines_added": total_insertions,
+                        "lines_added": total_insertions,  # Filtered counts for backward compatibility
                         "lines_deleted": total_deletions,
+                        "filtered_insertions": total_insertions,  # Explicitly filtered counts
+                        "filtered_deletions": total_deletions,
+                        "raw_insertions": raw_insertions,  # Raw unfiltered counts
+                        "raw_deletions": raw_deletions,
                     }
                 )
 
@@ -394,6 +454,10 @@ class GitDataFetcher:
                         "files_changed_count": 0,
                         "lines_added": 0,
                         "lines_deleted": 0,
+                        "filtered_insertions": 0,
+                        "filtered_deletions": 0,
+                        "raw_insertions": 0,
+                        "raw_deletions": 0,
                     }
                 )
 
@@ -422,9 +486,166 @@ class GitDataFetcher:
 
     def _should_exclude_file(self, file_path: str) -> bool:
         """Check if a file should be excluded based on exclude patterns."""
-        import fnmatch
+        return any(self._matches_glob_pattern(file_path, pattern) for pattern in self.exclude_paths)
 
-        return any(fnmatch.fnmatch(file_path, pattern) for pattern in self.exclude_paths)
+    def _matches_glob_pattern(self, filepath: str, pattern: str) -> bool:
+        """Check if a file path matches a glob pattern, handling ** recursion correctly.
+
+        This method properly handles different glob pattern types:
+        - **/vendor/** : matches files inside vendor directories at any level
+        - **/*.min.js : matches files with specific suffix anywhere in directory tree
+        - vendor/** : matches files inside vendor directory at root level only
+        - **pattern** : handles other complex patterns with pathlib.match()
+        - simple patterns : uses fnmatch for basic wildcards
+
+        Args:
+            filepath: The file path to check
+            pattern: The glob pattern to match against
+
+        Returns:
+            True if the file path matches the pattern, False otherwise
+        """
+        import fnmatch
+        import re
+        from pathlib import PurePath
+
+        # Handle empty or invalid inputs
+        if not filepath or not pattern:
+            return False
+
+        path = PurePath(filepath)
+
+        # Check for multiple ** patterns first (most complex)
+        if "**" in pattern and pattern.count("**") > 1:
+            # Multiple ** patterns - use custom recursive matching for complex patterns
+            return self._match_recursive_pattern(filepath, pattern)
+
+        # Then handle simple ** patterns
+        elif pattern.startswith("**/") and pattern.endswith("/**"):
+            # Pattern like **/vendor/** - matches files inside vendor directories at any level
+            dir_name = pattern[3:-3]  # Extract 'vendor' from '**/vendor/**'
+            if not dir_name:  # Handle edge case of '**/**'
+                return True
+            return dir_name in path.parts
+
+        elif pattern.startswith("**/"):
+            # Pattern like **/*.min.js - matches files with specific suffix anywhere
+            suffix_pattern = pattern[3:]
+            if not suffix_pattern:  # Handle edge case of '**/'
+                return True
+            # Check against filename for file patterns, or any path part for directory patterns
+            if suffix_pattern.endswith("/"):
+                # Directory pattern like **/build/
+                dir_name = suffix_pattern[:-1]
+                return dir_name in path.parts
+            else:
+                # File pattern like *.min.js
+                return fnmatch.fnmatch(path.name, suffix_pattern)
+
+        elif pattern.endswith("/**"):
+            # Pattern like vendor/** or docs/build/** - matches files inside directory at root level
+            dir_name = pattern[:-3]
+            if not dir_name:  # Handle edge case of '/**'
+                return True
+
+            # Handle both single directory names and nested paths
+            expected_parts = PurePath(dir_name).parts
+            return (
+                len(path.parts) >= len(expected_parts)
+                and path.parts[: len(expected_parts)] == expected_parts
+            )
+
+        elif "**" in pattern:
+            # Single ** pattern - use pathlib matching with fallback
+            try:
+                return path.match(pattern)
+            except (ValueError, TypeError):
+                # Fall back to fnmatch if pathlib fails (e.g., invalid pattern)
+                try:
+                    return fnmatch.fnmatch(filepath, pattern)
+                except re.error:
+                    # Invalid regex pattern - return False to be safe
+                    return False
+        else:
+            # Simple pattern - use fnmatch for basic wildcards
+            try:
+                # Try matching the full path first
+                if fnmatch.fnmatch(filepath, pattern):
+                    return True
+                # Also try matching just the filename for simple patterns
+                # This allows "package-lock.json" to match "src/package-lock.json"
+                return fnmatch.fnmatch(path.name, pattern)
+            except re.error:
+                # Invalid regex pattern - return False to be safe
+                return False
+
+    def _match_recursive_pattern(self, filepath: str, pattern: str) -> bool:
+        """Handle complex patterns with multiple ** wildcards.
+
+        Args:
+            filepath: The file path to check
+            pattern: The pattern with multiple ** wildcards
+
+        Returns:
+            True if the path matches the pattern, False otherwise
+        """
+        import fnmatch
+        from pathlib import PurePath
+
+        # Split pattern by ** to handle each segment
+        parts = pattern.split("**")
+
+        # Validate that we have actual segments
+        if not parts:
+            return False
+
+        # Convert filepath to parts for easier matching
+        path_parts = list(PurePath(filepath).parts)
+
+        # Start matching from the beginning
+        path_index = 0
+
+        for i, part in enumerate(parts):
+            if not part:
+                # Empty part (e.g., from leading or trailing **)
+                if i == 0 or i == len(parts) - 1:
+                    # Leading or trailing ** - continue
+                    continue
+                # Middle empty part (consecutive **) - match any number of path components
+                continue
+
+            # Clean the part (remove leading/trailing slashes)
+            part = part.strip("/")
+
+            if not part:
+                continue
+
+            # Find where this part matches in the remaining path
+            found = False
+            for j in range(path_index, len(path_parts)):
+                # Check if the current path part matches the pattern part
+                if "/" in part:
+                    # Part contains multiple path components
+                    sub_parts = part.split("/")
+                    if j + len(sub_parts) <= len(path_parts) and all(
+                        fnmatch.fnmatch(path_parts[j + k], sub_parts[k])
+                        for k in range(len(sub_parts))
+                    ):
+                        path_index = j + len(sub_parts)
+                        found = True
+                        break
+                else:
+                    # Single component part
+                    if fnmatch.fnmatch(path_parts[j], part):
+                        path_index = j + 1
+                        found = True
+                        break
+
+            if not found and part:
+                # Required part not found in path
+                return False
+
+        return True
 
     def _get_branches_to_analyze(
         self, repo: Any, branch_patterns: Optional[list[str]]
@@ -919,8 +1140,12 @@ class GitDataFetcher:
                                 "branch": commit.get("branch", "main"),
                                 "is_merge": commit.get("is_merge", False),
                                 "files_changed_count": commit.get("files_changed_count", 0),
-                                "insertions": commit.get("lines_added", 0),
-                                "deletions": commit.get("lines_deleted", 0),
+                                # Store raw unfiltered values in insertions/deletions
+                                "insertions": commit.get("raw_insertions", commit.get("lines_added", 0)),
+                                "deletions": commit.get("raw_deletions", commit.get("lines_deleted", 0)),
+                                # Store filtered values separately
+                                "filtered_insertions": commit.get("filtered_insertions", commit.get("lines_added", 0)),
+                                "filtered_deletions": commit.get("filtered_deletions", commit.get("lines_deleted", 0)),
                                 "story_points": commit.get("story_points"),
                                 "ticket_references": commit.get("ticket_references", []),
                             }
@@ -1193,12 +1418,18 @@ class GitDataFetcher:
             session.close()
 
     def _calculate_commit_stats(self, commit: Any) -> dict[str, int]:
-        """Calculate commit statistics using reliable git diff --numstat.
+        """Calculate commit statistics using reliable git diff --numstat with exclude_paths filtering.
 
         Returns:
-            Dictionary with 'files', 'insertions', and 'deletions' counts
+            Dictionary with both raw and filtered statistics:
+            - 'files', 'insertions', 'deletions': filtered counts
+            - 'raw_insertions', 'raw_deletions': unfiltered counts
         """
         stats = {"files": 0, "insertions": 0, "deletions": 0}
+
+        # Track raw stats for storage
+        raw_stats = {"files": 0, "insertions": 0, "deletions": 0}
+        excluded_stats = {"files": 0, "insertions": 0, "deletions": 0}
 
         # For initial commits or commits without parents
         parent = commit.parents[0] if commit.parents else None
@@ -1222,9 +1453,22 @@ class GitDataFetcher:
                     try:
                         insertions = int(parts[0]) if parts[0] != "-" else 0
                         deletions = int(parts[1]) if parts[1] != "-" else 0
-                        # filename = parts[2] - we don't filter here since files_changed list is handled separately
+                        filename = parts[2]
 
-                        # Count all changes (raw stats, no filtering)
+                        # Always count raw stats
+                        raw_stats["files"] += 1
+                        raw_stats["insertions"] += insertions
+                        raw_stats["deletions"] += deletions
+
+                        # Skip excluded files based on exclude_paths patterns
+                        if self._should_exclude_file(filename):
+                            logger.debug(f"Excluding file from line counts: {filename}")
+                            excluded_stats["files"] += 1
+                            excluded_stats["insertions"] += insertions
+                            excluded_stats["deletions"] += deletions
+                            continue
+
+                        # Count only non-excluded files and their changes
                         stats["files"] += 1
                         stats["insertions"] += insertions
                         stats["deletions"] += deletions
@@ -1233,10 +1477,36 @@ class GitDataFetcher:
                         # Skip binary files or malformed lines
                         continue
 
+            # Log exclusion statistics if significant
+            if excluded_stats["files"] > 0 or (
+                raw_stats["insertions"] > 0 and stats["insertions"] < raw_stats["insertions"]
+            ):
+                reduction_pct = (
+                    100 * (1 - stats["insertions"] / raw_stats["insertions"])
+                    if raw_stats["insertions"] > 0
+                    else 0
+                )
+                logger.info(
+                    f"Commit {commit.hexsha[:8]}: Excluded {excluded_stats['files']} files, "
+                    f"{excluded_stats['insertions']} insertions, {excluded_stats['deletions']} deletions "
+                    f"({reduction_pct:.1f}% reduction)"
+                )
+
+            # Log if exclusions are configured
+            if self.exclude_paths and raw_stats["files"] > 0:
+                logger.debug(
+                    f"Commit {commit.hexsha[:8]}: Applied {len(self.exclude_paths)} exclusion patterns. "
+                    f"Raw: {raw_stats['files']} files, +{raw_stats['insertions']} -{raw_stats['deletions']}. "
+                    f"Filtered: {stats['files']} files, +{stats['insertions']} -{stats['deletions']}"
+                )
+
         except Exception as e:
             # Log the error for debugging but don't crash
             logger.warning(f"Error calculating commit stats for {commit.hexsha[:8]}: {e}")
 
+        # Return both raw and filtered stats
+        stats["raw_insertions"] = raw_stats["insertions"]
+        stats["raw_deletions"] = raw_stats["deletions"]
         return stats
 
     def _store_day_commits_incremental(
@@ -1266,8 +1536,12 @@ class GitDataFetcher:
                     "branch": commit.get("branch", "main"),
                     "is_merge": commit.get("is_merge", False),
                     "files_changed_count": commit.get("files_changed_count", 0),
-                    "insertions": commit.get("lines_added", 0),
-                    "deletions": commit.get("lines_deleted", 0),
+                    # Store raw unfiltered values
+                    "insertions": commit.get("raw_insertions", commit.get("lines_added", 0)),
+                    "deletions": commit.get("raw_deletions", commit.get("lines_deleted", 0)),
+                    # Store filtered values
+                    "filtered_insertions": commit.get("filtered_insertions", commit.get("lines_added", 0)),
+                    "filtered_deletions": commit.get("filtered_deletions", commit.get("lines_deleted", 0)),
                     "story_points": commit.get("story_points"),
                     "ticket_references": commit.get("ticket_references", []),
                 }

@@ -312,11 +312,31 @@ class OpenAIClassifier(BaseLLMClassifier):
             "temperature": self.config.temperature,
         }
 
-        # Make request
+        # Make request with proper timeout handling
         url = f"{self.config.api_base_url}/chat/completions"
-        response = requests.post(
-            url, headers=headers, json=payload, timeout=self.config.timeout_seconds
-        )
+
+        # Log request details for debugging
+        logger.debug(f"Making API request to {url} with model {self.config.model}")
+        logger.debug(f"Timeout set to {self.config.timeout_seconds} seconds")
+
+        try:
+            # Use a more conservative timeout and handle both connection and read timeouts
+            # connection timeout = 10s, read timeout = config timeout
+            response = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=(10.0, self.config.timeout_seconds)  # (connection, read) timeouts
+            )
+        except requests.exceptions.Timeout as e:
+            logger.error(f"API request timed out after {self.config.timeout_seconds}s: {e}")
+            raise Exception(f"API request timed out after {self.config.timeout_seconds} seconds")
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Connection error during API request: {e}")
+            raise Exception(f"Connection error: Unable to reach API at {url}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request failed: {e}")
+            raise Exception(f"Request failed: {str(e)}")
 
         # Check response
         if response.status_code != 200:
