@@ -137,25 +137,30 @@ class GitDataFetcher:
             try:
                 import git
                 repo = git.Repo(repo_path)
-                # Rough estimate based on weeks
-                estimated_commits = weeks_back * 50  # Estimate ~50 commits per week
-                progress.start_repository(project_key, estimated_commits)
+                # Check if we need to clone or pull
+                if not repo_path.exists() or not (repo_path / '.git').exists():
+                    logger.info(f"📥 Repository {project_key} needs cloning")
+                    progress.start_repository(f"{project_key} (cloning)", 0)
+                else:
+                    # Rough estimate based on weeks
+                    estimated_commits = weeks_back * 50  # Estimate ~50 commits per week
+                    progress.start_repository(project_key, estimated_commits)
             except Exception:
                 progress.start_repository(project_key, 100)  # Default estimate
 
         # Step 1: Collect all commits organized by day with enhanced progress tracking
         logger.info("🔍 DEBUG: About to fetch commits by day")
-        logger.info("Fetching commits organized by day...")
+        logger.info(f"Fetching commits organized by day for repository: {project_key}")
 
         # Create top-level progress for this repository
         with progress.progress(
             total=3,  # Three main steps: fetch commits, extract tickets, store data
-            description=f"Processing {project_key}",
+            description=f"📊 Processing repository: {project_key}",
             unit="steps",
         ) as repo_progress_ctx:
 
             # Step 1: Fetch commits
-            progress.set_description(repo_progress_ctx, f"{project_key}: Fetching commits")
+            progress.set_description(repo_progress_ctx, f"🔍 {project_key}: Fetching commits")
             daily_commits = self._fetch_commits_by_day(
                 repo_path, project_key, start_date, end_date, branch_patterns, progress_callback
             )
@@ -163,25 +168,25 @@ class GitDataFetcher:
             progress.update(repo_progress_ctx)
 
             # Step 2: Extract and fetch all referenced tickets
-            progress.set_description(repo_progress_ctx, f"{project_key}: Processing tickets")
+            progress.set_description(repo_progress_ctx, f"🎫 {project_key}: Processing tickets")
             logger.info("🔍 DEBUG: About to extract ticket references")
-            logger.info("Extracting ticket references...")
+            logger.info(f"Extracting ticket references for {project_key}...")
             ticket_ids = self._extract_all_ticket_references(daily_commits)
             logger.info(f"🔍 DEBUG: Extracted {len(ticket_ids)} ticket IDs")
 
             if jira_integration and ticket_ids:
-                logger.info(f"Fetching {len(ticket_ids)} unique tickets from JIRA...")
+                logger.info(f"Fetching {len(ticket_ids)} unique tickets from JIRA for {project_key}...")
                 self._fetch_detailed_tickets(
                     ticket_ids, jira_integration, project_key, progress_callback
                 )
 
             # Build commit-ticket correlations
-            logger.info("Building commit-ticket correlations...")
+            logger.info(f"Building commit-ticket correlations for {project_key}...")
             correlations_created = self._build_commit_ticket_correlations(daily_commits, repo_path)
             progress.update(repo_progress_ctx)
 
             # Step 3: Store daily commit batches
-            progress.set_description(repo_progress_ctx, f"{project_key}: Storing data")
+            progress.set_description(repo_progress_ctx, f"💾 {project_key}: Storing data")
             logger.info(
                 f"🔍 DEBUG: About to store daily batches. Daily commits has {len(daily_commits)} days"
             )
@@ -306,19 +311,20 @@ class GitDataFetcher:
         try:
             repo = Repo(repo_path)
             # Update repository from remote before analysis
+            logger.info(f"📥 Updating repository {project_key} from remote...")
             self._update_repository(repo)
         except Exception as e:
-            logger.error(f"Failed to open repository at {repo_path}: {e}")
+            logger.error(f"Failed to open repository {project_key} at {repo_path}: {e}")
             return {}
 
         # Get branches to analyze
         branches_to_analyze = self._get_branches_to_analyze(repo, branch_patterns)
 
         if not branches_to_analyze:
-            logger.warning(f"No accessible branches found in repository {repo_path}")
+            logger.warning(f"No accessible branches found in repository {project_key} at {repo_path}")
             return {}
 
-        logger.info(f"Analyzing branches: {branches_to_analyze}")
+        logger.info(f"🌿 {project_key}: Analyzing branches: {branches_to_analyze}")
 
         # Calculate days to process
         current_date = start_date.date()
@@ -359,15 +365,15 @@ class GitDataFetcher:
         # Create nested progress for day-by-day processing
         with progress.progress(
             total=len(days_to_process),
-            description=f"Fetching commits for {project_key}",
+            description=f"📅 Fetching commits for repository: {project_key}",
             unit="days",
             nested=True,
         ) as day_progress_ctx:
 
             for day_date in days_to_process:
-                # Update description to show current day
+                # Update description to show current repository and day clearly
                 day_str = day_date.strftime("%Y-%m-%d")
-                progress.set_description(day_progress_ctx, f"{project_key}: Processing {day_str}")
+                progress.set_description(day_progress_ctx, f"🔍 {project_key}: Analyzing {day_str}")
 
                 # Calculate day boundaries
                 day_start = datetime.combine(day_date, datetime.min.time(), tzinfo=timezone.utc)

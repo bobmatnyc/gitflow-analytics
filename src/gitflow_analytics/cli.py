@@ -924,7 +924,7 @@ def analyze(
         if cfg.github.organization and not repositories_to_analyze:
             if display:
                 display.print_status(
-                    f"Discovering repositories from organization: {cfg.github.organization}", "info"
+                    f"🔍 Discovering repositories from organization: {cfg.github.organization}", "info"
                 )
             else:
                 click.echo(
@@ -939,22 +939,23 @@ def analyze(
 
                 if display:
                     display.print_status(
-                        f"Found {len(discovered_repos)} repositories in organization", "success"
+                        f"✅ Found {len(discovered_repos)} repositories in {cfg.github.organization}", "success"
                     )
-                    # Show repository discovery in structured format
-                    repo_data = [
-                        {
+                    # Show repository discovery in structured format with status
+                    repo_data = []
+                    for repo in discovered_repos:
+                        status = "📁 Local" if repo.path.exists() else "☁️  Remote"
+                        repo_data.append({
                             "name": repo.name,
+                            "status": status,
                             "github_repo": repo.github_repo,
-                            "exists": repo.path.exists(),
-                        }
-                        for repo in discovered_repos
-                    ]
+                        })
                     display.show_repository_discovery(repo_data)
                 else:
                     click.echo(f"   ✅ Found {len(discovered_repos)} repositories in organization")
                     for repo in discovered_repos:
-                        click.echo(f"      - {repo.name} ({repo.github_repo})")
+                        status = "exists locally" if repo.path.exists() else "needs cloning"
+                        click.echo(f"      - {repo.name} ({status})")
             except Exception as e:
                 if display:
                     display.show_error(f"Failed to discover repositories: {e}")
@@ -1132,11 +1133,20 @@ def analyze(
                             repo_path = Path(repo_config.path)
                             project_key = repo_config.project_key or repo_path.name
 
-                            # Update overall progress description
+                            # Update overall progress description with clear repository info
+                            repo_display_name = repo_config.name or project_key
                             progress.set_description(
                                 repos_progress_ctx,
-                                f"Repository {idx}/{len(repos_needing_analysis)}: {project_key}",
+                                f"🔄 Analyzing repository: {repo_display_name} ({idx}/{len(repos_needing_analysis)})",
                             )
+
+                            # Also update the display if available
+                            if display:
+                                display.update_progress_task(
+                                    "repos",
+                                    description=f"🔄 Processing: {repo_display_name} ({idx}/{len(repos_needing_analysis)})",
+                                    completed=idx - 1
+                                )
 
                             # Progress callback for fetch
                             def progress_callback(message: str):

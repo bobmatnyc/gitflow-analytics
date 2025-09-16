@@ -188,14 +188,28 @@ class RichProgressDisplay:
         content_items.append(Text("Overall Progress", style="bold"))
         content_items.append(self.overall_progress)
 
-        # Current repository progress
+        # Current repository progress - ENHANCED with prominent display
         if self.current_repo:
             content_items.append(Text())  # Empty line
             repo_info = self.repositories.get(self.current_repo)
             if repo_info:
-                current_text = Text(f"Current: {repo_info.name}", style="cyan")
-                if repo_info.total_commits > 0:
-                    current_text.append(f" ({repo_info.commits}/{repo_info.total_commits})")
+                # Create a more prominent current repository display
+                if repo_info.status == RepositoryStatus.PROCESSING:
+                    # Show what action is happening
+                    action = "🔄 Analyzing" if repo_info.commits > 0 else "📥 Cloning"
+                    current_text = Text(f"{action} Repository: ", style="bold yellow")
+                    current_text.append(f"{repo_info.name}", style="bold cyan")
+
+                    # Add commit count if available
+                    if repo_info.total_commits > 0:
+                        current_text.append(f" ({repo_info.commits}/{repo_info.total_commits} commits)", style="dim white")
+                    elif repo_info.commits > 0:
+                        current_text.append(f" ({repo_info.commits} commits found)", style="dim white")
+                else:
+                    current_text = Text(f"Current: {repo_info.name}", style="cyan")
+                    if repo_info.total_commits > 0:
+                        current_text.append(f" ({repo_info.commits}/{repo_info.total_commits})")
+
                 content_items.append(current_text)
                 content_items.append(self.repo_progress)
 
@@ -617,17 +631,34 @@ class RichProgressDisplay:
 
     def show_repository_discovery(self, repositories):
         """Display discovered repositories in a Rich format."""
-        table = Table(title="Discovered Repositories", box=box.ROUNDED)
-        table.add_column("#", style="dim", width=4)
-        table.add_column("Repository", style="cyan")
-        table.add_column("Status", style="green")
+        table = Table(
+            title="📚 Discovered Repositories",
+            box=box.ROUNDED,
+            show_lines=True,
+            highlight=True
+        )
+        table.add_column("#", style="dim", width=4, justify="right")
+        table.add_column("Repository", style="bold cyan", no_wrap=False)
+        table.add_column("Status", style="green", width=12)
+        table.add_column("GitHub", style="dim white", no_wrap=False)
 
         for idx, repo in enumerate(repositories, 1):
             name = repo.get('name', 'Unknown')
             status = repo.get('status', 'Ready')
-            table.add_row(str(idx), name, status)
+            github_repo = repo.get('github_repo', '')
+
+            # Style the status based on its value
+            if "Local" in status or "exists" in status.lower():
+                status_style = "[green]" + status + "[/green]"
+            elif "Remote" in status or "clone" in status.lower():
+                status_style = "[yellow]" + status + "[/yellow]"
+            else:
+                status_style = status
+
+            table.add_row(str(idx), name, status_style, github_repo or "")
 
         self.console.print(table)
+        self.console.print(f"\n[dim]Total repositories: {len(repositories)}[/dim]\n")
 
     def show_error(self, message: str, show_debug_hint: bool = True):
         """Display an error message in Rich format."""
@@ -800,9 +831,13 @@ class SimpleProgressDisplay:
             start_time=datetime.now(),
         )
 
+        # Enhanced description to show what's happening
+        action = "Analyzing" if total_commits > 0 else "Fetching"
+        desc = f"{action} repository: {repo_name}"
+
         self.repo_progress = self.tqdm(
             total=total_commits if total_commits > 0 else 100,
-            desc=f"Processing {repo_name}",
+            desc=desc,
             unit="commits",
             leave=False,
         )
@@ -962,11 +997,18 @@ class SimpleProgressDisplay:
 
     def show_repository_discovery(self, repositories):
         """Display discovered repositories in simple format."""
-        print("\n=== Discovered Repositories ===")
+        print("\n📚 === Discovered Repositories ===")
         for idx, repo in enumerate(repositories, 1):
             name = repo.get('name', 'Unknown')
             status = repo.get('status', 'Ready')
-            print(f"  {idx}. {name} - {status}")
+            github_repo = repo.get('github_repo', '')
+
+            # Format the output line
+            if github_repo:
+                print(f"  {idx:2}. {name:30} {status:12} ({github_repo})")
+            else:
+                print(f"  {idx:2}. {name:30} {status}")
+        print(f"\nTotal repositories: {len(repositories)}")
         print("============================\n")
 
     def show_error(self, message: str, show_debug_hint: bool = True):
