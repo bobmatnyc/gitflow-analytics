@@ -70,10 +70,10 @@ class RepositoryInfo:
     def get_status_icon(self) -> str:
         """Get icon for current status."""
         icons = {
-            RepositoryStatus.PENDING: "◌",
-            RepositoryStatus.PROCESSING: "⟳",
-            RepositoryStatus.COMPLETE: "✓",
-            RepositoryStatus.ERROR: "✗",
+            RepositoryStatus.PENDING: "⏸",  # More visible pending icon
+            RepositoryStatus.PROCESSING: "🔄",  # Clearer processing icon
+            RepositoryStatus.COMPLETE: "✅",  # Green checkmark
+            RepositoryStatus.ERROR: "❌",  # Red X
             RepositoryStatus.SKIPPED: "⊘",
         }
         return icons.get(self.status, "?")
@@ -250,8 +250,8 @@ class RichProgressDisplay:
             )
         )
 
-        # Show only the most recent/relevant repositories (limit to 10)
-        for repo in sorted_repos[:10]:
+        # Show all repositories (no limit)
+        for repo in sorted_repos:
             status_text = Text(
                 f"{repo.get_status_icon()} {repo.status.value.capitalize()}",
                 style=repo.get_status_color()
@@ -282,15 +282,7 @@ class RichProgressDisplay:
                 result_text,
             )
 
-        if len(self.repositories) > 10:
-            table.add_row(
-                f"... and {len(self.repositories) - 10} more",
-                "",
-                "",
-                "",
-                "",
-                style="dim",
-            )
+        # Removed the "and X more" row - now showing all repositories
 
         return Panel(
             table,
@@ -483,6 +475,46 @@ class RichProgressDisplay:
                     setattr(self.statistics, key, value)
 
             if self._layout:
+                self._layout["stats"].update(self._create_statistics_panel())
+
+    def initialize_repositories(self, repository_list: list):
+        """Initialize all repositories with pending status.
+
+        Args:
+            repository_list: List of repositories to be processed.
+                            Each item should have 'name' and optionally 'status' fields.
+        """
+        with self._lock:
+            # Pre-populate all repositories with their status
+            for repo in repository_list:
+                repo_name = repo.get('name', 'Unknown')
+                status_str = repo.get('status', 'pending')
+
+                # Map status string to enum
+                status_map = {
+                    'pending': RepositoryStatus.PENDING,
+                    'complete': RepositoryStatus.COMPLETE,
+                    'processing': RepositoryStatus.PROCESSING,
+                    'error': RepositoryStatus.ERROR,
+                    'skipped': RepositoryStatus.SKIPPED,
+                }
+                status = status_map.get(status_str.lower(), RepositoryStatus.PENDING)
+
+                if repo_name not in self.repositories:
+                    self.repositories[repo_name] = RepositoryInfo(
+                        name=repo_name,
+                        status=status,
+                    )
+                else:
+                    # Update existing status if needed
+                    self.repositories[repo_name].status = status
+
+            # Update statistics
+            self.statistics.total_repositories = len(self.repositories)
+
+            # Update the display if layout exists
+            if self._layout:
+                self._layout["repos"].update(self._create_repository_table())
                 self._layout["stats"].update(self._create_statistics_panel())
 
     def set_phase(self, phase: str):
@@ -869,6 +901,37 @@ class SimpleProgressDisplay:
         for key, value in kwargs.items():
             if hasattr(self.statistics, key):
                 setattr(self.statistics, key, value)
+
+    def initialize_repositories(self, repository_list: list):
+        """Initialize all repositories with their status.
+
+        Args:
+            repository_list: List of repositories to be processed.
+        """
+        # Pre-populate all repositories with their status
+        for repo in repository_list:
+            repo_name = repo.get('name', 'Unknown')
+            status_str = repo.get('status', 'pending')
+
+            # Map status string to enum
+            status_map = {
+                'pending': RepositoryStatus.PENDING,
+                'complete': RepositoryStatus.COMPLETE,
+                'processing': RepositoryStatus.PROCESSING,
+                'error': RepositoryStatus.ERROR,
+                'skipped': RepositoryStatus.SKIPPED,
+            }
+            status = status_map.get(status_str.lower(), RepositoryStatus.PENDING)
+
+            if repo_name not in self.repositories:
+                self.repositories[repo_name] = RepositoryInfo(
+                    name=repo_name,
+                    status=status,
+                )
+            else:
+                # Update existing status if needed
+                self.repositories[repo_name].status = status
+        self.statistics.total_repositories = len(self.repositories)
 
     def set_phase(self, phase: str):
         """Set the current processing phase."""

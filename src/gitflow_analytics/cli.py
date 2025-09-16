@@ -991,6 +991,14 @@ def analyze(
             display.add_progress_task(
                 "repos", "Processing repositories", len(repositories_to_analyze)
             )
+
+            # Initialize all repositories with pending status for Rich display
+            if hasattr(display, 'initialize_repositories'):
+                repo_list = [
+                    {"name": repo.name or repo.project_key or Path(repo.path).name}
+                    for repo in repositories_to_analyze
+                ]
+                display.initialize_repositories(repo_list)
         else:
             click.echo(f"\n🚀 Analyzing {len(repositories_to_analyze)} repositories...")
             click.echo(
@@ -1114,6 +1122,22 @@ def analyze(
                         total_items=len(repos_needing_analysis),
                         description=f"Analyzing {len(repos_needing_analysis)} repositories"
                     )
+
+                    # Initialize ALL repositories (both cached and to-be-fetched) with their status
+                    all_repo_list = []
+
+                    # Add cached repos as COMPLETE
+                    for cached_repo, _ in cached_repos:
+                        repo_name = cached_repo.name or cached_repo.project_key or Path(cached_repo.path).name
+                        all_repo_list.append({"name": repo_name, "status": "complete"})
+
+                    # Add repos needing analysis as PENDING
+                    for repo in repos_needing_analysis:
+                        repo_name = repo.name or repo.project_key or Path(repo.path).name
+                        all_repo_list.append({"name": repo_name, "status": "pending"})
+
+                    progress.initialize_repositories(all_repo_list)
+
                     progress.set_phase("Step 1: Data Fetching")
 
                 # Fetch data for repositories that need analysis

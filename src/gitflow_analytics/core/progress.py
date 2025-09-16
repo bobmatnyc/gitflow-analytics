@@ -454,6 +454,16 @@ class ProgressService:
         if self._use_rich and self._rich_display and self._enabled:
             self._rich_display.update_statistics(**kwargs)
 
+    def initialize_repositories(self, repository_list: list):
+        """Initialize all repositories with pending status in Rich display.
+
+        Args:
+            repository_list: List of repositories to be processed.
+                            Each item should have 'name' and optionally 'path' fields.
+        """
+        if self._use_rich and self._rich_display and self._enabled:
+            self._rich_display.initialize_repositories(repository_list)
+
     def set_phase(self, phase: str):
         """Set the current processing phase for Rich display.
 
