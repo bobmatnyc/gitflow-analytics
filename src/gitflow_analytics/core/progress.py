@@ -13,6 +13,7 @@ DESIGN DECISIONS:
 - Testable: Can be globally disabled for testing, with event capture capability
 - Nested support: Handles nested progress contexts with proper positioning
 - Consistent styling: All progress bars follow the same formatting rules
+- Rich integration: Optional Rich library support for enhanced terminal UI
 
 USAGE:
     from gitflow_analytics.core.progress import get_progress_service
@@ -30,9 +31,22 @@ import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 
 from tqdm import tqdm
+
+# Import UI components if available
+try:
+    from ..ui.progress_display import (
+        create_progress_display,
+        RICH_AVAILABLE,
+        RepositoryStatus,
+        RepositoryInfo,
+    )
+    UI_AVAILABLE = True
+except ImportError:
+    UI_AVAILABLE = False
+    RICH_AVAILABLE = False
 
 
 @dataclass
@@ -73,20 +87,51 @@ class ProgressService:
 
     This service provides a unified interface for creating and managing progress bars
     throughout the application. It supports nested progress contexts, global disable
-    for testing, and event capture for verification.
+    for testing, event capture for verification, and optional Rich terminal UI.
     """
 
-    def __init__(self):
-        """Initialize the progress service."""
+    def __init__(self, display_style: str = "auto", version: str = "1.3.11"):
+        """Initialize the progress service.
+
+        Args:
+            display_style: Display style ("rich", "simple", or "auto")
+            version: Version string for display
+        """
         self._enabled = True
         self._lock = threading.Lock()
         self._active_contexts: list[ProgressContext] = []
         self._position_counter = 0
         self._capture_events = False
         self._captured_events: list[ProgressEvent] = []
+        self._display_style = display_style
+        self._version = version
+
+        # Rich display components
+        self._rich_display = None
+        self._repository_contexts: Dict[str, Any] = {}
+        self._use_rich = False
+
+        # Initialize display based on configuration
+        self._init_display()
 
         # Check environment for testing mode
         self._check_testing_environment()
+
+    def _init_display(self):
+        """Initialize the appropriate display based on configuration."""
+        if UI_AVAILABLE and self._display_style in ("rich", "auto"):
+            try:
+                self._rich_display = create_progress_display(
+                    style=self._display_style,
+                    version=self._version,
+                    update_frequency=0.5
+                )
+                self._use_rich = (self._display_style == "rich" or
+                                (self._display_style == "auto" and RICH_AVAILABLE))
+            except Exception:
+                # Fall back to tqdm if Rich fails
+                self._use_rich = False
+                self._rich_display = None
 
     def _check_testing_environment(self):
         """Check if running in a testing environment and disable if needed.
@@ -97,14 +142,17 @@ class ProgressService:
         # Disable in pytest
         if "pytest" in sys.modules:
             self._enabled = False
+            self._use_rich = False
 
         # Disable if explicitly requested via environment
         if os.environ.get("GITFLOW_DISABLE_PROGRESS", "").lower() in ("1", "true", "yes"):
             self._enabled = False
+            self._use_rich = False
 
         # Disable if not in a TTY (e.g., CI/CD, piped output)
         if not sys.stdout.isatty():
             self._enabled = False
+            self._use_rich = False
 
     def create_progress(
         self,
@@ -154,16 +202,21 @@ class ProgressService:
 
             # Create actual progress bar if enabled
             if self._enabled:
-                context.progress_bar = tqdm(
-                    total=total,
-                    desc=description,
-                    unit=unit,
-                    position=position,
-                    leave=leave,
-                    # Consistent styling
-                    bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
-                    dynamic_ncols=True,
-                )
+                if self._use_rich and self._rich_display:
+                    # For Rich display, we don't create individual tqdm bars
+                    # Instead, we'll manage everything through the Rich display
+                    context.progress_bar = None
+                else:
+                    context.progress_bar = tqdm(
+                        total=total,
+                        desc=description,
+                        unit=unit,
+                        position=position,
+                        leave=leave,
+                        # Consistent styling
+                        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
+                        dynamic_ncols=True,
+                    )
 
             self._active_contexts.append(context)
             return context
@@ -196,7 +249,23 @@ class ProgressService:
                 )
 
             # Update actual progress bar if it exists
-            if context.progress_bar:
+            if self._use_rich and self._rich_display:
+                # Update Rich display based on context type
+                if hasattr(context, 'repository_name'):
+                    # Repository-specific progress
+                    speed = increment / 0.1 if increment > 0 else 0  # Simple speed calculation
+                    self._rich_display.update_repository(
+                        context.repository_name,
+                        context.current,
+                        speed
+                    )
+                else:
+                    # Overall progress
+                    self._rich_display.update_overall(
+                        context.current,
+                        description
+                    )
+            elif context.progress_bar:
                 context.progress_bar.update(increment)
                 if description:
                     context.progress_bar.set_description(description)
@@ -334,14 +403,94 @@ class ProgressService:
         with self._lock:
             self._captured_events = []
 
+    # Rich-specific methods
+    def start_rich_display(self, total_items: int = 100, description: str = "Analyzing repositories"):
+        """Start the Rich display if available.
+
+        Args:
+            total_items: Total number of items to process
+            description: Description of the overall task
+        """
+        if self._use_rich and self._rich_display and self._enabled:
+            self._rich_display.start(total_items, description)
+
+    def stop_rich_display(self):
+        """Stop the Rich display if active."""
+        if self._use_rich and self._rich_display:
+            self._rich_display.stop()
+
+    def start_repository(self, repo_name: str, total_commits: int = 0):
+        """Start processing a repository with Rich display.
+
+        Args:
+            repo_name: Name of the repository
+            total_commits: Total number of commits to process
+        """
+        if self._use_rich and self._rich_display and self._enabled:
+            self._rich_display.start_repository(repo_name, total_commits)
+
+    def finish_repository(self, repo_name: str, success: bool = True, error_message: Optional[str] = None):
+        """Finish processing a repository with Rich display.
+
+        Args:
+            repo_name: Name of the repository
+            success: Whether processing was successful
+            error_message: Error message if processing failed
+        """
+        if self._use_rich and self._rich_display and self._enabled:
+            self._rich_display.finish_repository(repo_name, success, error_message)
+
+    def update_statistics(self, **kwargs):
+        """Update Rich display statistics.
+
+        Args:
+            **kwargs: Statistics to update (total_commits, total_developers, etc.)
+        """
+        if self._use_rich and self._rich_display and self._enabled:
+            self._rich_display.update_statistics(**kwargs)
+
+    def set_phase(self, phase: str):
+        """Set the current processing phase for Rich display.
+
+        Args:
+            phase: Description of the current phase
+        """
+        if self._use_rich and self._rich_display and self._enabled:
+            self._rich_display.set_phase(phase)
+
+    def create_repository_progress(self, repo_name: str, total: int, description: str) -> ProgressContext:
+        """Create a progress context specifically for repository processing.
+
+        Args:
+            repo_name: Name of the repository
+            total: Total number of items to process
+            description: Description of the task
+
+        Returns:
+            ProgressContext with repository information
+        """
+        context = self.create_progress(total, description, unit="commits", nested=True)
+        # Add repository name to context for Rich display handling
+        # Note: We use object.__setattr__ to bypass dataclass frozen status if needed
+        object.__setattr__(context, 'repository_name', repo_name)
+
+        if self._use_rich and self._rich_display and self._enabled:
+            self.start_repository(repo_name, total)
+
+        return context
+
 
 # Global singleton instance
 _progress_service: Optional[ProgressService] = None
 _service_lock = threading.Lock()
 
 
-def get_progress_service() -> ProgressService:
+def get_progress_service(display_style: Optional[str] = None, version: Optional[str] = None) -> ProgressService:
     """Get the global progress service instance.
+
+    Args:
+        display_style: Optional display style override ("rich", "simple", or "auto")
+        version: Optional version string for display
 
     Returns:
         The singleton ProgressService instance
@@ -353,7 +502,18 @@ def get_progress_service() -> ProgressService:
     if _progress_service is None:
         with _service_lock:
             if _progress_service is None:
-                _progress_service = ProgressService()
+                # Get display style from environment or use default
+                if display_style is None:
+                    display_style = os.environ.get("GITFLOW_PROGRESS_STYLE", "auto")
+                if version is None:
+                    # Try to get version from package
+                    try:
+                        from .._version import __version__
+                        version = __version__
+                    except ImportError:
+                        version = "1.3.11"
+
+                _progress_service = ProgressService(display_style=display_style, version=version)
 
     return _progress_service
 

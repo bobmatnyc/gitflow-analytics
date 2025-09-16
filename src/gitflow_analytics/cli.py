@@ -421,6 +421,12 @@ def cli(ctx: click.Context) -> None:
 @click.option(
     "--force-fetch", is_flag=True, help="Force fetch fresh data even if cached data exists"
 )
+@click.option(
+    "--progress-style",
+    type=click.Choice(["rich", "simple", "auto"], case_sensitive=False),
+    default="auto",
+    help="Progress display style: rich (beautiful terminal UI), simple (tqdm), auto (detect)",
+)
 def analyze_subcommand(
     config: Path,
     weeks: int,
@@ -443,6 +449,7 @@ def analyze_subcommand(
     generate_csv: bool,
     use_batch_classification: bool,
     force_fetch: bool,
+    progress_style: str,
 ) -> None:
     """Analyze Git repositories and generate comprehensive productivity reports.
 
@@ -505,6 +512,7 @@ def analyze_subcommand(
         generate_csv=generate_csv,
         use_batch_classification=use_batch_classification,
         force_fetch=force_fetch,
+        progress_style=progress_style,
     )
 
 
@@ -530,6 +538,7 @@ def analyze(
     generate_csv: bool = False,
     use_batch_classification: bool = True,
     force_fetch: bool = False,
+    progress_style: str = "auto",
 ) -> None:
     """Analyze Git repositories using configuration file."""
 
@@ -1085,11 +1094,26 @@ def analyze(
                 jira_integration = orchestrator.integrations.get("jira")
 
                 # Get progress service for overall repository progress
-                progress = get_progress_service()
+                # Pass version from configuration or package
+                try:
+                    from ._version import __version__
+                    version = __version__
+                except ImportError:
+                    version = "1.3.11"
+                progress = get_progress_service(display_style=progress_style, version=version)
+
+                # Start Rich display if enabled
+                if progress_style == "rich" or (progress_style == "auto" and progress._use_rich):
+                    progress.start_rich_display(
+                        total_items=len(repos_needing_analysis),
+                        description=f"Analyzing {len(repos_needing_analysis)} repositories"
+                    )
+                    progress.set_phase("Step 1: Data Fetching")
 
                 # Fetch data for repositories that need analysis
                 total_commits = 0
                 total_tickets = 0
+                total_developers = set()  # Track unique developers
 
                 # Create top-level progress for all repositories
                 with progress.progress(
@@ -1137,6 +1161,21 @@ def analyze(
 
                             total_commits += result["stats"]["total_commits"]
                             total_tickets += result["stats"]["unique_tickets"]
+
+                            # Collect unique developers if available
+                            if "developers" in result["stats"]:
+                                total_developers.update(result["stats"]["developers"])
+
+                            # Update Rich display statistics
+                            if progress._use_rich:
+                                progress.update_statistics(
+                                    total_commits=total_commits,
+                                    total_tickets=total_tickets,
+                                    total_developers=len(total_developers),
+                                    total_repositories=len(repos_needing_analysis),
+                                    processed_repositories=idx
+                                )
+                                progress.finish_repository(project_key, success=True)
 
                             if display:
                                 display.print_status(
@@ -1376,6 +1415,21 @@ def analyze(
 
                             total_commits += result["stats"]["total_commits"]
                             total_tickets += result["stats"]["unique_tickets"]
+
+                            # Collect unique developers if available
+                            if "developers" in result["stats"]:
+                                total_developers.update(result["stats"]["developers"])
+
+                            # Update Rich display statistics
+                            if progress._use_rich:
+                                progress.update_statistics(
+                                    total_commits=total_commits,
+                                    total_tickets=total_tickets,
+                                    total_developers=len(total_developers),
+                                    total_repositories=len(repos_needing_analysis),
+                                    processed_repositories=idx
+                                )
+                                progress.finish_repository(project_key, success=True)
 
                             if display:
                                 display.print_status(
@@ -3433,6 +3487,10 @@ def analyze(
                 click.echo(f"   Warning: Could not display cache statistics: {e}")
 
             click.echo(f"\n✅ Analysis complete! Reports saved to {output}")
+
+        # Stop Rich display if it was started
+        if 'progress' in locals() and progress and hasattr(progress, '_use_rich') and progress._use_rich:
+            progress.stop_rich_display()
 
     except click.ClickException:
         # Let Click handle its own exceptions

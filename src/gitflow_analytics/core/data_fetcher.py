@@ -317,6 +317,23 @@ class GitDataFetcher:
         daily_commits = {}
         all_commit_hashes = set()  # Track all hashes for deduplication
 
+        # Count total commits first for Rich display
+        total_expected_commits = 0
+        try:
+            for branch_name in branches_to_analyze[:1]:  # Sample from first branch
+                sample_commits = list(repo.iter_commits(
+                    branch_name, since=start_date, until=end_date
+                ))
+                # Estimate based on first branch (multiply by number of branches for rough estimate)
+                total_expected_commits = len(sample_commits) * len(branches_to_analyze)
+                break
+        except:
+            total_expected_commits = len(days_to_process) * 50  # Default estimate
+
+        # Update repository in Rich display with estimated commit count
+        if hasattr(progress, '_use_rich') and progress._use_rich:
+            progress.update_repository(project_key, 0, 0.0)
+
         # Create nested progress for day-by-day processing
         with progress.progress(
             total=len(days_to_process),
@@ -386,6 +403,17 @@ class GitDataFetcher:
 
                 # Update progress bar
                 progress.update(day_progress_ctx)
+
+                # Update Rich display with current commit count and speed
+                if hasattr(progress, '_use_rich') and progress._use_rich:
+                    total_processed = len(all_commit_hashes)
+                    # Calculate speed (commits per second) based on elapsed time
+                    import time
+                    if not hasattr(self, '_fetch_start_time'):
+                        self._fetch_start_time = time.time()
+                    elapsed = time.time() - self._fetch_start_time
+                    speed = total_processed / elapsed if elapsed > 0 else 0
+                    progress.update_repository(project_key, total_processed, speed)
 
         total_commits = sum(len(commits) for commits in daily_commits.values())
         logger.info(f"Collected {total_commits} unique commits across {len(daily_commits)} days")
