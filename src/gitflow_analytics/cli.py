@@ -18,7 +18,7 @@ import pandas as pd
 import yaml
 
 from ._version import __version__
-from .cli_rich import create_rich_display
+from .ui.progress_display import create_progress_display
 from .config import ConfigLoader
 from .core.analyzer import GitAnalyzer
 from .core.cache import GitAnalysisCache
@@ -554,7 +554,7 @@ def analyze(
     progress = get_progress_service(display_style=progress_style, version=version)
 
     # Initialize display - use rich by default, fall back to simple output if needed
-    display = create_rich_display() if rich else None
+    display = create_progress_display(style="rich" if rich else "simple", version=__version__) if rich else None
 
     # Configure logging based on the --log option
     if log.upper() != "NONE":
@@ -3597,7 +3597,7 @@ def fetch(
       - Use --clear-cache to force fresh fetch
     """
     # Initialize display
-    display = create_rich_display() if rich else None
+    display = create_progress_display(style="rich" if rich else "simple", version=__version__) if rich else None
 
     # Configure logging
     if log.upper() != "NONE":

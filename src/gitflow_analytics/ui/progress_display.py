@@ -481,6 +481,268 @@ class RichProgressDisplay:
         finally:
             self.stop()
 
+    # Compatibility methods for CLI interface
+    def show_header(self):
+        """Display header - compatibility method for CLI."""
+        # The header is shown when start() is called, so we just need to print it
+        header_panel = self._create_header_panel()
+        self.console.print(header_panel)
+
+    def start_live_display(self):
+        """Start live display - compatibility wrapper for start()."""
+        # Initialize but don't start the Live display yet
+        # It will be started when add_progress_task is called
+        with self._lock:
+            if not hasattr(self, '_task_ids'):
+                self._task_ids = {}
+            self.statistics.start_time = datetime.now()
+
+    def stop_live_display(self):
+        """Stop live display - compatibility wrapper for stop()."""
+        # Only stop if Live display is running
+        if self._live:
+            self.stop()
+
+    def add_progress_task(self, task_id: str, description: str, total: int):
+        """Add a progress task - compatibility method."""
+        # Start the live display if not already started
+        if not self._live and task_id == "repos":
+            self.start(total_items=total, description=description)
+        elif task_id == "repos":
+            # Update the overall progress description and total
+            if self.overall_task_id is not None:
+                self.overall_progress.update(self.overall_task_id,
+                                           description=description,
+                                           total=total)
+        elif task_id == "qualitative":
+            # Create a new task for qualitative analysis
+            with self._lock:
+                # Store task IDs in a dictionary for tracking
+                if not hasattr(self, '_task_ids'):
+                    self._task_ids = {}
+                # Only add task if overall_progress is available
+                if self._live:
+                    self._task_ids[task_id] = self.overall_progress.add_task(
+                        description,
+                        total=total
+                    )
+
+    def update_progress_task(self, task_id: str, description: Optional[str] = None,
+                           advance: int = 0, completed: Optional[int] = None):
+        """Update a progress task - compatibility method."""
+        if task_id == "repos":
+            # Update overall progress
+            if description:
+                self.update_overall(completed or 0, description)
+            elif advance:
+                if self.overall_task_id is not None:
+                    self.overall_progress.advance(self.overall_task_id, advance)
+        elif hasattr(self, '_task_ids') and task_id in self._task_ids:
+            # Update specific task
+            update_kwargs = {}
+            if description:
+                update_kwargs['description'] = description
+            if completed is not None:
+                update_kwargs['completed'] = completed
+            if advance:
+                self.overall_progress.advance(self._task_ids[task_id], advance)
+            elif update_kwargs:
+                self.overall_progress.update(self._task_ids[task_id], **update_kwargs)
+
+    def complete_progress_task(self, task_id: str, description: str):
+        """Complete a progress task - compatibility method."""
+        if task_id == "repos":
+            # Mark overall task as complete
+            if self.overall_task_id is not None:
+                total = self.overall_progress.tasks[0].total if self.overall_progress.tasks else 100
+                self.overall_progress.update(self.overall_task_id,
+                                           description=description,
+                                           completed=total)
+        elif hasattr(self, '_task_ids') and task_id in self._task_ids:
+            # Complete specific task
+            task = None
+            for t in self.overall_progress.tasks:
+                if t.id == self._task_ids[task_id]:
+                    task = t
+                    break
+            if task:
+                self.overall_progress.update(self._task_ids[task_id],
+                                           description=description,
+                                           completed=task.total)
+
+    def print_status(self, message: str, style: str = "info"):
+        """Print a status message - compatibility method."""
+        styles = {
+            "info": "cyan",
+            "success": "green",
+            "warning": "yellow",
+            "error": "red"
+        }
+        self.console.print(f"[{styles.get(style, 'white')}]{message}[/{styles.get(style, 'white')}]")
+
+    def show_configuration_status(self, config_file, github_org=None,
+                                 github_token_valid=False, jira_configured=False,
+                                 jira_valid=False, analysis_weeks=4, **kwargs):
+        """Display configuration status in a Rich format."""
+        table = Table(title="Configuration", box=box.ROUNDED)
+        table.add_column("Setting", style="cyan")
+        table.add_column("Value", style="white")
+
+        table.add_row("Config File", str(config_file))
+
+        if github_org:
+            table.add_row("GitHub Organization", github_org)
+            status = "✓ Valid" if github_token_valid else "✗ No token"
+            table.add_row("GitHub Token", status)
+
+        if jira_configured:
+            status = "✓ Valid" if jira_valid else "✗ Invalid"
+            table.add_row("JIRA Integration", status)
+
+        table.add_row("Analysis Period", f"{analysis_weeks} weeks")
+
+        # Add any additional kwargs passed
+        for key, value in kwargs.items():
+            formatted_key = key.replace('_', ' ').title()
+            table.add_row(formatted_key, str(value))
+
+        self.console.print(table)
+
+    def show_repository_discovery(self, repositories):
+        """Display discovered repositories in a Rich format."""
+        table = Table(title="Discovered Repositories", box=box.ROUNDED)
+        table.add_column("#", style="dim", width=4)
+        table.add_column("Repository", style="cyan")
+        table.add_column("Status", style="green")
+
+        for idx, repo in enumerate(repositories, 1):
+            name = repo.get('name', 'Unknown')
+            status = repo.get('status', 'Ready')
+            table.add_row(str(idx), name, status)
+
+        self.console.print(table)
+
+    def show_error(self, message: str, show_debug_hint: bool = True):
+        """Display an error message in Rich format."""
+        error_panel = Panel(
+            Text(message, style="red"),
+            title="[red]Error[/red]",
+            border_style="red",
+            padding=(1, 2)
+        )
+        self.console.print(error_panel)
+
+        if show_debug_hint:
+            self.console.print("[dim]Tip: Set GITFLOW_DEBUG=1 for more detailed output[/dim]")
+
+    def show_warning(self, message: str):
+        """Display a warning message in Rich format."""
+        warning_panel = Panel(
+            Text(message, style="yellow"),
+            title="[yellow]Warning[/yellow]",
+            border_style="yellow",
+            padding=(1, 2)
+        )
+        self.console.print(warning_panel)
+
+    def show_qualitative_stats(self, stats):
+        """Display qualitative analysis statistics in Rich format."""
+        table = Table(title="Qualitative Analysis Statistics", box=box.ROUNDED)
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="white")
+
+        if isinstance(stats, dict):
+            for key, value in stats.items():
+                # Format the key to be more readable
+                formatted_key = key.replace('_', ' ').title()
+                formatted_value = str(value)
+                table.add_row(formatted_key, formatted_value)
+
+        self.console.print(table)
+
+    def show_analysis_summary(self, commits, developers, tickets, prs=None, untracked=None):
+        """Display analysis summary in Rich format."""
+        summary = Table(title="Analysis Summary", box=box.ROUNDED)
+        summary.add_column("Metric", style="cyan", width=30)
+        summary.add_column("Count", style="green", width=20)
+
+        summary.add_row("Total Commits", str(commits))
+        summary.add_row("Unique Developers", str(developers))
+        summary.add_row("Tracked Tickets", str(tickets))
+
+        if prs is not None:
+            summary.add_row("Pull Requests", str(prs))
+
+        if untracked is not None:
+            summary.add_row("Untracked Commits", str(untracked))
+
+        self.console.print(summary)
+
+    def show_dora_metrics(self, metrics):
+        """Display DORA metrics in Rich format."""
+        if not metrics:
+            return
+
+        table = Table(title="DORA Metrics", box=box.ROUNDED)
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="white")
+        table.add_column("Rating", style="green")
+
+        # Format and display each DORA metric
+        metric_names = {
+            'deployment_frequency': 'Deployment Frequency',
+            'lead_time_for_changes': 'Lead Time for Changes',
+            'mean_time_to_recovery': 'Mean Time to Recovery',
+            'change_failure_rate': 'Change Failure Rate'
+        }
+
+        for key, name in metric_names.items():
+            if key in metrics:
+                value = metrics[key].get('value', 'N/A')
+                rating = metrics[key].get('rating', '')
+                table.add_row(name, str(value), rating)
+
+        self.console.print(table)
+
+    def show_reports_generated(self, output_dir, reports):
+        """Display generated reports information in Rich format."""
+        table = Table(title=f"Reports Generated in {output_dir}", box=box.ROUNDED)
+        table.add_column("Report Type", style="cyan")
+        table.add_column("Filename", style="white")
+
+        for report in reports:
+            if isinstance(report, dict):
+                report_type = report.get('type', 'Unknown')
+                filename = report.get('filename', 'N/A')
+            else:
+                # Handle simple string format
+                report_type = "Report"
+                filename = str(report)
+
+            table.add_row(report_type, filename)
+
+        self.console.print(table)
+
+    def show_llm_cost_summary(self, cost_stats):
+        """Display LLM cost summary in Rich format."""
+        if not cost_stats:
+            return
+
+        table = Table(title="LLM Usage & Cost Summary", box=box.ROUNDED)
+        table.add_column("Model", style="cyan")
+        table.add_column("Requests", style="white")
+        table.add_column("Tokens", style="white")
+        table.add_column("Cost", style="green")
+
+        if isinstance(cost_stats, dict):
+            for model, stats in cost_stats.items():
+                requests = stats.get('requests', 0)
+                tokens = stats.get('tokens', 0)
+                cost = stats.get('cost', 0.0)
+                table.add_row(model, str(requests), str(tokens), f"${cost:.4f}")
+
+        self.console.print(table)
+
 
 class SimpleProgressDisplay:
     """Fallback progress display using tqdm when Rich is not available."""
@@ -580,6 +842,206 @@ class SimpleProgressDisplay:
             yield self
         finally:
             self.stop()
+
+    # Compatibility methods for CLI interface
+    def show_header(self):
+        """Display header - compatibility method for CLI."""
+        print(f"\n{'='*60}")
+        print(f"GitFlow Analytics v{self.version}")
+        print(f"{'='*60}\n")
+
+    def start_live_display(self):
+        """Start live display - compatibility wrapper for start()."""
+        if not self.overall_progress:
+            self.start(total_items=100, description="Processing")
+
+    def stop_live_display(self):
+        """Stop live display - compatibility wrapper for stop()."""
+        self.stop()
+
+    def add_progress_task(self, task_id: str, description: str, total: int):
+        """Add a progress task - compatibility method."""
+        # Store task information for later use
+        if not hasattr(self, '_tasks'):
+            self._tasks = {}
+        self._tasks[task_id] = {'description': description, 'total': total, 'progress': None}
+
+        if task_id == "repos":
+            # Update overall progress
+            if self.overall_progress:
+                self.overall_progress.total = total
+                self.overall_progress.set_description(description)
+        elif task_id == "qualitative":
+            # For qualitative, we might create a separate progress bar
+            from tqdm import tqdm
+            self._tasks[task_id]['progress'] = tqdm(
+                total=total,
+                desc=description,
+                unit="items",
+                leave=False
+            )
+
+    def update_progress_task(self, task_id: str, description: Optional[str] = None,
+                           advance: int = 0, completed: Optional[int] = None):
+        """Update a progress task - compatibility method."""
+        if task_id == "repos" and self.overall_progress:
+            if description:
+                self.overall_progress.set_description(description)
+            if advance:
+                self.overall_progress.update(advance)
+            if completed is not None:
+                self.overall_progress.n = completed
+                self.overall_progress.refresh()
+        elif hasattr(self, '_tasks') and task_id in self._tasks:
+            task = self._tasks[task_id].get('progress')
+            if task:
+                if description:
+                    task.set_description(description)
+                if advance:
+                    task.update(advance)
+                if completed is not None:
+                    task.n = completed
+                    task.refresh()
+
+    def complete_progress_task(self, task_id: str, description: str):
+        """Complete a progress task - compatibility method."""
+        if task_id == "repos" and self.overall_progress:
+            self.overall_progress.set_description(description)
+            self.overall_progress.n = self.overall_progress.total
+            self.overall_progress.refresh()
+        elif hasattr(self, '_tasks') and task_id in self._tasks:
+            task = self._tasks[task_id].get('progress')
+            if task:
+                task.set_description(description)
+                task.n = task.total
+                task.close()
+                self._tasks[task_id]['progress'] = None
+
+    def print_status(self, message: str, style: str = "info"):
+        """Print a status message - compatibility method."""
+        # Simple console print with basic styling
+        prefix = {
+            "info": "ℹ️ ",
+            "success": "✅ ",
+            "warning": "⚠️ ",
+            "error": "❌ "
+        }.get(style, "")
+        print(f"{prefix}{message}")
+
+    def show_configuration_status(self, config_file, github_org=None,
+                                 github_token_valid=False, jira_configured=False,
+                                 jira_valid=False, analysis_weeks=4, **kwargs):
+        """Display configuration status in simple format."""
+        print("\n=== Configuration ===")
+        print(f"Config File: {config_file}")
+
+        if github_org:
+            print(f"GitHub Organization: {github_org}")
+            status = "✓ Valid" if github_token_valid else "✗ No token"
+            print(f"GitHub Token: {status}")
+
+        if jira_configured:
+            status = "✓ Valid" if jira_valid else "✗ Invalid"
+            print(f"JIRA Integration: {status}")
+
+        print(f"Analysis Period: {analysis_weeks} weeks")
+
+        # Add any additional kwargs passed
+        for key, value in kwargs.items():
+            formatted_key = key.replace('_', ' ').title()
+            print(f"{formatted_key}: {value}")
+
+        print("==================\n")
+
+    def show_repository_discovery(self, repositories):
+        """Display discovered repositories in simple format."""
+        print("\n=== Discovered Repositories ===")
+        for idx, repo in enumerate(repositories, 1):
+            name = repo.get('name', 'Unknown')
+            status = repo.get('status', 'Ready')
+            print(f"  {idx}. {name} - {status}")
+        print("============================\n")
+
+    def show_error(self, message: str, show_debug_hint: bool = True):
+        """Display an error message in simple format."""
+        print(f"\n❌ ERROR: {message}")
+        if show_debug_hint:
+            print("Tip: Set GITFLOW_DEBUG=1 for more detailed output")
+        print("")
+
+    def show_warning(self, message: str):
+        """Display a warning message in simple format."""
+        print(f"\n⚠️  WARNING: {message}\n")
+
+    def show_qualitative_stats(self, stats):
+        """Display qualitative analysis statistics in simple format."""
+        print("\n=== Qualitative Analysis Statistics ===")
+        if isinstance(stats, dict):
+            for key, value in stats.items():
+                formatted_key = key.replace('_', ' ').title()
+                print(f"  {formatted_key}: {value}")
+        print("=====================================\n")
+
+    def show_analysis_summary(self, commits, developers, tickets, prs=None, untracked=None):
+        """Display analysis summary in simple format."""
+        print("\n=== Analysis Summary ===")
+        print(f"  Total Commits: {commits}")
+        print(f"  Unique Developers: {developers}")
+        print(f"  Tracked Tickets: {tickets}")
+        if prs is not None:
+            print(f"  Pull Requests: {prs}")
+        if untracked is not None:
+            print(f"  Untracked Commits: {untracked}")
+        print("======================\n")
+
+    def show_dora_metrics(self, metrics):
+        """Display DORA metrics in simple format."""
+        if not metrics:
+            return
+
+        print("\n=== DORA Metrics ===")
+        metric_names = {
+            'deployment_frequency': 'Deployment Frequency',
+            'lead_time_for_changes': 'Lead Time for Changes',
+            'mean_time_to_recovery': 'Mean Time to Recovery',
+            'change_failure_rate': 'Change Failure Rate'
+        }
+
+        for key, name in metric_names.items():
+            if key in metrics:
+                value = metrics[key].get('value', 'N/A')
+                rating = metrics[key].get('rating', '')
+                print(f"  {name}: {value} {f'({rating})' if rating else ''}")
+        print("==================\n")
+
+    def show_reports_generated(self, output_dir, reports):
+        """Display generated reports information in simple format."""
+        print(f"\n=== Reports Generated in {output_dir} ===")
+        for report in reports:
+            if isinstance(report, dict):
+                report_type = report.get('type', 'Unknown')
+                filename = report.get('filename', 'N/A')
+                print(f"  {report_type}: {filename}")
+            else:
+                print(f"  Report: {report}")
+        print("=====================================\n")
+
+    def show_llm_cost_summary(self, cost_stats):
+        """Display LLM cost summary in simple format."""
+        if not cost_stats:
+            return
+
+        print("\n=== LLM Usage & Cost Summary ===")
+        if isinstance(cost_stats, dict):
+            for model, stats in cost_stats.items():
+                requests = stats.get('requests', 0)
+                tokens = stats.get('tokens', 0)
+                cost = stats.get('cost', 0.0)
+                print(f"  {model}:")
+                print(f"    Requests: {requests}")
+                print(f"    Tokens: {tokens}")
+                print(f"    Cost: ${cost:.4f}")
+        print("==============================\n")
 
 
 def create_progress_display(style: str = "auto", version: str = "1.3.11",
