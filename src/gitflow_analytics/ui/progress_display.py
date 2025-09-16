@@ -13,7 +13,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import threading
-import psutil
+
+# Try to import psutil, but make it optional
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 try:
     from rich.console import Console
@@ -161,8 +167,8 @@ class RichProgressDisplay:
         self._live = None
         self._layout = None
 
-        # System monitoring
-        self._process = psutil.Process()
+        # System monitoring (only if psutil is available)
+        self._process = psutil.Process() if PSUTIL_AVAILABLE else None
 
     def _create_header_panel(self) -> Panel:
         """Create the header panel with title and version."""
@@ -281,13 +287,14 @@ class RichProgressDisplay:
 
     def _create_statistics_panel(self) -> Panel:
         """Create the statistics panel."""
-        # Update system statistics
+        # Update system statistics (only if psutil is available)
         with self._lock:
-            try:
-                self.statistics.memory_usage = self._process.memory_info().rss / 1024 / 1024
-                self.statistics.cpu_percent = self._process.cpu_percent()
-            except:
-                pass
+            if self._process:
+                try:
+                    self.statistics.memory_usage = self._process.memory_info().rss / 1024 / 1024
+                    self.statistics.cpu_percent = self._process.cpu_percent()
+                except:
+                    pass
 
         stats_items = []
 
