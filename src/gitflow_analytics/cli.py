@@ -277,7 +277,7 @@ class AnalyzeAsDefaultGroup(click.Group):
             "--enable-pm",
             "--pm-platform",
             "--disable-pm",
-            "--rich",
+            "--no-rich",
             "--log",
             "--skip-identity-analysis",
             "--apply-identity-suggestions",
@@ -390,7 +390,7 @@ def cli(ctx: click.Context) -> None:
     "--disable-pm", is_flag=True, help="Disable PM platform integration (overrides config setting)"
 )
 @click.option(
-    "--rich", is_flag=True, default=True, help="Use rich terminal output (default: enabled)"
+    "--no-rich", is_flag=True, default=False, help="Disable rich terminal output (rich is enabled by default)"
 )
 @click.option(
     "--log",
@@ -440,7 +440,7 @@ def analyze_subcommand(
     enable_pm: bool,
     pm_platform: tuple[str, ...],
     disable_pm: bool,
-    rich: bool,
+    no_rich: bool,
     log: str,
     skip_identity_analysis: bool,
     apply_identity_suggestions: bool,
@@ -503,7 +503,7 @@ def analyze_subcommand(
         enable_pm=enable_pm,
         pm_platform=pm_platform,
         disable_pm=disable_pm,
-        rich=rich,
+        no_rich=no_rich,
         log=log,
         skip_identity_analysis=skip_identity_analysis,
         apply_identity_suggestions=apply_identity_suggestions,
@@ -529,7 +529,7 @@ def analyze(
     enable_pm: bool,
     pm_platform: tuple[str, ...],
     disable_pm: bool,
-    rich: bool,
+    no_rich: bool,
     log: str,
     skip_identity_analysis: bool,
     apply_identity_suggestions: bool,
@@ -554,7 +554,8 @@ def analyze(
     progress = get_progress_service(display_style=progress_style, version=version)
 
     # Initialize display - use rich by default, fall back to simple output if needed
-    display = create_progress_display(style="rich" if rich else "simple", version=__version__) if rich else None
+    # Create display - Rich is enabled by default, disabled only with --no-rich flag
+    display = create_progress_display(style="simple" if no_rich else "rich", version=__version__) if not no_rich else None
 
     # Configure logging based on the --log option
     if log.upper() != "NONE":
@@ -3685,7 +3686,7 @@ def analyze(
     help="Enable logging with specified level (default: none)",
 )
 @click.option(
-    "--rich", is_flag=True, default=True, help="Use rich terminal output (default: enabled)"
+    "--no-rich", is_flag=True, default=False, help="Disable rich terminal output (rich is enabled by default)"
 )
 def fetch(
     config: Path,
@@ -3693,7 +3694,7 @@ def fetch(
     output: Optional[Path],
     clear_cache: bool,
     log: str,
-    rich: bool,
+    no_rich: bool,
 ) -> None:
     """Fetch data from external platforms for enhanced analysis.
 
@@ -3735,7 +3736,8 @@ def fetch(
       - Use --clear-cache to force fresh fetch
     """
     # Initialize display
-    display = create_progress_display(style="rich" if rich else "simple", version=__version__) if rich else None
+    # Create display - Rich is enabled by default, disabled only with --no-rich flag
+    display = create_progress_display(style="simple" if no_rich else "rich", version=__version__) if not no_rich else None
 
     # Configure logging
     if log.upper() != "NONE":
