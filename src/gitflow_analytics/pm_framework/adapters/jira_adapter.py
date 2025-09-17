@@ -545,7 +545,13 @@ class JIRAAdapter(BasePlatformAdapter):
                 - cache_dir: Directory for ticket cache (optional, defaults to current directory)
                 - cache_ttl_hours: Cache TTL in hours (optional, default: 168 = 7 days)
         """
-        print(f"   🔍 JIRA adapter __init__ called with config keys: {list(config.keys())}")
+        import os
+
+        # Check debug mode
+        debug_mode = os.getenv("GITFLOW_DEBUG", "").lower() in ("1", "true", "yes")
+        if debug_mode:
+            print(f"   🔍 JIRA adapter __init__ called with config keys: {list(config.keys())}")
+
         super().__init__(config)
 
         # Required configuration (use defaults for capability checking)
@@ -557,9 +563,10 @@ class JIRAAdapter(BasePlatformAdapter):
         logger.info(
             f"JIRA adapter init: base_url={self.base_url}, username={self.username}, has_token={bool(self.api_token and self.api_token != 'dummy-token')}"
         )
-        print(
-            f"   🔍 JIRA adapter received: username={self.username}, has_token={bool(self.api_token and self.api_token != 'dummy-token')}, base_url={self.base_url}"
-        )
+        if debug_mode:
+            print(
+                f"   🔍 JIRA adapter received: username={self.username}, has_token={bool(self.api_token and self.api_token != 'dummy-token')}, base_url={self.base_url}"
+            )
 
         # Optional configuration with defaults
         self.story_point_fields = config.get(

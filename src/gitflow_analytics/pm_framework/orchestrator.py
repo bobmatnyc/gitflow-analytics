@@ -80,12 +80,17 @@ class PMFrameworkOrchestrator:
         self.temporal_window_hours = correlation_config.get("temporal_window_hours", 72)
         self.confidence_threshold = correlation_config.get("confidence_threshold", 0.8)
 
+        import os
         import traceback
 
         logger.info("PM Framework Orchestrator initialized")
-        print("   🔍 PM Framework init stack trace:")
-        for line in traceback.format_stack()[-5:-1]:
-            print("   " + line.strip())
+
+        # Only show debug messages when GITFLOW_DEBUG is set
+        debug_mode = os.getenv("GITFLOW_DEBUG", "").lower() in ("1", "true", "yes")
+        if debug_mode:
+            print("   🔍 PM Framework init stack trace:")
+            for line in traceback.format_stack()[-5:-1]:
+                print("   " + line.strip())
 
         # Initialize configured platforms if PM integration is enabled
         if self.pm_integration_enabled:
