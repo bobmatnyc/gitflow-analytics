@@ -1,6 +1,7 @@
 """Integration orchestrator for multiple platforms."""
 
 import json
+import os
 from datetime import datetime
 from typing import Any, Union
 
@@ -15,7 +16,9 @@ class IntegrationOrchestrator:
 
     def __init__(self, config: Any, cache: GitAnalysisCache):
         """Initialize integration orchestrator."""
-        print("   🔍 IntegrationOrchestrator.__init__ called")
+        self.debug_mode = os.getenv("GITFLOW_DEBUG", "").lower() in ("1", "true", "yes")
+        if self.debug_mode:
+            print("   🔍 IntegrationOrchestrator.__init__ called")
         self.config = config
         self.cache = cache
         self.integrations: dict[str, Union[GitHubIntegration, JIRAIntegration]] = {}
@@ -59,7 +62,8 @@ class IntegrationOrchestrator:
             and config.pm_integration
             and config.pm_integration.enabled
         ):
-            print("   🔍 PM Integration detected - building configuration...")
+            if self.debug_mode:
+                print("   🔍 PM Integration detected - building configuration...")
             try:
                 # Create PM platform configuration for the orchestrator
                 pm_config = {
@@ -109,28 +113,32 @@ class IntegrationOrchestrator:
                             if hasattr(config, "cache") and hasattr(config.cache, "directory"):
                                 platform_settings["cache_dir"] = config.cache.directory
                             # Debug output to check credentials
-                            print(
-                                f"   🔍 JIRA config: username={platform_settings['username']}, has_token={bool(platform_settings['api_token'])}, base_url={platform_settings['base_url']}, cache_dir={platform_settings.get('cache_dir', 'not_set')}"
-                            )
+                            if self.debug_mode:
+                                print(
+                                    f"   🔍 JIRA config: username={platform_settings['username']}, has_token={bool(platform_settings['api_token'])}, base_url={platform_settings['base_url']}, cache_dir={platform_settings.get('cache_dir', 'not_set')}"
+                                )
 
                         pm_config["pm_platforms"][platform_name] = platform_settings
 
                 # Debug output - show final PM config
-                print(
-                    f"   🔍 Final PM config platforms: {list(pm_config.get('pm_platforms', {}).keys())}"
-                )
-                for plat_name, plat_config in pm_config.get("pm_platforms", {}).items():
+                if self.debug_mode:
                     print(
-                        f"   🔍 {plat_name}: enabled={plat_config.get('enabled')}, has_username={bool(plat_config.get('username'))}, has_token={bool(plat_config.get('api_token'))}"
+                        f"   🔍 Final PM config platforms: {list(pm_config.get('pm_platforms', {}).keys())}"
                     )
+                    for plat_name, plat_config in pm_config.get("pm_platforms", {}).items():
+                        print(
+                            f"   🔍 {plat_name}: enabled={plat_config.get('enabled')}, has_username={bool(plat_config.get('username'))}, has_token={bool(plat_config.get('api_token'))}"
+                        )
 
                 self.pm_orchestrator = PMFrameworkOrchestrator(pm_config)
-                print(
-                    f"📋 PM Framework initialized with {len(self.pm_orchestrator.get_active_platforms())} platforms"
-                )
+                if self.debug_mode:
+                    print(
+                        f"📋 PM Framework initialized with {len(self.pm_orchestrator.get_active_platforms())} platforms"
+                    )
 
             except Exception as e:
-                print(f"⚠️  Failed to initialize PM framework: {e}")
+                if self.debug_mode:
+                    print(f"⚠️  Failed to initialize PM framework: {e}")
                 self.pm_orchestrator = None
 
     def enrich_repository_data(
@@ -157,8 +165,10 @@ class IntegrationOrchestrator:
                 except Exception as e:
                     import traceback
 
-                    print(f"   ⚠️  GitHub enrichment failed: {e}")
-                    print(f"   Debug traceback: {traceback.format_exc()}")
+                    if self.debug_mode:
+                        print(f"   ⚠️  GitHub enrichment failed: {e}")
+                        import traceback
+                        print(f"   Debug traceback: {traceback.format_exc()}")
 
         # JIRA enrichment for story points
         if "jira" in self.integrations:
@@ -173,12 +183,14 @@ class IntegrationOrchestrator:
                         jira_integration.enrich_prs_with_jira_data(enrichment["prs"])
 
                 except Exception as e:
-                    print(f"   ⚠️  JIRA enrichment failed: {e}")
+                    if self.debug_mode:
+                        print(f"   ⚠️  JIRA enrichment failed: {e}")
 
         # PM Framework enrichment
         if self.pm_orchestrator and self.pm_orchestrator.is_enabled():
             try:
-                print("   📋 Collecting PM platform data...")
+                if self.debug_mode:
+                    print("   📋 Collecting PM platform data...")
 
                 # Get all issues from PM platforms
                 pm_issues = self.pm_orchestrator.get_all_issues(since=since)
@@ -197,15 +209,17 @@ class IntegrationOrchestrator:
                 enrichment["pm_data"]["metrics"] = enhanced_metrics
 
                 # Only show correlations message if there are any correlations found
-                if correlations:
-                    print(
-                        f"   ✅ PM correlations found: {len(correlations)} commits linked to issues"
-                    )
-                else:
-                    print("   📋 PM data processed (no correlations found)")
+                if self.debug_mode:
+                    if correlations:
+                        print(
+                            f"   ✅ PM correlations found: {len(correlations)} commits linked to issues"
+                        )
+                    else:
+                        print("   📋 PM data processed (no correlations found)")
 
             except Exception as e:
-                print(f"   ⚠️  PM framework enrichment failed: {e}")
+                if self.debug_mode:
+                    print(f"   ⚠️  PM framework enrichment failed: {e}")
                 enrichment["pm_data"] = {"error": str(e)}
 
         return enrichment

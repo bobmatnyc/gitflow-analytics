@@ -711,6 +711,8 @@ class RichProgressDisplay:
         """Add a progress task - compatibility method."""
         # Start the live display if not already started
         if not self._live and task_id == "repos":
+            # Clear console for clean transition to full-screen mode
+            self.console.clear()
             self.start(total_items=total, description=description)
         elif task_id == "repos":
             # Update the overall progress description and total
