@@ -1699,6 +1699,33 @@ def analyze(
 
             if display:
                 display.print_status("Step 2: Batch classification...", "info")
+                # Restart the full-screen live display for Step 2
+                display.start_live_display()
+                # Get total number of batches to process
+                with cache.get_session() as session:
+                    total_batches = (
+                        session.query(DailyCommitBatch)
+                        .filter(
+                            and_(
+                                DailyCommitBatch.date >= start_date.date(),
+                                DailyCommitBatch.date <= end_date.date(),
+                            )
+                        )
+                        .count()
+                    )
+                display.add_progress_task(
+                    "repos",  # Use "repos" task id to trigger the full display
+                    f"Classifying {total_batches} batches",
+                    total_batches
+                )
+                # Reinitialize repositories for Step 2 display
+                if hasattr(display, 'initialize_repositories'):
+                    # Create a list of "batches" to display
+                    batch_list = []
+                    for repo in repositories_to_analyze:
+                        repo_name = repo.name or repo.project_key or Path(repo.path).name
+                        batch_list.append({"name": f"{repo_name} batches", "status": "pending"})
+                    display.initialize_repositories(batch_list)
             else:
                 click.echo("🧠 Step 2: Batch classification...")
 
@@ -1734,6 +1761,7 @@ def analyze(
                 project_keys.append(project_key)
 
             # Run batch classification
+            # Note: The batch classifier will create its own progress bars, but our display should remain active
             classification_result = batch_classifier.classify_date_range(
                 start_date=start_date,
                 end_date=end_date,
@@ -1741,7 +1769,14 @@ def analyze(
                 force_reclassify=clear_cache,
             )
 
+            # Update display progress after classification
+            if display and hasattr(display, 'update_progress_task'):
+                display.update_progress_task("repos", completed=total_batches if 'total_batches' in locals() else 0)
+
             if display:
+                # Complete the progress task and stop the live display
+                display.complete_progress_task("repos", "Batch classification complete")
+                display.stop_live_display()
                 display.print_status(
                     f"✅ Batch classification completed: {classification_result['processed_batches']} batches, "
                     f"{classification_result['total_commits']} commits",
