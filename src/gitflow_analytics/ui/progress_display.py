@@ -22,7 +22,7 @@ except ImportError:
     PSUTIL_AVAILABLE = False
 
 try:
-    from rich.console import Console
+    from rich.console import Console, Group
     from rich.layout import Layout
     from rich.live import Live
     from rich.panel import Panel
@@ -115,13 +115,13 @@ class ProgressStatistics:
 class RichProgressDisplay:
     """Rich-based progress display for GitFlow Analytics."""
 
-    def __init__(self, version: str = "1.3.11", update_frequency: float = 0.5):
+    def __init__(self, version: str = "1.3.11", update_frequency: float = 0.25):
         """
         Initialize the progress display.
 
         Args:
             version: Version of GitFlow Analytics
-            update_frequency: How often to update display in seconds
+            update_frequency: How often to update display in seconds (default 0.25 for smooth updates)
         """
         if not RICH_AVAILABLE:
             raise ImportError("Rich library is not available. Install with: pip install rich")
@@ -131,11 +131,11 @@ class RichProgressDisplay:
         # Force terminal mode to ensure Rich works even when output is piped
         self.console = Console(force_terminal=True)
 
-        # Progress tracking
+        # Progress tracking with enhanced styling
         self.overall_progress = Progress(
-            SpinnerColumn(),
+            SpinnerColumn(style="bold cyan"),
             TextColumn("[bold blue]{task.description}"),
-            BarColumn(bar_width=40),
+            BarColumn(bar_width=40, style="cyan", complete_style="green"),
             MofNCompleteColumn(),
             TextColumn("•"),
             TimeRemainingColumn(),
@@ -145,7 +145,7 @@ class RichProgressDisplay:
 
         self.repo_progress = Progress(
             TextColumn("[cyan]{task.description}"),
-            BarColumn(bar_width=30),
+            BarColumn(bar_width=30, style="yellow", complete_style="green"),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("•"),
             TextColumn("{task.fields[speed]:.1f} commits/s"),
@@ -166,6 +166,7 @@ class RichProgressDisplay:
         self._lock = threading.Lock()
         self._live = None
         self._layout = None
+        self._update_counter = 0  # For tracking updates
 
         # System monitoring (only if psutil is available)
         self._process = psutil.Process() if PSUTIL_AVAILABLE else None
@@ -181,118 +182,204 @@ class RichProgressDisplay:
         )
 
     def _create_progress_panel(self) -> Panel:
-        """Create the main progress panel."""
-        content_items = []
+        """Create the main progress panel with prominent activity display."""
+        content_lines = []
 
-        # Overall progress
-        content_items.append(Text("Overall Progress", style="bold"))
-        content_items.append(self.overall_progress)
+        # Overall progress with enhanced display
+        overall_text = Text("Overall Progress: ", style="bold cyan")
+        if self.statistics.processed_repositories > 0:
+            pct = (self.statistics.processed_repositories / self.statistics.total_repositories) * 100
+            overall_text.append(f"{self.statistics.processed_repositories}/{self.statistics.total_repositories} repositories ", style="white")
+            overall_text.append(f"({pct:.1f}%)", style="bold green" if pct > 50 else "bold yellow")
+        content_lines.append(overall_text)
+        content_lines.append(self.overall_progress)
 
-        # Current repository progress - ENHANCED with prominent display
+        # Current repository progress - VERY prominent display
         if self.current_repo:
-            content_items.append(Text())  # Empty line
+            content_lines.append(Text())  # Empty line for spacing
             repo_info = self.repositories.get(self.current_repo)
-            if repo_info:
-                # Create a more prominent current repository display
-                if repo_info.status == RepositoryStatus.PROCESSING:
-                    # Show what action is happening
-                    action = "🔄 Analyzing" if repo_info.commits > 0 else "📥 Cloning"
-                    current_text = Text(f"{action} Repository: ", style="bold yellow")
-                    current_text.append(f"{repo_info.name}", style="bold cyan")
+            if repo_info and repo_info.status == RepositoryStatus.PROCESSING:
+                # Animated activity indicator
+                spinner_frames = ["🔄", "🔃", "🔄", "🔃"]
+                frame_idx = int(time.time() * 2) % len(spinner_frames)
 
-                    # Add commit count if available
-                    if repo_info.total_commits > 0:
-                        current_text.append(f" ({repo_info.commits}/{repo_info.total_commits} commits)", style="dim white")
-                    elif repo_info.commits > 0:
-                        current_text.append(f" ({repo_info.commits} commits found)", style="dim white")
+                # Determine current action based on progress
+                if repo_info.commits == 0:
+                    action = f"{spinner_frames[frame_idx]} Fetching commits from"
+                    action_style = "bold yellow blink"
+                elif repo_info.total_commits > 0 and repo_info.commits < repo_info.total_commits * 0.3:
+                    action = f"{spinner_frames[frame_idx]} Starting analysis of"
+                    action_style = "bold yellow"
+                elif repo_info.total_commits > 0 and repo_info.commits < repo_info.total_commits * 0.7:
+                    action = f"{spinner_frames[frame_idx]} Processing commits in"
+                    action_style = "bold green"
                 else:
-                    current_text = Text(f"Current: {repo_info.name}", style="cyan")
-                    if repo_info.total_commits > 0:
-                        current_text.append(f" ({repo_info.commits}/{repo_info.total_commits})")
+                    action = f"{spinner_frames[frame_idx]} Finalizing analysis of"
+                    action_style = "bold cyan"
 
-                content_items.append(current_text)
-                content_items.append(self.repo_progress)
+                # Build the current activity text
+                current_text = Text(action + " ", style=action_style)
+                current_text.append(f"{repo_info.name}", style="bold white on blue")
 
-        # Combine all items
-        content = Columns(content_items, expand=True, padding=(1, 2))
+                # Add detailed progress info
+                if repo_info.total_commits > 0:
+                    progress_pct = (repo_info.commits / repo_info.total_commits) * 100
+                    current_text.append(f"\n   📊 Progress: {repo_info.commits}/{repo_info.total_commits} commits ", style="white")
+                    current_text.append(f"({progress_pct:.1f}%)", style="bold green")
+
+                    # Estimate time remaining
+                    if repo_info.start_time and repo_info.commits > 0:
+                        elapsed = (datetime.now() - repo_info.start_time).total_seconds()
+                        rate = repo_info.commits / elapsed if elapsed > 0 else 0
+                        remaining = (repo_info.total_commits - repo_info.commits) / rate if rate > 0 else 0
+                        if remaining > 0:
+                            current_text.append(f" - ETA: {remaining:.0f}s", style="dim white")
+                elif repo_info.commits > 0:
+                    current_text.append(f"\n   📊 Found {repo_info.commits} commits so far...", style="yellow")
+                else:
+                    current_text.append(f"\n   📥 Cloning repository...", style="yellow blink")
+
+                content_lines.append(current_text)
+                content_lines.append(self.repo_progress)
+
+        # Create a group of all elements (Group already imported at top)
+        group_items = []
+        for item in content_lines:
+            group_items.append(item)  # Both Text and Progress objects
 
         return Panel(
-            content,
-            title="[bold]Progress[/bold]",
+            Group(*group_items),
+            title="[bold]🚀 Live Progress Monitor[/bold]",
             box=box.ROUNDED,
             padding=(1, 2),
+            border_style="bright_blue",
         )
 
     def _create_repository_table(self) -> Panel:
-        """Create the repository status table."""
+        """Create the repository status table with scrollable view."""
+        # Get terminal height to determine max visible rows
+        console_height = self.console.size.height
+        # Reserve space for header, progress, stats panels (approximately 18 lines)
+        available_height = max(10, console_height - 18)
+
         table = Table(
             show_header=True,
             header_style="bold magenta",
             box=box.SIMPLE_HEAD,
             expand=True,
             show_lines=False,
+            row_styles=["none", "dim"],  # Alternate row colors for readability
         )
 
-        table.add_column("Repository", style="cyan", no_wrap=True)
-        table.add_column("Status", justify="center", width=12)
-        table.add_column("Commits", justify="right", width=10)
+        table.add_column("#", width=4, justify="right", style="dim")
+        table.add_column("Repository", style="cyan", no_wrap=True, width=25)
+        table.add_column("Status", justify="center", width=15)
+        table.add_column("Progress", width=20)
+        table.add_column("Stats", justify="right", width=20)
         table.add_column("Time", justify="right", width=8)
-        table.add_column("Result", width=10)
 
-        # Sort repositories: processing first, then complete, then pending
+        # Sort repositories: processing first, then error, then complete, then pending
         sorted_repos = sorted(
             self.repositories.values(),
             key=lambda r: (
                 r.status != RepositoryStatus.PROCESSING,
-                r.status != RepositoryStatus.COMPLETE,
                 r.status != RepositoryStatus.ERROR,
+                r.status != RepositoryStatus.COMPLETE,
                 r.name
             )
         )
 
-        # Show all repositories (no limit)
-        for repo in sorted_repos:
-            status_text = Text(
-                f"{repo.get_status_icon()} {repo.status.value.capitalize()}",
-                style=repo.get_status_color()
-            )
+        # Calculate visible repositories
+        total_repos = len(sorted_repos)
+        visible_repos = sorted_repos[:available_height - 2]  # Leave room for summary row
 
-            commits_text = str(repo.commits) if repo.commits > 0 else "-"
+        for idx, repo in enumerate(visible_repos, 1):
+            # Status with icon and animation for processing
+            if repo.status == RepositoryStatus.PROCESSING:
+                # Animated spinner for current repo
+                spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+                frame_idx = int(time.time() * 10) % len(spinner_frames)
+                status_icon = spinner_frames[frame_idx]
+                status_text = Text(f"{status_icon} Processing", style="bold yellow")
+            else:
+                status_text = Text(
+                    f"{repo.get_status_icon()} {repo.status.value.capitalize()}",
+                    style=repo.get_status_color()
+                )
 
+            # Progress bar for processing repos
+            progress_text = ""
+            if repo.status == RepositoryStatus.PROCESSING:
+                if repo.total_commits > 0:
+                    progress_pct = (repo.commits / repo.total_commits) * 100
+                    bar_width = 10
+                    filled = int(bar_width * progress_pct / 100)
+                    bar = "█" * filled + "░" * (bar_width - filled)
+                    progress_text = f"[yellow]{bar}[/yellow] {progress_pct:.0f}%"
+                else:
+                    progress_text = "[yellow]Fetching...[/yellow]"
+            elif repo.status == RepositoryStatus.COMPLETE:
+                progress_text = "[green]████████████[/green] 100%"
+            else:
+                progress_text = "[dim]────────────[/dim]"
+
+            # Stats column
+            stats_text = ""
+            if repo.commits > 0:
+                if repo.developers > 0:
+                    stats_text = f"{repo.commits} commits, {repo.developers} devs"
+                else:
+                    stats_text = f"{repo.commits} commits"
+            elif repo.status == RepositoryStatus.PROCESSING:
+                stats_text = "[yellow]Analyzing...[/yellow]"
+            else:
+                stats_text = "-"
+
+            # Time column
             time_text = "-"
             if repo.processing_time > 0:
                 time_text = f"{repo.processing_time:.1f}s"
             elif repo.status == RepositoryStatus.PROCESSING and repo.start_time:
                 elapsed = (datetime.now() - repo.start_time).total_seconds()
-                time_text = f"{elapsed:.1f}s"
-
-            result_text = ""
-            if repo.status == RepositoryStatus.COMPLETE:
-                result_text = "[green]OK[/green]"
-            elif repo.status == RepositoryStatus.ERROR:
-                result_text = "[red]Failed[/red]"
-            elif repo.status == RepositoryStatus.SKIPPED:
-                result_text = "[yellow]Skip[/yellow]"
+                time_text = f"[yellow]{elapsed:.0f}s[/yellow]"
 
             table.add_row(
-                repo.name[:30],  # Truncate long names
+                str(idx),
+                repo.name[:25],  # Truncate long names
                 status_text,
-                commits_text,
+                progress_text,
+                stats_text,
                 time_text,
-                result_text,
             )
 
-        # Removed the "and X more" row - now showing all repositories
+        # Add summary row if there are more repositories
+        if total_repos > len(visible_repos):
+            remaining = total_repos - len(visible_repos)
+            table.add_row(
+                "...",
+                f"[dim italic]and {remaining} more repositories[/dim italic]",
+                "",
+                "",
+                "",
+                "",
+            )
+
+        # Add totals row
+        completed = sum(1 for r in self.repositories.values() if r.status == RepositoryStatus.COMPLETE)
+        processing = sum(1 for r in self.repositories.values() if r.status == RepositoryStatus.PROCESSING)
+        pending = sum(1 for r in self.repositories.values() if r.status == RepositoryStatus.PENDING)
+
+        title = f"[bold]Repository Status[/bold] (✅ {completed} | 🔄 {processing} | ⏸️ {pending})"
 
         return Panel(
             table,
-            title="[bold]Repository Status[/bold]",
+            title=title,
             box=box.ROUNDED,
             padding=(1, 2),
         )
 
     def _create_statistics_panel(self) -> Panel:
-        """Create the statistics panel."""
+        """Create the statistics panel with live updates."""
         # Update system statistics (only if psutil is available)
         with self._lock:
             if self._process:
@@ -304,44 +391,83 @@ class RichProgressDisplay:
 
         stats_items = []
 
-        # Main statistics row
-        main_stats = [
-            f"[bold cyan]Commits:[/bold cyan] {self.statistics.total_commits:,}",
-            f"[bold cyan]Developers:[/bold cyan] {self.statistics.total_developers}",
-            f"[bold cyan]Tickets:[/bold cyan] {self.statistics.total_tickets}",
-        ]
-        stats_items.append(" • ".join(main_stats))
+        # Calculate overall completion percentage
+        if self.statistics.total_repositories > 0:
+            overall_pct = (self.statistics.processed_repositories / self.statistics.total_repositories) * 100
+            completion_bar = self._create_mini_progress_bar(overall_pct, 20)
+            stats_items.append(f"[bold]Overall:[/bold] {completion_bar} {overall_pct:.1f}%")
 
-        # System statistics row
-        system_stats = [
-            f"[bold yellow]Memory:[/bold yellow] {self.statistics.memory_usage:.0f} MB",
-            f"[bold yellow]CPU:[/bold yellow] {self.statistics.cpu_percent:.1f}%",
-            f"[bold yellow]Speed:[/bold yellow] {self.statistics.processing_speed:.1f} commits/s",
-        ]
-        stats_items.append(" • ".join(system_stats))
+        # Main statistics row with live counters
+        main_stats = []
+        if self.statistics.total_commits > 0:
+            main_stats.append(f"[bold cyan]📊 Commits:[/bold cyan] {self.statistics.total_commits:,}")
+        if self.statistics.total_developers > 0:
+            main_stats.append(f"[bold cyan]👥 Developers:[/bold cyan] {self.statistics.total_developers}")
+        if self.statistics.total_tickets > 0:
+            main_stats.append(f"[bold cyan]🎫 Tickets:[/bold cyan] {self.statistics.total_tickets}")
 
-        # Phase and timing
-        phase_text = f"[bold green]Phase:[/bold green] {self.statistics.current_phase}"
-        elapsed_text = f"[bold blue]Elapsed:[/bold blue] {self.statistics.get_elapsed_time()}"
-        stats_items.append(f"{phase_text} • {elapsed_text}")
+        if main_stats:
+            stats_items.append(" • ".join(main_stats))
+
+        # System performance with visual indicators
+        system_stats = []
+        if PSUTIL_AVAILABLE:
+            mem_icon = "🟢" if self.statistics.memory_usage < 500 else "🟡" if self.statistics.memory_usage < 1000 else "🔴"
+            cpu_icon = "🟢" if self.statistics.cpu_percent < 50 else "🟡" if self.statistics.cpu_percent < 80 else "🔴"
+            system_stats.append(f"{mem_icon} Memory: {self.statistics.memory_usage:.0f} MB")
+            system_stats.append(f"{cpu_icon} CPU: {self.statistics.cpu_percent:.1f}%")
+
+        if self.statistics.processing_speed > 0:
+            speed_icon = "🚀" if self.statistics.processing_speed > 100 else "⚡" if self.statistics.processing_speed > 50 else "🐢"
+            system_stats.append(f"{speed_icon} Speed: {self.statistics.processing_speed:.1f} commits/s")
+
+        if system_stats:
+            stats_items.append(" • ".join(system_stats))
+
+        # Enhanced phase display with activity indicator
+        phase_indicator = "⚙️" if "Processing" in self.statistics.current_phase else "🔍" if "Analyzing" in self.statistics.current_phase else "✨"
+        phase_text = f"{phase_indicator} [bold green]{self.statistics.current_phase}[/bold green]"
+        elapsed_text = f"⏱️ [bold blue]{self.statistics.get_elapsed_time()}[/bold blue]"
+
+        # Estimate total time if possible
+        eta_text = ""
+        if self.statistics.processed_repositories > 0 and self.statistics.total_repositories > 0:
+            if self.statistics.processed_repositories < self.statistics.total_repositories:
+                elapsed_seconds = (datetime.now() - self.statistics.start_time).total_seconds() if self.statistics.start_time else 0
+                if elapsed_seconds > 0:
+                    rate = self.statistics.processed_repositories / elapsed_seconds
+                    remaining = (self.statistics.total_repositories - self.statistics.processed_repositories) / rate if rate > 0 else 0
+                    if remaining > 0:
+                        eta_text = f" • ETA: {timedelta(seconds=int(remaining))}"
+
+        stats_items.append(f"{phase_text} • {elapsed_text}{eta_text}")
 
         content = "\n".join(stats_items)
 
         return Panel(
             content,
-            title="[bold]Statistics[/bold]",
+            title="[bold]📈 Live Statistics[/bold]",
             box=box.ROUNDED,
             padding=(1, 2),
+            border_style="green" if self.statistics.processed_repositories == self.statistics.total_repositories else "yellow",
         )
+
+    def _create_mini_progress_bar(self, percentage: float, width: int = 20) -> str:
+        """Create a mini progress bar for inline display."""
+        filled = int(width * percentage / 100)
+        bar = "█" * filled + "░" * (width - filled)
+        color = "green" if percentage >= 75 else "yellow" if percentage >= 50 else "cyan"
+        return f"[{color}]{bar}[/{color}]"
 
     def _create_layout(self) -> Layout:
         """Create the complete layout."""
         layout = Layout()
 
+        # Adjust layout sizes to show more repositories
         layout.split_column(
             Layout(self._create_header_panel(), size=3),
             Layout(name="progress", size=7),
-            Layout(name="repos", size=12),
+            Layout(name="repos"),  # No fixed size - take remaining space
             Layout(name="stats", size=6),
         )
 
@@ -351,9 +477,17 @@ class RichProgressDisplay:
 
         return layout
 
+    def _update_all_panels(self):
+        """Force update all panels in the layout."""
+        if self._layout:
+            self._layout["progress"].update(self._create_progress_panel())
+            self._layout["repos"].update(self._create_repository_table())
+            self._layout["stats"].update(self._create_statistics_panel())
+            self._update_counter += 1
+
     def start(self, total_items: int = 100, description: str = "Analyzing repositories"):
         """
-        Start the progress display.
+        Start the progress display with full-screen live updates.
 
         Args:
             total_items: Total number of items to process
@@ -361,20 +495,27 @@ class RichProgressDisplay:
         """
         with self._lock:
             self.statistics.start_time = datetime.now()
+            self.statistics.total_repositories = total_items
             self.overall_task_id = self.overall_progress.add_task(
                 description,
                 total=total_items
             )
 
             self._layout = self._create_layout()
-            # Use screen=False when forcing terminal mode to avoid display issues
+            # Use high refresh rate for smooth animations (4 updates per second)
             self._live = Live(
                 self._layout,
                 console=self.console,
-                refresh_per_second=1 / self.update_frequency,
-                screen=False,  # Changed from True to avoid conflicts with force_terminal
+                refresh_per_second=4,  # High refresh for smooth updates
+                screen=True,  # Full screen mode for immersive display
+                auto_refresh=True,  # Enable auto refresh
+                vertical_overflow="visible",  # Show all content
             )
             self._live.start()
+
+            # Force an immediate refresh to show initial state
+            if self._layout:
+                self._update_all_panels()
 
     def stop(self):
         """Stop the progress display."""
@@ -395,7 +536,7 @@ class RichProgressDisplay:
                 self._layout["progress"].update(self._create_progress_panel())
 
     def start_repository(self, repo_name: str, total_commits: int = 0):
-        """Start processing a repository."""
+        """Start processing a repository with immediate visual feedback."""
         with self._lock:
             self.current_repo = repo_name
 
@@ -417,11 +558,11 @@ class RichProgressDisplay:
                 speed=0.0,
             )
 
-            if self._layout:
-                self._layout["repos"].update(self._create_repository_table())
+            # Immediately update all panels to show the change
+            self._update_all_panels()
 
     def update_repository(self, repo_name: str, commits: int, speed: float = 0.0):
-        """Update repository progress."""
+        """Update repository progress with continuous visual feedback."""
         with self._lock:
             if repo_name not in self.repositories:
                 return
@@ -439,13 +580,15 @@ class RichProgressDisplay:
             # Update overall statistics
             self.statistics.processing_speed = speed
 
-            if self._layout:
-                self._layout["progress"].update(self._create_progress_panel())
-                self._layout["stats"].update(self._create_statistics_panel())
+            # Update total commits across all repos
+            self.statistics.total_commits = sum(r.commits for r in self.repositories.values())
+
+            # Force update all panels every time for continuous visual feedback
+            self._update_all_panels()
 
     def finish_repository(self, repo_name: str, success: bool = True,
                          error_message: Optional[str] = None):
-        """Finish processing a repository."""
+        """Finish processing a repository with immediate status update."""
         with self._lock:
             if repo_name not in self.repositories:
                 return
@@ -459,8 +602,15 @@ class RichProgressDisplay:
 
             self.statistics.processed_repositories += 1
 
-            if self._layout:
-                self._layout["repos"].update(self._create_repository_table())
+            # Immediately clear current repo if it was this one
+            if self.current_repo == repo_name:
+                self.current_repo = None
+                if self.repo_task_id is not None:
+                    self.repo_progress.remove_task(self.repo_task_id)
+                    self.repo_task_id = None
+
+            # Force immediate update to show completion
+            self._update_all_panels()
 
     def update_statistics(self, **kwargs):
         """
@@ -478,7 +628,7 @@ class RichProgressDisplay:
                 self._layout["stats"].update(self._create_statistics_panel())
 
     def initialize_repositories(self, repository_list: list):
-        """Initialize all repositories with pending status.
+        """Initialize all repositories with pending status and show them immediately.
 
         Args:
             repository_list: List of repositories to be processed.
@@ -486,7 +636,7 @@ class RichProgressDisplay:
         """
         with self._lock:
             # Pre-populate all repositories with their status
-            for repo in repository_list:
+            for idx, repo in enumerate(repository_list):
                 repo_name = repo.get('name', 'Unknown')
                 status_str = repo.get('status', 'pending')
 
@@ -512,18 +662,19 @@ class RichProgressDisplay:
             # Update statistics
             self.statistics.total_repositories = len(self.repositories)
 
-            # Update the display if layout exists
-            if self._layout:
-                self._layout["repos"].update(self._create_repository_table())
-                self._layout["stats"].update(self._create_statistics_panel())
+            # Set initial phase
+            if not self.statistics.current_phase or self.statistics.current_phase == "Initializing":
+                self.statistics.current_phase = f"Ready to process {len(self.repositories)} repositories"
+
+            # Force immediate update to show all repositories
+            self._update_all_panels()
 
     def set_phase(self, phase: str):
-        """Set the current processing phase."""
+        """Set the current processing phase with immediate display update."""
         with self._lock:
             self.statistics.current_phase = phase
-
-            if self._layout:
-                self._layout["stats"].update(self._create_statistics_panel())
+            # Force immediate update to show phase change
+            self._update_all_panels()
 
     @contextmanager
     def progress_context(self, total_items: int = 100, description: str = "Processing"):
