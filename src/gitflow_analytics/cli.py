@@ -1116,29 +1116,63 @@ def analyze(
                 # Progress service already initialized at the start of the function
                 # We can use the progress instance that was created earlier
 
-                # Start Rich display if enabled
-                if progress_style == "rich" or (progress_style == "auto" and progress._use_rich):
-                    progress.start_rich_display(
-                        total_items=len(repos_needing_analysis),
-                        description=f"Analyzing {len(repos_needing_analysis)} repositories"
+                # Start Rich display if enabled - use the display object for full-screen UI
+                if display:
+                    # Start the full-screen live display
+                    display.start_live_display()
+                    display.add_progress_task(
+                        "repos",
+                        f"Analyzing {len(repos_needing_analysis)} repositories",
+                        len(repos_needing_analysis)
                     )
 
                     # Initialize ALL repositories (both cached and to-be-fetched) with their status
-                    all_repo_list = []
+                    if hasattr(display, 'initialize_repositories'):
+                        all_repo_list = []
 
-                    # Add cached repos as COMPLETE
-                    for cached_repo, _ in cached_repos:
-                        repo_name = cached_repo.name or cached_repo.project_key or Path(cached_repo.path).name
-                        all_repo_list.append({"name": repo_name, "status": "complete"})
+                        # Add cached repos as COMPLETE
+                        for cached_repo, _ in cached_repos:
+                            repo_name = cached_repo.name or cached_repo.project_key or Path(cached_repo.path).name
+                            all_repo_list.append({"name": repo_name, "status": "complete"})
 
-                    # Add repos needing analysis as PENDING
-                    for repo in repos_needing_analysis:
-                        repo_name = repo.name or repo.project_key or Path(repo.path).name
-                        all_repo_list.append({"name": repo_name, "status": "pending"})
+                        # Add repos needing analysis as PENDING
+                        for repo in repos_needing_analysis:
+                            repo_name = repo.name or repo.project_key or Path(repo.path).name
+                            all_repo_list.append({"name": repo_name, "status": "pending"})
 
-                    progress.initialize_repositories(all_repo_list)
+                        display.initialize_repositories(all_repo_list)
 
-                    progress.set_phase("Step 1: Data Fetching")
+                    # Also initialize progress service for compatibility
+                    if progress_style == "rich" or (progress_style == "auto" and progress._use_rich):
+                        progress.start_rich_display(
+                            total_items=len(repos_needing_analysis),
+                            description=f"Analyzing {len(repos_needing_analysis)} repositories"
+                        )
+                        progress.initialize_repositories(all_repo_list if 'all_repo_list' in locals() else [])
+                        progress.set_phase("Step 1: Data Fetching")
+                else:
+                    # Fallback to progress service if no display
+                    if progress_style == "rich" or (progress_style == "auto" and progress._use_rich):
+                        progress.start_rich_display(
+                            total_items=len(repos_needing_analysis),
+                            description=f"Analyzing {len(repos_needing_analysis)} repositories"
+                        )
+
+                        # Initialize ALL repositories (both cached and to-be-fetched) with their status
+                        all_repo_list = []
+
+                        # Add cached repos as COMPLETE
+                        for cached_repo, _ in cached_repos:
+                            repo_name = cached_repo.name or cached_repo.project_key or Path(cached_repo.path).name
+                            all_repo_list.append({"name": repo_name, "status": "complete"})
+
+                        # Add repos needing analysis as PENDING
+                        for repo in repos_needing_analysis:
+                            repo_name = repo.name or repo.project_key or Path(repo.path).name
+                            all_repo_list.append({"name": repo_name, "status": "pending"})
+
+                        progress.initialize_repositories(all_repo_list)
+                        progress.set_phase("Step 1: Data Fetching")
 
                 # Fetch data for repositories that need analysis
                 total_commits = 0
@@ -1171,6 +1205,14 @@ def analyze(
                                     description=f"🔄 Processing: {repo_display_name} ({idx}/{len(repos_needing_analysis)})",
                                     completed=idx - 1
                                 )
+                                # Update repository status to processing
+                                if hasattr(display, 'update_repository_status'):
+                                    display.update_repository_status(
+                                        repo_display_name,
+                                        "processing",
+                                        f"Fetching data from {repo_display_name}",
+                                        {}
+                                    )
 
                             # Progress callback for fetch
                             def progress_callback(message: str):
@@ -1236,6 +1278,20 @@ def analyze(
                                 config_hash=config_hash,
                             )
 
+                            # Update repository status to completed in display
+                            if display and hasattr(display, 'update_repository_status'):
+                                repo_display_name = repo_config.name or project_key
+                                display.update_repository_status(
+                                    repo_display_name,
+                                    "completed",
+                                    f"Completed {repo_display_name}",
+                                    {
+                                        "commits": result['stats']['total_commits'],
+                                        "tickets": result['stats']['unique_tickets'],
+                                        "developers": len(result['stats'].get('developers', []))
+                                    }
+                                )
+
                             # Update overall repository progress
                             progress.update(repos_progress_ctx)
 
@@ -1244,6 +1300,15 @@ def analyze(
                                 display.print_status(
                                     f"   ❌ Error fetching {project_key}: {e}", "error"
                                 )
+                                # Update repository status to error
+                                if hasattr(display, 'update_repository_status'):
+                                    repo_display_name = repo_config.name or project_key
+                                    display.update_repository_status(
+                                        repo_display_name,
+                                        "error",
+                                        f"Error: {str(e)}",
+                                        {}
+                                    )
                             else:
                                 click.echo(f"   ❌ Error fetching {project_key}: {e}")
 
@@ -1267,6 +1332,8 @@ def analyze(
                         f"Step 1 complete: {total_commits} commits, {total_tickets} tickets fetched",
                         "success",
                     )
+                    # Stop the live display after Step 1
+                    display.stop_live_display()
                 else:
                     click.echo(
                         f"📥 Step 1 complete: {total_commits} commits, {total_tickets} tickets fetched"
@@ -1276,6 +1343,8 @@ def analyze(
                     display.print_status(
                         "All repositories use cached data - skipping data fetch", "success"
                     )
+                    # Stop the live display if all data was cached
+                    display.stop_live_display()
                 else:
                     click.echo("✅ All repositories use cached data - skipping data fetch")
 
