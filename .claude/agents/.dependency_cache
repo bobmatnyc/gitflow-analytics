@@ -1,10 +1,10 @@
 {
-  "4e53d8c14cc6f323d01bd57bd67328cd": {
-    "timestamp": 1757373205.740696,
+  "9f6a519a3cd24babf108a50b4573d5db": {
+    "timestamp": 1758206147.155587,
     "results": {
       "agents": {},
       "summary": {
-        "total_agents": 19,
+        "total_agents": 26,
         "agents_with_deps": 0,
         "missing_python": [],
         "missing_system": [],
@@ -12,23 +12,7 @@
         "satisfied_system": []
       }
     },
-    "deployment_hash": "4f170a35ff0aa5e34360240a0af64b8a1e98a0bad6ab75b65a1ba1a6c97f4991",
-    "context": {}
-  },
-  "81093fd9a775c312371d01fa56d895ba": {
-    "timestamp": 1757378129.2440991,
-    "results": {
-      "agents": {},
-      "summary": {
-        "total_agents": 22,
-        "agents_with_deps": 0,
-        "missing_python": [],
-        "missing_system": [],
-        "satisfied_python": [],
-        "satisfied_system": []
-      }
-    },
-    "deployment_hash": "c3095e929153cc48448b0b91ac6bc25e1a941556e487f9175b6cb3fa600bba6a",
+    "deployment_hash": "ff309d3efee84b916ac7d22921c5ad0125624c0457e232b5046758b5a8bd017c",
     "context": {}
   }
 }

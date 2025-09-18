@@ -94,10 +94,14 @@ class RepositoryInfo:
 class ProgressStatistics:
     """Overall progress statistics."""
     total_commits: int = 0
+    total_commits_processed: int = 0
     total_developers: int = 0
     total_tickets: int = 0
     total_repositories: int = 0
     processed_repositories: int = 0
+    successful_repositories: int = 0
+    failed_repositories: int = 0
+    skipped_repositories: int = 0
     processing_speed: float = 0.0  # commits per second
     memory_usage: float = 0.0  # MB
     cpu_percent: float = 0.0
@@ -132,6 +136,7 @@ class RichProgressDisplay:
         self.console = Console(force_terminal=True)
 
         # Progress tracking with enhanced styling
+        # Don't start the progress bars - they'll be rendered inside Live
         self.overall_progress = Progress(
             SpinnerColumn(style="bold cyan"),
             TextColumn("[bold blue]{task.description}"),
@@ -139,7 +144,6 @@ class RichProgressDisplay:
             MofNCompleteColumn(),
             TextColumn("•"),
             TimeRemainingColumn(),
-            console=self.console,
             transient=False,
         )
 
@@ -149,7 +153,6 @@ class RichProgressDisplay:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("•"),
             TextColumn("{task.fields[speed]:.1f} commits/s"),
-            console=self.console,
             transient=False,
         )
 
@@ -459,30 +462,78 @@ class RichProgressDisplay:
         color = "green" if percentage >= 75 else "yellow" if percentage >= 50 else "cyan"
         return f"[{color}]{bar}[/{color}]"
 
-    def _create_layout(self) -> Layout:
-        """Create the complete layout."""
-        layout = Layout()
-
-        # Adjust layout sizes to show more repositories
-        layout.split_column(
-            Layout(self._create_header_panel(), size=3),
-            Layout(name="progress", size=7),
-            Layout(name="repos"),  # No fixed size - take remaining space
-            Layout(name="stats", size=6),
+    def _create_simple_layout(self) -> Panel:
+        """Create a simpler layout without embedded Progress objects."""
+        # Create a simple panel that we'll update dynamically
+        content = self._generate_display_content()
+        return Panel(
+            content,
+            title="[bold cyan]GitFlow Analytics Progress[/bold cyan]",
+            border_style="cyan",
+            padding=(1, 2)
         )
 
-        layout["progress"].update(self._create_progress_panel())
-        layout["repos"].update(self._create_repository_table())
-        layout["stats"].update(self._create_statistics_panel())
+    def _generate_display_content(self) -> str:
+        """Generate the display content as a string."""
+        lines = []
 
-        return layout
+        # Header
+        lines.append(f"[bold cyan]Analyzing {self.statistics.total_repositories} repositories[/bold cyan]")
+        lines.append("")
+
+        # Overall progress
+        if self.overall_task_id is not None:
+            task = self.overall_progress.tasks[0] if self.overall_progress.tasks else None
+            if task:
+                progress_pct = (task.completed / task.total * 100) if task.total > 0 else 0
+                bar = self._create_mini_progress_bar(progress_pct, 40)
+                lines.append(f"Overall Progress: {bar} {progress_pct:.1f}%")
+                lines.append(f"Status: {task.description}")
+
+        # Current repository
+        if self.current_repo:
+            lines.append("")
+            lines.append(f"[yellow]Current Repository:[/yellow] {self.current_repo}")
+            if self.repo_task_id is not None and self.repo_progress.tasks:
+                repo_task = self.repo_progress.tasks[0] if self.repo_progress.tasks else None
+                if repo_task:
+                    lines.append(f"  Commits: {repo_task.completed}/{repo_task.total}")
+
+        # Statistics
+        lines.append("")
+        lines.append("[bold green]Statistics:[/bold green]")
+        lines.append(f"  Processed: {self.statistics.processed_repositories}/{self.statistics.total_repositories}")
+        lines.append(f"  Success: {self.statistics.successful_repositories}")
+        lines.append(f"  Failed: {self.statistics.failed_repositories}")
+        lines.append(f"  Skipped: {self.statistics.skipped_repositories}")
+
+        if self.statistics.total_commits_processed > 0:
+            lines.append(f"  Total Commits: {self.statistics.total_commits_processed:,}")
+
+        # Repository list (last 5)
+        if self.repositories:
+            lines.append("")
+            lines.append("[bold]Recent Repositories:[/bold]")
+            recent = list(self.repositories.values())[-5:]
+            for repo in recent:
+                status_icon = {
+                    RepositoryStatus.PENDING: "⏳",
+                    RepositoryStatus.PROCESSING: "🔄",
+                    RepositoryStatus.COMPLETE: "✅",
+                    RepositoryStatus.ERROR: "❌",
+                    RepositoryStatus.SKIPPED: "⏭️",
+                }.get(repo.status, "❓")
+                lines.append(f"  {status_icon} {repo.name}")
+
+        return "\n".join(lines)
 
     def _update_all_panels(self):
         """Force update all panels in the layout."""
-        if self._layout:
-            self._layout["progress"].update(self._create_progress_panel())
-            self._layout["repos"].update(self._create_repository_table())
-            self._layout["stats"].update(self._create_statistics_panel())
+        if self._layout and self._live:
+            # Update the simple panel with new content
+            new_content = self._generate_display_content()
+            self._layout.renderable = new_content
+            # Rich's auto_refresh handles the updates automatically
             self._update_counter += 1
 
     def start(self, total_items: int = 100, description: str = "Analyzing repositories"):
@@ -493,35 +544,45 @@ class RichProgressDisplay:
             total_items: Total number of items to process
             description: Description of the overall task
         """
-        with self._lock:
-            self.statistics.start_time = datetime.now()
-            self.statistics.total_repositories = total_items
-            self.overall_task_id = self.overall_progress.add_task(
-                description,
-                total=total_items
-            )
+        # Initialize statistics and progress without holding lock
+        self.statistics.start_time = datetime.now()
+        self.statistics.total_repositories = total_items
+        self.overall_task_id = self.overall_progress.add_task(
+            description,
+            total=total_items
+        )
 
-            self._layout = self._create_layout()
-            # Use high refresh rate for smooth animations (4 updates per second)
+        # Create a simpler layout that doesn't embed Progress objects
+        self._layout = self._create_simple_layout()
+
+        # Create and start Live display without holding any locks
+        try:
             self._live = Live(
                 self._layout,
                 console=self.console,
-                refresh_per_second=4,  # High refresh for smooth updates
-                screen=True,  # Full screen mode for immersive display
-                auto_refresh=True,  # Enable auto refresh
-                vertical_overflow="visible",  # Show all content
+                refresh_per_second=2,
+                screen=True,  # Full screen mode
+                auto_refresh=True,
             )
             self._live.start()
-
-            # Force an immediate refresh to show initial state
-            if self._layout:
-                self._update_all_panels()
+            # Rich's auto_refresh will handle periodic updates
+        except Exception as e:
+            # Fallback to simple display if Live fails
+            self._live = None
+            self.console.print(f"[yellow]Note: Using simple progress display (Rich Live unavailable)[/yellow]")
+            self.console.print(Panel(f"GitFlow Analytics - {description}", title="Progress"))
 
     def stop(self):
         """Stop the progress display."""
-        if self._live:
-            self._live.stop()
-            self._live = None
+        with self._lock:
+            if self._live:
+                try:
+                    self._live.stop()
+                except Exception:
+                    pass  # Ignore errors during cleanup
+                finally:
+                    self._live = None
+                    self._layout = None
 
     def update_overall(self, completed: int, description: Optional[str] = None):
         """Update overall progress."""
@@ -532,8 +593,8 @@ class RichProgressDisplay:
                     update_kwargs["description"] = description
                 self.overall_progress.update(self.overall_task_id, **update_kwargs)
 
-            if self._layout:
-                self._layout["progress"].update(self._create_progress_panel())
+            # Update the display with new content
+            self._update_all_panels()
 
     def start_repository(self, repo_name: str, total_commits: int = 0):
         """Start processing a repository with immediate visual feedback."""
@@ -692,34 +753,25 @@ class RichProgressDisplay:
         header_panel = self._create_header_panel()
         self.console.print(header_panel)
 
-    def start_live_display(self):
-        """Start live display - compatibility wrapper for start()."""
-        # Initialize but don't start the Live display yet
-        # It will be started when add_progress_task is called
-        with self._lock:
-            if not hasattr(self, '_task_ids'):
-                self._task_ids = {}
-            self.statistics.start_time = datetime.now()
-
-    def stop_live_display(self):
-        """Stop live display - compatibility wrapper for stop()."""
-        # Only stop if Live display is running
-        if self._live:
-            self.stop()
 
     def add_progress_task(self, task_id: str, description: str, total: int):
         """Add a progress task - compatibility method."""
-        # Start the live display if not already started
-        if not self._live and task_id == "repos":
-            # Clear console for clean transition to full-screen mode
-            self.console.clear()
-            self.start(total_items=total, description=description)
-        elif task_id == "repos":
-            # Update the overall progress description and total
-            if self.overall_task_id is not None:
-                self.overall_progress.update(self.overall_task_id,
-                                           description=description,
-                                           total=total)
+        if task_id == "repos" or task_id == "main":
+            # Handle both "repos" and "main" for overall progress
+            if not self._live:
+                # Not in live mode, just print
+                self.console.print(f"[cyan]{description}[/cyan] (0/{total})")
+                return
+            # If Live display not started yet, start it now
+            if not self._live:
+                # Don't clear console - let Rich Live handle the screen management
+                self.start(total_items=total, description=description)
+            else:
+                # Update the existing overall progress description and total
+                if self.overall_task_id is not None:
+                    self.overall_progress.update(self.overall_task_id,
+                                               description=description,
+                                               total=total)
         elif task_id == "qualitative":
             # Create a new task for qualitative analysis
             with self._lock:
@@ -736,8 +788,12 @@ class RichProgressDisplay:
     def update_progress_task(self, task_id: str, description: Optional[str] = None,
                            advance: int = 0, completed: Optional[int] = None):
         """Update a progress task - compatibility method."""
-        if task_id == "repos":
-            # Update overall progress
+        # Handle simple mode
+        if self._live == "simple" and description:
+            self.console.print(f"[cyan]→ {description}[/cyan]")
+            return
+        if task_id == "repos" or task_id == "main":
+            # Update overall progress (handle both "repos" and "main" for compatibility)
             if description:
                 self.update_overall(completed or 0, description)
             elif advance:
@@ -965,6 +1021,15 @@ class RichProgressDisplay:
                 table.add_row(model, str(requests), str(tokens), f"${cost:.4f}")
 
         self.console.print(table)
+
+    def start_live_display(self):
+        """Start live display - compatibility wrapper for start()."""
+        if not self.overall_task_id:
+            self.start(total_items=100, description="Processing")
+
+    def stop_live_display(self):
+        """Stop live display - compatibility wrapper for stop()."""
+        self.stop()
 
 
 class SimpleProgressDisplay:

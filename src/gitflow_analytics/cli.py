@@ -243,55 +243,49 @@ class ImprovedErrorHandler:
         click.echo("\nFor help: gitflow-analytics help", err=True)
 
 
-class AnalyzeAsDefaultGroup(click.Group):
+class TUIAsDefaultGroup(click.Group):
     """
-    Custom Click group that treats unrecognized options as analyze command arguments.
-    This allows 'gitflow-analytics -c config.yaml' to work like 'gitflow-analytics analyze -c config.yaml'
+    Custom Click group that defaults to TUI when no explicit subcommand is provided.
+    This allows 'gitflow-analytics -c config.yaml' to launch the TUI by default.
+    For explicit CLI analysis, use 'gitflow-analytics analyze -c config.yaml'
     """
 
     def parse_args(self, ctx, args):
-        """Override parse_args to redirect unrecognized patterns to analyze command."""
+        """Override parse_args to default to TUI unless explicit subcommand or CLI-only options."""
         # Check if the first argument is a known subcommand
         if args and args[0] in self.list_commands(ctx):
             return super().parse_args(ctx, args)
 
-        # Check for global options that should NOT be routed to analyze
+        # Check for global options that should NOT be routed to TUI
         global_options = {"--version", "--help", "-h"}
         if args and args[0] in global_options:
             return super().parse_args(ctx, args)
 
-        # Check if we have arguments that look like analyze options
-        analyze_indicators = {
-            "-c",
-            "--config",
-            "-w",
-            "--weeks",
-            "--output",
-            "-o",
-            "--anonymize",
-            "--no-cache",
-            "--validate-only",
-            "--clear-cache",
-            "--enable-qualitative",
-            "--qualitative-only",
-            "--enable-pm",
-            "--pm-platform",
-            "--disable-pm",
+        # Check if we have arguments that indicate explicit CLI analysis request
+        cli_only_indicators = {
             "--no-rich",
-            "--log",
-            "--skip-identity-analysis",
-            "--apply-identity-suggestions",
+            "--generate-csv",
+            "--validate-only",
             "--warm-cache",
             "--validate-cache",
-            "--generate-csv",
+            "--qualitative-only",
         }
 
-        # If first arg starts with - and looks like an analyze option, prepend 'analyze'
+        # If user explicitly requests CLI-only features, route to analyze
+        if args and any(arg in cli_only_indicators for arg in args):
+            new_args = ["analyze"] + args
+            return super().parse_args(ctx, new_args)
+
+        # For all other cases (including -c config.yaml), default to TUI
         if args and args[0].startswith("-"):
-            # Check if any of the args are analyze indicators
-            has_analyze_indicators = any(arg in analyze_indicators for arg in args)
-            if has_analyze_indicators:
-                # This looks like it should be an analyze command
+            # Check if TUI dependencies are available
+            try:
+                import textual
+                # TUI is available - route to TUI
+                new_args = ["tui"] + args
+                return super().parse_args(ctx, new_args)
+            except ImportError:
+                # TUI not available - fallback to analyze
                 new_args = ["analyze"] + args
                 return super().parse_args(ctx, new_args)
 
@@ -299,7 +293,7 @@ class AnalyzeAsDefaultGroup(click.Group):
         return super().parse_args(ctx, args)
 
 
-@click.group(cls=AnalyzeAsDefaultGroup, invoke_without_command=True)
+@click.group(cls=TUIAsDefaultGroup, invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="GitFlow Analytics")
 @click.help_option("-h", "--help")
 @click.pass_context
@@ -763,10 +757,17 @@ def analyze(
             # This ensures smooth transition for all modes, especially with organization discovery
             # and prevents console prints from breaking the full-screen experience
             try:
-                display.start_live_display()
-                display.add_progress_task(
-                    "main", "Initializing GitFlow Analytics", 100
-                )
+                # Check if display has the method before calling
+                if hasattr(display, 'start_live_display'):
+                    display.start_live_display()
+                elif hasattr(display, 'start'):
+                    display.start(total_items=100, description="Initializing GitFlow Analytics")
+
+                # Add progress task if method exists
+                if hasattr(display, 'add_progress_task'):
+                    display.add_progress_task(
+                        "main", "Initializing GitFlow Analytics", 100
+                    )
             except Exception as e:
                 # Fall back to simple display if Rich has issues
                 click.echo(f"⚠️ Rich display initialization failed: {e}")
