@@ -421,8 +421,7 @@ def tui_command(
         if config:
             try:
                 from .config import ConfigLoader
-                config_loader = ConfigLoader()
-                loaded_config = config_loader.load_config(config)
+                loaded_config = ConfigLoader.load(config)
                 app.config = loaded_config
                 app.config_path = config
                 app.initialization_complete = True

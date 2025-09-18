@@ -82,7 +82,9 @@ class AnalysisProgressScreen(Screen):
                 # Live statistics panel
                 with Container(classes="stats-panel"):
                     yield Label("Live Statistics", classes="panel-title")
-                    yield Pretty({}, id="live-stats")
+                    stats_widget = Pretty({})
+                    stats_widget.id = "live-stats"
+                    yield stats_widget
 
             # Analysis log
             with Container(classes="log-panel"):
