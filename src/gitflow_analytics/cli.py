@@ -345,7 +345,31 @@ def cli(ctx: click.Context) -> None:
     default=None,
     help="Path to YAML configuration file (optional - can be loaded in TUI)",
 )
-def tui_command(config: Optional[Path]) -> None:
+@click.option(
+    "--weeks",
+    "-w",
+    type=int,
+    default=None,
+    help="Number of weeks to analyze (passed to TUI)",
+)
+@click.option(
+    "--clear-cache",
+    is_flag=True,
+    help="Clear cache before analysis (passed to TUI)",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output directory for reports (passed to TUI)",
+)
+def tui_command(
+    config: Optional[Path],
+    weeks: Optional[int],
+    clear_cache: bool,
+    output: Optional[Path],
+) -> None:
     """Launch the Terminal User Interface for GitFlow Analytics.
 
     \b
@@ -384,6 +408,14 @@ def tui_command(config: Optional[Path]) -> None:
 
         # Create and run the TUI application
         app = GitFlowAnalyticsApp()
+
+        # Pass CLI parameters to TUI
+        if weeks is not None:
+            app.default_weeks = weeks
+        if clear_cache:
+            app.clear_cache_on_start = True
+        if output:
+            app.default_output_dir = output
 
         # If config path provided, try to load it
         if config:
