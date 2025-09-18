@@ -342,8 +342,85 @@ def cli(ctx: click.Context) -> None:
         ctx.exit(0)
 
 
-# TUI command removed - replaced with rich CLI output
-# Legacy TUI code preserved but not exposed
+# TUI command - Terminal User Interface
+@cli.command(name="tui")
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help="Path to YAML configuration file (optional - can be loaded in TUI)",
+)
+def tui_command(config: Optional[Path]) -> None:
+    """Launch the Terminal User Interface for GitFlow Analytics.
+
+    \b
+    The TUI provides an interactive interface for:
+    - Loading and editing configuration files
+    - Running analysis with real-time progress updates
+    - Viewing results in an organized, navigable format
+    - Exporting reports in various formats
+
+    \b
+    FEATURES:
+    • Full-screen terminal interface with keyboard navigation
+    • Real-time progress tracking during analysis
+    • Interactive configuration management
+    • Results browser with filtering and export options
+    • Built-in help system and keyboard shortcuts
+
+    \b
+    EXAMPLES:
+    # Launch TUI without pre-loading configuration
+    gitflow-analytics tui
+
+    # Launch TUI with a specific configuration file
+    gitflow-analytics tui -c config.yaml
+
+    \b
+    KEYBOARD SHORTCUTS:
+    • Ctrl+Q / Ctrl+C: Quit application
+    • F1: Show help
+    • Ctrl+D: Toggle dark/light mode
+    • Escape: Go back/cancel current action
+    """
+    try:
+        # Import TUI components only when needed
+        from .tui.app import GitFlowAnalyticsApp
+
+        # Create and run the TUI application
+        app = GitFlowAnalyticsApp()
+
+        # If config path provided, try to load it
+        if config:
+            try:
+                from .config import ConfigLoader
+                config_loader = ConfigLoader()
+                loaded_config = config_loader.load_config(config)
+                app.config = loaded_config
+                app.config_path = config
+                app.initialization_complete = True
+            except Exception as e:
+                # Don't fail - let TUI handle config loading
+                click.echo(f"⚠️  Could not pre-load config: {e}")
+                click.echo("   You can load the configuration within the TUI.")
+
+        # Run the TUI
+        app.run()
+
+    except ImportError as e:
+        click.echo("❌ TUI dependencies not installed.", err=True)
+        click.echo(f"   Error: {e}", err=True)
+        click.echo("\n💡 Install TUI dependencies:", err=True)
+        click.echo("   pip install 'gitflow-analytics[tui]'", err=True)
+        click.echo("   # or", err=True)
+        click.echo("   pip install textual>=0.41.0", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"❌ Failed to launch TUI: {e}", err=True)
+        if "--debug" in sys.argv:
+            raise
+        sys.exit(1)
 
 
 @cli.command(name="analyze")
@@ -682,12 +759,34 @@ def analyze(
                 analysis_weeks=weeks,
             )
 
+            # Start full-screen display immediately after showing configuration
+            # This ensures smooth transition for all modes, especially with organization discovery
+            # and prevents console prints from breaking the full-screen experience
+            try:
+                display.start_live_display()
+                display.add_progress_task(
+                    "main", "Initializing GitFlow Analytics", 100
+                )
+            except Exception as e:
+                # Fall back to simple display if Rich has issues
+                click.echo(f"⚠️ Rich display initialization failed: {e}")
+                click.echo("   Continuing with simple output mode...")
+                # Set display to None to use fallback everywhere
+                display = None
+
         # Initialize components
         cache_dir = cfg.cache.directory
         cache = GitAnalysisCache(cache_dir, ttl_hours=0 if no_cache else cfg.cache.ttl_hours)
 
         if clear_cache:
-            if display:
+            if display and display._live:
+                # We're in full-screen mode, update the task
+                display.update_progress_task(
+                    "main",
+                    description="Clearing cache...",
+                    completed=5
+                )
+            elif display:
                 display.print_status("Clearing cache...", "info")
             else:
                 click.echo("🗑️  Clearing cache...")
@@ -695,7 +794,13 @@ def analyze(
             try:
                 # Use the new method that provides detailed feedback
                 cleared_counts = cache.clear_all_cache()
-                if display:
+                if display and display._live:
+                    display.update_progress_task(
+                        "main",
+                        description=f"Cache cleared: {cleared_counts['commits']} commits, {cleared_counts['total']} total",
+                        completed=10
+                    )
+                elif display:
                     display.print_status(
                         f"Cache cleared: {cleared_counts['commits']} commits, "
                         f"{cleared_counts['repository_status']} repo status records, "
@@ -923,9 +1028,12 @@ def analyze(
         # Discovery organization repositories if needed
         repositories_to_analyze = cfg.repositories
         if cfg.github.organization and not repositories_to_analyze:
-            if display:
-                display.print_status(
-                    f"🔍 Discovering repositories from organization: {cfg.github.organization}", "info"
+            if display and display._live:
+                # We're in full-screen mode, update the task
+                display.update_progress_task(
+                    "main",
+                    description=f"🔍 Discovering repositories from organization: {cfg.github.organization}",
+                    completed=15
                 )
             else:
                 click.echo(
@@ -938,28 +1046,34 @@ def analyze(
                 discovered_repos = cfg.discover_organization_repositories(clone_base_path=repos_dir)
                 repositories_to_analyze = discovered_repos
 
-                if display:
-                    display.print_status(
-                        f"✅ Found {len(discovered_repos)} repositories in {cfg.github.organization}", "success"
+                if display and display._live:
+                    # We're in full-screen mode, update progress and initialize repo list
+                    display.update_progress_task(
+                        "main",
+                        description=f"✅ Found {len(discovered_repos)} repositories in {cfg.github.organization}",
+                        completed=20
                     )
-                    # Show repository discovery in structured format with status
-                    repo_data = []
+                    # Initialize repository list for the full-screen display
+                    repo_list = []
                     for repo in discovered_repos:
-                        status = "📁 Local" if repo.path.exists() else "☁️  Remote"
-                        repo_data.append({
+                        repo_list.append({
                             "name": repo.name,
-                            "status": status,
-                            "github_repo": repo.github_repo,
+                            "status": "pending"
                         })
-                    display.show_repository_discovery(repo_data)
+                    display.initialize_repositories(repo_list)
                 else:
                     click.echo(f"   ✅ Found {len(discovered_repos)} repositories in organization")
                     for repo in discovered_repos:
                         status = "exists locally" if repo.path.exists() else "needs cloning"
                         click.echo(f"      - {repo.name} ({status})")
             except Exception as e:
-                if display:
-                    display.show_error(f"Failed to discover repositories: {e}")
+                if display and display._live:
+                    # Update error in full-screen mode
+                    display.update_progress_task(
+                        "main",
+                        description=f"❌ Failed to discover repositories: {e}",
+                        completed=20
+                    )
                 else:
                     click.echo(f"   ❌ Failed to discover repositories: {e}")
                 return
@@ -980,26 +1094,21 @@ def analyze(
         end_date = get_week_end(last_complete_week_start + timedelta(days=6))
 
         if display:
-            display.print_status(
-                f"Analyzing {len(repositories_to_analyze)} repositories...", "info"
-            )
-            display.print_status(
-                f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
-                "info",
-            )
-            # Start live progress display
-            display.start_live_display()
-            display.add_progress_task(
-                "repos", "Processing repositories", len(repositories_to_analyze)
-            )
-
-            # Initialize all repositories with pending status for Rich display
-            if hasattr(display, 'initialize_repositories'):
-                repo_list = [
-                    {"name": repo.name or repo.project_key or Path(repo.path).name}
-                    for repo in repositories_to_analyze
-                ]
-                display.initialize_repositories(repo_list)
+            # Update task or initialize repositories in full-screen mode
+            if display._live:
+                # We're in full-screen mode
+                display.update_progress_task(
+                    "main",
+                    description=f"Analyzing {len(repositories_to_analyze)} repositories",
+                    completed=25
+                )
+                # Initialize repositories if not already done (e.g., when not using org discovery)
+                if not cfg.github.organization or cfg.repositories:
+                    repo_list = [
+                        {"name": repo.name or repo.project_key or Path(repo.path).name, "status": "pending"}
+                        for repo in repositories_to_analyze
+                    ]
+                    display.initialize_repositories(repo_list)
         else:
             click.echo(f"\n🚀 Analyzing {len(repositories_to_analyze)} repositories...")
             click.echo(
@@ -1029,7 +1138,10 @@ def analyze(
         # Check if we should use batch classification (two-step process)
         if use_batch_classification:
             if display:
-                display.print_status("Using two-step process: fetch then classify...", "info")
+                # Add the repos task - this will start the display if needed
+                display.add_progress_task(
+                    "repos", "Checking cache and preparing analysis", len(repositories_to_analyze)
+                )
             else:
                 click.echo("🔄 Using two-step process: fetch then classify...")
 
@@ -1039,7 +1151,15 @@ def analyze(
 
             if not force_fetch:
                 if display:
-                    display.print_status("Checking cache completeness...", "info")
+                    # Check if display is actually running, if not fall back to simple output
+                    if hasattr(display, '_live') and display._live:
+                        display.update_progress_task(
+                            "repos",
+                            description="Checking cache completeness...",
+                            completed=0
+                        )
+                    else:
+                        click.echo("🔍 Checking cache completeness...")
                 else:
                     click.echo("🔍 Checking cache completeness...")
 
@@ -1054,24 +1174,17 @@ def analyze(
 
                     if status:
                         cached_repos.append((repo_config, status))
-                        if display:
-                            display.print_status(
-                                f"   ✅ {repo_config.name}: Using cached data ({status['commit_count']} commits)",
-                                "success",
-                            )
+                        # In full-screen mode, we'll update repo status via the display
                     else:
                         repos_needing_analysis.append(repo_config)
-                        if display:
-                            display.print_status(
-                                f"   📥 {repo_config.name}: Analysis needed", "info"
-                            )
 
                 if cached_repos:
                     total_cached_commits = sum(status["commit_count"] for _, status in cached_repos)
-                    if display:
-                        display.print_status(
-                            f"Found {len(cached_repos)} repos with cached data ({total_cached_commits} commits)",
-                            "success",
+                    if display and hasattr(display, '_live') and display._live:
+                        display.update_progress_task(
+                            "repos",
+                            description=f"Found {len(cached_repos)} repos with cached data ({total_cached_commits} commits)",
+                            completed=10
                         )
                     else:
                         click.echo(
@@ -1080,17 +1193,22 @@ def analyze(
             else:
                 # Force fetch: analyze all repositories
                 repos_needing_analysis = repositories_to_analyze
-                if display:
-                    display.print_status("Force fetch enabled - analyzing all repositories", "info")
+                if display and display._live:
+                    display.update_progress_task(
+                        "repos",
+                        description="Force fetch enabled - analyzing all repositories",
+                        completed=5
+                    )
                 else:
                     click.echo("🔄 Force fetch enabled - analyzing all repositories")
 
             # Step 1: Fetch data only for repos that need analysis
             if repos_needing_analysis:
-                if display:
-                    display.print_status(
-                        f"Step 1: Fetching data for {len(repos_needing_analysis)} repositories...",
-                        "info",
+                if display and display._live:
+                    display.update_progress_task(
+                        "repos",
+                        description=f"Step 1: Fetching data for {len(repos_needing_analysis)} repositories...",
+                        completed=15
                     )
                 else:
                     click.echo(
@@ -1117,14 +1235,13 @@ def analyze(
                 # Progress service already initialized at the start of the function
                 # We can use the progress instance that was created earlier
 
-                # Start Rich display if enabled - use the display object for full-screen UI
+                # Update the progress task since display is already started
                 if display:
-                    # Start the full-screen live display
-                    display.start_live_display()
-                    display.add_progress_task(
+                    # Update the existing task since display was already started
+                    display.update_progress_task(
                         "repos",
-                        f"Analyzing {len(repos_needing_analysis)} repositories",
-                        len(repos_needing_analysis)
+                        description=f"Step 1: Fetching data for {len(repos_needing_analysis)} repositories",
+                        completed=0
                     )
 
                     # Initialize ALL repositories (both cached and to-be-fetched) with their status
@@ -1297,11 +1414,8 @@ def analyze(
                             progress.update(repos_progress_ctx)
 
                         except Exception as e:
-                            if display:
-                                display.print_status(
-                                    f"   ❌ Error fetching {project_key}: {e}", "error"
-                                )
-                                # Update repository status to error
+                            if display and display._live:
+                                # Update repository status to error in full-screen mode
                                 if hasattr(display, 'update_repository_status'):
                                     repo_display_name = repo_config.name or project_key
                                     display.update_repository_status(
@@ -1328,10 +1442,11 @@ def analyze(
                             progress.update(repos_progress_ctx)
                             continue
 
-                if display:
-                    display.print_status(
-                        f"Step 1 complete: {total_commits} commits, {total_tickets} tickets fetched",
-                        "success",
+                if display and display._live:
+                    display.update_progress_task(
+                        "repos",
+                        description=f"Step 1 complete: {total_commits} commits, {total_tickets} tickets fetched",
+                        completed=100
                     )
                     # Stop the live display after Step 1
                     display.stop_live_display()
@@ -1340,9 +1455,11 @@ def analyze(
                         f"📥 Step 1 complete: {total_commits} commits, {total_tickets} tickets fetched"
                     )
             else:
-                if display:
-                    display.print_status(
-                        "All repositories use cached data - skipping data fetch", "success"
+                if display and display._live:
+                    display.update_progress_task(
+                        "repos",
+                        description="All repositories use cached data - skipping data fetch",
+                        completed=100
                     )
                     # Stop the live display if all data was cached
                     display.stop_live_display()
@@ -1873,25 +1990,35 @@ def analyze(
 
                     all_commits.append(commit_dict)
 
-                if display:
-                    display.print_status(
-                        f"Loaded {len(all_commits)} classified commits from database", "success"
+                if display and display._live:
+                    display.update_progress_task(
+                        "main",
+                        description=f"Loaded {len(all_commits)} classified commits from database",
+                        completed=85
                     )
                 else:
                     click.echo(f"✅ Loaded {len(all_commits)} classified commits from database")
 
             # Process the loaded commits to generate required statistics
             # Update developer identities
-            if display:
-                display.print_status("Processing developer identities...", "info")
+            if display and display._live:
+                display.update_progress_task(
+                    "main",
+                    description="Processing developer identities...",
+                    completed=90
+                )
             else:
                 click.echo("👥 Processing developer identities...")
 
             identity_resolver.update_commit_stats(all_commits)
 
             # Analyze ticket references using loaded commits
-            if display:
-                display.print_status("Analyzing ticket references...", "info")
+            if display and display._live:
+                display.update_progress_task(
+                    "main",
+                    description="Analyzing ticket references...",
+                    completed=95
+                )
             else:
                 click.echo("🎫 Analyzing ticket references...")
 
@@ -1907,9 +2034,11 @@ def analyze(
                 ticket_coverage=developer_ticket_coverage
             )
 
-            if display:
-                display.print_status(
-                    f"Identified {len(developer_stats)} unique developers", "success"
+            if display and display._live:
+                display.update_progress_task(
+                    "main",
+                    description=f"Identified {len(developer_stats)} unique developers",
+                    completed=98
                 )
             else:
                 click.echo(f"   ✅ Identified {len(developer_stats)} unique developers")
@@ -1921,6 +2050,13 @@ def analyze(
             all_prs = []
             all_enrichments = {}
             branch_health_metrics = {}  # Store branch health metrics per repository
+
+            # Note: Full-screen display is already started early after configuration
+            # Just add the repository processing task
+            if display and display._live:
+                display.add_progress_task(
+                    "repos", "Processing repositories", len(repositories_to_analyze)
+                )
 
         # Analyze repositories (traditional mode or forced fetch)
         # Note: In batch mode, these are already populated from database
@@ -1941,10 +2077,14 @@ def analyze(
                 if not repo_config.path.exists():
                     # Try to clone if we have a github_repo configured
                     if repo_config.github_repo and cfg.github.organization:
-                        if display:
-                            display.print_status(
-                                f"Cloning {repo_config.github_repo} from GitHub...", "info"
-                            )
+                        if display and display._live:
+                            # Update status in full-screen mode
+                            if hasattr(display, 'update_repository_status'):
+                                display.update_repository_status(
+                                    repo_config.name,
+                                    "processing",
+                                    f"Cloning {repo_config.github_repo} from GitHub..."
+                                )
                         else:
                             click.echo(f"   📥 Cloning {repo_config.github_repo} from GitHub...")
                         try:
