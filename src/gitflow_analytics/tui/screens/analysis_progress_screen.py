@@ -6,11 +6,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from rich.pretty import Pretty
 from textual.binding import Binding
 from textual.containers import Container, Vertical
 from textual.screen import Screen
-from textual.widgets import Footer, Header, Label, Log
+from textual.widgets import Footer, Header, Label, Log, Static
 
 from gitflow_analytics.config import Config
 from gitflow_analytics.core.analyzer import GitAnalyzer
@@ -82,9 +81,7 @@ class AnalysisProgressScreen(Screen):
                 # Live statistics panel
                 with Container(classes="stats-panel"):
                     yield Label("Live Statistics", classes="panel-title")
-                    stats_widget = Pretty({})
-                    stats_widget.id = "live-stats"
-                    yield stats_widget
+                    yield Static("No statistics yet...", id="live-stats")
 
             # Analysis log
             with Container(classes="log-panel"):
