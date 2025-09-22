@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
+import threading
 
 from textual.binding import Binding
 from textual.containers import Container, Vertical
@@ -16,8 +17,10 @@ from gitflow_analytics.core.analyzer import GitAnalyzer
 from gitflow_analytics.core.cache import GitAnalysisCache
 from gitflow_analytics.core.identity import DeveloperIdentityResolver
 from gitflow_analytics.integrations.orchestrator import IntegrationOrchestrator
+from gitflow_analytics.core import progress as core_progress
 
 from ..widgets.progress_widget import AnalysisProgressWidget
+from ..progress_adapter import TUIProgressAdapter, TUIProgressService
 
 
 class AnalysisProgressScreen(Screen):
@@ -55,6 +58,7 @@ class AnalysisProgressScreen(Screen):
         self.analysis_task: Optional[asyncio.Task] = None
         self.analysis_results = {}
         self.start_time = time.time()
+        self.progress_service = None  # Will be initialized on mount
 
     def compose(self):
         """Compose the analysis progress screen."""
@@ -92,7 +96,32 @@ class AnalysisProgressScreen(Screen):
 
     def on_mount(self) -> None:
         """Start analysis when screen mounts."""
-        self.analysis_task = asyncio.create_task(self._run_analysis())
+        # Initialize progress service for TUI
+        self.progress_service = TUIProgressService(asyncio.get_event_loop())
+        self.analysis_task = asyncio.create_task(self._run_analysis_wrapper())
+
+    def on_unmount(self) -> None:
+        """Cleanup when screen unmounts."""
+        # Cancel the analysis task if it's still running
+        if self.analysis_task and not self.analysis_task.done():
+            self.analysis_task.cancel()
+            # Don't wait for cancellation to complete to avoid blocking
+
+    async def _run_analysis_wrapper(self) -> None:
+        """Wrapper for analysis that handles cancellation gracefully."""
+        try:
+            await self._run_analysis()
+        except asyncio.CancelledError:
+            # Silently handle cancellation - this is expected during shutdown
+            pass
+        except Exception as e:
+            # Log unexpected errors if the app is still running
+            if self.app and self.app.is_running:
+                try:
+                    log = self.query_one("#analysis-log", Log)
+                    log.write_line(f"❌ Unexpected error: {e}")
+                except Exception:
+                    pass
 
     async def _run_analysis(self) -> None:
         """
@@ -167,12 +196,26 @@ class AnalysisProgressScreen(Screen):
             )
 
         except asyncio.CancelledError:
-            log.write_line("❌ Analysis cancelled by user")
-            overall_progress.update_progress(0, "Cancelled")
+            # Check if the app is still running before updating UI
+            if self.app and self.app.is_running:
+                try:
+                    log.write_line("❌ Analysis cancelled by user")
+                    overall_progress.update_progress(0, "Cancelled")
+                except Exception:
+                    # Silently ignore if we can't update the UI
+                    pass
+            # Re-raise for the wrapper to handle
+            raise
         except Exception as e:
-            log.write_line(f"❌ Analysis failed: {e}")
-            overall_progress.update_progress(0, f"Error: {str(e)[:50]}...")
-            self.notify(f"Analysis failed: {e}", severity="error")
+            # Check if the app is still running before updating UI
+            if self.app and self.app.is_running:
+                try:
+                    log.write_line(f"❌ Analysis failed: {e}")
+                    overall_progress.update_progress(0, f"Error: {str(e)[:50]}...")
+                    self.notify(f"Analysis failed: {e}", severity="error")
+                except Exception:
+                    # Silently ignore if we can't update the UI
+                    pass
 
     async def _initialize_components(self, log: Log) -> None:
         """Initialize analysis components."""
@@ -190,12 +233,20 @@ class AnalysisProgressScreen(Screen):
         )
 
         log.write_line("🔍 Initializing analyzer...")
+
+        # Enable branch analysis with progress logging for TUI
+        branch_analysis_config = {
+            'enable_progress_logging': True,
+            'strategy': 'all',
+        }
+
         self.analyzer = GitAnalyzer(
             self.cache,
             branch_mapping_rules=self.config.analysis.branch_mapping_rules,
             allowed_ticket_platforms=getattr(self.config.analysis, "ticket_platforms", None),
             exclude_paths=self.config.analysis.exclude_paths,
             story_point_patterns=self.config.analysis.story_point_patterns,
+            branch_analysis_config=branch_analysis_config,
         )
 
         log.write_line("🔗 Initializing integrations...")
@@ -242,6 +293,7 @@ class AnalysisProgressScreen(Screen):
     async def _analyze_repositories(self, repositories: list, log: Log) -> tuple:
         """Analyze all repositories and return commits and PRs."""
         repo_progress = self.query_one("#repo-progress", AnalysisProgressWidget)
+        overall_progress = self.query_one("#overall-progress", AnalysisProgressWidget)
 
         all_commits = []
         all_prs = []
@@ -250,53 +302,153 @@ class AnalysisProgressScreen(Screen):
         end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(weeks=self.weeks)
 
-        for i, repo_config in enumerate(repositories):
-            progress = (i / len(repositories)) * 100
-            repo_progress.update_progress(progress, f"Analyzing {repo_config.name}...")
+        # Create progress adapter for repository analysis
+        repo_adapter = self.progress_service.create_adapter("repo", repo_progress)
 
-            log.write_line(f"📁 Analyzing {repo_config.name}...")
+        # Set initial stats for the adapter
+        repo_adapter.processing_stats['total'] = len(repositories)
+
+        # Temporarily replace the global progress service with our adapter
+        original_progress_service = core_progress._progress_service
+        core_progress._progress_service = repo_adapter
+
+        total_repos = len(repositories)
+
+        # Clone repositories that don't exist locally first
+        for repo_config in repositories:
+            if not repo_config.path.exists() and repo_config.github_repo:
+                log.write_line(f"   📥 Cloning {repo_config.github_repo}...")
+                await self._clone_repository(repo_config, log)
+
+        # Check if we should use parallel processing (for multiple repositories)
+        use_parallel = len(repositories) > 1
+
+        if use_parallel:
+            log.write_line(f"🚀 Starting parallel analysis of {len(repositories)} repositories...")
+
+            # Import data fetcher for parallel processing
+            from gitflow_analytics.core.data_fetcher import GitDataFetcher
+
+            # Create data fetcher
+            data_fetcher = GitDataFetcher(
+                cache=self.cache,
+                skip_remote_fetch=False
+            )
+
+            # Prepare repository configurations for parallel processing
+            repo_configs = []
+            for repo_config in repositories:
+                repo_configs.append({
+                    'path': str(repo_config.path),
+                    'project_key': repo_config.project_key or repo_config.name,
+                    'branch_patterns': [repo_config.branch] if repo_config.branch else None
+                })
+
+            # Run parallel processing in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+
+            # Update overall progress
+            overall_progress.update_progress(25, "Running parallel repository analysis...")
 
             try:
-                # Clone repository if needed
-                if not repo_config.path.exists() and repo_config.github_repo:
-                    log.write_line(f"   📥 Cloning {repo_config.github_repo}...")
-                    await self._clone_repository(repo_config, log)
-
-                # Analyze commits
-                commits = self.analyzer.analyze_repository(
-                    repo_config.path, start_date, repo_config.branch
+                # Run parallel processing
+                parallel_results = await loop.run_in_executor(
+                    None,
+                    data_fetcher.process_repositories_parallel,
+                    repo_configs,
+                    self.weeks,
+                    None,  # JIRA integration
+                    start_date,
+                    end_date,
+                    min(3, len(repositories))  # Max workers
                 )
 
-                # Add project key and resolve identities
-                for commit in commits:
-                    commit["project_key"] = repo_config.project_key or commit.get(
-                        "inferred_project", "UNKNOWN"
-                    )
-                    commit["canonical_id"] = self.identity_resolver.resolve_developer(
-                        commit["author_name"], commit["author_email"]
-                    )
+                # Process results
+                for project_key, result in parallel_results['results'].items():
+                    if result and 'commits' in result:
+                        commits_data = result['commits']
+                        # Add project key and resolve identities
+                        for commit in commits_data:
+                            commit["project_key"] = project_key
+                            commit["canonical_id"] = self.identity_resolver.resolve_developer(
+                                commit["author_name"], commit["author_email"]
+                            )
+                        all_commits.extend(commits_data)
+                        log.write_line(f"   ✅ {project_key}: {len(commits_data)} commits")
 
-                all_commits.extend(commits)
-                log.write_line(f"   ✅ Found {len(commits)} commits")
-
-                # Update live stats
-                await self._update_live_stats(
-                    {
-                        "repositories_analyzed": i + 1,
-                        "total_repositories": len(repositories),
-                        "total_commits": len(all_commits),
-                        "current_repo": repo_config.name,
-                    }
-                )
-
-                # Small delay to allow UI updates
-                await asyncio.sleep(0.1)
+                # Log final statistics
+                stats = parallel_results.get('statistics', {})
+                log.write_line(f"\n📊 Analysis Statistics:")
+                log.write_line(f"   Total: {stats.get('total', 0)} repositories")
+                log.write_line(f"   Success: {stats.get('success', 0)}")
+                log.write_line(f"   Failed: {stats.get('failed', 0)}")
+                log.write_line(f"   Timeout: {stats.get('timeout', 0)}")
 
             except Exception as e:
-                log.write_line(f"   ❌ Error analyzing {repo_config.name}: {e}")
-                continue
+                log.write_line(f"   ❌ Parallel processing failed: {e}")
+                log.write_line("   Falling back to sequential processing...")
+                use_parallel = False
+
+        # Sequential processing fallback or for single repository
+        if not use_parallel:
+            for i, repo_config in enumerate(repositories):
+                # Update overall progress based on repository completion
+                overall_pct = 20 + ((i / total_repos) * 30)  # 20-50% range for repo analysis
+                overall_progress.update_progress(overall_pct, f"Analyzing repositories ({i+1}/{total_repos})...")
+
+                repo_progress.update_progress(0, f"Analyzing {repo_config.name}...")
+
+                log.write_line(f"📁 Analyzing {repo_config.name}...")
+
+                try:
+                    log.write_line(f"   ⏳ Starting analysis of {repo_config.name}...")
+
+                    # Run repository analysis in a thread to avoid blocking
+                    loop = asyncio.get_event_loop()
+                    commits = await loop.run_in_executor(
+                        None,
+                        self.analyzer.analyze_repository,
+                        repo_config.path,
+                        start_date,
+                        repo_config.branch
+                    )
+
+                    log.write_line(f"   ✓ Analysis complete for {repo_config.name}")
+
+                    # Add project key and resolve identities
+                    for commit in commits:
+                        commit["project_key"] = repo_config.project_key or commit.get(
+                            "inferred_project", "UNKNOWN"
+                        )
+                        commit["canonical_id"] = self.identity_resolver.resolve_developer(
+                            commit["author_name"], commit["author_email"]
+                        )
+
+                    all_commits.extend(commits)
+                    log.write_line(f"   ✅ Found {len(commits)} commits")
+
+                    # Update live stats
+                    await self._update_live_stats(
+                        {
+                            "repositories_analyzed": i + 1,
+                            "total_repositories": len(repositories),
+                            "total_commits": len(all_commits),
+                            "current_repo": repo_config.name,
+                        }
+                    )
+
+                    # Small delay to allow UI updates
+                    await asyncio.sleep(0.05)  # Reduced delay for more responsive updates
+
+                except Exception as e:
+                    log.write_line(f"   ❌ Error analyzing {repo_config.name}: {e}")
+                    continue
+
+        # Restore original progress service
+        core_progress._progress_service = original_progress_service
 
         repo_progress.complete(f"Completed {len(repositories)} repositories")
+        overall_progress.update_progress(50, f"Analyzed {len(all_commits)} commits")
         return all_commits, all_prs
 
     async def _enrich_with_integrations(self, repositories: list, commits: list, log: Log) -> None:
@@ -476,14 +628,29 @@ class AnalysisProgressScreen(Screen):
 
     async def _update_live_stats(self, stats: dict[str, Any]) -> None:
         """Update live statistics display."""
-        stats_widget = self.query_one("#live-stats", Pretty)
-        stats_widget.update(stats)
+        stats_widget = self.query_one("#live-stats", Static)
+
+        # Format stats for display
+        stats_text = "\n".join([
+            f"• {key.replace('_', ' ').title()}: {value}"
+            for key, value in stats.items()
+        ])
+        stats_widget.update(stats_text)
 
     def action_cancel(self) -> None:
         """Cancel the analysis."""
         if self.analysis_task and not self.analysis_task.done():
             self.analysis_task.cancel()
-        self.app.pop_screen()
+            # Give the task a moment to cancel cleanly
+            asyncio.create_task(self._delayed_pop_screen())
+        else:
+            self.app.pop_screen()
+
+    async def _delayed_pop_screen(self) -> None:
+        """Pop screen after a brief delay to allow cancellation to complete."""
+        await asyncio.sleep(0.1)
+        if self.app and self.app.is_running:
+            self.app.pop_screen()
 
     def action_back(self) -> None:
         """Go back to main screen."""

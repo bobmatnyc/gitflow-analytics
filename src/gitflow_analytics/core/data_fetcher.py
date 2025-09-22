@@ -8,6 +8,8 @@ without performing any LLM-based classification.
 import logging
 import os
 import subprocess
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -28,6 +30,7 @@ from .branch_mapper import BranchToProjectMapper
 from .cache import GitAnalysisCache
 from .identity import DeveloperIdentityResolver
 from .progress import get_progress_service
+from .git_timeout_wrapper import GitTimeoutWrapper, HeartbeatLogger, GitOperationTimeout
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +52,7 @@ class GitDataFetcher:
         branch_mapping_rules: Optional[dict[str, list[str]]] = None,
         allowed_ticket_platforms: Optional[list[str]] = None,
         exclude_paths: Optional[list[str]] = None,
+        skip_remote_fetch: bool = False,
     ):
         """Initialize the data fetcher.
 
@@ -57,8 +61,11 @@ class GitDataFetcher:
             branch_mapping_rules: Rules for mapping branches to projects
             allowed_ticket_platforms: List of allowed ticket platforms
             exclude_paths: List of file paths to exclude from analysis
+            skip_remote_fetch: If True, skip git fetch/pull operations
         """
         self.cache = cache
+        self.skip_remote_fetch = skip_remote_fetch
+        self.repository_status = {}  # Track status of each repository
         # CRITICAL FIX: Use the same database instance as the cache to avoid session conflicts
         self.database = cache.db
         self.story_point_extractor = StoryPointExtractor()
@@ -81,6 +88,19 @@ class GitDataFetcher:
         # Initialize identity resolver
         identity_db_path = cache.cache_dir / "identities.db"
         self.identity_resolver = DeveloperIdentityResolver(identity_db_path)
+
+        # Initialize git timeout wrapper for safe operations
+        self.git_wrapper = GitTimeoutWrapper(default_timeout=30)
+
+        # Statistics for tracking repository processing
+        self.processing_stats = {
+            'total': 0,
+            'processed': 0,
+            'success': 0,
+            'failed': 0,
+            'timeout': 0,
+            'repositories': {}
+        }
 
     def fetch_repository_data(
         self,
@@ -307,14 +327,129 @@ class GitDataFetcher:
             Dictionary mapping date strings (YYYY-MM-DD) to lists of commit data
         """
         from git import Repo
+        import os
+
+        # Set environment variables to prevent ANY password prompts before opening repo
+        original_env = {}
+        env_vars = {
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_ASKPASS": "/bin/echo",  # Use full path to echo
+            "SSH_ASKPASS": "/bin/echo",
+            "GCM_INTERACTIVE": "never",
+            "GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o PasswordAuthentication=no",
+            "DISPLAY": "",
+            "GIT_CREDENTIAL_HELPER": "",  # Disable credential helper
+            "GCM_PROVIDER": "none",  # Disable Git Credential Manager
+            "GIT_CREDENTIALS": "",  # Clear any cached credentials
+            "GIT_CONFIG_NOSYSTEM": "1",  # Don't use system config
+        }
+
+        # Save original environment and set our values
+        for key, value in env_vars.items():
+            original_env[key] = os.environ.get(key)
+            os.environ[key] = value
 
         try:
-            repo = Repo(repo_path)
+            # Open repository with minimal configuration to avoid credential checks
+            from git import Repo
+
+            # Check for security issues in repository configuration
+            self._check_repository_security(repo_path, project_key)
+
+            # When skip_remote_fetch is enabled, use a more restricted repository access
+            if self.skip_remote_fetch:
+                # Use a special git configuration that completely disables credential helpers
+                import tempfile
+                import subprocess
+
+                # Create a secure temporary directory for our config
+                temp_dir = tempfile.mkdtemp(prefix="gitflow_")
+
+                # Create a temporary git config that disables all authentication
+                tmp_config_path = os.path.join(temp_dir, ".gitconfig")
+                with open(tmp_config_path, 'w') as tmp_config:
+                    tmp_config.write("[credential]\n")
+                    tmp_config.write("    helper = \n")
+                    tmp_config.write("[core]\n")
+                    tmp_config.write("    askpass = \n")
+
+                # Set GIT_CONFIG to use our temporary config
+                os.environ["GIT_CONFIG_GLOBAL"] = tmp_config_path
+                os.environ["GIT_CONFIG_SYSTEM"] = "/dev/null"
+
+                # Store temp_dir for cleanup
+                self._temp_dir = temp_dir
+
+                try:
+                    # Open repository with our restricted configuration
+                    repo = Repo(repo_path)
+                finally:
+                    # Clean up temporary config directory
+                    try:
+                        import shutil
+                        if hasattr(self, '_temp_dir'):
+                            shutil.rmtree(self._temp_dir, ignore_errors=True)
+                            delattr(self, '_temp_dir')
+                    except:
+                        pass
+
+                try:
+                    # Configure git to never prompt for credentials
+                    with repo.config_writer() as git_config:
+                        git_config.set_value('core', 'askpass', '')
+                        git_config.set_value('credential', 'helper', '')
+                except Exception as e:
+                    logger.debug(f"Could not update git config: {e}")
+
+                # Monkey-patch the remotes property to prevent any remote access
+                class FakeRemotes:
+                    def __bool__(self):
+                        return False
+                    def __len__(self):
+                        return 0
+                    def __iter__(self):
+                        return iter([])
+                    def __getattr__(self, name):
+                        return None
+
+                repo._remotes = FakeRemotes()
+                repo.remotes = FakeRemotes()
+
+                logger.debug(f"Opened repository {project_key} in offline mode (skip_remote_fetch=true)")
+            else:
+                repo = Repo(repo_path)
+            # Track repository status
+            self.repository_status[project_key] = {
+                "path": str(repo_path),
+                "remote_update": "skipped" if self.skip_remote_fetch else "pending",
+                "authentication_issues": False,
+                "error": None
+            }
+
             # Update repository from remote before analysis
-            logger.info(f"📥 Updating repository {project_key} from remote...")
-            self._update_repository(repo)
+            if not self.skip_remote_fetch:
+                logger.info(f"📥 Updating repository {project_key} from remote...")
+
+            update_success = self._update_repository(repo)
+            if not self.skip_remote_fetch:
+                self.repository_status[project_key]["remote_update"] = "success" if update_success else "failed"
+                if not update_success:
+                    logger.warning(f"⚠️ {project_key}: Continuing with local repository state (remote update failed)")
+
         except Exception as e:
             logger.error(f"Failed to open repository {project_key} at {repo_path}: {e}")
+            self.repository_status[project_key] = {
+                "path": str(repo_path),
+                "remote_update": "error",
+                "authentication_issues": "authentication" in str(e).lower() or "password" in str(e).lower(),
+                "error": str(e)
+            }
+            # Restore original environment variables before returning
+            for key, value in original_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
             return {}
 
         # Get branches to analyze
@@ -322,6 +457,12 @@ class GitDataFetcher:
 
         if not branches_to_analyze:
             logger.warning(f"No accessible branches found in repository {project_key} at {repo_path}")
+            # Restore original environment variables before returning
+            for key, value in original_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
             return {}
 
         logger.info(f"🌿 {project_key}: Analyzing branches: {branches_to_analyze}")
@@ -385,12 +526,26 @@ class GitDataFetcher:
                 # Process each branch for this specific day
                 for branch_name in branches_to_analyze:
                     try:
-                        # Fetch commits for this specific day and branch
-                        branch_commits = list(
-                            repo.iter_commits(
-                                branch_name, since=day_start, until=day_end, reverse=False
+                        # Fetch commits for this specific day and branch with timeout protection
+                        def fetch_branch_commits():
+                            return list(
+                                repo.iter_commits(
+                                    branch_name, since=day_start, until=day_end, reverse=False
+                                )
                             )
-                        )
+
+                        # Use timeout wrapper to prevent hanging on iter_commits
+                        try:
+                            branch_commits = self.git_wrapper.run_with_timeout(
+                                fetch_branch_commits,
+                                timeout=15,  # 15 seconds per branch/day combination
+                                operation_name=f"iter_commits_{branch_name}_{day_str}"
+                            )
+                        except GitOperationTimeout:
+                            logger.warning(
+                                f"⏱️ Timeout fetching commits for branch {branch_name} on {day_str}, skipping"
+                            )
+                            continue
 
                         for commit in branch_commits:
                             # Skip if we've already processed this commit
@@ -406,6 +561,11 @@ class GitDataFetcher:
                                 all_commit_hashes.add(commit.hexsha)
                                 commits_found_today += 1
 
+                    except GitOperationTimeout as e:
+                        logger.warning(
+                            f"⏱️ Timeout processing branch {branch_name} for day {day_str}: {e}"
+                        )
+                        continue
                     except Exception as e:
                         logger.warning(
                             f"Error processing branch {branch_name} for day {day_str}: {e}"
@@ -445,6 +605,14 @@ class GitDataFetcher:
 
         total_commits = sum(len(commits) for commits in daily_commits.values())
         logger.info(f"Collected {total_commits} unique commits across {len(daily_commits)} days")
+
+        # Restore original environment variables
+        for key, value in original_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
         return daily_commits
 
     def _extract_commit_data(
@@ -731,20 +899,25 @@ class GitDataFetcher:
             logger.debug(f"Error getting local branches: {e}")
 
         # If we have remotes, also consider remote branches (but clean the names)
-        try:
-            if repo.remotes and hasattr(repo.remotes, "origin"):
-                remote_branches = [
-                    ref.name.replace("origin/", "")
-                    for ref in repo.remotes.origin.refs
-                    if not ref.name.endswith("HEAD")  # Skip HEAD ref
-                ]
-                # Only add remote branches that aren't already in local branches
-                for branch in remote_branches:
-                    if branch not in available_branches:
-                        available_branches.append(branch)
-                logger.debug(f"Found remote branches: {remote_branches}")
-        except Exception as e:
-            logger.debug(f"Error getting remote branches: {e}")
+        # Skip remote branch checking if skip_remote_fetch is enabled to avoid auth prompts
+        if not self.skip_remote_fetch:
+            try:
+                if repo.remotes and hasattr(repo.remotes, "origin"):
+                    remote_branches = [
+                        ref.name.replace("origin/", "")
+                        for ref in repo.remotes.origin.refs
+                        if not ref.name.endswith("HEAD")  # Skip HEAD ref
+                    ]
+                    # Only add remote branches that aren't already in local branches
+                    for branch in remote_branches:
+                        if branch not in available_branches:
+                            available_branches.append(branch)
+                    logger.debug(f"Found remote branches: {remote_branches}")
+            except Exception as e:
+                logger.debug(f"Error getting remote branches (may require authentication): {e}")
+                # Continue with local branches only
+        else:
+            logger.debug("Skipping remote branch enumeration (skip_remote_fetch=true)")
 
         # If no branches found, fallback to trying common names directly
         if not available_branches:
@@ -827,46 +1000,36 @@ class GitDataFetcher:
         Returns:
             bool: True if update succeeded, False if failed (but analysis continues)
         """
+        # Skip remote operations if configured
+        if self.skip_remote_fetch:
+            logger.info("🚫 Skipping remote fetch (skip_remote_fetch=true)")
+            return True
+
         try:
-            if repo.remotes:
+            # Check if we have remotes without triggering authentication
+            has_remotes = False
+            try:
+                has_remotes = bool(repo.remotes)
+            except Exception as e:
+                logger.debug(f"Could not check for remotes (may require authentication): {e}")
+                return True  # Continue with local analysis
+
+            if has_remotes:
                 logger.info("Fetching latest changes from remote")
 
-                # Use subprocess for git fetch to prevent password prompts
-                env = os.environ.copy()
-                env["GIT_TERMINAL_PROMPT"] = "0"
-                env["GIT_ASKPASS"] = ""
-                env["GCM_INTERACTIVE"] = "never"
+                # Use our timeout wrapper for safe git operations
+                repo_path = Path(repo.working_dir)
 
-                # Run git fetch with timeout
-                try:
-                    result = subprocess.run(
-                        ["git", "fetch", "--all"],
-                        cwd=repo.working_dir,
-                        env=env,
-                        capture_output=True,
-                        text=True,
-                        timeout=30,  # 30 second timeout
-                    )
+                # Try to fetch with timeout protection
+                fetch_success = self.git_wrapper.fetch_with_timeout(repo_path, timeout=30)
 
-                    if result.returncode != 0:
-                        error_str = result.stderr.lower()
-                        if any(
-                            x in error_str
-                            for x in ["authentication", "permission denied", "401", "403"]
-                        ):
-                            logger.error(
-                                "GitHub authentication failed. Please check your token is valid and has appropriate permissions. "
-                                "You can verify with: gh auth status"
-                            )
-                            # Skip fetch but continue with local analysis
-                            return False
-                        logger.warning(f"Git fetch failed: {result.stderr}")
-                        return False
-
-                except subprocess.TimeoutExpired:
-                    logger.error(
-                        "Git fetch timed out (likely authentication failure). Continuing with local repository state."
-                    )
+                if not fetch_success:
+                    # Mark this repository as having authentication issues if applicable
+                    if hasattr(self, 'repository_status'):
+                        for key in self.repository_status:
+                            if repo.working_dir.endswith(key) or key in repo.working_dir:
+                                self.repository_status[key]["remote_update"] = "failed"
+                                break
                     return False
 
                 # Only try to pull if not in detached HEAD state
@@ -874,35 +1037,12 @@ class GitDataFetcher:
                     current_branch = repo.active_branch
                     tracking = current_branch.tracking_branch()
                     if tracking:
-                        # Pull latest changes using subprocess
-                        try:
-                            result = subprocess.run(
-                                ["git", "pull"],
-                                cwd=repo.working_dir,
-                                env=env,
-                                capture_output=True,
-                                text=True,
-                                timeout=30,
-                            )
-
-                            if result.returncode != 0:
-                                error_str = result.stderr.lower()
-                                if any(
-                                    x in error_str
-                                    for x in ["authentication", "permission denied", "401", "403"]
-                                ):
-                                    logger.error(
-                                        "GitHub authentication failed during pull. Continuing with local repository state."
-                                    )
-                                    return False
-                                logger.warning(f"Git pull failed: {result.stderr}")
-                                return False
+                        # Pull latest changes using timeout wrapper
+                        pull_success = self.git_wrapper.pull_with_timeout(repo_path, timeout=30)
+                        if pull_success:
                             logger.debug(f"Pulled latest changes for {current_branch.name}")
-
-                        except subprocess.TimeoutExpired:
-                            logger.error(
-                                "Git pull timed out. Continuing with local repository state."
-                            )
+                        else:
+                            logger.warning("Git pull failed, continuing with fetched state")
                             return False
                     else:
                         logger.debug(
@@ -918,6 +1058,84 @@ class GitDataFetcher:
             logger.warning(f"Could not update repository: {e}")
             # Continue with analysis using local state
             return False
+
+    def _check_repository_security(self, repo_path: Path, project_key: str) -> None:
+        """Check for security issues in repository configuration.
+
+        Warns about:
+        - Exposed tokens in remote URLs
+        - Insecure credential storage
+        """
+        import subprocess
+
+        try:
+            # Check for tokens in remote URLs
+            result = subprocess.run(
+                ["git", "remote", "-v"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=2,
+                env={"GIT_TERMINAL_PROMPT": "0"}
+            )
+
+            if result.returncode == 0:
+                output = result.stdout
+                # Check for various token patterns in URLs
+                token_patterns = [
+                    r"https://[^@]*@",  # Any HTTPS URL with embedded credentials
+                    r"ghp_[a-zA-Z0-9]+",  # GitHub Personal Access Token
+                    r"ghs_[a-zA-Z0-9]+",  # GitHub Server Token
+                    r"github_pat_[a-zA-Z0-9]+",  # New GitHub PAT format
+                ]
+
+                for pattern in token_patterns:
+                    import re
+                    if re.search(pattern, output):
+                        logger.warning(
+                            f"⚠️  SECURITY WARNING for {project_key}: "
+                            f"Repository appears to have credentials in remote URL. "
+                            f"This is a security risk! Consider using: "
+                            f"1) GitHub CLI (gh auth login), "
+                            f"2) SSH keys, or "
+                            f"3) Git credential manager instead."
+                        )
+                        break
+        except:
+            # Don't fail analysis due to security check
+            pass
+
+    def get_repository_status_summary(self) -> dict[str, Any]:
+        """Get a summary of repository fetch status.
+
+        Returns:
+            Dictionary with status summary including any repositories with issues
+        """
+        summary = {
+            "total_repositories": len(self.repository_status),
+            "successful_updates": 0,
+            "failed_updates": 0,
+            "skipped_updates": 0,
+            "authentication_issues": [],
+            "errors": []
+        }
+
+        for project_key, status in self.repository_status.items():
+            if status["remote_update"] == "success":
+                summary["successful_updates"] += 1
+            elif status["remote_update"] == "failed":
+                summary["failed_updates"] += 1
+                if status.get("authentication_issues"):
+                    summary["authentication_issues"].append(project_key)
+            elif status["remote_update"] == "skipped":
+                summary["skipped_updates"] += 1
+            elif status["remote_update"] == "error":
+                summary["errors"].append({
+                    "repository": project_key,
+                    "error": status.get("error", "Unknown error")
+                })
+
+        return summary
 
     def _extract_all_ticket_references(
         self, daily_commits: dict[str, list[dict[str, Any]]]
@@ -1491,13 +1709,27 @@ class GitDataFetcher:
         parent = commit.parents[0] if commit.parents else None
 
         try:
-            # Use git command directly for accurate line counts
+            # Use git command directly for accurate line counts with timeout protection
             repo = commit.repo
-            if parent:
-                diff_output = repo.git.diff(parent.hexsha, commit.hexsha, "--numstat")
-            else:
-                # Initial commit - use git show with --numstat
-                diff_output = repo.git.show(commit.hexsha, "--numstat", "--format=")
+            repo_path = Path(repo.working_dir)
+
+            def get_diff_output():
+                if parent:
+                    return repo.git.diff(parent.hexsha, commit.hexsha, "--numstat")
+                else:
+                    # Initial commit - use git show with --numstat
+                    return repo.git.show(commit.hexsha, "--numstat", "--format=")
+
+            # Use timeout wrapper for git diff operations
+            try:
+                diff_output = self.git_wrapper.run_with_timeout(
+                    get_diff_output,
+                    timeout=10,  # 10 seconds for diff operations
+                    operation_name=f"diff_{commit.hexsha[:8]}"
+                )
+            except GitOperationTimeout:
+                logger.warning(f"⏱️ Timeout calculating stats for commit {commit.hexsha[:8]}")
+                return stats  # Return zeros
 
             # Parse the numstat output: insertions\tdeletions\tfilename
             for line in diff_output.strip().split("\n"):
@@ -1613,3 +1845,279 @@ class GitDataFetcher:
         except Exception as e:
             # Log error but don't fail - commits will be stored again in batch at the end
             logger.warning(f"Failed to incrementally store commits for {date_str}: {e}")
+
+    def process_repositories_parallel(
+        self,
+        repositories: list[dict],
+        weeks_back: int = 4,
+        jira_integration: Optional[JIRAIntegration] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        max_workers: int = 3
+    ) -> dict[str, Any]:
+        """Process multiple repositories in parallel with proper timeout protection.
+
+        Args:
+            repositories: List of repository configurations
+            weeks_back: Number of weeks to analyze
+            jira_integration: Optional JIRA integration for ticket data
+            start_date: Optional explicit start date
+            end_date: Optional explicit end date
+            max_workers: Maximum number of parallel workers
+
+        Returns:
+            Dictionary containing processing results and statistics
+        """
+        logger.info(f"🚀 Starting parallel processing of {len(repositories)} repositories with {max_workers} workers")
+
+        # Initialize statistics
+        self.processing_stats = {
+            'total': len(repositories),
+            'processed': 0,
+            'success': 0,
+            'failed': 0,
+            'timeout': 0,
+            'repositories': {}
+        }
+
+        # Get progress service for updates
+        progress = get_progress_service()
+
+        # Start heartbeat logger for monitoring
+        with HeartbeatLogger(interval=5) as heartbeat:
+            results = {}
+
+            # Use ThreadPoolExecutor for parallel processing
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all repository processing tasks
+                future_to_repo = {}
+
+                for repo_config in repositories:
+                    repo_path = Path(repo_config.get('path', ''))
+                    project_key = repo_config.get('project_key', repo_path.name)
+                    branch_patterns = repo_config.get('branch_patterns')
+
+                    # Submit task with timeout wrapper
+                    future = executor.submit(
+                        self._process_repository_with_timeout,
+                        repo_path,
+                        project_key,
+                        weeks_back,
+                        branch_patterns,
+                        jira_integration,
+                        start_date,
+                        end_date
+                    )
+                    future_to_repo[future] = {
+                        'path': repo_path,
+                        'project_key': project_key,
+                        'start_time': time.time()
+                    }
+
+                    logger.info(f"📋 Submitted {project_key} for processing")
+
+                # Process results as they complete
+                for future in as_completed(future_to_repo):
+                    repo_info = future_to_repo[future]
+                    project_key = repo_info['project_key']
+                    elapsed_time = time.time() - repo_info['start_time']
+
+                    try:
+                        result = future.result(timeout=5)  # Short timeout to get result
+
+                        if result:
+                            self.processing_stats['success'] += 1
+                            self.processing_stats['repositories'][project_key] = {
+                                'status': 'success',
+                                'elapsed_time': elapsed_time,
+                                'commits': result.get('stats', {}).get('total_commits', 0),
+                                'tickets': result.get('stats', {}).get('unique_tickets', 0)
+                            }
+                            results[project_key] = result
+
+                            logger.info(
+                                f"✅ {project_key}: Successfully processed "
+                                f"{result['stats']['total_commits']} commits in {elapsed_time:.1f}s"
+                            )
+
+                            # Update progress
+                            if hasattr(progress, 'finish_repository'):
+                                # Check if progress adapter supports stats parameter
+                                if hasattr(progress, 'update_stats'):
+                                    progress.update_stats(
+                                        processed=self.processing_stats['processed'],
+                                        success=self.processing_stats['success'],
+                                        failed=self.processing_stats['failed'],
+                                        timeout=self.processing_stats['timeout'],
+                                        total=self.processing_stats['total']
+                                    )
+                                    progress.finish_repository(project_key, success=True)
+                                else:
+                                    progress.finish_repository(project_key, success=True)
+                        else:
+                            self.processing_stats['failed'] += 1
+                            self.processing_stats['repositories'][project_key] = {
+                                'status': 'failed',
+                                'elapsed_time': elapsed_time,
+                                'error': 'Processing returned no result'
+                            }
+
+                            logger.error(f"❌ {project_key}: Processing failed after {elapsed_time:.1f}s")
+
+                            # Update progress
+                            if hasattr(progress, 'finish_repository'):
+                                # Check if progress adapter supports stats parameter
+                                if hasattr(progress, 'update_stats'):
+                                    progress.update_stats(
+                                        processed=self.processing_stats['processed'],
+                                        success=self.processing_stats['success'],
+                                        failed=self.processing_stats['failed'],
+                                        timeout=self.processing_stats['timeout'],
+                                        total=self.processing_stats['total']
+                                    )
+                                    progress.finish_repository(project_key, success=False, error_message="Processing failed")
+                                else:
+                                    progress.finish_repository(project_key, success=False, error_message="Processing failed")
+
+                    except GitOperationTimeout:
+                        self.processing_stats['timeout'] += 1
+                        self.processing_stats['repositories'][project_key] = {
+                            'status': 'timeout',
+                            'elapsed_time': elapsed_time,
+                            'error': 'Operation timed out'
+                        }
+
+                        logger.error(f"⏱️ {project_key}: Timed out after {elapsed_time:.1f}s")
+
+                        # Update progress
+                        if hasattr(progress, 'finish_repository'):
+                            # Check if progress adapter supports stats parameter
+                            if hasattr(progress, 'update_stats'):
+                                progress.update_stats(
+                                    processed=self.processing_stats['processed'],
+                                    success=self.processing_stats['success'],
+                                    failed=self.processing_stats['failed'],
+                                    timeout=self.processing_stats['timeout'],
+                                    total=self.processing_stats['total']
+                                )
+                                progress.finish_repository(project_key, success=False, error_message="Timeout")
+                            else:
+                                progress.finish_repository(project_key, success=False, error_message="Timeout")
+
+                    except Exception as e:
+                        self.processing_stats['failed'] += 1
+                        self.processing_stats['repositories'][project_key] = {
+                            'status': 'failed',
+                            'elapsed_time': elapsed_time,
+                            'error': str(e)
+                        }
+
+                        logger.error(f"❌ {project_key}: Error after {elapsed_time:.1f}s - {e}")
+
+                        # Update progress
+                        if hasattr(progress, 'finish_repository'):
+                            # Check if progress adapter supports stats parameter
+                            if hasattr(progress, 'update_stats'):
+                                progress.update_stats(
+                                    processed=self.processing_stats['processed'],
+                                    success=self.processing_stats['success'],
+                                    failed=self.processing_stats['failed'],
+                                    timeout=self.processing_stats['timeout'],
+                                    total=self.processing_stats['total']
+                                )
+                                progress.finish_repository(project_key, success=False, error_message=str(e))
+                            else:
+                                progress.finish_repository(project_key, success=False, error_message=str(e))
+
+                    finally:
+                        # Update processed counter BEFORE logging and progress updates
+                        self.processing_stats['processed'] += 1
+
+                        # Update progress service with actual processing stats
+                        if hasattr(progress, 'update_stats'):
+                            progress.update_stats(
+                                processed=self.processing_stats['processed'],
+                                success=self.processing_stats['success'],
+                                failed=self.processing_stats['failed'],
+                                timeout=self.processing_stats['timeout'],
+                                total=self.processing_stats['total']
+                            )
+
+                        # Log progress
+                        logger.info(
+                            f"📊 Progress: {self.processing_stats['processed']}/{self.processing_stats['total']} repositories "
+                            f"(✅ {self.processing_stats['success']} | ❌ {self.processing_stats['failed']} | ⏱️ {self.processing_stats['timeout']})"
+                        )
+
+        # Final summary
+        logger.info("=" * 60)
+        logger.info("📈 PARALLEL PROCESSING SUMMARY")
+        logger.info(f"   Total repositories: {self.processing_stats['total']}")
+        logger.info(f"   Successfully processed: {self.processing_stats['success']}")
+        logger.info(f"   Failed: {self.processing_stats['failed']}")
+        logger.info(f"   Timed out: {self.processing_stats['timeout']}")
+        logger.info("=" * 60)
+
+        return {
+            'results': results,
+            'statistics': self.processing_stats
+        }
+
+    def _process_repository_with_timeout(
+        self,
+        repo_path: Path,
+        project_key: str,
+        weeks_back: int = 4,
+        branch_patterns: Optional[list[str]] = None,
+        jira_integration: Optional[JIRAIntegration] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        timeout_per_operation: int = 30
+    ) -> Optional[dict[str, Any]]:
+        """Process a single repository with comprehensive timeout protection.
+
+        Args:
+            repo_path: Path to the repository
+            project_key: Project identifier
+            weeks_back: Number of weeks to analyze
+            branch_patterns: Branch patterns to include
+            jira_integration: JIRA integration for ticket data
+            start_date: Optional explicit start date
+            end_date: Optional explicit end date
+            timeout_per_operation: Timeout for individual git operations
+
+        Returns:
+            Repository processing results or None if failed
+        """
+        try:
+            # Track this repository in progress
+            progress = get_progress_service()
+            if hasattr(progress, 'start_repository'):
+                progress.start_repository(project_key, 0)
+
+            logger.info(f"🔍 Processing repository: {project_key} at {repo_path}")
+
+            # Use the regular fetch method but with timeout wrapper active
+            with self.git_wrapper.operation_tracker(f"fetch_repository_data", repo_path):
+                result = self.fetch_repository_data(
+                    repo_path=repo_path,
+                    project_key=project_key,
+                    weeks_back=weeks_back,
+                    branch_patterns=branch_patterns,
+                    jira_integration=jira_integration,
+                    progress_callback=None,  # We handle progress at a higher level
+                    start_date=start_date,
+                    end_date=end_date
+                )
+
+                return result
+
+        except GitOperationTimeout as e:
+            logger.error(f"⏱️ Repository {project_key} processing timed out: {e}")
+            raise
+
+        except Exception as e:
+            logger.error(f"❌ Error processing repository {project_key}: {e}")
+            import traceback
+            logger.debug(f"Full traceback: {traceback.format_exc()}")
+            return None
