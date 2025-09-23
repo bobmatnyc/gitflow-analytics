@@ -292,6 +292,9 @@ class AnalysisProgressScreen(Screen):
 
     async def _analyze_repositories(self, repositories: list, log: Log) -> tuple:
         """Analyze all repositories and return commits and PRs."""
+        # Import progress module at the top of the function
+        from gitflow_analytics.core import progress as core_progress
+
         repo_progress = self.query_one("#repo-progress", AnalysisProgressWidget)
         overall_progress = self.query_one("#overall-progress", AnalysisProgressWidget)
 
@@ -328,7 +331,6 @@ class AnalysisProgressScreen(Screen):
 
             # Import data fetcher for parallel processing
             from gitflow_analytics.core.data_fetcher import GitDataFetcher
-            from gitflow_analytics.core import progress as core_progress
             from gitflow_analytics.tui.progress_adapter import TUIProgressAdapter
 
             # Create and set up progress adapter for parallel processing
