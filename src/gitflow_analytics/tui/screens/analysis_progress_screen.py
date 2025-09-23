@@ -323,11 +323,12 @@ class AnalysisProgressScreen(Screen):
                 log.write_line(f"   📥 Cloning {repo_config.github_repo}...")
                 await self._clone_repository(repo_config, log)
 
-        # Check if we should use parallel processing (for multiple repositories)
-        use_parallel = len(repositories) > 1
+        # Check if we should use async processing (for multiple repositories)
+        # We use async processing for 2+ repositories to keep the UI responsive
+        use_async = len(repositories) > 1
 
-        if use_parallel:
-            log.write_line(f"🚀 Starting parallel analysis of {len(repositories)} repositories...")
+        if use_async:
+            log.write_line(f"🚀 Starting async analysis of {len(repositories)} repositories...")
 
             # Import data fetcher for parallel processing
             from gitflow_analytics.core.data_fetcher import GitDataFetcher
@@ -365,17 +366,15 @@ class AnalysisProgressScreen(Screen):
             overall_progress.update_progress(25, "Running parallel repository analysis...")
 
             try:
-                # Run parallel processing with limited workers to avoid thread conflicts
-                # Use only 1 worker to prevent GitPython thread safety issues
-                parallel_results = await loop.run_in_executor(
-                    None,
-                    data_fetcher.process_repositories_parallel,
+                # Process repositories asynchronously with yielding for UI updates
+                parallel_results = await self._process_repositories_async(
+                    data_fetcher,
                     repo_configs,
-                    self.weeks,
-                    None,  # JIRA integration
                     start_date,
                     end_date,
-                    1  # Use single worker to avoid GitPython thread safety issues
+                    repo_progress,
+                    overall_progress,
+                    log
                 )
 
                 # Process results
@@ -400,15 +399,15 @@ class AnalysisProgressScreen(Screen):
                 log.write_line(f"   Timeout: {stats.get('timeout', 0)}")
 
             except Exception as e:
-                log.write_line(f"   ❌ Parallel processing failed: {e}")
+                log.write_line(f"   ❌ Async processing failed: {e}")
                 log.write_line("   Falling back to sequential processing...")
-                use_parallel = False
+                use_async = False
             finally:
                 # Restore original progress service
                 core_progress._progress_service = original_progress_service
 
         # Sequential processing fallback or for single repository
-        if not use_parallel:
+        if not use_async:
             for i, repo_config in enumerate(repositories):
                 # Update overall progress based on repository completion
                 overall_pct = 20 + ((i / total_repos) * 30)  # 20-50% range for repo analysis
@@ -610,6 +609,141 @@ class AnalysisProgressScreen(Screen):
             log.write_line(f"   ❌ Qualitative analysis failed: {e}")
             qual_progress.update_progress(0, f"Error: {str(e)[:30]}...")
 
+    async def _process_repositories_async(
+        self,
+        data_fetcher,
+        repo_configs: list,
+        start_date: datetime,
+        end_date: datetime,
+        repo_progress: AnalysisProgressWidget,
+        overall_progress: AnalysisProgressWidget,
+        log: Log
+    ) -> dict:
+        """
+        Process repositories asynchronously with proper yielding for UI updates.
+
+        This method processes repositories one at a time but yields control back
+        to the event loop between each repository to allow UI updates.
+        """
+        results = {'results': {}, 'statistics': {
+            'total': len(repo_configs),
+            'processed': 0,
+            'success': 0,
+            'failed': 0,
+            'timeout': 0
+        }}
+
+        stats = results['statistics']
+        loop = asyncio.get_event_loop()
+
+        for i, repo_config in enumerate(repo_configs):
+            project_key = repo_config['project_key']
+
+            # Update progress before processing
+            percentage = (i / stats['total']) * 100
+            repo_progress.update_progress(
+                percentage,
+                f"Processing {project_key} ({i+1}/{stats['total']})..."
+            )
+
+            # Update overall progress
+            overall_percentage = 25 + ((i / stats['total']) * 25)  # 25-50% range
+            overall_progress.update_progress(
+                overall_percentage,
+                f"Analyzing repository {i+1}/{stats['total']}: {project_key}"
+            )
+
+            log.write_line(f"🔍 Processing {project_key} ({i+1}/{stats['total']})...")
+
+            try:
+                # Run the actual repository processing in a thread to avoid blocking
+                # but await it properly so we can yield between repositories
+                result = await loop.run_in_executor(
+                    None,
+                    self._process_single_repository_sync,
+                    data_fetcher,
+                    repo_config,
+                    self.weeks,
+                    start_date,
+                    end_date
+                )
+
+                if result and result.get('commits'):
+                    results['results'][project_key] = result
+                    stats['success'] += 1
+                    commits_count = result.get('stats', {}).get('total_commits', 0)
+                    log.write_line(f"   ✅ {project_key}: {commits_count} commits")
+                else:
+                    stats['failed'] += 1
+                    if result:
+                        log.write_line(f"   ⚠️ {project_key}: No commits found in analysis period")
+                    else:
+                        log.write_line(f"   ❌ {project_key}: Failed to process")
+
+            except Exception as e:
+                stats['failed'] += 1
+                log.write_line(f"   ❌ {project_key}: Error - {str(e)[:50]}...")
+
+            stats['processed'] += 1
+
+            # Update progress after processing
+            percentage = ((i + 1) / stats['total']) * 100
+            repo_progress.update_progress(
+                percentage,
+                f"Completed {project_key} ({i+1}/{stats['total']})"
+            )
+
+            # Yield control to event loop for UI updates
+            # This is the key to keeping the UI responsive
+            await asyncio.sleep(0.01)
+
+            # Also update live stats
+            await self._update_live_stats({
+                "repositories_analyzed": stats['processed'],
+                "total_repositories": stats['total'],
+                "successful": stats['success'],
+                "failed": stats['failed'],
+                "current_repo": project_key if i < len(repo_configs) - 1 else "Complete"
+            })
+
+        # Final progress update
+        repo_progress.complete(f"Processed {stats['total']} repositories")
+
+        return results
+
+    def _process_single_repository_sync(
+        self,
+        data_fetcher,
+        repo_config: dict,
+        weeks_back: int,
+        start_date: datetime,
+        end_date: datetime
+    ) -> Optional[dict]:
+        """
+        Synchronous wrapper for processing a single repository.
+
+        This runs in a thread executor to avoid blocking the event loop.
+        """
+        try:
+            # Process the repository using data fetcher
+            result = data_fetcher.fetch_repository_data(
+                repo_path=Path(repo_config['path']),
+                project_key=repo_config['project_key'],
+                weeks_back=weeks_back,
+                branch_patterns=repo_config.get('branch_patterns'),
+                jira_integration=None,
+                progress_callback=None,
+                start_date=start_date,
+                end_date=end_date
+            )
+            return result
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(
+                f"Error processing {repo_config['project_key']}: {e}"
+            )
+            return None
+
     async def _clone_repository(self, repo_config, log: Log) -> None:
         """Clone repository if needed."""
         try:
@@ -646,14 +780,18 @@ class AnalysisProgressScreen(Screen):
 
     async def _update_live_stats(self, stats: dict[str, Any]) -> None:
         """Update live statistics display."""
-        stats_widget = self.query_one("#live-stats", Static)
+        try:
+            stats_widget = self.query_one("#live-stats", Static)
 
-        # Format stats for display
-        stats_text = "\n".join([
-            f"• {key.replace('_', ' ').title()}: {value}"
-            for key, value in stats.items()
-        ])
-        stats_widget.update(stats_text)
+            # Format stats for display
+            stats_text = "\n".join([
+                f"• {key.replace('_', ' ').title()}: {value}"
+                for key, value in stats.items()
+            ])
+            stats_widget.update(stats_text)
+        except Exception:
+            # Silently ignore if widget doesn't exist (e.g., in testing)
+            pass
 
     def action_cancel(self) -> None:
         """Cancel the analysis."""
