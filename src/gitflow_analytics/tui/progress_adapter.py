@@ -48,7 +48,9 @@ class TUIProgressAdapter(ProgressService):
         total: int,
         description: str = "",
         unit: str = "items",
-        show_throughput: bool = False
+        nested: bool = False,
+        leave: bool = True,
+        position: Optional[int] = None
     ) -> ProgressContext:
         """Create a progress context for tracking.
 
@@ -56,12 +58,15 @@ class TUIProgressAdapter(ProgressService):
             total: Total number of items to process
             description: Description of the task
             unit: Unit of work (e.g., "commits", "files")
-            show_throughput: Whether to show throughput stats
+            nested: Whether this is a nested progress bar
+            leave: Whether to leave the progress bar on screen after completion
+            position: Explicit position for the progress bar (for nested contexts)
 
         Returns:
             Progress context for this task
         """
-        context = super().create_progress(total, description, unit, show_throughput)
+        # Pass all parameters to parent class with correct signature
+        context = super().create_progress(total, description, unit, nested, leave, position)
         self.total_items = float(total)
         self.current_progress = 0.0
 
