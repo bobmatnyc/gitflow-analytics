@@ -100,10 +100,11 @@ class ResultsScreen(Screen):
         allowing users to quickly understand the overall scope and key metrics
         without diving into detailed data tables.
         """
-        container = ScrollableContainer()
+        # Build all widgets first, then add to container
+        widgets = []
 
         # Key metrics section
-        container.mount(Label("Analysis Summary", classes="section-title"))
+        widgets.append(Label("Analysis Summary", classes="section-title"))
 
         # Create summary table
         summary_table = Table(show_header=False, show_edge=False, pad_edge=False)
@@ -151,16 +152,13 @@ class ResultsScreen(Screen):
             "Ticket Coverage", f"{ticket_coverage:.1f}%", "Commits with ticket references"
         )
 
-        from rich.console import Console
         from rich.panel import Panel
 
-        Console()
-
-        container.mount(Static(Panel(summary_table, title="Key Metrics", border_style="blue")))
+        widgets.append(Static(Panel(summary_table, title="Key Metrics", border_style="blue")))
 
         # Top contributors section
-        container.mount(Rule())
-        container.mount(Label("Top Contributors", classes="section-title"))
+        widgets.append(Rule())
+        widgets.append(Label("Top Contributors", classes="section-title"))
 
         if self.developers:
             top_devs = sorted(
@@ -185,275 +183,282 @@ class ResultsScreen(Screen):
                     f"{avg_points:.1f}",
                 )
 
-            container.mount(
+            widgets.append(
                 Static(Panel(contrib_table, title="Developer Activity", border_style="green"))
             )
 
         # Qualitative insights summary (if available)
         if self._has_qualitative_data():
-            container.mount(Rule())
-            container.mount(Label("Qualitative Analysis Summary", classes="section-title"))
-            container.mount(Static(self._create_qualitative_summary()))
+            widgets.append(Rule())
+            widgets.append(Label("Qualitative Analysis Summary", classes="section-title"))
+            widgets.append(Static(self._create_qualitative_summary()))
 
-        return container
+        # Create container with all widgets
+        return ScrollableContainer(*widgets)
 
     def _create_developers_panel(self) -> Container:
         """Create interactive developers data panel."""
-        container = Container()
-
-        container.mount(Label("Developer Statistics", classes="section-title"))
-        container.mount(
-            Static(
-                f"Showing {len(self.developers)} unique developers. Click column headers to sort.",
-                classes="help-text",
-            )
-        )
-
         # Create enhanced data table
         developers_table = EnhancedDataTable(data=self.developers, id="developers-table")
 
-        container.mount(developers_table)
-
-        # Action buttons
-        with container.mount(Horizontal(classes="action-bar")):
-            yield Button("Export Developers", id="export-developers")
-            yield Button("Show Identity Details", id="show-identities")
-
-        return container
+        # Create container with all widgets
+        return Container(
+            Label("Developer Statistics", classes="section-title"),
+            Static(
+                f"Showing {len(self.developers)} unique developers. Click column headers to sort.",
+                classes="help-text",
+            ),
+            developers_table,
+            Horizontal(
+                Button("Export Developers", id="export-developers"),
+                Button("Show Identity Details", id="show-identities"),
+                classes="action-bar"
+            )
+        )
 
     def _create_commits_panel(self) -> Container:
         """Create interactive commits data panel."""
-        container = Container()
+        # Build widgets list
+        widgets = []
 
-        container.mount(Label("Commit Analysis", classes="section-title"))
-        container.mount(
+        widgets.append(Label("Commit Analysis", classes="section-title"))
+        widgets.append(
             Static(
-                f"Showing {len(self.commits)} commits. Use filters to explore specific data.",
+                f"Showing {len(self.commits)} commits. Click column headers to sort.",
                 classes="help-text",
             )
         )
 
-        # Prepare commits data for table display
-        commits_data = []
-        for commit in self.commits[:1000]:  # Limit to 1000 for performance
-            commit_row = {
-                "date": (
-                    commit.get("timestamp", "").strftime("%Y-%m-%d")
-                    if commit.get("timestamp")
-                    else ""
-                ),
-                "author": commit.get("author_name", ""),
-                "message": (
-                    commit.get("message", "")[:80] + "..."
-                    if len(commit.get("message", "")) > 80
-                    else commit.get("message", "")
-                ),
-                "files_changed": commit.get("files_changed_count", 0),
-                "insertions": commit.get("insertions", 0),
-                "deletions": commit.get("deletions", 0),
-                "story_points": commit.get("story_points", 0),
-                "project_key": commit.get("project_key", ""),
-                "change_type": commit.get("change_type", "unknown"),
-                "risk_level": commit.get("risk_level", "unknown"),
-            }
-            commits_data.append(commit_row)
+        # Create commits table with meaningful columns
+        commits_table = Table(show_header=True, header_style="bold magenta", expand=True)
+        commits_table.add_column("Date", width=12)
+        commits_table.add_column("Developer", width=20)
+        commits_table.add_column("Message", width=50)
+        commits_table.add_column("Points", width=8, justify="right")
+        commits_table.add_column("Tickets", width=15)
+        commits_table.add_column("Files", width=8, justify="right")
 
-        commits_table = EnhancedDataTable(data=commits_data, id="commits-table")
+        # Add rows (limit to recent 100 for performance)
+        for commit in sorted(
+            self.commits, key=lambda c: c.get("timestamp", ""), reverse=True
+        )[:100]:
+            timestamp = commit.get("timestamp", "")
+            date_str = timestamp.strftime("%Y-%m-%d") if timestamp else "Unknown"
 
-        container.mount(commits_table)
+            developer = commit.get("author_name", "Unknown")[:18]
+            message = commit.get("message", "")[:48]
+            story_points = commit.get("story_points", 0) or 0
+            tickets = ", ".join(commit.get("ticket_references", []))[:13]
+            files = commit.get("files_changed", 0)
+
+            commits_table.add_row(
+                date_str,
+                developer,
+                message,
+                str(story_points) if story_points > 0 else "",
+                tickets,
+                str(files) if files > 0 else "",
+            )
+
+        # Create enhanced data table
+        commits_table_widget = EnhancedDataTable(data=self.commits[:100], id="commits-table")
+
+        widgets.append(commits_table_widget)
 
         # Action buttons
-        with container.mount(Horizontal(classes="action-bar")):
-            yield Button("Export Commits", id="export-commits")
-            yield Button("Filter by Author", id="filter-author")
-            yield Button("Filter by Project", id="filter-project")
+        widgets.append(
+            Horizontal(
+                Button("Export Commits", id="export-commits"),
+                Button("Show Untracked", id="show-untracked"),
+                classes="action-bar"
+            )
+        )
 
-        return container
+        return Container(*widgets)
 
     def _create_prs_panel(self) -> Container:
-        """Create pull requests analysis panel."""
-        container = Container()
+        """Create pull requests data panel."""
+        widgets = []
 
-        container.mount(Label("Pull Request Analysis", classes="section-title"))
-        container.mount(
-            Static(
-                f"Showing {len(self.prs)} pull requests with metrics and timing data.",
-                classes="help-text",
+        widgets.append(Label("Pull Request Analysis", classes="section-title"))
+        widgets.append(
+            Static(f"Showing {len(self.prs)} pull requests.", classes="help-text")
+        )
+
+        # Create PR table
+        pr_table = Table(show_header=True, header_style="bold magenta", expand=True)
+        pr_table.add_column("PR #", width=8)
+        pr_table.add_column("Title", width=40)
+        pr_table.add_column("Author", width=20)
+        pr_table.add_column("Status", width=10)
+        pr_table.add_column("Created", width=12)
+        pr_table.add_column("Commits", width=8, justify="right")
+
+        # Add rows
+        for pr in self.prs[:100]:  # Limit for performance
+            pr_number = pr.get("number", "")
+            title = pr.get("title", "")[:38]
+            author = pr.get("author", "Unknown")[:18]
+            status = pr.get("state", "unknown")
+            created = pr.get("created_at", "")
+            if created:
+                created_str = created.strftime("%Y-%m-%d") if hasattr(created, 'strftime') else str(created)[:10]
+            else:
+                created_str = "Unknown"
+            commit_count = pr.get("commit_count", 0)
+
+            pr_table.add_row(
+                str(pr_number),
+                title,
+                author,
+                status,
+                created_str,
+                str(commit_count) if commit_count > 0 else "",
+            )
+
+        # Create enhanced data table
+        prs_table = EnhancedDataTable(data=self.prs, id="prs-table")
+
+        widgets.append(prs_table)
+
+        # Action buttons
+        widgets.append(
+            Horizontal(
+                Button("Export PRs", id="export-prs"),
+                classes="action-bar"
             )
         )
 
-        # Prepare PR data for table
-        prs_data = []
-        for pr in self.prs:
-            pr_row = {
-                "title": (
-                    pr.get("title", "")[:60] + "..."
-                    if len(pr.get("title", "")) > 60
-                    else pr.get("title", "")
-                ),
-                "author": pr.get("author", ""),
-                "state": pr.get("state", ""),
-                "created_date": (
-                    pr.get("created_at", "").strftime("%Y-%m-%d") if pr.get("created_at") else ""
-                ),
-                "merged_date": (
-                    pr.get("merged_at", "").strftime("%Y-%m-%d") if pr.get("merged_at") else ""
-                ),
-                "commits": pr.get("commits_count", 0),
-                "changed_files": pr.get("changed_files", 0),
-                "additions": pr.get("additions", 0),
-                "deletions": pr.get("deletions", 0),
-            }
-            prs_data.append(pr_row)
-
-        prs_table = EnhancedDataTable(data=prs_data, id="prs-table")
-
-        container.mount(prs_table)
-
-        # Action buttons
-        with container.mount(Horizontal(classes="action-bar")):
-            yield Button("Export PRs", id="export-prs")
-            yield Button("Show PR Metrics", id="show-pr-metrics")
-
-        return container
+        return Container(*widgets)
 
     def _create_qualitative_panel(self) -> ScrollableContainer:
-        """Create qualitative insights panel."""
-        container = ScrollableContainer()
+        """Create qualitative analysis panel with enhanced insights."""
+        widgets = []
 
-        container.mount(Label("Qualitative Analysis Results", classes="section-title"))
+        widgets.append(Label("Qualitative Analysis Results", classes="section-title"))
 
-        if not self._has_qualitative_data():
-            container.mount(
-                Static("No qualitative analysis data available.", classes="info-message")
+        if self._has_qualitative_data():
+            widgets.append(
+                Static("AI-powered insights from commit analysis", classes="help-text")
             )
-            container.mount(
-                Static("Run analysis with qualitative processing enabled to see insights here.")
+            widgets.append(
+                Static(
+                    "Note: Qualitative analysis is based on commit messages and may not reflect "
+                    "actual implementation details.",
+                    classes="warning-text",
+                )
             )
-            return container
+        else:
+            widgets.append(
+                Static(
+                    "No qualitative analysis data available. Enable OpenAI integration to generate insights.",
+                    classes="warning-text",
+                )
+            )
+            return ScrollableContainer(*widgets)
 
-        # Analyze qualitative data distributions
-        change_types = {}
-        risk_levels = {}
-        domains = {}
-        confidence_scores = []
+        # Get qualitative data
+        qual_data = self._get_qualitative_data()
+        summary_data = qual_data.get("summary", {})
 
-        for commit in self.commits:
-            if "change_type" in commit:
-                change_type = commit.get("change_type", "unknown")
-                change_types[change_type] = change_types.get(change_type, 0) + 1
-
-                risk_level = commit.get("risk_level", "unknown")
-                risk_levels[risk_level] = risk_levels.get(risk_level, 0) + 1
-
-                domain = commit.get("business_domain", "unknown")
-                domains[domain] = domains.get(domain, 0) + 1
-
-                if "confidence_score" in commit:
-                    confidence_scores.append(commit["confidence_score"])
-
-        # Change types distribution
-        container.mount(Label("Change Type Distribution", classes="subsection-title"))
+        # Change Type Distribution
+        widgets.append(Label("Change Type Distribution", classes="subsection-title"))
 
         change_table = Table(show_header=True, header_style="bold cyan")
-        change_table.add_column("Change Type", width=20)
-        change_table.add_column("Count", justify="right", width=10)
-        change_table.add_column("Percentage", justify="right", width=12)
+        change_table.add_column("Type", width=20)
+        change_table.add_column("Count", width=10, justify="right")
+        change_table.add_column("Percentage", width=12, justify="right")
 
-        total_commits = len(self.commits)
+        change_types = summary_data.get("change_types", {})
+        total_changes = sum(change_types.values())
+
         for change_type, count in sorted(change_types.items(), key=lambda x: x[1], reverse=True):
-            pct = (count / total_commits) * 100
-            change_table.add_row(change_type.title(), f"{count:,}", f"{pct:.1f}%")
+            percentage = (count / total_changes * 100) if total_changes > 0 else 0
+            change_table.add_row(change_type.title(), str(count), f"{percentage:.1f}%")
 
         from rich.panel import Panel
+        widgets.append(Static(Panel(change_table, title="Change Types", border_style="cyan")))
 
-        container.mount(Static(Panel(change_table, title="Change Types", border_style="cyan")))
-
-        # Risk levels distribution
-        container.mount(Rule())
-        container.mount(Label("Risk Level Distribution", classes="subsection-title"))
+        # Risk Level Distribution
+        widgets.append(Rule())
+        widgets.append(Label("Risk Level Distribution", classes="subsection-title"))
 
         risk_table = Table(show_header=True, header_style="bold red")
         risk_table.add_column("Risk Level", width=20)
-        risk_table.add_column("Count", justify="right", width=10)
-        risk_table.add_column("Percentage", justify="right", width=12)
+        risk_table.add_column("Count", width=10, justify="right")
+        risk_table.add_column("Percentage", width=12, justify="right")
 
-        for risk_level, count in sorted(risk_levels.items(), key=lambda x: x[1], reverse=True):
-            pct = (count / total_commits) * 100
-            risk_table.add_row(risk_level.title(), f"{count:,}", f"{pct:.1f}%")
+        risk_levels = summary_data.get("risk_levels", {})
+        for level, count in risk_levels.items():
+            percentage = (count / total_changes * 100) if total_changes > 0 else 0
+            risk_table.add_row(level.title(), str(count), f"{percentage:.1f}%")
 
-        container.mount(Static(Panel(risk_table, title="Risk Levels", border_style="red")))
+        widgets.append(Static(Panel(risk_table, title="Risk Levels", border_style="red")))
 
-        # Business domains
-        container.mount(Rule())
-        container.mount(Label("Business Domain Activity", classes="subsection-title"))
+        # Business Domain Activity
+        widgets.append(Rule())
+        widgets.append(Label("Business Domain Activity", classes="subsection-title"))
 
         domain_table = Table(show_header=True, header_style="bold green")
-        domain_table.add_column("Business Domain", width=25)
-        domain_table.add_column("Count", justify="right", width=10)
-        domain_table.add_column("Percentage", justify="right", width=12)
+        domain_table.add_column("Domain", width=20)
+        domain_table.add_column("Commits", width=10, justify="right")
+        domain_table.add_column("Focus", width=12, justify="right")
 
-        for domain, count in sorted(domains.items(), key=lambda x: x[1], reverse=True):
-            pct = (count / total_commits) * 100
-            domain_table.add_row(domain.title(), f"{count:,}", f"{pct:.1f}%")
+        domains = summary_data.get("business_domains", {})
+        for domain, count in sorted(domains.items(), key=lambda x: x[1], reverse=True)[:10]:
+            percentage = (count / total_changes * 100) if total_changes > 0 else 0
+            domain_table.add_row(domain.title(), str(count), f"{percentage:.1f}%")
 
-        container.mount(Static(Panel(domain_table, title="Business Domains", border_style="green")))
+        widgets.append(Static(Panel(domain_table, title="Business Domains", border_style="green")))
 
-        # Confidence score statistics
-        if confidence_scores:
-            container.mount(Rule())
-            container.mount(Label("Analysis Confidence", classes="subsection-title"))
+        # Analysis Confidence
+        if "confidence_scores" in summary_data:
+            widgets.append(Rule())
+            widgets.append(Label("Analysis Confidence", classes="subsection-title"))
 
-            avg_confidence = sum(confidence_scores) / len(confidence_scores)
-            min_confidence = min(confidence_scores)
-            max_confidence = max(confidence_scores)
+            conf_scores = summary_data["confidence_scores"]
+            conf_table = Table(show_header=False, show_edge=False)
+            conf_table.add_column("Metric", width=25)
+            conf_table.add_column("Score", width=15)
 
-            confidence_text = f"""Average Confidence: {avg_confidence:.2f}
-Minimum Confidence: {min_confidence:.2f}
-Maximum Confidence: {max_confidence:.2f}
-Total Analyzed: {len(confidence_scores):,} commits"""
+            conf_table.add_row("Average Confidence", f"{conf_scores.get('average', 0):.1f}%")
+            conf_table.add_row("High Confidence", f"{conf_scores.get('high_confidence_pct', 0):.1f}%")
+            conf_table.add_row("Low Confidence", f"{conf_scores.get('low_confidence_pct', 0):.1f}%")
 
-            container.mount(
-                Static(Panel(confidence_text, title="Confidence Statistics", border_style="yellow"))
+            widgets.append(
+                Static(Panel(conf_table, title="ML Model Confidence", border_style="yellow"))
             )
 
-        return container
+        return ScrollableContainer(*widgets)
 
     def _create_export_panel(self) -> Container:
         """Create export options panel."""
-        container = Container()
+        widgets = []
 
-        container.mount(Label("Export Analysis Results", classes="section-title"))
-        container.mount(
+        widgets.append(Label("Export Analysis Results", classes="section-title"))
+        widgets.append(
             Static(
-                "Export your analysis results in various formats for further analysis or reporting.",
+                "Select export format and click export to save results.",
                 classes="help-text",
             )
         )
 
         # Export options
-        with container.mount(Vertical(id="export-options")):
-            yield Button(
-                "📄 Export Summary Report (CSV)", variant="primary", id="export-summary-csv"
-            )
-            yield Button("👥 Export Developer Statistics (CSV)", id="export-developers-csv")
-            yield Button("📝 Export Commit Details (CSV)", id="export-commits-csv")
+        export_options = Vertical(
+            RadioButton("CSV Reports (Multiple Files)", id="export-csv", value=True),
+            RadioButton("JSON (Complete Data)", id="export-json"),
+            RadioButton("Markdown Report", id="export-markdown"),
+            Rule(),
+            Button("Export Now", variant="primary", id="export-now"),
+            Label("", id="export-path-label"),
+            id="export-options"
+        )
 
-            if self.prs:
-                yield Button("🔀 Export Pull Requests (CSV)", id="export-prs-csv")
+        widgets.append(export_options)
+        widgets.append(Rule())
+        widgets.append(Static("", id="export-status"))
 
-            if self._has_qualitative_data():
-                yield Button("🧠 Export Qualitative Insights (CSV)", id="export-qualitative-csv")
-
-            yield Rule()
-            yield Button("📊 Export Complete Dataset (JSON)", id="export-json")
-            yield Button("📋 Generate Markdown Report", id="export-markdown")
-
-        # Export status
-        container.mount(Rule())
-        container.mount(Static("", id="export-status"))
-
-        return container
+        return Container(*widgets)
 
     def _has_qualitative_data(self) -> bool:
         """Check if qualitative analysis data is available."""
