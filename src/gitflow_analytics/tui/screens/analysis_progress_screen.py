@@ -668,17 +668,30 @@ class AnalysisProgressScreen(Screen):
                     end_date
                 )
 
-                if result and result.get('commits'):
-                    results['results'][project_key] = result
-                    stats['success'] += 1
-                    commits_count = result.get('stats', {}).get('total_commits', 0)
-                    log.write_line(f"   ✅ {project_key}: {commits_count} commits")
+                # Check for commits - data fetcher returns 'daily_commits' not 'commits'
+                if result:
+                    # Extract commits from daily_commits structure
+                    daily_commits = result.get('daily_commits', {})
+                    total_commits = result.get('stats', {}).get('total_commits', 0)
+
+                    # Convert daily_commits to flat commits list
+                    commits = []
+                    for date_str, day_commits in daily_commits.items():
+                        commits.extend(day_commits)
+
+                    # Add flattened commits to result for compatibility
+                    result['commits'] = commits
+
+                    if total_commits > 0 or commits:
+                        results['results'][project_key] = result
+                        stats['success'] += 1
+                        log.write_line(f"   ✅ {project_key}: {total_commits} commits")
+                    else:
+                        stats['failed'] += 1
+                        log.write_line(f"   ⚠️ {project_key}: No commits found in analysis period")
                 else:
                     stats['failed'] += 1
-                    if result:
-                        log.write_line(f"   ⚠️ {project_key}: No commits found in analysis period")
-                    else:
-                        log.write_line(f"   ❌ {project_key}: Failed to process")
+                    log.write_line(f"   ❌ {project_key}: Failed to process")
 
             except Exception as e:
                 stats['failed'] += 1
