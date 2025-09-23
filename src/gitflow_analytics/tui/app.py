@@ -279,6 +279,7 @@ class GitFlowAnalyticsApp(App):
         self.config_path: Optional[Path] = None
         self.initialization_complete = False
         self._nlp_engine = None
+        self.dark = True  # Initialize dark mode state
 
     def compose(self) -> ComposeResult:
         """
