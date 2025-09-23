@@ -9,7 +9,7 @@ from rich.table import Table
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Label, Rule, Static, TabbedContent, TabPane
+from textual.widgets import Button, Footer, Header, Label, RadioButton, Rule, Static, TabbedContent, TabPane
 
 from gitflow_analytics.config import Config
 
