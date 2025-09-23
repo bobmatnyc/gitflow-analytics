@@ -328,15 +328,16 @@ class AnalysisProgressScreen(Screen):
 
             # Import data fetcher for parallel processing
             from gitflow_analytics.core.data_fetcher import GitDataFetcher
-            from gitflow_analytics.core.progress import set_progress_service
+            from gitflow_analytics.core import progress as core_progress
             from gitflow_analytics.tui.progress_adapter import TUIProgressAdapter
 
             # Create and set up progress adapter for parallel processing
             tui_progress_adapter = TUIProgressAdapter(repo_progress)
             tui_progress_adapter.set_event_loop(asyncio.get_event_loop())
 
-            # Set it as the global progress service so parallel processing can use it
-            set_progress_service(tui_progress_adapter)
+            # Replace the global progress service so parallel processing can use it
+            # We'll restore the original one after processing
+            core_progress._progress_service = tui_progress_adapter
 
             # Create data fetcher
             # Use skip_remote_fetch=True when analyzing already-cloned repositories
@@ -401,8 +402,7 @@ class AnalysisProgressScreen(Screen):
                 use_parallel = False
             finally:
                 # Restore original progress service
-                from gitflow_analytics.core.progress import set_progress_service
-                set_progress_service(original_progress_service)
+                core_progress._progress_service = original_progress_service
 
         # Sequential processing fallback or for single repository
         if not use_parallel:
