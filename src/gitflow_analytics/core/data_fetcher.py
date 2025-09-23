@@ -401,19 +401,8 @@ class GitDataFetcher:
                 except Exception as e:
                     logger.debug(f"Could not update git config: {e}")
 
-                # Monkey-patch the remotes property to prevent any remote access
-                class FakeRemotes:
-                    def __bool__(self):
-                        return False
-                    def __len__(self):
-                        return 0
-                    def __iter__(self):
-                        return iter([])
-                    def __getattr__(self, name):
-                        return None
-
-                repo._remotes = FakeRemotes()
-                repo.remotes = FakeRemotes()
+                # Note: We can't monkey-patch remotes as it's a property without setter
+                # The skip_remote_fetch flag will prevent remote operations elsewhere
 
                 logger.debug(f"Opened repository {project_key} in offline mode (skip_remote_fetch=true)")
             else:

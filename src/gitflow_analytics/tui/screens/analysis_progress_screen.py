@@ -330,9 +330,11 @@ class AnalysisProgressScreen(Screen):
             from gitflow_analytics.core.data_fetcher import GitDataFetcher
 
             # Create data fetcher
+            # Use skip_remote_fetch=True when analyzing already-cloned repositories
+            # to avoid authentication issues with expired tokens
             data_fetcher = GitDataFetcher(
                 cache=self.cache,
-                skip_remote_fetch=False
+                skip_remote_fetch=True
             )
 
             # Prepare repository configurations for parallel processing
