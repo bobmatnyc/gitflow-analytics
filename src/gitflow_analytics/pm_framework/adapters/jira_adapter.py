@@ -952,7 +952,7 @@ class JIRAAdapter(BasePlatformAdapter):
 
                 session = self._ensure_session()
                 response = session.get(
-                    f"{self.base_url}/rest/api/3/search",
+                    f"{self.base_url}/rest/api/3/search/jql",
                     params={
                         "jql": jql,
                         "startAt": start_at,

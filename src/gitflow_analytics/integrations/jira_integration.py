@@ -202,7 +202,7 @@ class JIRAIntegration:
                 try:
                     print(f"   🔍 Fetching {len(batch)} JIRA tickets from API...")
                     response = self._session.get(
-                        f"{self.base_url}/rest/api/3/search",
+                        f"{self.base_url}/rest/api/3/search/jql",
                         params={
                             "jql": jql,
                             "fields": "*all",  # Get all fields to find story points
