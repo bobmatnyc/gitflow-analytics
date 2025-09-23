@@ -394,8 +394,9 @@ class AnalysisProgressScreen(Screen):
                 stats = parallel_results.get('statistics', {})
                 log.write_line(f"\n📊 Analysis Statistics:")
                 log.write_line(f"   Total: {stats.get('total', 0)} repositories")
-                log.write_line(f"   Success: {stats.get('success', 0)}")
-                log.write_line(f"   Failed: {stats.get('failed', 0)}")
+                log.write_line(f"   Success: {stats.get('success', 0)} (have commits)")
+                log.write_line(f"   No Commits: {stats.get('no_commits', 0)} (no activity in period)")
+                log.write_line(f"   Failed: {stats.get('failed', 0)} (processing errors)")
                 log.write_line(f"   Timeout: {stats.get('timeout', 0)}")
 
             except Exception as e:
@@ -629,6 +630,7 @@ class AnalysisProgressScreen(Screen):
             'total': len(repo_configs),
             'processed': 0,
             'success': 0,
+            'no_commits': 0,
             'failed': 0,
             'timeout': 0
         }}
@@ -687,8 +689,8 @@ class AnalysisProgressScreen(Screen):
                         stats['success'] += 1
                         log.write_line(f"   ✅ {project_key}: {total_commits} commits")
                     else:
-                        stats['failed'] += 1
-                        log.write_line(f"   ⚠️ {project_key}: No commits found in analysis period")
+                        stats['no_commits'] += 1
+                        log.write_line(f"   ⏸️  {project_key}: No commits in analysis period")
                 else:
                     stats['failed'] += 1
                     log.write_line(f"   ❌ {project_key}: Failed to process")
@@ -715,6 +717,7 @@ class AnalysisProgressScreen(Screen):
                 "repositories_analyzed": stats['processed'],
                 "total_repositories": stats['total'],
                 "successful": stats['success'],
+                "no_commits": stats['no_commits'],
                 "failed": stats['failed'],
                 "current_repo": project_key if i < len(repo_configs) - 1 else "Complete"
             })
