@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -59,6 +60,7 @@ class AnalysisProgressScreen(Screen):
         self.analysis_results = {}
         self.start_time = time.time()
         self.progress_service = None  # Will be initialized on mount
+        self.executor: Optional[ThreadPoolExecutor] = None  # Managed executor for cleanup
 
     def compose(self):
         """Compose the analysis progress screen."""
@@ -106,6 +108,11 @@ class AnalysisProgressScreen(Screen):
         if self.analysis_task and not self.analysis_task.done():
             self.analysis_task.cancel()
             # Don't wait for cancellation to complete to avoid blocking
+
+        # Shutdown the executor to cleanup threads immediately
+        if self.executor:
+            self.executor.shutdown(wait=False)
+            self.executor = None
 
     async def _run_analysis_wrapper(self) -> None:
         """Wrapper for analysis that handles cancellation gracefully."""
@@ -409,6 +416,10 @@ class AnalysisProgressScreen(Screen):
 
         # Sequential processing fallback or for single repository
         if not use_async:
+            # Ensure we have an executor for sequential processing
+            if not self.executor:
+                self.executor = ThreadPoolExecutor(max_workers=1)
+
             for i, repo_config in enumerate(repositories):
                 # Update overall progress based on repository completion
                 overall_pct = 20 + ((i / total_repos) * 30)  # 20-50% range for repo analysis
@@ -424,7 +435,7 @@ class AnalysisProgressScreen(Screen):
                     # Run repository analysis in a thread to avoid blocking
                     loop = asyncio.get_event_loop()
                     commits = await loop.run_in_executor(
-                        None,
+                        self.executor if self.executor else None,  # Use managed executor if available
                         self.analyzer.analyze_repository,
                         repo_config.path,
                         start_date,
@@ -638,6 +649,10 @@ class AnalysisProgressScreen(Screen):
         stats = results['statistics']
         loop = asyncio.get_event_loop()
 
+        # Create a managed executor for this analysis
+        if not self.executor:
+            self.executor = ThreadPoolExecutor(max_workers=1)
+
         for i, repo_config in enumerate(repo_configs):
             project_key = repo_config['project_key']
 
@@ -661,7 +676,7 @@ class AnalysisProgressScreen(Screen):
                 # Run the actual repository processing in a thread to avoid blocking
                 # but await it properly so we can yield between repositories
                 result = await loop.run_in_executor(
-                    None,
+                    self.executor,  # Use managed executor instead of default
                     self._process_single_repository_sync,
                     data_fetcher,
                     repo_config,
@@ -724,6 +739,11 @@ class AnalysisProgressScreen(Screen):
 
         # Final progress update
         repo_progress.complete(f"Processed {stats['total']} repositories")
+
+        # Cleanup executor after processing
+        if self.executor:
+            self.executor.shutdown(wait=False)
+            self.executor = None
 
         return results
 
