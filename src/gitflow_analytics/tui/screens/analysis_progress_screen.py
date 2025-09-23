@@ -365,7 +365,8 @@ class AnalysisProgressScreen(Screen):
             overall_progress.update_progress(25, "Running parallel repository analysis...")
 
             try:
-                # Run parallel processing
+                # Run parallel processing with limited workers to avoid thread conflicts
+                # Use only 1 worker to prevent GitPython thread safety issues
                 parallel_results = await loop.run_in_executor(
                     None,
                     data_fetcher.process_repositories_parallel,
@@ -374,7 +375,7 @@ class AnalysisProgressScreen(Screen):
                     None,  # JIRA integration
                     start_date,
                     end_date,
-                    min(3, len(repositories))  # Max workers
+                    1  # Use single worker to avoid GitPython thread safety issues
                 )
 
                 # Process results
