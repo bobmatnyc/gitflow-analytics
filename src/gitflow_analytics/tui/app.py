@@ -280,6 +280,7 @@ class GitFlowAnalyticsApp(App):
         self.initialization_complete = False
         self._nlp_engine = None
         self.dark = True  # Initialize dark mode state
+        self.default_weeks = 12  # Default weeks for analysis, can be overridden from CLI
 
     def compose(self) -> ComposeResult:
         """
@@ -457,7 +458,7 @@ class GitFlowAnalyticsApp(App):
         # Launch analysis progress screen
         analysis_screen = AnalysisProgressScreen(
             config=self.config,
-            weeks=12,  # TODO: Get from config or user preference
+            weeks=getattr(self, 'default_weeks', 12),  # Use CLI parameter or default to 12
             enable_qualitative=getattr(self.config, "qualitative", None)
             and self.config.qualitative.enabled,
         )
