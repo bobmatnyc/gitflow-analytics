@@ -492,7 +492,7 @@ def tui_command(
     "--disable-pm", is_flag=True, help="Disable PM platform integration (overrides config setting)"
 )
 @click.option(
-    "--no-rich", is_flag=True, default=False, help="Disable rich terminal output (rich is enabled by default)"
+    "--no-rich", is_flag=True, default=True, help="Disable rich terminal output (simple output is default to prevent TUI hanging)"
 )
 @click.option(
     "--log",
@@ -526,7 +526,7 @@ def tui_command(
 @click.option(
     "--progress-style",
     type=click.Choice(["rich", "simple", "auto"], case_sensitive=False),
-    default="auto",
+    default="simple",
     help="Progress display style: rich (beautiful terminal UI), simple (tqdm), auto (detect)",
 )
 def analyze_subcommand(
@@ -640,7 +640,7 @@ def analyze(
     generate_csv: bool = False,
     use_batch_classification: bool = True,
     force_fetch: bool = False,
-    progress_style: str = "auto",
+    progress_style: str = "simple",
 ) -> None:
     """Analyze Git repositories using configuration file."""
 
@@ -655,8 +655,8 @@ def analyze(
     # Initialize progress service with user's preference
     progress = get_progress_service(display_style=progress_style, version=version)
 
-    # Initialize display - use rich by default, fall back to simple output if needed
-    # Create display - Rich is enabled by default, disabled only with --no-rich flag
+    # Initialize display - simple output by default to prevent TUI hanging
+    # Create display - only create if rich output is explicitly enabled (--no-rich=False)
     display = create_progress_display(style="simple" if no_rich else "rich", version=__version__) if not no_rich else None
 
     # Configure logging based on the --log option
@@ -3858,7 +3858,7 @@ def analyze(
     help="Enable logging with specified level (default: none)",
 )
 @click.option(
-    "--no-rich", is_flag=True, default=False, help="Disable rich terminal output (rich is enabled by default)"
+    "--no-rich", is_flag=True, default=True, help="Disable rich terminal output (simple output is default to prevent TUI hanging)"
 )
 def fetch(
     config: Path,
@@ -3908,7 +3908,7 @@ def fetch(
       - Use --clear-cache to force fresh fetch
     """
     # Initialize display
-    # Create display - Rich is enabled by default, disabled only with --no-rich flag
+    # Create display - simple output by default to prevent TUI hanging, rich only when explicitly enabled
     display = create_progress_display(style="simple" if no_rich else "rich", version=__version__) if not no_rich else None
 
     # Configure logging
