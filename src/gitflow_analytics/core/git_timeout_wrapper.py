@@ -302,9 +302,10 @@ class HeartbeatLogger:
                 operation = self._wrapper.get_current_operation()
                 if operation:
                     elapsed = current_time - operation['start_time']
+                    repo_info = f"for {operation['repo_path']} " if operation['repo_path'] else ""
                     logger.info(
                         f"💓 Heartbeat: Still running '{operation['name']}' "
-                        f"{f'for {operation['repo_path']}' if operation['repo_path'] else ''} "
+                        f"{repo_info}"
                         f"(elapsed: {elapsed:.1f}s)"
                     )
                 last_log_time = current_time
