@@ -395,7 +395,15 @@ class DailyMetricsStorage:
             ticket_refs = commit.get("ticket_references", [])
             if ticket_refs:
                 metrics["tracked_commits"] += 1
-                metrics["unique_tickets"].update(ticket_refs)
+                # Extract ticket IDs from ticket reference objects
+                # ticket_refs can be either [{"id": "PROJ-123", "platform": "jira"}] or ["PROJ-123"]
+                ticket_ids = []
+                for ref in ticket_refs:
+                    if isinstance(ref, dict):
+                        ticket_ids.append(ref.get("id", str(ref)))
+                    else:
+                        ticket_ids.append(str(ref))
+                metrics["unique_tickets"].update(ticket_ids)
             else:
                 metrics["untracked_commits"] += 1
 

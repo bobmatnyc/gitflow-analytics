@@ -186,8 +186,9 @@ class BranchHealthAnalyzer:
 
             # If branch tip is in main's history, it's merged
             branch_tip = branch.commit
-            main_commits = set(repo.iter_commits(main_branch))
-            return branch_tip in main_commits
+            # Use commit hashes instead of commit objects for hashability
+            main_commit_hashes = set(commit.hexsha for commit in repo.iter_commits(main_branch))
+            return branch_tip.hexsha in main_commit_hashes
 
         except Exception:
             return False

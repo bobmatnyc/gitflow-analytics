@@ -2055,7 +2055,7 @@ def analyze(
                 click.echo("🎫 Analyzing ticket references...")
 
             ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
-                all_commits, all_prs
+                all_commits, all_prs, display
             )
 
             # Calculate per-developer ticket coverage and get updated developer stats
@@ -2572,7 +2572,7 @@ def analyze(
             click.echo("\n🎫 Analyzing ticket references...")
 
         # Use the analyzer's ticket extractor which may be ML-enhanced
-        ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(all_commits, all_prs)
+        ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(all_commits, all_prs, display)
 
         # Calculate per-developer ticket coverage and update developer stats with accurate coverage
         developer_ticket_coverage = analyzer.ticket_extractor.calculate_developer_ticket_coverage(

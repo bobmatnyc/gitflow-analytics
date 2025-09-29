@@ -673,7 +673,7 @@ class MLTicketExtractor(TicketExtractor):
         return mapping.get(ml_category, "other")
 
     def analyze_ticket_coverage(
-        self, commits: list[dict[str, Any]], prs: list[dict[str, Any]]
+        self, commits: list[dict[str, Any]], prs: list[dict[str, Any]], progress_display=None
     ) -> dict[str, Any]:
         """Enhanced ticket coverage analysis with ML categorization insights.
 
@@ -683,12 +683,13 @@ class MLTicketExtractor(TicketExtractor):
         Args:
             commits: List of commit data
             prs: List of PR data
+            progress_display: Optional progress display for showing analysis progress
 
         Returns:
             Enhanced analysis results with ML insights
         """
         # Get base analysis from parent
-        base_analysis = super().analyze_ticket_coverage(commits, prs)
+        base_analysis = super().analyze_ticket_coverage(commits, prs, progress_display)
 
         if not self.enable_ml:
             # Add indicator that ML was not used

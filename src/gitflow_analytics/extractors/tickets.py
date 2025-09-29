@@ -6,6 +6,12 @@ from collections import defaultdict
 from datetime import timezone
 from typing import Any, Optional, cast
 
+try:
+    from tqdm import tqdm
+    TQDM_AVAILABLE = True
+except ImportError:
+    TQDM_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -380,9 +386,15 @@ class TicketExtractor:
         return dict(by_platform)
 
     def analyze_ticket_coverage(
-        self, commits: list[dict[str, Any]], prs: list[dict[str, Any]]
+        self, commits: list[dict[str, Any]], prs: list[dict[str, Any]], progress_display=None
     ) -> dict[str, Any]:
-        """Analyze ticket reference coverage across commits and PRs."""
+        """Analyze ticket reference coverage across commits and PRs.
+
+        Args:
+            commits: List of commit dictionaries to analyze
+            prs: List of PR dictionaries to analyze
+            progress_display: Optional progress display for showing analysis progress
+        """
         ticket_platforms: defaultdict[str, int] = defaultdict(int)
         untracked_commits: list[dict[str, Any]] = []
         ticket_summary: defaultdict[str, set[str]] = defaultdict(set)
@@ -400,8 +412,23 @@ class TicketExtractor:
         # Analyze commits
         commits_analyzed = 0
         commits_with_ticket_refs = 0
+        tickets_found = 0
 
-        for commit in commits:
+        # Set up progress tracking for commits
+        commit_iterator = commits
+        if progress_display and hasattr(progress_display, 'console'):
+            # Rich progress display available
+            commit_iterator = commits  # Rich will handle its own progress
+        elif TQDM_AVAILABLE:
+            # Fall back to tqdm for simple progress tracking
+            commit_iterator = tqdm(
+                commits,
+                desc="🎫 Analyzing commits for tickets",
+                unit="commits",
+                leave=False
+            )
+
+        for commit in commit_iterator:
             # Debug: check if commit is actually a dictionary
             if not isinstance(commit, dict):
                 logger.error(f"Expected commit to be dict, got {type(commit)}: {commit}")
@@ -432,6 +459,7 @@ class TicketExtractor:
                     platform_count = ticket_platforms[platform]
                     ticket_platforms[platform] = platform_count + 1
                     ticket_summary[platform].add(ticket_id)
+                    tickets_found += 1
             else:
                 # Track untracked commits with configurable threshold and enhanced data
                 files_changed = self._get_files_changed_count(commit)
@@ -462,8 +490,29 @@ class TicketExtractor:
 
                     untracked_commits.append(commit_data)
 
+            # Update progress if using tqdm
+            if TQDM_AVAILABLE and hasattr(commit_iterator, 'set_postfix'):
+                commit_iterator.set_postfix({
+                    'tickets': tickets_found,
+                    'with_tickets': commits_with_ticket_refs,
+                    'untracked': len(untracked_commits)
+                })
+
         # Analyze PRs
-        for pr in prs:
+        pr_tickets_found = 0
+
+        # Set up progress tracking for PRs (only if there are PRs to analyze)
+        pr_iterator = prs
+        if prs and TQDM_AVAILABLE and not (progress_display and hasattr(progress_display, 'console')):
+            # Only show PR progress if there are PRs and we're not using Rich
+            pr_iterator = tqdm(
+                prs,
+                desc="🎫 Analyzing PRs for tickets",
+                unit="PRs",
+                leave=False
+            )
+
+        for pr in pr_iterator:
             # Extract tickets from PR title and description
             pr_text = f"{pr.get('title', '')} {pr.get('description', '')}"
             tickets = self.extract_from_text(pr_text)
@@ -476,6 +525,14 @@ class TicketExtractor:
                     platform_count = ticket_platforms[platform]
                     ticket_platforms[platform] = platform_count + 1
                     ticket_summary[platform].add(ticket["id"])
+                    pr_tickets_found += 1
+
+            # Update PR progress if using tqdm
+            if TQDM_AVAILABLE and hasattr(pr_iterator, 'set_postfix'):
+                pr_iterator.set_postfix({
+                    'tickets': pr_tickets_found,
+                    'with_tickets': results["prs_with_tickets"]
+                })
 
         # Calculate coverage percentages
         total_commits = cast(int, results["total_commits"])
