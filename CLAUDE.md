@@ -6,13 +6,129 @@ This document provides specific instructions for Claude (AI assistant) when work
 
 GitFlow Analytics is a Python package that analyzes Git repositories to generate developer productivity insights without requiring external project management tools. It provides comprehensive metrics including commit patterns, developer focus, ticket tracking, and DORA metrics.
 
+## 📋 Priority Index
+
+This section organizes all instructions by priority level for efficient navigation:
+
+### 🔴 CRITICAL Instructions
+- [Code Quality Standards](#1-code-quality-standards) - Always run linting/testing before commits
+- [Identity Resolution](#2-identity-resolution) - Core data integrity system
+- [Caching System](#3-caching-system) - Performance-critical data persistence
+- [Configuration Management](#4-configuration-management) - Secure credential handling
+- [Common Gotchas](#common-gotchas) - Critical failure modes to avoid
+
+### 🟡 IMPORTANT Instructions
+- [Report Generation](#6-report-generation) - Core business logic and output
+- [Testing Workflow](#7-testing-workflow) - Quality assurance procedures
+- [Atomic Versioning System](#atomic-versioning-system) - Release management
+- [Automated Release Process](#automated-release-process) - CI/CD pipelines
+- [Project Structure](#project-structure) - Architecture understanding
+
+### 🟢 STANDARD Instructions
+- [Default Command Behavior](#5-default-command-behavior) - User experience patterns
+- [Performance Considerations](#9-performance-considerations) - Optimization guidelines
+- [Error Handling](#10-error-handling) - User-friendly error management
+- [Documentation Updates](#11-documentation-updates) - Content maintenance
+- [YAML Configuration Error Handling](#12-yaml-configuration-error-handling) - User support
+
+### ⚪ OPTIONAL Instructions
+- [ML-Enhanced Commit Categorization](#working-with-ml-enhanced-commit-categorization) - Advanced features
+- [Organization Support](#working-with-organization-support) - Enterprise features
+- [Qualitative Analysis](#debugging-narrative-report-generation) - Advanced analytics
+
+## 🛠️ Single-Path Standards
+
+GitFlow Analytics follows the "ONE way to do ANYTHING" principle for all common operations:
+
+### Build & Installation
+```bash
+# THE way to install for development
+pip install -e ".[dev]"
+
+# THE way to reinstall after code changes
+pipx uninstall gitflow-analytics && pipx install /Users/masa/Projects/managed/gitflow-analytics
+```
+
+### Testing
+```bash
+# THE way to run all tests
+pytest --cov=gitflow_analytics --cov-report=html
+
+# THE way to run specific test categories
+pytest tests/test_config.py  # Configuration tests
+pytest tests/qualitative/   # ML system tests
+```
+
+### Code Quality
+```bash
+# THE way to check and fix code quality (run in this order)
+ruff check src/         # Check linting issues
+black src/ tests/       # Format code
+mypy src/              # Type checking
+```
+
+### Analysis Commands
+```bash
+# THE way to run analysis (simplified syntax)
+gitflow-analytics -c config.yaml --weeks 8
+
+# THE way to clear cache and re-run
+gitflow-analytics -c config.yaml --weeks 8 --clear-cache
+
+# THE way to test configuration
+gitflow-analytics -c config.yaml --validate-only
+```
+
+### Version Management
+```bash
+# THE way to check current version
+gitflow-analytics --version
+
+# THE way to preview next version (development)
+semantic-release version --dry-run
+
+# THE way to create release (automated via CI/CD)
+# Releases are triggered automatically by conventional commits to main branch
+```
+
+### Development Workflow
+```bash
+# THE way to set up development environment
+git clone <repository>
+cd gitflow-analytics
+pip install -e ".[dev]"
+python -m spacy download en_core_web_sm  # For ML features
+
+# THE way to test changes
+make quality  # If Makefile exists, otherwise use individual commands above
+pytest
+gitflow-analytics -c config-sample.yaml --validate-only
+```
+
+## 🏗️ Meta-Instructions for Priority Maintenance
+
+When updating this document:
+
+1. **Add Priority Markers**: New sections must include appropriate priority emoji (🔴🟡🟢⚪)
+2. **Update Priority Index**: Add new sections to the index with links
+3. **Maintain Single-Path**: Only document ONE recommended way per task
+4. **Version Control**: Create backup before major changes to `docs/_archive/`
+5. **Link Validation**: Ensure all priority index links work correctly
+6. **Content Preservation**: Never remove existing content, only reorganize and enhance
+
+Priority assignment guidelines:
+- 🔴 **CRITICAL**: Security, data integrity, core functionality that can break the system
+- 🟡 **IMPORTANT**: Key workflows, architecture decisions, business logic
+- 🟢 **STANDARD**: Common operations, coding standards, routine maintenance
+- ⚪ **OPTIONAL**: Advanced features, nice-to-have functionality, future enhancements
+
 ## Documentation Structure
 
 GitFlow Analytics uses a comprehensive documentation system organized for different audiences. All documentation is located in the `docs/` directory:
 
 - **[docs/STRUCTURE.md](docs/STRUCTURE.md)** - Complete documentation organization guide
 - **[docs/README.md](docs/README.md)** - Main documentation index and navigation
-- **[docs/getting-started/](docs/getting-started/)** - New user onboarding and tutorials  
+- **[docs/getting-started/](docs/getting-started/)** - New user onboarding and tutorials
 - **[docs/guides/](docs/guides/)** - Task-oriented configuration and usage guides
 - **[docs/examples/](docs/examples/)** - Real-world usage scenarios and templates
 - **[docs/reference/](docs/reference/)** - Technical specifications and API documentation
@@ -21,7 +137,7 @@ GitFlow Analytics uses a comprehensive documentation system organized for differ
 - **[docs/design/](docs/design/)** - Design documents and technical decision records
 - **[docs/deployment/](docs/deployment/)** - Production deployment and operations
 
-### Documentation Guidelines for Developers
+### 🟢 Documentation Guidelines for Developers
 
 When working on the project:
 - **Update docs with code changes** - Documentation should stay current with implementation
@@ -33,12 +149,12 @@ When working on the project:
 ### Documentation Audience Focus
 
 - **User Documentation** (`getting-started/`, `guides/`, `examples/`) - External users and administrators
-- **Developer Documentation** (`developer/`, `architecture/`, `design/`) - Contributors and maintainers  
+- **Developer Documentation** (`developer/`, `architecture/`, `design/`) - Contributors and maintainers
 - **Reference Documentation** (`reference/`) - Technical specifications for integration
 
 ## Key Development Guidelines
 
-### 1. Code Quality Standards
+### 🔴 1. Code Quality Standards
 
 When modifying code:
 - **Always run linting and type checking** before committing:
@@ -53,7 +169,7 @@ When modifying code:
   ```
 - **Follow existing code patterns** - check neighboring files for conventions
 
-### 2. Identity Resolution
+### 🔴 2. Identity Resolution
 
 The project has a sophisticated developer identity resolution system:
 - **Automatic Analysis**: Runs LLM-based identity analysis on first run (when no manual mappings exist)
@@ -99,7 +215,7 @@ Manual identity mappings now support an optional `name` field to control display
 analysis:
   identity:
     manual_mappings:
-      # Consolidate John Smith identities  
+      # Consolidate John Smith identities
       - name: "John Smith"  # Controls how name appears in reports
         primary_email: "john.smith@company.com"
         aliases:
@@ -109,14 +225,14 @@ analysis:
 
 This feature resolves duplicate entries when the same developer appears with different name formats. The structure supports both `primary_email` (preferred) and `canonical_email` (backward compatibility).
 
-### 3. Caching System
+### 🔴 3. Caching System
 
 The project uses SQLite for caching:
 - Commit cache: `.gitflow-cache/gitflow_cache.db`
 - Identity cache: `.gitflow-cache/identities.db`
 - **Always provide `--clear-cache` option** when testing configuration changes
 
-### 4. Configuration Management
+### 🔴 4. Configuration Management
 
 Configuration uses YAML with environment variable support:
 - Variables use format: `${VARIABLE_NAME}`
@@ -128,7 +244,7 @@ Configuration uses YAML with environment variable support:
 - Manual identity mappings for consolidating developer identities
 - Full backward compatibility with existing repository-based configurations
 
-### 5. Default Command Behavior
+### 🟢 5. Default Command Behavior
 
 GitFlow Analytics now uses `analyze` as the default command when no subcommand is specified:
 
@@ -152,7 +268,7 @@ This approach is recommended for:
 - Easy credential management across environments
 - Preventing accidental credential commits
 
-### 6. Report Generation
+### 🟡 6. Report Generation
 
 The system generates multiple report types:
 - **CSV Reports**: Weekly metrics, developer stats, activity distribution, **untracked commits**
@@ -217,7 +333,7 @@ The project now includes sophisticated untracked commit analysis with several ke
 - `build`: Build system and CI/CD changes
 - `other`: Uncategorized commits
 
-**Configurable File Threshold**: 
+**Configurable File Threshold**:
 - Default threshold reduced from 3 to 1 file changed
 - Configurable via `TicketExtractor` constructor parameter
 - Filters out merge commits automatically
@@ -231,17 +347,17 @@ The project now includes sophisticated untracked commit analysis with several ke
 - Commit categorization for pattern analysis
 - Timestamp preservation for chronological analysis
 
-**Dual Percentage Metrics**: 
+**Dual Percentage Metrics**:
 - Percentage of total untracked work (developer's share of all untracked commits)
 - Percentage of developer's individual work (proportion of their commits that are untracked)
 - Provides context for process improvement recommendations
 
-**Process Recommendations**: 
+**Process Recommendations**:
 - Category-based recommendations (e.g., track features/bugs, accept maintenance)
 - Developer-specific guidance identification
 - Positive recognition for appropriate untracked work patterns
 
-### 7. Testing Workflow
+### 🟡 7. Testing Workflow
 
 When testing changes:
 1. Use the recess-recreo repositories as test data
@@ -249,7 +365,7 @@ When testing changes:
 3. Check all report outputs for correctness
 4. Verify identity resolution is working properly
 
-### 8. Common Tasks
+### 🟢 8. Common Tasks
 
 #### Adding a New Report Type
 
@@ -258,7 +374,7 @@ When testing changes:
 3. Update configuration to support format selection
 4. Document the report format in README
 
-#### Working with ML-Enhanced Commit Categorization
+#### ⚪ Working with ML-Enhanced Commit Categorization
 
 1. **Implementation Architecture**: The ML categorization system is built on top of the existing `TicketExtractor`:
    - `MLTicketExtractor` extends `TicketExtractor` with ML capabilities
@@ -289,16 +405,16 @@ When testing changes:
 5. **Testing ML Categorization**:
    ```python
    from gitflow_analytics.extractors.ml_tickets import MLTicketExtractor
-   
+
    # Create extractor with ML enabled
    extractor = MLTicketExtractor(enable_ml=True)
-   
+
    # Test categorization with confidence
    result = extractor.categorize_commit_with_confidence(
        "fix: resolve memory leak in cache cleanup",
        files_changed=["src/cache.py"]
    )
-   
+
    print(f"Category: {result['category']}")
    print(f"Confidence: {result['confidence']}")
    print(f"Method: {result['method']}")  # 'ml', 'rules', or 'cached'
@@ -340,12 +456,12 @@ When testing changes:
    # Debug narrative report generation
    from gitflow_analytics.reports.narrative_writer import NarrativeReportGenerator
    generator = NarrativeReportGenerator()
-   
+
    # Check if PR data is available for PR analysis section
    if pr_metrics and pr_metrics.get('total_prs', 0) > 0:
        print("PR Analysis section will be included")
-   
-   # Check if PM data is available for PM integration section  
+
+   # Check if PM data is available for PM integration section
    if pm_data and 'metrics' in pm_data:
        print("PM Platform Integration section will be included")
    ```
@@ -399,7 +515,7 @@ When testing changes:
    ```python
    # Include all commits (threshold = 1)
    extractor = TicketExtractor(untracked_file_threshold=1)
-   
+
    # Only significant commits (threshold = 3)
    extractor = TicketExtractor(untracked_file_threshold=3)
    ```
@@ -412,7 +528,7 @@ When testing changes:
 
 5. **Review Developer Mapping**: Ensure canonical IDs are resolving correctly for dual percentage calculations
 
-#### Working with Organization Support
+#### ⚪ Working with Organization Support
 
 1. **Organization Discovery**: When `github.organization` is specified and no repositories are manually configured:
    - All non-archived repositories are automatically discovered from the GitHub organization
@@ -423,10 +539,10 @@ When testing changes:
    ```bash
    # Test with organization discovery (simplified syntax)
    gitflow-analytics -c config-org.yaml --weeks 4 --validate-only
-   
+
    # Run with discovered repositories (simplified syntax)
    gitflow-analytics -c config-org.yaml --weeks 4
-   
+
    # Explicit analyze command (backward compatibility)
    gitflow-analytics analyze -c config-org.yaml --weeks 4
    ```
@@ -449,21 +565,21 @@ When testing changes:
    - Use `--validate-only` to test configuration without full analysis
    - Check for API rate limiting issues
 
-### 9. Performance Considerations
+### 🟢 9. Performance Considerations
 
 - **Batch processing**: Commits are processed in batches (default: 1000)
 - **Progress bars**: Use tqdm for long operations
 - **Caching**: Aggressive caching to avoid re-processing
 - **Memory usage**: Be mindful with large repositories
 
-### 10. Error Handling
+### 🟢 10. Error Handling
 
 - **GitHub API errors**: Handle rate limiting and authentication failures gracefully
 - **File system errors**: Check permissions and paths
 - **Database locks**: Use proper session management with SQLAlchemy
 - **Configuration errors**: Provide helpful error messages
 
-### 11. Documentation Updates
+### 🟢 11. Documentation Updates
 
 When adding features:
 1. Update README.md with user-facing changes
@@ -471,7 +587,7 @@ When adding features:
 3. Add docstrings to all new functions/classes
 4. Update configuration examples if needed
 
-## Project Structure
+## 🟡 Project Structure
 
 ```
 gitflow-analytics/
@@ -528,7 +644,7 @@ gitflow-analytics/
 └── README.md                # User documentation
 ```
 
-## Atomic Versioning System
+## 🟡 Atomic Versioning System
 
 The project uses **python-semantic-release** for automated, atomic version management. This ensures consistency between the source code version, git tags, PyPI releases, and GitHub releases.
 
@@ -574,7 +690,7 @@ The project includes a fix for proper CLI version display:
 - CLI command `gitflow-analytics --version` correctly shows current version
 - Prevents version mismatch between package and CLI
 
-## Automated Release Process
+## 🟡 Automated Release Process
 
 The project uses GitHub Actions for fully automated releases:
 
@@ -620,7 +736,7 @@ The project includes comprehensive CI/CD:
 - **No API Keys**: No need to manage PyPI tokens in secrets
 - **Automatic**: Publishing happens on every version tag creation
 
-### 12. YAML Configuration Error Handling
+### 🟢 12. YAML Configuration Error Handling
 
 The project provides friendly YAML configuration error messages to help users quickly fix common issues.
 
@@ -671,7 +787,7 @@ All YAML error messages follow this structure:
 - 📁 File location
 - 🔗 Help resources
 
-## Common Gotchas
+## 🔴 Common Gotchas
 
 1. **Timezone issues**: GitHub API returns timezone-aware timestamps, while database-stored datetimes may be timezone-naive. The system now ensures all datetime comparisons use UTC-aware timestamps
 2. **Branch detection**: Simplified branch detection may not work for all workflows

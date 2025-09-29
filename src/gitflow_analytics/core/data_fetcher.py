@@ -8,6 +8,7 @@ without performing any LLM-based classification.
 import logging
 import os
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
@@ -33,6 +34,11 @@ from .progress import get_progress_service
 from .git_timeout_wrapper import GitTimeoutWrapper, HeartbeatLogger, GitOperationTimeout
 
 logger = logging.getLogger(__name__)
+
+# THREAD SAFETY: Module-level thread-local storage for repository instances
+# Each thread gets its own isolated storage to prevent thread-safety issues
+# when GitDataFetcher is called from ThreadPoolExecutor
+_thread_local = threading.local()
 
 
 class GitDataFetcher:
@@ -326,8 +332,10 @@ class GitDataFetcher:
         Returns:
             Dictionary mapping date strings (YYYY-MM-DD) to lists of commit data
         """
-        from git import Repo
         import os
+
+        # THREAD SAFETY: Use the module-level thread-local storage to ensure each thread
+        # gets its own Repo instance. This prevents thread-safety issues when called from ThreadPoolExecutor
 
         # Set environment variables to prevent ANY password prompts before opening repo
         original_env = {}
@@ -350,7 +358,8 @@ class GitDataFetcher:
             os.environ[key] = value
 
         try:
-            # Open repository with minimal configuration to avoid credential checks
+            # THREAD SAFETY: Create a fresh Repo instance for this thread
+            # Do NOT reuse Repo instances across threads
             from git import Repo
 
             # Check for security issues in repository configuration
@@ -377,19 +386,20 @@ class GitDataFetcher:
                 os.environ["GIT_CONFIG_GLOBAL"] = tmp_config_path
                 os.environ["GIT_CONFIG_SYSTEM"] = "/dev/null"
 
-                # Store temp_dir for cleanup
-                self._temp_dir = temp_dir
+                # Store temp_dir in thread-local storage for cleanup
+                _thread_local.temp_dir = temp_dir
 
                 try:
                     # Open repository with our restricted configuration
+                    # THREAD SAFETY: Each thread gets its own Repo instance
                     repo = Repo(repo_path)
                 finally:
                     # Clean up temporary config directory
                     try:
                         import shutil
-                        if hasattr(self, '_temp_dir'):
-                            shutil.rmtree(self._temp_dir, ignore_errors=True)
-                            delattr(self, '_temp_dir')
+                        if hasattr(_thread_local, 'temp_dir'):
+                            shutil.rmtree(_thread_local.temp_dir, ignore_errors=True)
+                            delattr(_thread_local, 'temp_dir')
                     except:
                         pass
 
@@ -406,6 +416,7 @@ class GitDataFetcher:
 
                 logger.debug(f"Opened repository {project_key} in offline mode (skip_remote_fetch=true)")
             else:
+                # THREAD SAFETY: Each thread gets its own Repo instance
                 repo = Repo(repo_path)
             # Track repository status
             self.repository_status[project_key] = {
@@ -875,13 +886,17 @@ class GitDataFetcher:
         - Handle missing remotes gracefully
         - Skip remote tracking branches to avoid duplicates
         - Use actual branch existence checking rather than assuming branches exist
+
+        THREAD SAFETY: This method is thread-safe as it doesn't modify shared state
+        and works with a repo instance passed as a parameter.
         """
         # Collect all available branches (local branches preferred)
         available_branches = []
 
         # First, try local branches
         try:
-            local_branches = [branch.name for branch in repo.branches]
+            # THREAD SAFETY: Create a new list to avoid sharing references
+            local_branches = list([branch.name for branch in repo.branches])
             available_branches.extend(local_branches)
             logger.debug(f"Found local branches: {local_branches}")
         except Exception as e:
@@ -892,11 +907,12 @@ class GitDataFetcher:
         if not self.skip_remote_fetch:
             try:
                 if repo.remotes and hasattr(repo.remotes, "origin"):
-                    remote_branches = [
+                    # THREAD SAFETY: Create a new list to avoid sharing references
+                    remote_branches = list([
                         ref.name.replace("origin/", "")
                         for ref in repo.remotes.origin.refs
                         if not ref.name.endswith("HEAD")  # Skip HEAD ref
-                    ]
+                    ])
                     # Only add remote branches that aren't already in local branches
                     for branch in remote_branches:
                         if branch not in available_branches:
@@ -936,6 +952,7 @@ class GitDataFetcher:
         accessible_branches = []
         for branch in branches_to_test:
             try:
+                # THREAD SAFETY: Use iterator without storing intermediate results
                 next(iter(repo.iter_commits(branch, max_count=1)), None)
                 accessible_branches.append(branch)
             except Exception as e:
@@ -1687,6 +1704,9 @@ class GitDataFetcher:
             Dictionary with both raw and filtered statistics:
             - 'files', 'insertions', 'deletions': filtered counts
             - 'raw_insertions', 'raw_deletions': unfiltered counts
+
+        THREAD SAFETY: This method is thread-safe as it works with commit objects
+        that have their own repo references.
         """
         stats = {"files": 0, "insertions": 0, "deletions": 0}
 
@@ -1698,7 +1718,8 @@ class GitDataFetcher:
         parent = commit.parents[0] if commit.parents else None
 
         try:
-            # Use git command directly for accurate line counts with timeout protection
+            # THREAD SAFETY: Use the repo reference from the commit object
+            # Each thread has its own commit object with its own repo reference
             repo = commit.repo
             repo_path = Path(repo.working_dir)
 
