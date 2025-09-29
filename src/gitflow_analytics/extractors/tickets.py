@@ -394,6 +394,11 @@ class TicketExtractor:
             commits: List of commit dictionaries to analyze
             prs: List of PR dictionaries to analyze
             progress_display: Optional progress display for showing analysis progress
+
+        Note:
+            This method re-extracts tickets from commit messages rather than using cached
+            'ticket_references' to ensure the analysis respects the current allowed_platforms
+            configuration. Cached data may contain tickets from all platforms from previous runs.
         """
         ticket_platforms: defaultdict[str, int] = defaultdict(int)
         untracked_commits: list[dict[str, Any]] = []
@@ -435,12 +440,16 @@ class TicketExtractor:
                 continue
 
             commits_analyzed += 1
-            ticket_refs = commit.get("ticket_references", [])
+            # IMPORTANT: Re-extract tickets using current allowed_platforms instead of cached values
+            # This ensures the analysis respects the current configuration
+            commit_message = commit.get("message", "")
+            ticket_refs = self.extract_from_text(commit_message)
 
             # Debug logging for the first few commits
             if commits_analyzed <= 5:
                 logger.debug(
-                    f"Commit {commits_analyzed}: hash={commit.get('hash', 'N/A')[:8]}, ticket_refs={ticket_refs}"
+                    f"Commit {commits_analyzed}: hash={commit.get('hash', 'N/A')[:8]}, "
+                    f"re-extracted ticket_refs={ticket_refs} (allowed_platforms={self.allowed_platforms})"
                 )
 
             if ticket_refs:

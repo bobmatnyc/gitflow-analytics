@@ -1048,7 +1048,7 @@ def analyze(
         analyzer = GitAnalyzer(
             cache,
             branch_mapping_rules=cfg.analysis.branch_mapping_rules,
-            allowed_ticket_platforms=getattr(cfg.analysis, "ticket_platforms", None),
+            allowed_ticket_platforms=getattr(cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]),
             exclude_paths=cfg.analysis.exclude_paths,
             story_point_patterns=cfg.analysis.story_point_patterns,
             ml_categorization_config=ml_config,
@@ -4401,7 +4401,7 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
         analyzer = GitAnalyzer(
             cache,
             branch_mapping_rules=cfg.analysis.branch_mapping_rules,
-            allowed_ticket_platforms=getattr(cfg.analysis, "ticket_platforms", None),
+            allowed_ticket_platforms=getattr(cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]),
             exclude_paths=cfg.analysis.exclude_paths,
             story_point_patterns=cfg.analysis.story_point_patterns,
             ml_categorization_config=ml_config,
