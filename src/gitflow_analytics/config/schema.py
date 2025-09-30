@@ -314,6 +314,7 @@ class AnalysisConfig:
         default_factory=CommitClassificationConfig
     )
     llm_classification: LLMClassificationConfig = field(default_factory=LLMClassificationConfig)
+    security: Optional[dict[str, Any]] = field(default_factory=dict)  # Security configuration
 
 
 @dataclass

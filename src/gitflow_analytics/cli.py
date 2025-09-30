@@ -529,6 +529,11 @@ def tui_command(
     default="simple",
     help="Progress display style: rich (beautiful terminal UI), simple (tqdm), auto (detect)",
 )
+@click.option(
+    "--security-only",
+    is_flag=True,
+    help="Run only security analysis (skip productivity metrics)",
+)
 def analyze_subcommand(
     config: Path,
     weeks: int,
@@ -552,6 +557,7 @@ def analyze_subcommand(
     use_batch_classification: bool,
     force_fetch: bool,
     progress_style: str,
+    security_only: bool,
 ) -> None:
     """Analyze Git repositories and generate comprehensive productivity reports.
 
@@ -576,6 +582,9 @@ def analyze_subcommand(
 
       # Analyze with qualitative insights
       gitflow-analytics analyze -c config.yaml --enable-qualitative
+
+      # Run only security analysis (requires security config)
+      gitflow-analytics analyze -c config.yaml --security-only
 
     \b
     OUTPUT FILES:
@@ -615,6 +624,7 @@ def analyze_subcommand(
         use_batch_classification=use_batch_classification,
         force_fetch=force_fetch,
         progress_style=progress_style,
+        security_only=security_only,
     )
 
 
@@ -641,6 +651,7 @@ def analyze(
     use_batch_classification: bool = True,
     force_fetch: bool = False,
     progress_style: str = "simple",
+    security_only: bool = False,
 ) -> None:
     """Analyze Git repositories using configuration file."""
 
@@ -954,6 +965,142 @@ def analyze(
             # Exit after warming unless we're also doing normal analysis
             if validate_only:
                 return
+
+        # Security-only mode: Run only security analysis and exit
+        if security_only:
+            if display:
+                display.print_status("🔒 Running security-only analysis...", "info")
+            else:
+                click.echo("\n🔒 Running security-only analysis...")
+
+            from .security import SecurityAnalyzer, SecurityConfig
+            from .security.reports import SecurityReportGenerator
+            from .core.data_fetcher import GitDataFetcher
+            from .core.cache import GitAnalysisCache
+
+            # Load security configuration
+            security_config = SecurityConfig.from_dict(cfg.analysis.security if hasattr(cfg.analysis, "security") else {})
+
+            if not security_config.enabled:
+                if display:
+                    display.show_error("Security analysis is not enabled in configuration")
+                else:
+                    click.echo("❌ Security analysis is not enabled in configuration")
+                    click.echo("💡 Add 'security:' section to your config with 'enabled: true'")
+                return
+
+            # Setup cache directory
+            cache_dir = cfg.cache.directory
+            if not cache_dir.is_absolute():
+                cache_dir = config.parent / cache_dir
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+            # Initialize cache for data fetcher
+            cache = GitAnalysisCache(
+                cache_dir=cache_dir,
+                ttl_hours=cfg.cache.ttl_hours if not no_cache else 0,
+            )
+
+            # Initialize data fetcher for getting commits
+            data_fetcher = GitDataFetcher(
+                cache=cache,
+                branch_mapping_rules=cfg.analysis.branch_mapping_rules,
+                allowed_ticket_platforms=cfg.analysis.ticket_platforms,
+                exclude_paths=cfg.analysis.exclude_paths,
+            )
+
+            # Get commits from all repositories
+            all_commits = []
+            for repo_config in cfg.repositories:
+                repo_path = Path(repo_config["path"])
+                if not repo_path.exists():
+                    click.echo(f"⚠️  Repository not found: {repo_path}")
+                    continue
+
+                # Calculate date range
+                end_date = datetime.now(timezone.utc)
+                start_date = end_date - timedelta(weeks=weeks)
+
+                if display:
+                    display.print_status(f"Fetching commits from {repo_config['name']}...", "info")
+                else:
+                    click.echo(f"📥 Fetching commits from {repo_config['name']}...")
+
+                # Fetch raw data for the repository
+                raw_data = data_fetcher.fetch_raw_data(
+                    repositories=[repo_config],
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+
+                # Extract commits from the raw data
+                if raw_data and raw_data.get("commits"):
+                    commits = raw_data["commits"]
+                else:
+                    commits = []
+                all_commits.extend(commits)
+
+            if not all_commits:
+                if display:
+                    display.show_error("No commits found to analyze")
+                else:
+                    click.echo("❌ No commits found to analyze")
+                return
+
+            # Initialize security analyzer
+            security_analyzer = SecurityAnalyzer(config=security_config)
+
+            # Analyze commits for security issues
+            if display:
+                display.print_status(f"Analyzing {len(all_commits)} commits for security issues...", "info")
+            else:
+                click.echo(f"\n🔍 Analyzing {len(all_commits)} commits for security issues...")
+
+            analyses = []
+            for commit in all_commits:
+                analysis = security_analyzer.analyze_commit(commit)
+                analyses.append(analysis)
+
+            # Generate summary
+            summary = security_analyzer.generate_summary_report(analyses)
+
+            # Print summary to console
+            click.echo("\n" + "=" * 60)
+            click.echo("SECURITY ANALYSIS SUMMARY")
+            click.echo("=" * 60)
+            click.echo(f"Total Commits Analyzed: {summary['total_commits']}")
+            click.echo(f"Commits with Issues: {summary['commits_with_issues']}")
+            click.echo(f"Total Security Findings: {summary['total_findings']}")
+            click.echo(f"Risk Level: {summary['risk_level']} (Score: {summary['average_risk_score']:.1f})")
+
+            if summary['severity_distribution']['critical'] > 0:
+                click.echo(f"\n🔴 Critical Issues: {summary['severity_distribution']['critical']}")
+            if summary['severity_distribution']['high'] > 0:
+                click.echo(f"🟠 High Issues: {summary['severity_distribution']['high']}")
+            if summary['severity_distribution']['medium'] > 0:
+                click.echo(f"🟡 Medium Issues: {summary['severity_distribution']['medium']}")
+
+            # Generate reports
+            report_dir = output or Path(cfg.output.directory)
+            report_dir.mkdir(parents=True, exist_ok=True)
+
+            report_gen = SecurityReportGenerator(output_dir=report_dir)
+            reports = report_gen.generate_reports(analyses, summary)
+
+            click.echo("\n✅ Security Reports Generated:")
+            for report_type, path in reports.items():
+                click.echo(f"  - {report_type.upper()}: {path}")
+
+            # Show recommendations
+            if summary['recommendations']:
+                click.echo("\n💡 Recommendations:")
+                for rec in summary['recommendations'][:5]:
+                    click.echo(f"  {rec}")
+
+            if display:
+                display.print_status("Security analysis completed!", "success")
+
+            return  # Exit after security-only analysis
 
         # Initialize identity resolver with comprehensive error handling
         identity_db_path = cache_dir / "identities.db"

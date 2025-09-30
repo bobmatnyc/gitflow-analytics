@@ -560,6 +560,7 @@ class ConfigLoader:
             ml_categorization=ml_categorization_config,
             commit_classification=commit_classification_config,
             llm_classification=llm_classification_config,
+            security=analysis_data.get("security", {}),
         )
 
     @classmethod
