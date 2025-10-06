@@ -13,6 +13,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Optional, TypeVar
 
+from ..constants import Timeouts
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -27,7 +29,7 @@ class GitOperationTimeout(Exception):
 class GitTimeoutWrapper:
     """Wrapper for git operations with timeout protection."""
 
-    def __init__(self, default_timeout: int = 30):
+    def __init__(self, default_timeout: int = Timeouts.DEFAULT_GIT_OPERATION):
         """Initialize the git timeout wrapper.
 
         Args:
@@ -195,7 +197,7 @@ class GitTimeoutWrapper:
                     logger.error(f"   Error details: {e.stderr}")
                 raise
 
-    def fetch_with_timeout(self, repo_path: Path, timeout: int = 30) -> bool:
+    def fetch_with_timeout(self, repo_path: Path, timeout: int = Timeouts.GIT_FETCH) -> bool:
         """Fetch from remote with timeout protection.
 
         Args:
@@ -238,7 +240,7 @@ class GitTimeoutWrapper:
                 logger.warning(f"Git fetch failed for {repo_path.name}: {e}")
             return False
 
-    def pull_with_timeout(self, repo_path: Path, timeout: int = 30) -> bool:
+    def pull_with_timeout(self, repo_path: Path, timeout: int = Timeouts.GIT_PULL) -> bool:
         """Pull from remote with timeout protection.
 
         Args:
@@ -309,7 +311,7 @@ class HeartbeatLogger:
         """Stop the heartbeat logging thread."""
         self._stop_event.set()
         if self._thread:
-            self._thread.join(timeout=1)
+            self._thread.join(timeout=Timeouts.THREAD_JOIN)
 
     def _heartbeat_loop(self):
         """Main heartbeat loop that logs current operations."""

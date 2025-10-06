@@ -12,6 +12,7 @@ from typing import Any, Optional, Union
 import git
 from sqlalchemy import and_
 
+from ..constants import BatchSizes, CacheTTL, Thresholds
 from ..models.database import (
     CachedCommit,
     Database,
@@ -27,7 +28,10 @@ class GitAnalysisCache:
     """Cache for Git analysis results."""
 
     def __init__(
-        self, cache_dir: Union[Path, str], ttl_hours: int = 168, batch_size: int = 1000
+        self,
+        cache_dir: Union[Path, str],
+        ttl_hours: int = CacheTTL.ONE_WEEK_HOURS,
+        batch_size: int = BatchSizes.COMMIT_STORAGE,
     ) -> None:
         """Initialize cache with SQLite backend and configurable batch size.
 
@@ -37,7 +41,7 @@ class GitAnalysisCache:
 
         Args:
             cache_dir: Directory for cache database
-            ttl_hours: Time-to-live for cache entries in hours
+            ttl_hours: Time-to-live for cache entries in hours (default: 168 = 1 week)
             batch_size: Default batch size for bulk operations (default: 1000)
         """
         self.cache_dir = Path(cache_dir)  # Ensure it's a Path object
@@ -643,7 +647,7 @@ class GitAnalysisCache:
         # Performance insights
         if stats["hit_rate_percent"] > 80:
             print("   ✅ Excellent cache performance!")
-        elif stats["hit_rate_percent"] > 50:
+        elif stats["hit_rate_percent"] > Thresholds.CACHE_HIT_RATE_GOOD:
             print("   👍 Good cache performance")
         elif stats["total_requests"] > 0:
             print("   ⚠️  Consider clearing stale cache entries")

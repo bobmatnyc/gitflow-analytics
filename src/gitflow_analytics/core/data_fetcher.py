@@ -18,6 +18,7 @@ from typing import Any, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ..constants import BatchSizes, Timeouts
 from ..extractors.story_points import StoryPointExtractor
 from ..extractors.tickets import TicketExtractor
 from ..integrations.jira_integration import JIRAIntegration
@@ -96,7 +97,7 @@ class GitDataFetcher:
         self.identity_resolver = DeveloperIdentityResolver(identity_db_path)
 
         # Initialize git timeout wrapper for safe operations
-        self.git_wrapper = GitTimeoutWrapper(default_timeout=30)
+        self.git_wrapper = GitTimeoutWrapper(default_timeout=Timeouts.DEFAULT_GIT_OPERATION)
 
         # Statistics for tracking repository processing
         self.processing_stats = {
@@ -170,10 +171,10 @@ class GitDataFetcher:
                     progress.start_repository(f"{project_key} (cloning)", 0)
                 else:
                     # Rough estimate based on weeks
-                    estimated_commits = weeks_back * 50  # Estimate ~50 commits per week
+                    estimated_commits = weeks_back * BatchSizes.COMMITS_PER_WEEK_ESTIMATE
                     progress.start_repository(project_key, estimated_commits)
             except Exception:
-                progress.start_repository(project_key, 100)  # Default estimate
+                progress.start_repository(project_key, BatchSizes.DEFAULT_PROGRESS_ESTIMATE)
 
         # Step 1: Collect all commits organized by day with enhanced progress tracking
         logger.info("🔍 DEBUG: About to fetch commits by day")
@@ -515,10 +516,10 @@ class GitDataFetcher:
             logger.warning(
                 f"Timeout while sampling commits for {project_key}, using default estimate"
             )
-            len(days_to_process) * 50  # Default estimate
+            len(days_to_process) * BatchSizes.COMMITS_PER_WEEK_ESTIMATE  # Default estimate
         except Exception as e:
             logger.debug(f"Could not sample commits for {project_key}: {e}, using default estimate")
-            len(days_to_process) * 50  # Default estimate
+            len(days_to_process) * BatchSizes.COMMITS_PER_WEEK_ESTIMATE  # Default estimate
 
         # Update repository in Rich display with estimated commit count
         if hasattr(progress, "_use_rich") and progress._use_rich:
@@ -564,7 +565,7 @@ class GitDataFetcher:
                         try:
                             branch_commits = self.git_wrapper.run_with_timeout(
                                 fetch_branch_commits,
-                                timeout=15,  # 15 seconds per branch/day combination
+                                timeout=Timeouts.GIT_BRANCH_ITERATION,
                                 operation_name=f"iter_commits_{branch_name}_{day_str}",
                             )
                         except GitOperationTimeout:
@@ -1064,7 +1065,9 @@ class GitDataFetcher:
                 repo_path = Path(repo.working_dir)
 
                 # Try to fetch with timeout protection
-                fetch_success = self.git_wrapper.fetch_with_timeout(repo_path, timeout=30)
+                fetch_success = self.git_wrapper.fetch_with_timeout(
+                    repo_path, timeout=Timeouts.GIT_FETCH
+                )
 
                 if not fetch_success:
                     # Mark this repository as having authentication issues if applicable
@@ -1091,7 +1094,9 @@ class GitDataFetcher:
                     tracking = current_branch.tracking_branch()
                     if tracking:
                         # Pull latest changes using timeout wrapper
-                        pull_success = self.git_wrapper.pull_with_timeout(repo_path, timeout=30)
+                        pull_success = self.git_wrapper.pull_with_timeout(
+                            repo_path, timeout=Timeouts.GIT_PULL
+                        )
                         if pull_success:
                             logger.debug(f"Pulled latest changes for {current_branch.name}")
                         else:
@@ -1158,7 +1163,7 @@ class GitDataFetcher:
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=Timeouts.GIT_CONFIG,
                 env={"GIT_TERMINAL_PROMPT": "0"},
             )
 
@@ -1268,7 +1273,7 @@ class GitDataFetcher:
             logger.info(f"Fetching {len(tickets_to_fetch)} new tickets")
 
             # Fetch tickets in batches
-            batch_size = 50
+            batch_size = BatchSizes.TICKET_FETCH
             tickets_list = list(tickets_to_fetch)
 
             # Use centralized progress service
@@ -1827,7 +1832,7 @@ class GitDataFetcher:
             try:
                 diff_output = self.git_wrapper.run_with_timeout(
                     get_diff_output,
-                    timeout=10,  # 10 seconds for diff operations
+                    timeout=Timeouts.GIT_DIFF,
                     operation_name=f"diff_{commit.hexsha[:8]}",
                 )
             except GitOperationTimeout:
@@ -2032,7 +2037,7 @@ class GitDataFetcher:
                     elapsed_time = time.time() - repo_info["start_time"]
 
                     try:
-                        result = future.result(timeout=5)  # Short timeout to get result
+                        result = future.result(timeout=Timeouts.SUBPROCESS_DEFAULT)
 
                         if result:
                             self.processing_stats["success"] += 1
@@ -2196,7 +2201,7 @@ class GitDataFetcher:
         jira_integration: Optional[JIRAIntegration] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        timeout_per_operation: int = 30,
+        timeout_per_operation: int = Timeouts.DEFAULT_GIT_OPERATION,
     ) -> Optional[dict[str, Any]]:
         """Process a single repository with comprehensive timeout protection.
 
