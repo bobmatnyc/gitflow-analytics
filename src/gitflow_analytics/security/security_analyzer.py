@@ -1,14 +1,14 @@
 """Main security analyzer that orchestrates all security checks."""
 
 import logging
-from typing import Dict, List, Optional, Any
-from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Dict, List, Optional
 
 from .config import SecurityConfig
-from .extractors import SecretDetector, VulnerabilityScanner, DependencyChecker
+from .extractors import DependencyChecker, SecretDetector, VulnerabilityScanner
 from .llm_analyzer import LLMSecurityAnalyzer
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ class SecurityAnalyzer:
             self.secret_detector = SecretDetector(
                 patterns=self.config.secret_scanning.patterns,
                 entropy_threshold=self.config.secret_scanning.entropy_threshold,
-                exclude_paths=self.config.secret_scanning.exclude_paths
+                exclude_paths=self.config.secret_scanning.exclude_paths,
             )
             self.components.append(("secrets", self.secret_detector))
         else:
@@ -92,12 +92,7 @@ class SecurityAnalyzer:
         Returns:
             SecurityAnalysis object with findings
         """
-        findings = {
-            "secrets": [],
-            "vulnerabilities": [],
-            "dependencies": [],
-            "llm": []
-        }
+        findings = {"secrets": [], "vulnerabilities": [], "dependencies": [], "llm": []}
 
         # Run analyses in parallel for performance
         with ThreadPoolExecutor(max_workers=self.config.max_concurrent_scans) as executor:
@@ -133,10 +128,10 @@ class SecurityAnalyzer:
 
         # Calculate summary metrics
         all_findings = (
-            findings["secrets"] +
-            findings["vulnerabilities"] +
-            findings["dependencies"] +
-            findings["llm"]
+            findings["secrets"]
+            + findings["vulnerabilities"]
+            + findings["dependencies"]
+            + findings["llm"]
         )
 
         severity_counts = self._count_severities(all_findings)
@@ -155,7 +150,7 @@ class SecurityAnalyzer:
             high_count=severity_counts.get("high", 0),
             medium_count=severity_counts.get("medium", 0),
             low_count=severity_counts.get("low", 0),
-            risk_score=risk_score
+            risk_score=risk_score,
         )
 
     def analyze_batch(self, commits: List[Dict]) -> List[SecurityAnalysis]:
@@ -176,9 +171,13 @@ class SecurityAnalyzer:
 
                 # Check for critical issues
                 if self.config.fail_on_critical and analysis.critical_count > 0:
-                    logger.error(f"Critical security issues found in commit {commit.get('commit_hash', '')}")
+                    logger.error(
+                        f"Critical security issues found in commit {commit.get('commit_hash', '')}"
+                    )
                     if self.config.fail_on_critical:
-                        raise SecurityException(f"Critical security issues detected: {analysis.critical_count}")
+                        raise SecurityException(
+                            f"Critical security issues detected: {analysis.critical_count}"
+                        )
 
             except Exception as e:
                 logger.error(f"Error analyzing commit {commit.get('commit_hash', '')}: {e}")
@@ -242,10 +241,10 @@ class SecurityAnalyzer:
         Capped at 100.
         """
         score = (
-            severity_counts.get("critical", 0) * 25 +
-            severity_counts.get("high", 0) * 10 +
-            severity_counts.get("medium", 0) * 3 +
-            severity_counts.get("low", 0) * 1
+            severity_counts.get("critical", 0) * 25
+            + severity_counts.get("high", 0) * 10
+            + severity_counts.get("medium", 0) * 3
+            + severity_counts.get("low", 0) * 1
         )
 
         return min(100.0, float(score))
@@ -264,7 +263,7 @@ class SecurityAnalyzer:
                 "total_commits": 0,
                 "commits_with_issues": 0,
                 "total_findings": 0,
-                "risk_assessment": "No data available"
+                "risk_assessment": "No data available",
             }
 
         total_findings = sum(a.total_findings for a in analyses)
@@ -305,16 +304,16 @@ class SecurityAnalyzer:
                 "secrets": len(all_secrets),
                 "vulnerabilities": len(all_vulnerabilities),
                 "dependency_issues": len(all_dependencies),
-                "llm_findings": len(all_llm)
+                "llm_findings": len(all_llm),
             },
             "severity_distribution": {
                 "critical": sum(a.critical_count for a in analyses),
                 "high": sum(a.high_count for a in analyses),
                 "medium": sum(a.medium_count for a in analyses),
-                "low": sum(a.low_count for a in analyses)
+                "low": sum(a.low_count for a in analyses),
             },
             "top_issues": self._identify_top_issues(analyses),
-            "recommendations": self._generate_recommendations(analyses)
+            "recommendations": self._generate_recommendations(analyses),
         }
 
         # Add LLM insights if available
@@ -330,9 +329,15 @@ class SecurityAnalyzer:
         issue_counts = {}
 
         for analysis in analyses:
-            for finding in (analysis.secrets + analysis.vulnerabilities +
-                          analysis.dependency_issues + analysis.llm_findings):
-                issue_type = finding.get("vulnerability_type", finding.get("secret_type", "unknown"))
+            for finding in (
+                analysis.secrets
+                + analysis.vulnerabilities
+                + analysis.dependency_issues
+                + analysis.llm_findings
+            ):
+                issue_type = finding.get(
+                    "vulnerability_type", finding.get("secret_type", "unknown")
+                )
                 severity = finding.get("severity", "medium")
 
                 key = f"{issue_type}:{severity}"
@@ -341,7 +346,7 @@ class SecurityAnalyzer:
                         "type": issue_type,
                         "severity": severity,
                         "count": 0,
-                        "files": set()
+                        "files": set(),
                     }
 
                 issue_counts[key]["count"] += 1
@@ -352,18 +357,20 @@ class SecurityAnalyzer:
         severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         sorted_issues = sorted(
             issue_counts.values(),
-            key=lambda x: (severity_order.get(x["severity"], 999), -x["count"])
+            key=lambda x: (severity_order.get(x["severity"], 999), -x["count"]),
         )
 
         # Return top 10 issues
         top_issues = []
         for issue in sorted_issues[:10]:
-            top_issues.append({
-                "type": issue["type"],
-                "severity": issue["severity"],
-                "occurrences": issue["count"],
-                "affected_files": len(issue["files"])
-            })
+            top_issues.append(
+                {
+                    "type": issue["type"],
+                    "severity": issue["severity"],
+                    "occurrences": issue["count"],
+                    "affected_files": len(issue["files"]),
+                }
+            )
 
         return top_issues
 
@@ -378,7 +385,9 @@ class SecurityAnalyzer:
         critical_count = sum(a.critical_count for a in analyses)
 
         if critical_count > 0:
-            recommendations.append(f"🚨 Address {critical_count} critical security issues immediately")
+            recommendations.append(
+                f"🚨 Address {critical_count} critical security issues immediately"
+            )
 
         if has_secrets:
             recommendations.append("🔑 Implement pre-commit hooks to prevent secret commits")
@@ -401,4 +410,5 @@ class SecurityAnalyzer:
 
 class SecurityException(Exception):
     """Exception raised for critical security issues."""
+
     pass

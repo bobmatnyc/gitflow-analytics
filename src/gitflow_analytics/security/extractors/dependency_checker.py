@@ -1,12 +1,11 @@
 """Check for vulnerable dependencies in project files."""
 
 import json
-import re
-from typing import Dict, List, Optional, Any
-from pathlib import Path
 import logging
-import httpx
-from packaging import version
+import re
+from pathlib import Path
+from typing import Any, Dict, List
+
 import toml
 
 logger = logging.getLogger(__name__)
@@ -105,15 +104,15 @@ class DependencyChecker:
         dependencies = {}
 
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path) as f:
                 data = json.load(f)
 
             for dep_type in ["dependencies", "devDependencies", "peerDependencies"]:
                 if dep_type in data:
                     for name, version_spec in data[dep_type].items():
                         # Clean version spec (remove ^, ~, etc.)
-                        clean_version = re.sub(r'^[^\d]*', '', version_spec)
-                        clean_version = clean_version.split(' ')[0]  # Handle version ranges
+                        clean_version = re.sub(r"^[^\d]*", "", version_spec)
+                        clean_version = clean_version.split(" ")[0]  # Handle version ranges
                         dependencies[name] = clean_version
 
         except Exception as e:
@@ -126,17 +125,17 @@ class DependencyChecker:
         dependencies = {}
 
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path) as f:
                 for line in f:
                     line = line.strip()
-                    if line and not line.startswith('#'):
+                    if line and not line.startswith("#"):
                         # Parse package==version or package>=version
-                        match = re.match(r'^([a-zA-Z0-9\-_]+)([=<>!]+)(.+)$', line)
+                        match = re.match(r"^([a-zA-Z0-9\-_]+)([=<>!]+)(.+)$", line)
                         if match:
                             name = match.group(1)
                             version_spec = match.group(3)
                             # Clean version
-                            clean_version = version_spec.split(',')[0].strip()
+                            clean_version = version_spec.split(",")[0].strip()
                             dependencies[name.lower()] = clean_version
 
         except Exception as e:
@@ -149,7 +148,7 @@ class DependencyChecker:
         dependencies = {}
 
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path) as f:
                 data = toml.load(f)
 
             # Check different dependency sections
@@ -172,11 +171,11 @@ class DependencyChecker:
                         for name, spec in section.items():
                             if isinstance(spec, str):
                                 # Simple version string
-                                clean_version = re.sub(r'^[^\d]*', '', spec)
+                                clean_version = re.sub(r"^[^\d]*", "", spec)
                                 dependencies[name.lower()] = clean_version
                             elif isinstance(spec, dict) and "version" in spec:
                                 # Poetry-style with version key
-                                clean_version = re.sub(r'^[^\d]*', '', spec["version"])
+                                clean_version = re.sub(r"^[^\d]*", "", spec["version"])
                                 dependencies[name.lower()] = clean_version
 
         except Exception as e:
@@ -189,7 +188,7 @@ class DependencyChecker:
         dependencies = {}
 
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path) as f:
                 in_require_block = False
                 for line in f:
                     line = line.strip()
@@ -217,7 +216,7 @@ class DependencyChecker:
         dependencies = {}
 
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path) as f:
                 for line in f:
                     line = line.strip()
                     # Parse: gem 'name', '~> version'
@@ -225,7 +224,7 @@ class DependencyChecker:
                     if match:
                         name = match.group(1)
                         version_spec = match.group(2) if match.group(2) else "unknown"
-                        clean_version = re.sub(r'^[^\d]*', '', version_spec)
+                        clean_version = re.sub(r"^[^\d]*", "", version_spec)
                         dependencies[name] = clean_version
 
         except Exception as e:
@@ -240,40 +239,50 @@ class DependencyChecker:
         for package_name, package_version in dependencies.items():
             vulnerabilities = self._query_vulnerability_db("npm", package_name, package_version)
             for vuln in vulnerabilities:
-                findings.append({
-                    "type": "dependency",
-                    "vulnerability_type": "vulnerable_dependency",
-                    "severity": vuln["severity"],
-                    "package": package_name,
-                    "version": package_version,
-                    "file": file_path,
-                    "cve": vuln.get("cve", ""),
-                    "message": vuln.get("summary", f"Vulnerable {package_name}@{package_version}"),
-                    "tool": "dependency_checker",
-                    "confidence": "high"
-                })
+                findings.append(
+                    {
+                        "type": "dependency",
+                        "vulnerability_type": "vulnerable_dependency",
+                        "severity": vuln["severity"],
+                        "package": package_name,
+                        "version": package_version,
+                        "file": file_path,
+                        "cve": vuln.get("cve", ""),
+                        "message": vuln.get(
+                            "summary", f"Vulnerable {package_name}@{package_version}"
+                        ),
+                        "tool": "dependency_checker",
+                        "confidence": "high",
+                    }
+                )
 
         return findings
 
-    def _check_python_dependencies(self, dependencies: Dict[str, str], file_path: str) -> List[Dict]:
+    def _check_python_dependencies(
+        self, dependencies: Dict[str, str], file_path: str
+    ) -> List[Dict]:
         """Check Python packages for vulnerabilities."""
         findings = []
 
         for package_name, package_version in dependencies.items():
             vulnerabilities = self._query_vulnerability_db("pip", package_name, package_version)
             for vuln in vulnerabilities:
-                findings.append({
-                    "type": "dependency",
-                    "vulnerability_type": "vulnerable_dependency",
-                    "severity": vuln["severity"],
-                    "package": package_name,
-                    "version": package_version,
-                    "file": file_path,
-                    "cve": vuln.get("cve", ""),
-                    "message": vuln.get("summary", f"Vulnerable {package_name}=={package_version}"),
-                    "tool": "dependency_checker",
-                    "confidence": "high"
-                })
+                findings.append(
+                    {
+                        "type": "dependency",
+                        "vulnerability_type": "vulnerable_dependency",
+                        "severity": vuln["severity"],
+                        "package": package_name,
+                        "version": package_version,
+                        "file": file_path,
+                        "cve": vuln.get("cve", ""),
+                        "message": vuln.get(
+                            "summary", f"Vulnerable {package_name}=={package_version}"
+                        ),
+                        "tool": "dependency_checker",
+                        "confidence": "high",
+                    }
+                )
 
         return findings
 
@@ -284,18 +293,22 @@ class DependencyChecker:
         for module_name, module_version in dependencies.items():
             vulnerabilities = self._query_vulnerability_db("go", module_name, module_version)
             for vuln in vulnerabilities:
-                findings.append({
-                    "type": "dependency",
-                    "vulnerability_type": "vulnerable_dependency",
-                    "severity": vuln["severity"],
-                    "package": module_name,
-                    "version": module_version,
-                    "file": file_path,
-                    "cve": vuln.get("cve", ""),
-                    "message": vuln.get("summary", f"Vulnerable {module_name}@{module_version}"),
-                    "tool": "dependency_checker",
-                    "confidence": "high"
-                })
+                findings.append(
+                    {
+                        "type": "dependency",
+                        "vulnerability_type": "vulnerable_dependency",
+                        "severity": vuln["severity"],
+                        "package": module_name,
+                        "version": module_version,
+                        "file": file_path,
+                        "cve": vuln.get("cve", ""),
+                        "message": vuln.get(
+                            "summary", f"Vulnerable {module_name}@{module_version}"
+                        ),
+                        "tool": "dependency_checker",
+                        "confidence": "high",
+                    }
+                )
 
         return findings
 
@@ -306,22 +319,26 @@ class DependencyChecker:
         for gem_name, gem_version in dependencies.items():
             vulnerabilities = self._query_vulnerability_db("rubygems", gem_name, gem_version)
             for vuln in vulnerabilities:
-                findings.append({
-                    "type": "dependency",
-                    "vulnerability_type": "vulnerable_dependency",
-                    "severity": vuln["severity"],
-                    "package": gem_name,
-                    "version": gem_version,
-                    "file": file_path,
-                    "cve": vuln.get("cve", ""),
-                    "message": vuln.get("summary", f"Vulnerable {gem_name} {gem_version}"),
-                    "tool": "dependency_checker",
-                    "confidence": "high"
-                })
+                findings.append(
+                    {
+                        "type": "dependency",
+                        "vulnerability_type": "vulnerable_dependency",
+                        "severity": vuln["severity"],
+                        "package": gem_name,
+                        "version": gem_version,
+                        "file": file_path,
+                        "cve": vuln.get("cve", ""),
+                        "message": vuln.get("summary", f"Vulnerable {gem_name} {gem_version}"),
+                        "tool": "dependency_checker",
+                        "confidence": "high",
+                    }
+                )
 
         return findings
 
-    def _query_vulnerability_db(self, ecosystem: str, package: str, package_version: str) -> List[Dict]:
+    def _query_vulnerability_db(
+        self, ecosystem: str, package: str, package_version: str
+    ) -> List[Dict]:
         """Query vulnerability database for package vulnerabilities.
 
         This is a simplified implementation. In production, you would:

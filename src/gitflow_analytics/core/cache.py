@@ -186,8 +186,12 @@ class GitAnalysisCache:
                     ),
                     insertions=commit_data.get("insertions", 0),
                     deletions=commit_data.get("deletions", 0),
-                    filtered_insertions=commit_data.get("filtered_insertions", commit_data.get("insertions", 0)),
-                    filtered_deletions=commit_data.get("filtered_deletions", commit_data.get("deletions", 0)),
+                    filtered_insertions=commit_data.get(
+                        "filtered_insertions", commit_data.get("insertions", 0)
+                    ),
+                    filtered_deletions=commit_data.get(
+                        "filtered_deletions", commit_data.get("deletions", 0)
+                    ),
                     complexity_delta=commit_data.get("complexity_delta", 0.0),
                     story_points=commit_data.get("story_points"),
                     ticket_references=commit_data.get("ticket_references", []),
@@ -257,8 +261,12 @@ class GitAnalysisCache:
                         ),
                         insertions=commit_data.get("insertions", 0),
                         deletions=commit_data.get("deletions", 0),
-                        filtered_insertions=commit_data.get("filtered_insertions", commit_data.get("insertions", 0)),
-                        filtered_deletions=commit_data.get("filtered_deletions", commit_data.get("deletions", 0)),
+                        filtered_insertions=commit_data.get(
+                            "filtered_insertions", commit_data.get("insertions", 0)
+                        ),
+                        filtered_deletions=commit_data.get(
+                            "filtered_deletions", commit_data.get("deletions", 0)
+                        ),
                         complexity_delta=commit_data.get("complexity_delta", 0.0),
                         story_points=commit_data.get("story_points"),
                         ticket_references=commit_data.get("ticket_references", []),
@@ -969,8 +977,12 @@ class GitAnalysisCache:
                 ),
                 "insertions": commit_data.get("insertions", 0),
                 "deletions": commit_data.get("deletions", 0),
-                "filtered_insertions": commit_data.get("filtered_insertions", commit_data.get("insertions", 0)),
-                "filtered_deletions": commit_data.get("filtered_deletions", commit_data.get("deletions", 0)),
+                "filtered_insertions": commit_data.get(
+                    "filtered_insertions", commit_data.get("insertions", 0)
+                ),
+                "filtered_deletions": commit_data.get(
+                    "filtered_deletions", commit_data.get("deletions", 0)
+                ),
                 "complexity_delta": commit_data.get("complexity_delta", 0.0),
                 "story_points": commit_data.get("story_points"),
                 "ticket_references": commit_data.get("ticket_references", []),

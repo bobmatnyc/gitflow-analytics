@@ -1,12 +1,13 @@
 """LLM-based security analysis for comprehensive code review."""
 
 import json
-import os
-from typing import Dict, List, Optional, Any
-from pathlib import Path
 import logging
-import httpx
+import os
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,9 @@ class LLMSecurityAnalyzer:
             cache_dir: Directory for caching LLM responses
         """
         self.config = config
-        self.api_key = config.api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        self.api_key = (
+            config.api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        )
         self.model = config.model
         self.cache_dir = cache_dir or Path(".gitflow-cache/llm_security")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -74,7 +77,7 @@ class LLMSecurityAnalyzer:
         prompt = self.config.commit_review_prompt.format(
             message=commit_data.get("message", ""),
             files=", ".join(commit_data.get("files_changed", [])),
-            category=commit_data.get("category", "unknown")
+            category=commit_data.get("category", "unknown"),
         )
 
         response = self._call_llm(prompt)
@@ -84,13 +87,12 @@ class LLMSecurityAnalyzer:
         """Analyze actual code changes for security issues."""
         # Limit the amount of code sent to LLM for cost control
         lines_added = commit_data.get("diff_content", "")
-        if len(lines_added.split('\n')) > self.config.max_lines_for_llm:
-            lines_added = '\n'.join(lines_added.split('\n')[:self.config.max_lines_for_llm])
+        if len(lines_added.split("\n")) > self.config.max_lines_for_llm:
+            lines_added = "\n".join(lines_added.split("\n")[: self.config.max_lines_for_llm])
             lines_added += "\n... (truncated for analysis)"
 
         prompt = self.config.code_review_prompt.format(
-            files_changed=", ".join(commit_data.get("files_changed", [])),
-            lines_added=lines_added
+            files_changed=", ".join(commit_data.get("files_changed", [])), lines_added=lines_added
         )
 
         response = self._call_llm(prompt)
@@ -109,25 +111,19 @@ class LLMSecurityAnalyzer:
             headers = {
                 "x-api-key": self.api_key,
                 "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
+                "content-type": "application/json",
             }
 
             data = {
                 "model": self.model,
                 "max_tokens": 500,
-                "messages": [{
-                    "role": "user",
-                    "content": prompt
-                }],
-                "temperature": 0.1  # Low temperature for consistent analysis
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,  # Low temperature for consistent analysis
             }
 
             with httpx.Client() as client:
                 response = client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers=headers,
-                    json=data,
-                    timeout=30
+                    "https://api.anthropic.com/v1/messages", headers=headers, json=data, timeout=30
                 )
 
             if response.status_code == 200:
@@ -145,20 +141,20 @@ class LLMSecurityAnalyzer:
         try:
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
 
             data = {
                 "model": self.model,
-                "messages": [{
-                    "role": "system",
-                    "content": "You are a security expert analyzing code for vulnerabilities. Be concise and specific."
-                }, {
-                    "role": "user",
-                    "content": prompt
-                }],
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a security expert analyzing code for vulnerabilities. Be concise and specific.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
                 "max_tokens": 500,
-                "temperature": 0.1
+                "temperature": 0.1,
             }
 
             with httpx.Client() as client:
@@ -166,7 +162,7 @@ class LLMSecurityAnalyzer:
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers=headers,
                     json=data,
-                    timeout=30
+                    timeout=30,
                 )
 
             if response.status_code == 200:
@@ -179,7 +175,9 @@ class LLMSecurityAnalyzer:
             logger.warning(f"Error calling OpenRouter API: {e}")
             return ""
 
-    def _parse_llm_response(self, response: str, commit_data: Dict, is_code_analysis: bool = False) -> List[Dict]:
+    def _parse_llm_response(
+        self, response: str, commit_data: Dict, is_code_analysis: bool = False
+    ) -> List[Dict]:
         """Parse LLM response and extract security findings."""
         findings = []
 
@@ -233,7 +231,7 @@ class LLMSecurityAnalyzer:
                 "message": self._extract_finding_message(response),
                 "confidence": self._calculate_confidence(response),
                 "analysis_type": "code" if is_code_analysis else "commit",
-                "files": commit_data.get("files_changed", [])
+                "files": commit_data.get("files_changed", []),
             }
 
             findings.append(finding)
@@ -243,7 +241,7 @@ class LLMSecurityAnalyzer:
     def _extract_finding_message(self, response: str) -> str:
         """Extract a concise finding message from LLM response."""
         # Take the first meaningful sentence
-        sentences = response.split('.')
+        sentences = response.split(".")
         for sentence in sentences:
             sentence = sentence.strip()
             if len(sentence) > 20 and not sentence.lower().startswith(("the", "this", "it")):
@@ -257,7 +255,14 @@ class LLMSecurityAnalyzer:
         response_lower = response.lower()
 
         # High confidence indicators
-        high_confidence_words = ["definitely", "clearly", "certain", "obvious", "critical", "severe"]
+        high_confidence_words = [
+            "definitely",
+            "clearly",
+            "certain",
+            "obvious",
+            "critical",
+            "severe",
+        ]
         if any(word in response_lower for word in high_confidence_words):
             return "high"
 
@@ -273,11 +278,12 @@ class LLMSecurityAnalyzer:
         key_parts = [
             commit_data.get("commit_hash", ""),
             str(sorted(commit_data.get("files_changed", []))),
-            commit_data.get("message", "")[:100]
+            commit_data.get("message", "")[:100],
         ]
         key_str = "|".join(key_parts)
         # Simple hash for filename
         import hashlib
+
         return hashlib.sha256(key_str.encode()).hexdigest()[:16]
 
     def _get_cached_result(self, cache_key: str) -> Optional[List[Dict]]:
@@ -293,7 +299,7 @@ class LLMSecurityAnalyzer:
                 cache_file.unlink()  # Delete expired cache
                 return None
 
-            with open(cache_file, 'r') as f:
+            with open(cache_file) as f:
                 return json.load(f)
         except Exception as e:
             logger.debug(f"Error reading cache: {e}")
@@ -303,7 +309,7 @@ class LLMSecurityAnalyzer:
         """Cache the analysis result."""
         cache_file = self.cache_dir / f"{cache_key}.json"
         try:
-            with open(cache_file, 'w') as f:
+            with open(cache_file, "w") as f:
                 json.dump(result, f)
         except Exception as e:
             logger.debug(f"Error writing cache: {e}")

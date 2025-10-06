@@ -3,7 +3,6 @@
 import logging
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from github import Github
 from github.GithubException import BadCredentialsException, GithubException
@@ -38,7 +37,9 @@ def verify_github_token(token: str, timeout: int = 10) -> tuple[bool, str, str]:
         logger.error(error_msg)
         return False, "", error_msg
     except GithubException as e:
-        error_msg = f"GitHub API error: {e.data.get('message', str(e)) if hasattr(e, 'data') else str(e)}"
+        error_msg = (
+            f"GitHub API error: {e.data.get('message', str(e)) if hasattr(e, 'data') else str(e)}"
+        )
         logger.error(error_msg)
         return False, "", error_msg
     except Exception as e:
@@ -77,7 +78,7 @@ def setup_git_credentials(token: str, username: str = "git") -> bool:
         # Read existing credentials
         existing_credentials = []
         if credentials_file.exists():
-            with open(credentials_file, "r") as f:
+            with open(credentials_file) as f:
                 existing_credentials = f.readlines()
 
         # Check if GitHub credential already exists
@@ -103,7 +104,7 @@ def setup_git_credentials(token: str, username: str = "git") -> bool:
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to configure git credential helper: {e.stderr}")
         return False
-    except IOError as e:
+    except OSError as e:
         logger.error(f"Failed to write git credentials file: {e}")
         return False
     except Exception as e:

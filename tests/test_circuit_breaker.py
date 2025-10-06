@@ -66,7 +66,9 @@ class TestCircuitBreaker:
 
                 # Verify fallback was used
                 assert len(result) == len(commits)
-                assert all(r["method"] in ["fallback_only", "circuit_breaker_fallback"] for r in result)
+                assert all(
+                    r["method"] in ["fallback_only", "circuit_breaker_fallback"] for r in result
+                )
 
                 # Check failure count increments
                 assert classifier.api_failure_count == i + 1
@@ -81,9 +83,7 @@ class TestCircuitBreaker:
         classifier.circuit_breaker_open = True
         classifier.api_failure_count = 5
 
-        commits = [
-            {"commit_hash": "hash1", "message": "Test commit", "ticket_references": []}
-        ]
+        commits = [{"commit_hash": "hash1", "message": "Test commit", "ticket_references": []}]
         ticket_context = {}
 
         # Mock should not be called when circuit breaker is open
@@ -106,15 +106,11 @@ class TestCircuitBreaker:
         # Set some failures
         classifier.api_failure_count = 3
 
-        commits = [
-            {"commit_hash": "hash1", "message": "Test commit", "ticket_references": []}
-        ]
+        commits = [{"commit_hash": "hash1", "message": "Test commit", "ticket_references": []}]
         ticket_context = {}
 
         # Mock successful LLM response
-        mock_result = [
-            {"category": "feature", "confidence": 0.8, "method": "llm"}
-        ]
+        mock_result = [{"category": "feature", "confidence": 0.8, "method": "llm"}]
 
         with patch.object(
             classifier.llm_classifier,
@@ -167,9 +163,7 @@ class TestCircuitBreaker:
 
     def test_logging_when_circuit_breaker_opens(self, classifier, caplog):
         """Test that appropriate logging occurs when circuit breaker opens."""
-        commits = [
-            {"commit_hash": "hash1", "message": "Test commit", "ticket_references": []}
-        ]
+        commits = [{"commit_hash": "hash1", "message": "Test commit", "ticket_references": []}]
         ticket_context = {}
 
         with patch.object(
@@ -184,7 +178,9 @@ class TestCircuitBreaker:
 
                 # Verify circuit breaker open message was logged
                 assert any("CIRCUIT BREAKER OPENED" in record.message for record in caplog.records)
-                assert any("consecutive API failures" in record.message for record in caplog.records)
+                assert any(
+                    "consecutive API failures" in record.message for record in caplog.records
+                )
 
     def test_reduced_timeouts_config(self, mock_llm_config):
         """Test that default timeouts have been reduced."""

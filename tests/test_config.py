@@ -26,10 +26,10 @@ analysis:
 output:
   formats: ["csv"]
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = Path(f.name)
-        
+
         try:
             # This should work without error (though it may fail later due to missing env vars)
             # We're mainly testing that YAML parsing works
@@ -52,15 +52,15 @@ repositories:
   - name: "test-repo"
     path: "/path/to/repo"
 """
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = Path(f.name)
-        
+
         try:
             with pytest.raises(ValueError) as exc_info:
                 ConfigLoader.load(temp_path)
-            
+
             error_msg = str(exc_info.value)
             assert "❌ YAML configuration error" in error_msg
             assert "🚫 Tab characters are not allowed" in error_msg
@@ -80,19 +80,21 @@ repositories:
   - name: "test-repo"
     path: "/path/to/repo"
 """
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = Path(f.name)
-        
+
         try:
             with pytest.raises(ValueError) as exc_info:
                 ConfigLoader.load(temp_path)
-            
+
             error_msg = str(exc_info.value)
             assert "❌ YAML configuration error" in error_msg
-            assert ("🚫 Missing colon (:) after a key name!" in error_msg or 
-                    "🚫 Invalid YAML syntax" in error_msg)
+            assert (
+                "🚫 Missing colon (:) after a key name!" in error_msg
+                or "🚫 Invalid YAML syntax" in error_msg
+            )
             assert "Fix:" in error_msg
             assert temp_path.name in error_msg
         finally:
@@ -108,15 +110,15 @@ repositories:
   - name: "test-repo"
     path: "/path/to/repo"
 """
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = Path(f.name)
-        
+
         try:
             with pytest.raises(ValueError) as exc_info:
                 ConfigLoader.load(temp_path)
-            
+
             error_msg = str(exc_info.value)
             assert "❌ YAML configuration error" in error_msg
             assert "🚫" in error_msg  # Should have some error indicator
@@ -135,11 +137,11 @@ repositories:
   - name: "test-repo"
     path: "/path/to/repo"
 """
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = Path(f.name)
-        
+
         try:
             # This may or may not trigger a YAML error depending on the parser
             # But if it does, we should get a friendly message
@@ -166,11 +168,11 @@ repositories:
   - name: "test-repo"
     path: "/path/to/repo"
 """
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = Path(f.name)
-        
+
         try:
             # This may or may not trigger a YAML error
             ConfigLoader.load(temp_path)
@@ -186,10 +188,10 @@ repositories:
     def test_file_not_found_error(self):
         """Test error handling for missing files."""
         non_existent_path = Path("/path/that/does/not/exist.yaml")
-        
+
         with pytest.raises(ValueError) as exc_info:
             ConfigLoader.load(non_existent_path)
-        
+
         error_msg = str(exc_info.value)
         assert "Configuration file not found" in error_msg
         assert str(non_existent_path) in error_msg
@@ -200,15 +202,15 @@ repositories:
 github:
 \ttoken: "invalid"  # Tab character
 """
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = Path(f.name)
-        
+
         try:
             with pytest.raises(ValueError) as exc_info:
                 ConfigLoader.load(temp_path)
-            
+
             error_msg = str(exc_info.value)
             assert "🔗 For YAML syntax help, visit:" in error_msg
             assert "yaml.org" in error_msg
@@ -222,15 +224,15 @@ github:
 github:
 \ttoken: "invalid"  # Tab at column 1
 """
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = Path(f.name)
-        
+
         try:
             with pytest.raises(ValueError) as exc_info:
                 ConfigLoader.load(temp_path)
-            
+
             error_msg = str(exc_info.value)
             # Should include line and column information
             assert "line 3" in error_msg

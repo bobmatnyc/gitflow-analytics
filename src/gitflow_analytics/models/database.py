@@ -1122,9 +1122,11 @@ class Database:
                 if "filtered_insertions" not in columns:
                     logger.info("Adding filtered_insertions column to cached_commits table")
                     try:
-                        conn.execute(text(
-                            "ALTER TABLE cached_commits ADD COLUMN filtered_insertions INTEGER DEFAULT 0"
-                        ))
+                        conn.execute(
+                            text(
+                                "ALTER TABLE cached_commits ADD COLUMN filtered_insertions INTEGER DEFAULT 0"
+                            )
+                        )
                         conn.commit()
                     except Exception as e:
                         logger.debug(f"Column may already exist or database is readonly: {e}")
@@ -1133,9 +1135,11 @@ class Database:
                 if "filtered_deletions" not in columns:
                     logger.info("Adding filtered_deletions column to cached_commits table")
                     try:
-                        conn.execute(text(
-                            "ALTER TABLE cached_commits ADD COLUMN filtered_deletions INTEGER DEFAULT 0"
-                        ))
+                        conn.execute(
+                            text(
+                                "ALTER TABLE cached_commits ADD COLUMN filtered_deletions INTEGER DEFAULT 0"
+                            )
+                        )
                         conn.commit()
                     except Exception as e:
                         logger.debug(f"Column may already exist or database is readonly: {e}")
@@ -1144,16 +1148,22 @@ class Database:
                 if "filtered_insertions" not in columns or "filtered_deletions" not in columns:
                     logger.info("Initializing filtered columns with existing values")
                     try:
-                        conn.execute(text("""
+                        conn.execute(
+                            text(
+                                """
                             UPDATE cached_commits
                             SET filtered_insertions = COALESCE(filtered_insertions, insertions),
                                 filtered_deletions = COALESCE(filtered_deletions, deletions)
                             WHERE filtered_insertions IS NULL OR filtered_deletions IS NULL
-                        """))
+                        """
+                            )
+                        )
                         conn.commit()
                     except Exception as e:
                         logger.debug(f"Could not initialize filtered columns: {e}")
 
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
-            logger.debug(f"Could not apply migrations (may be normal for new/memory databases): {e}")
+            logger.debug(
+                f"Could not apply migrations (may be normal for new/memory databases): {e}"
+            )

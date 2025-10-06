@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
-from pathlib import Path
 
 
 @dataclass
@@ -10,43 +9,45 @@ class SecretScanningConfig:
     """Configuration for secret detection."""
 
     enabled: bool = True
-    patterns: Dict[str, str] = field(default_factory=lambda: {
-        # AWS
-        "aws_access_key": r"AKIA[0-9A-Z]{16}",
-        "aws_secret_key": r"aws['\"][0-9a-zA-Z/+=]{40}['\"]",
-
-        # GitHub
-        "github_token": r"gh[ps]_[a-zA-Z0-9]{36}",
-        "github_oauth": r"gho_[a-zA-Z0-9]{36}",
-        "github_app_token": r"ghs_[a-zA-Z0-9]{36}",
-
-        # Generic API Keys
-        "api_key": r"(api[_-]?key|apikey)(.{0,20})?['\"]([0-9a-zA-Z]{32,45})['\"]",
-        "secret": r"(secret|password|passwd|pwd)(.{0,20})?['\"]([0-9a-zA-Z]{8,})['\"]",
-
-        # Private Keys
-        "private_key": r"-----BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-----",
-
-        # Database URLs
-        "db_url": r"(postgres|postgresql|mysql|mongodb|redis)://[^:]+:[^@]+@[^/]+",
-
-        # JWT
-        "jwt": r"eyJ[A-Za-z0-9-_]+\.eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+",
-
-        # Slack
-        "slack_token": r"xox[baprs]-[0-9a-zA-Z]{10,48}",
-
-        # Google
-        "google_api": r"AIza[0-9A-Za-z\\-_]{35}",
-
-        # Stripe
-        "stripe_key": r"(sk|pk)_(test|live)_[0-9a-zA-Z]{24,}",
-    })
+    patterns: Dict[str, str] = field(
+        default_factory=lambda: {
+            # AWS
+            "aws_access_key": r"AKIA[0-9A-Z]{16}",
+            "aws_secret_key": r"aws['\"][0-9a-zA-Z/+=]{40}['\"]",
+            # GitHub
+            "github_token": r"gh[ps]_[a-zA-Z0-9]{36}",
+            "github_oauth": r"gho_[a-zA-Z0-9]{36}",
+            "github_app_token": r"ghs_[a-zA-Z0-9]{36}",
+            # Generic API Keys
+            "api_key": r"(api[_-]?key|apikey)(.{0,20})?['\"]([0-9a-zA-Z]{32,45})['\"]",
+            "secret": r"(secret|password|passwd|pwd)(.{0,20})?['\"]([0-9a-zA-Z]{8,})['\"]",
+            # Private Keys
+            "private_key": r"-----BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-----",
+            # Database URLs
+            "db_url": r"(postgres|postgresql|mysql|mongodb|redis)://[^:]+:[^@]+@[^/]+",
+            # JWT
+            "jwt": r"eyJ[A-Za-z0-9-_]+\.eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+",
+            # Slack
+            "slack_token": r"xox[baprs]-[0-9a-zA-Z]{10,48}",
+            # Google
+            "google_api": r"AIza[0-9A-Za-z\\-_]{35}",
+            # Stripe
+            "stripe_key": r"(sk|pk)_(test|live)_[0-9a-zA-Z]{24,}",
+        }
+    )
     entropy_threshold: float = 4.5
-    exclude_paths: List[str] = field(default_factory=lambda: [
-        "*.test.*", "*.spec.*", "*_test.go", "test_*.py",
-        "*/tests/*", "*/test/*", "*.md", "*.txt"
-    ])
+    exclude_paths: List[str] = field(
+        default_factory=lambda: [
+            "*.test.*",
+            "*.spec.*",
+            "*_test.go",
+            "test_*.py",
+            "*/tests/*",
+            "*/test/*",
+            "*.md",
+            "*.txt",
+        ]
+    )
 
 
 @dataclass
@@ -57,11 +58,13 @@ class VulnerabilityScanningConfig:
 
     # Tool-specific configurations
     enable_semgrep: bool = True
-    semgrep_rules: List[str] = field(default_factory=lambda: [
-        "auto",  # Use Semgrep's auto configuration
-        "p/security-audit",
-        "p/owasp-top-ten"
-    ])
+    semgrep_rules: List[str] = field(
+        default_factory=lambda: [
+            "auto",  # Use Semgrep's auto configuration
+            "p/security-audit",
+            "p/owasp-top-ten",
+        ]
+    )
 
     enable_bandit: bool = True  # Python
     bandit_severity: str = "medium"  # low, medium, high
@@ -71,14 +74,16 @@ class VulnerabilityScanningConfig:
     enable_brakeman: bool = False  # Ruby on Rails
 
     # Custom patterns for quick checks
-    vulnerability_patterns: Dict[str, str] = field(default_factory=lambda: {
-        "sql_injection": r"(SELECT|DELETE|INSERT|UPDATE|DROP).*\+.*(?:request|params|input)",
-        "command_injection": r"(exec|eval|system|popen|subprocess).*\+.*(?:request|params|input)",
-        "xss": r"innerHTML\s*=.*(?:request|params|input)",
-        "path_traversal": r"\.\./.*(?:request|params|input)",
-        "weak_crypto": r"(md5|sha1|des|rc4)\s*\(",
-        "hardcoded_sql": r"(SELECT|DELETE|INSERT|UPDATE).*FROM.*WHERE.*=\s*['\"]",
-    })
+    vulnerability_patterns: Dict[str, str] = field(
+        default_factory=lambda: {
+            "sql_injection": r"(SELECT|DELETE|INSERT|UPDATE|DROP).*\+.*(?:request|params|input)",
+            "command_injection": r"(exec|eval|system|popen|subprocess).*\+.*(?:request|params|input)",
+            "xss": r"innerHTML\s*=.*(?:request|params|input)",
+            "path_traversal": r"\.\./.*(?:request|params|input)",
+            "weak_crypto": r"(md5|sha1|des|rc4)\s*\(",
+            "hardcoded_sql": r"(SELECT|DELETE|INSERT|UPDATE).*FROM.*WHERE.*=\s*['\"]",
+        }
+    )
 
 
 @dataclass
@@ -140,7 +145,9 @@ class SecurityConfig:
     enabled: bool = False  # Disabled by default, opt-in
 
     secret_scanning: SecretScanningConfig = field(default_factory=SecretScanningConfig)
-    vulnerability_scanning: VulnerabilityScanningConfig = field(default_factory=VulnerabilityScanningConfig)
+    vulnerability_scanning: VulnerabilityScanningConfig = field(
+        default_factory=VulnerabilityScanningConfig
+    )
     dependency_scanning: DependencyScanningConfig = field(default_factory=DependencyScanningConfig)
     llm_security: LLMSecurityConfig = field(default_factory=LLMSecurityConfig)
 
@@ -164,7 +171,9 @@ class SecurityConfig:
             config.secret_scanning = SecretScanningConfig(**data["secret_scanning"])
 
         if "vulnerability_scanning" in data:
-            config.vulnerability_scanning = VulnerabilityScanningConfig(**data["vulnerability_scanning"])
+            config.vulnerability_scanning = VulnerabilityScanningConfig(
+                **data["vulnerability_scanning"]
+            )
 
         if "dependency_scanning" in data:
             config.dependency_scanning = DependencyScanningConfig(**data["dependency_scanning"])

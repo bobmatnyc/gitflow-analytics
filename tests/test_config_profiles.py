@@ -27,12 +27,12 @@ class TestConfigurationProfiles:
         profile = ProfileManager.get_profile("performance")
         assert profile is not None
         assert profile.name == "performance"
-        
+
         # Test case insensitive
         profile = ProfileManager.get_profile("QUALITY")
         assert profile is not None
         assert profile.name == "quality"
-        
+
         # Test non-existent profile
         profile = ProfileManager.get_profile("non-existent")
         assert profile is None
@@ -40,9 +40,9 @@ class TestConfigurationProfiles:
     def test_performance_profile_settings(self):
         """Test performance profile settings."""
         from gitflow_analytics.config.profiles import PerformanceProfile
-        
+
         settings = PerformanceProfile.get_settings()
-        
+
         # Check key performance settings
         assert settings["analysis"]["branch_analysis"]["strategy"] == "main_only"
         assert settings["analysis"]["ml_categorization"]["enabled"] is False
@@ -54,9 +54,9 @@ class TestConfigurationProfiles:
     def test_quality_profile_settings(self):
         """Test quality profile settings."""
         from gitflow_analytics.config.profiles import QualityProfile
-        
+
         settings = QualityProfile.get_settings()
-        
+
         # Check key quality settings
         assert settings["analysis"]["branch_analysis"]["strategy"] == "smart"
         assert settings["analysis"]["branch_analysis"]["max_branches_per_repo"] == 100
@@ -68,9 +68,9 @@ class TestConfigurationProfiles:
     def test_balanced_profile_settings(self):
         """Test balanced profile settings."""
         from gitflow_analytics.config.profiles import BalancedProfile
-        
+
         settings = BalancedProfile.get_settings()
-        
+
         # Check balanced settings
         assert settings["analysis"]["branch_analysis"]["strategy"] == "smart"
         assert settings["analysis"]["branch_analysis"]["max_branches_per_repo"] == 50
@@ -80,9 +80,9 @@ class TestConfigurationProfiles:
     def test_minimal_profile_settings(self):
         """Test minimal profile settings."""
         from gitflow_analytics.config.profiles import MinimalProfile
-        
+
         settings = MinimalProfile.get_settings()
-        
+
         # Check minimal settings
         assert settings["analysis"]["branch_analysis"]["strategy"] == "main_only"
         assert settings["analysis"]["ml_categorization"]["enabled"] is False
@@ -96,12 +96,12 @@ class TestConfigurationProfiles:
             "version": "1.0",
             "repositories": [{"name": "test", "path": "/test"}],
         }
-        
+
         # Apply performance profile
         config = ProfileManager.apply_profile(base_config, "performance")
         assert config["analysis"]["branch_analysis"]["strategy"] == "main_only"
         assert config["analysis"]["ml_categorization"]["enabled"] is False
-        
+
         # Apply quality profile
         config = ProfileManager.apply_profile(base_config, "quality")
         assert config["analysis"]["branch_analysis"]["strategy"] == "smart"
@@ -110,10 +110,10 @@ class TestConfigurationProfiles:
     def test_apply_invalid_profile(self):
         """Test applying an invalid profile raises error."""
         base_config = {"version": "1.0"}
-        
+
         with pytest.raises(ValueError) as exc_info:
             ProfileManager.apply_profile(base_config, "non-existent")
-        
+
         assert "Unknown configuration profile" in str(exc_info.value)
         assert "Available profiles:" in str(exc_info.value)
 
@@ -127,10 +127,10 @@ repositories:
   - name: "test-repo"
     path: "/path/to/repo"
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = Path(f.name)
-        
+
         try:
             # Load config (will fail on missing token but profile should be applied)
             config = ConfigLoader.load(temp_path)
@@ -156,26 +156,26 @@ analysis:
 output:
   formats: ["csv", "markdown"]  # Override performance profile default
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = Path(f.name)
-        
+
         try:
             # Parse YAML to verify profile application
             with open(temp_path) as f:
                 data = yaml.safe_load(f)
-            
+
             # Apply profile
             data = ProfileManager.apply_profile(data, data["profile"])
-            
+
             # Check that overrides are preserved
             assert data["analysis"]["ml_categorization"]["enabled"] is True
             assert data["analysis"]["ml_categorization"]["min_confidence"] == 0.8
             assert data["output"]["formats"] == ["csv", "markdown"]
-            
+
             # Check that non-overridden profile settings are applied
             assert data["analysis"]["branch_analysis"]["strategy"] == "main_only"
-            
+
         finally:
             temp_path.unlink()
 
@@ -186,15 +186,15 @@ output:
             "b": {"c": 2, "d": 3},
             "e": [1, 2, 3],
         }
-        
+
         override = {
             "a": 10,
             "b": {"c": 20, "f": 4},
             "g": 5,
         }
-        
+
         result = ProfileManager._deep_merge(base, override)
-        
+
         assert result["a"] == 10  # Overridden
         assert result["b"]["c"] == 20  # Nested override
         assert result["b"]["d"] == 3  # Preserved from base

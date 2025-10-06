@@ -19,7 +19,7 @@ def test_branch_commits():
     repo = git.Repo(repo_path)
 
     print(f"Repository: {repo_path}")
-    print("="*60)
+    print("=" * 60)
 
     # Get date range
     since = datetime.now(timezone.utc) - timedelta(weeks=52)
@@ -34,7 +34,7 @@ def test_branch_commits():
 
     # Analyze each branch
     for ref in repo.references:
-        if isinstance(ref, git.RemoteReference) and ref.remote_head != 'HEAD':
+        if isinstance(ref, git.RemoteReference) and ref.remote_head != "HEAD":
             branch_name = f"{ref.remote_name}/{ref.remote_head}"
 
             # Get commits on this branch
@@ -52,7 +52,7 @@ def test_branch_commits():
                 if commits:
                     print(f"  Latest 3 commits:")
                     for commit in commits[:3]:
-                        msg = commit.message.split('\n')[0][:50]
+                        msg = commit.message.split("\n")[0][:50]
                         print(f"    - {commit.hexsha[:8]}: {msg}")
 
             except Exception as e:
@@ -73,24 +73,28 @@ def test_branch_commits():
                 if commits:
                     print(f"  Latest 3 commits:")
                     for commit in commits[:3]:
-                        msg = commit.message.split('\n')[0][:50]
+                        msg = commit.message.split("\n")[0][:50]
                         print(f"    - {commit.hexsha[:8]}: {msg}")
 
             except Exception as e:
                 print(f"Branch {branch_name}: Error - {e}")
 
     print()
-    print("="*60)
+    print("=" * 60)
     print("SUMMARY:")
     print(f"Total unique commits across all branches: {len(all_commits)}")
     print(f"Branches analyzed: {len(branch_commits)}")
 
     # Check for commits unique to non-main branches
     main_commits = set()
-    for ref_name in ['main', 'origin/main', 'master', 'origin/master']:
+    for ref_name in ["main", "origin/main", "master", "origin/master"]:
         if ref_name in branch_commits:
             try:
-                ref = repo.refs[ref_name] if '/' not in ref_name else repo.remotes.origin.refs[ref_name.split('/')[-1]]
+                ref = (
+                    repo.refs[ref_name]
+                    if "/" not in ref_name
+                    else repo.remotes.origin.refs[ref_name.split("/")[-1]]
+                )
                 for commit in repo.iter_commits(ref, since=since_str):
                     main_commits.add(commit.hexsha)
             except:
@@ -103,10 +107,10 @@ def test_branch_commits():
     if non_main_commits:
         print("\nBranches with unique commits:")
         for branch_name in branch_commits:
-            if 'main' not in branch_name and 'master' not in branch_name:
+            if "main" not in branch_name and "master" not in branch_name:
                 try:
-                    if '/' in branch_name:
-                        ref = repo.remotes.origin.refs[branch_name.split('/')[-1]]
+                    if "/" in branch_name:
+                        ref = repo.remotes.origin.refs[branch_name.split("/")[-1]]
                     else:
                         ref = repo.refs[branch_name]
 

@@ -1,10 +1,9 @@
 """Secret detection in git commits."""
 
-import re
-import math
-from typing import Dict, List, Optional, Tuple
-from pathlib import Path
 import logging
+import math
+import re
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +11,12 @@ logger = logging.getLogger(__name__)
 class SecretDetector:
     """Detect potential secrets and credentials in code changes."""
 
-    def __init__(self, patterns: Dict[str, str], entropy_threshold: float = 4.5, exclude_paths: List[str] = None):
+    def __init__(
+        self,
+        patterns: Dict[str, str],
+        entropy_threshold: float = 4.5,
+        exclude_paths: List[str] = None,
+    ):
         """Initialize secret detector.
 
         Args:
@@ -63,15 +67,15 @@ class SecretDetector:
                     "secret_type": secret_type,
                     "severity": self._get_severity(secret_type),
                     "file": file_path,
-                    "line": text[:match.start()].count('\n') + 1,
-                    "column": match.start() - text.rfind('\n', 0, match.start()),
+                    "line": text[: match.start()].count("\n") + 1,
+                    "column": match.start() - text.rfind("\n", 0, match.start()),
                     "match": secret_value[:20] + "..." if len(secret_value) > 20 else secret_value,
-                    "confidence": "high"
+                    "confidence": "high",
                 }
                 findings.append(finding)
 
         # Check for high-entropy strings (potential secrets)
-        for line_num, line in enumerate(text.split('\n'), 1):
+        for line_num, line in enumerate(text.split("\n"), 1):
             high_entropy_strings = self._find_high_entropy_strings(line)
             for string, entropy in high_entropy_strings:
                 if not self._is_false_positive(string):
@@ -83,7 +87,7 @@ class SecretDetector:
                         "line": line_num,
                         "entropy": round(entropy, 2),
                         "match": string[:20] + "..." if len(string) > 20 else string,
-                        "confidence": "medium"
+                        "confidence": "medium",
                     }
                     findings.append(finding)
 
@@ -158,7 +162,9 @@ class SecretDetector:
 
         return entropy
 
-    def _find_high_entropy_strings(self, text: str, min_length: int = 20) -> List[Tuple[str, float]]:
+    def _find_high_entropy_strings(
+        self, text: str, min_length: int = 20
+    ) -> List[Tuple[str, float]]:
         """Find strings with high entropy (potential secrets).
 
         Args:
@@ -174,10 +180,10 @@ class SecretDetector:
         patterns = [
             r'"([^"]+)"',  # Double quoted strings
             r"'([^']+)'",  # Single quoted strings
-            r'`([^`]+)`',  # Backtick strings
-            r'=\s*([^\s;,]+)',  # Values after equals sign
+            r"`([^`]+)`",  # Backtick strings
+            r"=\s*([^\s;,]+)",  # Values after equals sign
             r':\s*"([^"]+)"',  # JSON-style values
-            r':\s*\'([^\']+)\'',  # JSON-style values with single quotes
+            r":\s*\'([^\']+)\'",  # JSON-style values with single quotes
         ]
 
         for pattern in patterns:

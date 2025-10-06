@@ -21,9 +21,9 @@ class TestGitAnalyzer:
         """Test GitAnalyzer initialization."""
         cache_dir = temp_dir / ".gitflow-cache"
         cache = GitAnalysisCache(cache_dir)
-        
+
         analyzer = GitAnalyzer(cache)
-        
+
         assert analyzer.cache == cache
         assert analyzer.batch_size == 1000
         assert analyzer.exclude_paths == []
@@ -34,7 +34,7 @@ class TestGitAnalyzer:
         # Setup cache
         cache_dir = temp_dir / ".gitflow-cache"
         cache = GitAnalysisCache(cache_dir)
-        
+
         # Setup mock repository
         mock_repo = Mock()
         mock_repo_class.return_value = mock_repo
@@ -83,7 +83,7 @@ class TestGitAnalyzer:
         """Test repository analysis with date filtering."""
         cache_dir = temp_dir / ".gitflow-cache"
         cache = GitAnalysisCache(cache_dir)
-        
+
         mock_repo = Mock()
         mock_repo_class.return_value = mock_repo
 
@@ -112,22 +112,24 @@ class TestGitAnalyzer:
         # Setup a mock branch for the repository
         mock_branch = Mock()
         mock_branch.name = "main"
-        
+
         # Setup mock remote for update
         mock_remote = Mock()
         mock_remote.fetch.return_value = None
         mock_repo.remotes = [mock_remote]
-        
+
         # Setup mock head
         mock_repo.head.is_detached = False
         mock_repo.active_branch = mock_branch
         mock_repo.active_branch.tracking_branch.return_value = mock_branch
-        
+
         # Add the main branch to refs so it can be found
         mock_ref = Mock()
         mock_ref.name = "refs/heads/main"
-        
-        mock_repo.iter_commits.return_value = iter([recent_commit])  # Only recent commits returned by git
+
+        mock_repo.iter_commits.return_value = iter(
+            [recent_commit]
+        )  # Only recent commits returned by git
         mock_repo.remote_refs = []
         mock_repo.refs = [mock_ref]  # Include the main branch ref
         mock_repo.branches = [mock_branch]  # Add a main branch for the analyzer
@@ -148,20 +150,17 @@ class TestGitAnalyzer:
         """Test branch to project mapping functionality."""
         cache_dir = temp_dir / ".gitflow-cache"
         cache = GitAnalysisCache(cache_dir)
-        
+
         # Custom branch mapping rules
-        branch_rules = {
-            "FRONTEND": ["frontend/*", "fe/*"],
-            "BACKEND": ["backend/*", "api/*"]
-        }
-        
+        branch_rules = {"FRONTEND": ["frontend/*", "fe/*"], "BACKEND": ["backend/*", "api/*"]}
+
         analyzer = GitAnalyzer(cache, branch_mapping_rules=branch_rules)
-        
+
         # Test branch mapping
         frontend_project = analyzer.branch_mapper.map_branch_to_project("frontend/new-feature")
         backend_project = analyzer.branch_mapper.map_branch_to_project("api/user-service")
         unknown_project = analyzer.branch_mapper.map_branch_to_project("random/branch")
-        
+
         assert frontend_project == "FRONTEND"
         assert backend_project == "BACKEND"
         assert unknown_project == "UNKNOWN"
@@ -170,13 +169,13 @@ class TestGitAnalyzer:
         """Test ticket reference extraction from commit messages."""
         cache_dir = temp_dir / ".gitflow-cache"
         cache = GitAnalysisCache(cache_dir)
-        
+
         analyzer = GitAnalyzer(cache, allowed_ticket_platforms=["jira", "github"])
-        
+
         # Test ticket extraction
         commit_message = "feat: add user authentication [PROJ-123] fixes #456"
         tickets = analyzer.ticket_extractor.extract_from_text(commit_message)
-        
+
         assert len(tickets) == 2
         ticket_ids = [t["id"] for t in tickets]
         assert "PROJ-123" in ticket_ids
@@ -186,19 +185,19 @@ class TestGitAnalyzer:
         """Test story point extraction from commit messages."""
         cache_dir = temp_dir / ".gitflow-cache"
         cache = GitAnalysisCache(cache_dir)
-        
+
         analyzer = GitAnalyzer(cache)
-        
+
         # Test story point extraction
         commit_message = "feat: implement user dashboard [SP: 5]"
         points = analyzer.story_point_extractor.extract_from_text(commit_message)
-        
+
         assert points == 5
-        
+
         # Test no story points
         no_points_message = "fix: typo in documentation"
         points = analyzer.story_point_extractor.extract_from_text(no_points_message)
-        
+
         assert points is None
 
     @patch("gitflow_analytics.core.analyzer.Repo")
@@ -206,7 +205,7 @@ class TestGitAnalyzer:
         """Test error handling for repository access."""
         cache_dir = temp_dir / ".gitflow-cache"
         cache = GitAnalysisCache(cache_dir)
-        
+
         mock_repo_class.side_effect = Exception("Repository not found")
 
         repo_path = temp_dir / "nonexistent_repo"
@@ -224,10 +223,10 @@ class TestExcludePatterns:
         """Test that specified paths are excluded from analysis."""
         cache_dir = temp_dir / ".gitflow-cache"
         cache = GitAnalysisCache(cache_dir)
-        
+
         exclude_patterns = ["*.md", "*.txt", "node_modules/*"]
         analyzer = GitAnalyzer(cache, exclude_paths=exclude_patterns)
-        
+
         # Test file exclusion logic
         assert analyzer._should_exclude_file("README.md") is True
         assert analyzer._should_exclude_file("notes.txt") is True
@@ -239,16 +238,16 @@ class TestExcludePatterns:
         """Test batch processing of commits."""
         cache_dir = temp_dir / ".gitflow-cache"
         cache = GitAnalysisCache(cache_dir)
-        
+
         # Set small batch size for testing
         analyzer = GitAnalyzer(cache, batch_size=2)
-        
+
         assert analyzer.batch_size == 2
-        
+
         # Test batch generation
         test_commits = [Mock() for _ in range(5)]
         batches = list(analyzer._batch_commits(test_commits, 2))
-        
+
         assert len(batches) == 3  # 2 + 2 + 1
         assert len(batches[0]) == 2
         assert len(batches[1]) == 2

@@ -15,11 +15,12 @@ from typing import Callable, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class GitOperationTimeout(Exception):
     """Raised when a git operation exceeds its timeout."""
+
     pass
 
 
@@ -44,28 +45,30 @@ class GitTimeoutWrapper:
             repo_path: Optional repository path for context
         """
         operation_info = {
-            'name': operation_name,
-            'repo_path': str(repo_path) if repo_path else None,
-            'start_time': time.time(),
-            'thread_id': threading.current_thread().ident
+            "name": operation_name,
+            "repo_path": str(repo_path) if repo_path else None,
+            "start_time": time.time(),
+            "thread_id": threading.current_thread().ident,
         }
 
         self._operation_stack.append(operation_info)
-        logger.info(f"🚀 Starting operation: {operation_name} {f'for {repo_path}' if repo_path else ''}")
+        logger.info(
+            f"🚀 Starting operation: {operation_name} {f'for {repo_path}' if repo_path else ''}"
+        )
 
         try:
             yield operation_info
         finally:
             if self._operation_stack and self._operation_stack[-1] == operation_info:
                 self._operation_stack.pop()
-                elapsed = time.time() - operation_info['start_time']
+                elapsed = time.time() - operation_info["start_time"]
                 logger.info(f"✅ Completed operation: {operation_name} in {elapsed:.1f}s")
 
     def get_current_operation(self) -> Optional[dict]:
         """Get the currently running operation for this thread."""
         thread_id = threading.current_thread().ident
         for op in reversed(self._operation_stack):
-            if op.get('thread_id') == thread_id:
+            if op.get("thread_id") == thread_id:
                 return op
         return None
 
@@ -75,7 +78,7 @@ class GitTimeoutWrapper:
         args: tuple = (),
         kwargs: dict = None,
         timeout: Optional[int] = None,
-        operation_name: str = "git_operation"
+        operation_name: str = "git_operation",
     ) -> T:
         """Run a function with timeout protection using threading.
 
@@ -125,7 +128,7 @@ class GitTimeoutWrapper:
         cwd: Optional[Path] = None,
         timeout: Optional[int] = None,
         capture_output: bool = True,
-        check: bool = True
+        check: bool = True,
     ) -> subprocess.CompletedProcess:
         """Run a git command with timeout protection.
 
@@ -147,18 +150,20 @@ class GitTimeoutWrapper:
 
         # Set environment to prevent authentication prompts
         env = os.environ.copy()
-        env.update({
-            "GIT_TERMINAL_PROMPT": "0",
-            "GIT_ASKPASS": "/bin/echo",
-            "SSH_ASKPASS": "/bin/echo",
-            "GCM_INTERACTIVE": "never",
-            "GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o PasswordAuthentication=no",
-            "DISPLAY": "",
-            "GIT_CREDENTIAL_HELPER": "",
-            "GCM_PROVIDER": "none",
-        })
+        env.update(
+            {
+                "GIT_TERMINAL_PROMPT": "0",
+                "GIT_ASKPASS": "/bin/echo",
+                "SSH_ASKPASS": "/bin/echo",
+                "GCM_INTERACTIVE": "never",
+                "GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o PasswordAuthentication=no",
+                "DISPLAY": "",
+                "GIT_CREDENTIAL_HELPER": "",
+                "GCM_PROVIDER": "none",
+            }
+        )
 
-        operation_name = ' '.join(cmd[:2])  # e.g., "git fetch"
+        operation_name = " ".join(cmd[:2])  # e.g., "git fetch"
 
         with self.operation_tracker(operation_name, cwd):
             try:
@@ -169,18 +174,23 @@ class GitTimeoutWrapper:
                     capture_output=capture_output,
                     text=True,
                     timeout=timeout,
-                    check=check
+                    check=check,
                 )
                 return result
 
             except subprocess.TimeoutExpired as e:
                 logger.error(f"⏱️ Git command timed out after {timeout}s: {' '.join(cmd)}")
-                raise GitOperationTimeout(f"Git command '{operation_name}' timed out after {timeout}s") from e
+                raise GitOperationTimeout(
+                    f"Git command '{operation_name}' timed out after {timeout}s"
+                ) from e
 
             except subprocess.CalledProcessError as e:
                 # Check if it's an authentication error
                 error_str = (e.stderr or "").lower()
-                if any(x in error_str for x in ["authentication", "permission denied", "401", "403", "password"]):
+                if any(
+                    x in error_str
+                    for x in ["authentication", "permission denied", "401", "403", "password"]
+                ):
                     logger.error(f"🔐 Authentication failed for git command: {operation_name}")
                     logger.error(f"   Error details: {e.stderr}")
                 raise
@@ -197,10 +207,7 @@ class GitTimeoutWrapper:
         """
         try:
             self.run_git_command(
-                ["git", "fetch", "--all"],
-                cwd=repo_path,
-                timeout=timeout,
-                check=True
+                ["git", "fetch", "--all"], cwd=repo_path, timeout=timeout, check=True
             )
             logger.info(f"✅ Fetch succeeded for {repo_path.name}")
             return True
@@ -210,7 +217,10 @@ class GitTimeoutWrapper:
             if isinstance(e, subprocess.CalledProcessError) and e.stderr:
                 error_detail = e.stderr.strip()
                 # Check for authentication-specific errors
-                if "could not read Username" in error_detail or "could not read Password" in error_detail:
+                if (
+                    "could not read Username" in error_detail
+                    or "could not read Password" in error_detail
+                ):
                     logger.error(
                         f"🔐 Authentication required for {repo_path.name}. "
                         f"Repository uses HTTPS but no credentials configured. "
@@ -239,23 +249,14 @@ class GitTimeoutWrapper:
             True if pull succeeded, False otherwise
         """
         try:
-            self.run_git_command(
-                ["git", "pull"],
-                cwd=repo_path,
-                timeout=timeout,
-                check=True
-            )
+            self.run_git_command(["git", "pull"], cwd=repo_path, timeout=timeout, check=True)
             return True
         except (GitOperationTimeout, subprocess.CalledProcessError) as e:
             logger.warning(f"Git pull failed for {repo_path}: {e}")
             return False
 
     def clone_with_timeout(
-        self,
-        clone_url: str,
-        target_path: Path,
-        branch: Optional[str] = None,
-        timeout: int = 60
+        self, clone_url: str, target_path: Path, branch: Optional[str] = None, timeout: int = 60
     ) -> bool:
         """Clone a repository with timeout protection.
 
@@ -320,8 +321,8 @@ class HeartbeatLogger:
             if current_time - last_log_time >= self.interval:
                 operation = self._wrapper.get_current_operation()
                 if operation:
-                    elapsed = current_time - operation['start_time']
-                    repo_info = f"for {operation['repo_path']} " if operation['repo_path'] else ""
+                    elapsed = current_time - operation["start_time"]
+                    repo_info = f"for {operation['repo_path']} " if operation["repo_path"] else ""
                     logger.info(
                         f"💓 Heartbeat: Still running '{operation['name']}' "
                         f"{repo_info}"

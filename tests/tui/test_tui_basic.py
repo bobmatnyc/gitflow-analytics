@@ -61,6 +61,7 @@ analysis:
         try:
             # Load config
             from gitflow_analytics.config import ConfigLoader
+
             app.config = ConfigLoader.load(test_config_path)
             app.config_path = test_config_path
 
@@ -75,7 +76,6 @@ analysis:
             if test_config_path.exists():
                 test_config_path.unlink()
 
-
     @pytest.mark.asyncio
     async def test_tui_error_handling(self):
         """Test TUI error handling with invalid inputs."""
@@ -85,7 +85,7 @@ analysis:
             # Test invalid key presses don't crash
             await pilot.press("ctrl+z")  # Invalid shortcut
             await asyncio.sleep(0.1)
-            await pilot.press("alt+x")   # Invalid shortcut
+            await pilot.press("alt+x")  # Invalid shortcut
             await asyncio.sleep(0.1)
 
             assert app.is_running, "App crashed on invalid input"

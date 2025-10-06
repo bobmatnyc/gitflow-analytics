@@ -24,27 +24,21 @@ def test_branch_fetching(repo_path: str, branch_patterns: List[str] = None, week
     print(f"Testing repository: {repo_path}")
     print(f"Branch patterns: {branch_patterns if branch_patterns else 'ALL BRANCHES'}")
     print(f"Time period: {weeks} weeks")
-    print('='*80)
+    print("=" * 80)
 
     # Create a minimal config
-    config = Config({
-        'repositories': {
-            'test_repo': {
-                'path': repo_path,
-                'branch_patterns': branch_patterns or []
-            }
-        },
-        'analysis': {
-            'period_weeks': weeks,
-            'identity': {
-                'fuzzy_threshold': 0.85,
-                'auto_analysis': False
-            }
-        },
-        'output': {
-            'directory': 'test_output'
+    config = Config(
+        {
+            "repositories": {
+                "test_repo": {"path": repo_path, "branch_patterns": branch_patterns or []}
+            },
+            "analysis": {
+                "period_weeks": weeks,
+                "identity": {"fuzzy_threshold": 0.85, "auto_analysis": False},
+            },
+            "output": {"directory": "test_output"},
         }
-    })
+    )
 
     # Initialize DataFetcher
     fetcher = DataFetcher(config)
@@ -55,9 +49,9 @@ def test_branch_fetching(repo_path: str, branch_patterns: List[str] = None, week
     # Get all branches (both local and remote)
     all_branches = set()
     for ref in repo.references:
-        if 'origin/' in ref.name:
-            branch_name = ref.name.replace('origin/', '')
-            if branch_name != 'HEAD':
+        if "origin/" in ref.name:
+            branch_name = ref.name.replace("origin/", "")
+            if branch_name != "HEAD":
                 all_branches.add(branch_name)
 
     print(f"\nAvailable branches in repository:")
@@ -83,7 +77,7 @@ def test_branch_fetching(repo_path: str, branch_patterns: List[str] = None, week
             commit_branches = []
             try:
                 # Get the actual git commit
-                git_commit = repo.commit(commit['hash'])
+                git_commit = repo.commit(commit["hash"])
 
                 # Find which branches contain this commit
                 for branch in repo.heads:
@@ -91,18 +85,18 @@ def test_branch_fetching(repo_path: str, branch_patterns: List[str] = None, week
                         branch_name = branch.name
                         if branch_name not in branch_commits:
                             branch_commits[branch_name] = set()
-                        branch_commits[branch_name].add(commit['hash'])
+                        branch_commits[branch_name].add(commit["hash"])
                         commit_branches.append(branch_name)
 
                 # Also check remote branches
                 for ref in repo.remotes.origin.refs:
-                    if ref.remote_head != 'HEAD':
+                    if ref.remote_head != "HEAD":
                         try:
                             if repo.is_ancestor(git_commit, ref.commit):
                                 branch_name = ref.remote_head
                                 if branch_name not in branch_commits:
                                     branch_commits[branch_name] = set()
-                                branch_commits[branch_name].add(commit['hash'])
+                                branch_commits[branch_name].add(commit["hash"])
                                 if branch_name not in commit_branches:
                                     commit_branches.append(branch_name)
                         except:
@@ -169,13 +163,15 @@ def main():
         print(f"\n{'#'*80}")
         print(f"TEST 2: Fetching only main/master branches")
         print(f"{'#'*80}")
-        total2, branches2 = test_branch_fetching(repo_path, branch_patterns=['main', 'master'], weeks=8)
+        total2, branches2 = test_branch_fetching(
+            repo_path, branch_patterns=["main", "master"], weeks=8
+        )
 
         # Test 3: With develop pattern
         print(f"\n{'#'*80}")
         print(f"TEST 3: Fetching develop branches")
         print(f"{'#'*80}")
-        total3, branches3 = test_branch_fetching(repo_path, branch_patterns=['develop'], weeks=8)
+        total3, branches3 = test_branch_fetching(repo_path, branch_patterns=["develop"], weeks=8)
 
         # Summary
         print(f"\n{'='*80}")

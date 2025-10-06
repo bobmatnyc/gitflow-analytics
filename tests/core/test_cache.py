@@ -52,7 +52,7 @@ class TestGitAnalysisCache:
             "deletions": 5,
             "complexity_delta": 1.5,
             "story_points": 3,
-            "ticket_references": ["PROJ-123"]
+            "ticket_references": ["PROJ-123"],
         }
 
         # Cache the commit
@@ -92,12 +92,12 @@ class TestGitAnalysisCache:
                 "author_email": "jane@example.com",
                 "message": "fix: resolve bug",
                 "timestamp": datetime(2024, 1, 2, 14, 0, 0, tzinfo=timezone.utc),
-                "branch": "main", 
+                "branch": "main",
                 "project": "PROJECT",
                 "files_changed": 1,
                 "insertions": 5,
                 "deletions": 8,
-            }
+            },
         ]
 
         # Cache the commits in batch
@@ -127,7 +127,7 @@ class TestGitAnalysisCache:
             "merged_at": datetime(2024, 1, 3, tzinfo=timezone.utc),
             "story_points": 5,
             "labels": ["enhancement", "frontend"],
-            "commit_hashes": ["abc123", "def456"]
+            "commit_hashes": ["abc123", "def456"],
         }
 
         # Cache the PR
@@ -157,7 +157,7 @@ class TestGitAnalysisCache:
             "merged_at": datetime(2024, 1, 3, tzinfo=timezone.utc),
             "story_points": 5,
             "labels": ["enhancement", "frontend"],
-            "commit_hashes": ["abc123", "def456"]
+            "commit_hashes": ["abc123", "def456"],
         }
 
         # Cache the PR first time
@@ -179,7 +179,7 @@ class TestGitAnalysisCache:
             "merged_at": datetime(2024, 1, 4, tzinfo=timezone.utc),  # Different merge time
             "story_points": 8,  # Updated story points
             "labels": ["enhancement", "frontend", "high-priority"],  # Added label
-            "commit_hashes": ["abc123", "def456", "ghi789"]  # Added commit
+            "commit_hashes": ["abc123", "def456", "ghi789"],  # Added commit
         }
 
         # Cache the PR again - this should update, not insert
@@ -209,7 +209,7 @@ class TestGitAnalysisCache:
             "updated_at": datetime(2024, 1, 2, tzinfo=timezone.utc),
             "story_points": 8,
             "labels": ["backend", "security"],
-            "platform_data": {"custom_field": "value"}
+            "platform_data": {"custom_field": "value"},
         }
 
         # Cache the issue
@@ -238,7 +238,7 @@ class TestGitAnalysisCache:
             "updated_at": datetime(2024, 1, 2, tzinfo=timezone.utc),
             "story_points": 8,
             "labels": ["backend", "security"],
-            "platform_data": {"custom_field": "value"}
+            "platform_data": {"custom_field": "value"},
         }
 
         # Cache the issue first time
@@ -263,7 +263,7 @@ class TestGitAnalysisCache:
             "resolved_at": datetime(2024, 1, 5, tzinfo=timezone.utc),  # New field
             "story_points": 10,  # Updated story points
             "labels": ["backend", "security", "completed"],  # Added label
-            "platform_data": {"custom_field": "updated_value", "new_field": "new"}
+            "platform_data": {"custom_field": "updated_value", "new_field": "new"},
         }
 
         # Cache the issue again - this should update, not insert
@@ -309,8 +309,9 @@ class TestGitAnalysisCache:
         # Simulate time passing by directly testing the _is_stale method
         # with a past timestamp
         import time
+
         time.sleep(0.1)  # Small delay to ensure cache is stale
-        
+
         # The cache should handle stale entries appropriately
         # (exact behavior depends on implementation)
 
@@ -417,18 +418,20 @@ class TestCachePerformance:
 
         # Generate large batch of commits
         for i in range(100):
-            commits.append({
-                "hash": f"commit{i:03d}",
-                "author_name": f"Author {i}",
-                "author_email": f"author{i}@example.com",
-                "message": f"commit message {i}",
-                "timestamp": datetime(2024, 1, 1, 10, i % 60, 0, tzinfo=timezone.utc),
-                "branch": "main",
-                "project": "PROJECT",
-                "files_changed": 1,
-                "insertions": i,
-                "deletions": 0,
-            })
+            commits.append(
+                {
+                    "hash": f"commit{i:03d}",
+                    "author_name": f"Author {i}",
+                    "author_email": f"author{i}@example.com",
+                    "message": f"commit message {i}",
+                    "timestamp": datetime(2024, 1, 1, 10, i % 60, 0, tzinfo=timezone.utc),
+                    "branch": "main",
+                    "project": "PROJECT",
+                    "files_changed": 1,
+                    "insertions": i,
+                    "deletions": 0,
+                }
+            )
 
         # Cache all commits in batch
         cache.cache_commits_batch(repo_path, commits)

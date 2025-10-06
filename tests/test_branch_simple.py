@@ -25,10 +25,10 @@ def test_branch_analysis():
         return
 
     print(f"Testing repository: {repo_path}")
-    print("="*60)
+    print("=" * 60)
 
     # Test with different strategies
-    strategies = ['main_only', 'smart', 'all']
+    strategies = ["main_only", "smart", "all"]
     results = {}
 
     for strategy in strategies:
@@ -40,15 +40,13 @@ def test_branch_analysis():
 
             # Create analyzer
             branch_config = {
-                'strategy': strategy,
-                'active_days_threshold': 30,
-                'max_branches_per_repo': 50
+                "strategy": strategy,
+                "active_days_threshold": 30,
+                "max_branches_per_repo": 50,
             }
 
             analyzer = GitAnalyzer(
-                cache=cache,
-                batch_size=1000,
-                branch_analysis_config=branch_config
+                cache=cache, batch_size=1000, branch_analysis_config=branch_config
             )
 
             # Analyze last 52 weeks
@@ -64,21 +62,21 @@ def test_branch_analysis():
             if commits and len(commits) > 0:
                 print(f"  Sample commits:")
                 for commit in commits[:3]:
-                    msg = commit.get('message', '')[:50] if commit.get('message') else 'No message'
+                    msg = commit.get("message", "")[:50] if commit.get("message") else "No message"
                     print(f"    - {commit['hash'][:8]}: {msg}...")
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("SUMMARY:")
     for strategy, count in results.items():
         print(f"  {strategy}: {count} commits")
 
     # Calculate differences
-    if 'all' in results and 'main_only' in results:
+    if "all" in results and "main_only" in results:
         print(f"\nCommits on non-main branches: {results['all'] - results['main_only']}")
 
-    if 'all' in results and 'smart' in results:
-        diff = results['all'] - results['smart']
+    if "all" in results and "smart" in results:
+        diff = results["all"] - results["smart"]
         if diff > 0:
             print(f"Commits missed by smart strategy: {diff}")
         elif diff < 0:

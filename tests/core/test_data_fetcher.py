@@ -32,7 +32,7 @@ class TestGitDataFetcher:
             cache=temp_cache,
             branch_mapping_rules={"main": ["main", "master"]},
             allowed_ticket_platforms=["jira", "github"],
-            exclude_paths=["**/node_modules/**", "**/vendor/**"]
+            exclude_paths=["**/node_modules/**", "**/vendor/**"],
         )
 
         assert fetcher.cache == temp_cache
@@ -62,7 +62,7 @@ class TestGitDataFetcher:
             "**/node_modules/**",
             "**/vendor/**",
             "**/*.min.js",
-            "**/package-lock.json"
+            "**/package-lock.json",
         ]
 
         # Should exclude
@@ -105,20 +105,20 @@ class TestGitDataFetcher:
 
         assert stats["files"] == 6
         assert stats["insertions"] == 2150  # 100+1000+500+50+200+300
-        assert stats["deletions"] == 150     # 0+0+0+0+50+100
+        assert stats["deletions"] == 150  # 0+0+0+0+50+100
 
         # Test with exclusions
         data_fetcher.exclude_paths = [
             "**/package-lock.json",
             "**/vendor/**",
             "**/node_modules/**",
-            "**/*.min.js"
+            "**/*.min.js",
         ]
         stats = data_fetcher._calculate_commit_stats(mock_commit)
 
-        assert stats["files"] == 2           # Only main.py and utils.py
-        assert stats["insertions"] == 150    # 100+50
-        assert stats["deletions"] == 0       # 0+0
+        assert stats["files"] == 2  # Only main.py and utils.py
+        assert stats["insertions"] == 150  # 100+50
+        assert stats["deletions"] == 0  # 0+0
 
     def test_calculate_commit_stats_initial_commit(self, data_fetcher):
         """Test _calculate_commit_stats for initial commit (no parent)."""
@@ -140,8 +140,8 @@ class TestGitDataFetcher:
         data_fetcher.exclude_paths = ["**/package-lock.json"]
         stats = data_fetcher._calculate_commit_stats(mock_commit)
 
-        assert stats["files"] == 2           # README.md and src/main.py
-        assert stats["insertions"] == 150    # 50+100
+        assert stats["files"] == 2  # README.md and src/main.py
+        assert stats["insertions"] == 150  # 50+100
         assert stats["deletions"] == 0
 
     def test_matches_glob_pattern_edge_cases(self, data_fetcher):
@@ -152,37 +152,35 @@ class TestGitDataFetcher:
         assert data_fetcher._matches_glob_pattern("", "") is False
 
         # Complex patterns
-        assert data_fetcher._matches_glob_pattern(
-            "src/components/Button/index.js",
-            "**/components/**"
-        ) is True
+        assert (
+            data_fetcher._matches_glob_pattern("src/components/Button/index.js", "**/components/**")
+            is True
+        )
 
-        assert data_fetcher._matches_glob_pattern(
-            "build/static/js/main.chunk.js",
-            "**/build/**"
-        ) is True
+        assert (
+            data_fetcher._matches_glob_pattern("build/static/js/main.chunk.js", "**/build/**")
+            is True
+        )
 
     def test_match_recursive_pattern(self, data_fetcher):
         """Test complex recursive pattern matching."""
         # Multiple ** patterns
         pattern = "**/src/**/test/**/*.spec.js"
 
-        assert data_fetcher._match_recursive_pattern(
-            "project/src/components/test/button.spec.js",
-            pattern
-        ) is True
+        assert (
+            data_fetcher._match_recursive_pattern(
+                "project/src/components/test/button.spec.js", pattern
+            )
+            is True
+        )
 
-        assert data_fetcher._match_recursive_pattern(
-            "src/utils/test/helper.spec.js",
-            pattern
-        ) is True
+        assert (
+            data_fetcher._match_recursive_pattern("src/utils/test/helper.spec.js", pattern) is True
+        )
 
-        assert data_fetcher._match_recursive_pattern(
-            "src/main.js",
-            pattern
-        ) is False
+        assert data_fetcher._match_recursive_pattern("src/main.js", pattern) is False
 
-    @patch('git.Repo')
+    @patch("git.Repo")
     def test_fetch_repository_data_integration(self, mock_repo_class, data_fetcher):
         """Test full integration of fetch_repository_data with exclude patterns."""
         # This is a more complex integration test
@@ -200,7 +198,7 @@ class TestGitDataFetcher:
                 "**/node_modules/**",
                 "**/vendor/**",
                 "**/*.min.js",
-                "**/package-lock.json"
+                "**/package-lock.json",
             ]
 
             # Note: This would require more complex mocking of the git operations
@@ -219,10 +217,7 @@ class TestGitDataFetcher:
             )
 
             result = data_fetcher.fetch_repository_data(
-                repo_path=repo_path,
-                project_key="TEST",
-                start_date=start_date,
-                end_date=end_date
+                repo_path=repo_path, project_key="TEST", start_date=start_date, end_date=end_date
             )
 
             assert result["project_key"] == "TEST"

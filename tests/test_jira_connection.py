@@ -21,15 +21,12 @@ print(f"Base URL: {base_url}")
 
 # Test connection
 credentials = base64.b64encode(f"{username}:{api_token}".encode()).decode()
-headers = {
-    "Authorization": f"Basic {credentials}",
-    "Accept": "application/json"
-}
+headers = {"Authorization": f"Basic {credentials}", "Accept": "application/json"}
 
 try:
     response = requests.get(f"{base_url}/rest/api/3/myself", headers=headers)
     print(f"\nResponse status: {response.status_code}")
-    
+
     if response.status_code == 200:
         user_data = response.json()
         print(f"✅ Successfully authenticated as: {user_data.get('displayName', 'Unknown')}")

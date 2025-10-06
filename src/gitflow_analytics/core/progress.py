@@ -31,18 +31,19 @@ import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
 
 from tqdm import tqdm
 
 # Import UI components if available
 try:
     from ..ui.progress_display import (
-        create_progress_display,
         RICH_AVAILABLE,
-        RepositoryStatus,
         RepositoryInfo,
+        RepositoryStatus,
+        create_progress_display,
     )
+
     UI_AVAILABLE = True
 except ImportError:
     UI_AVAILABLE = False
@@ -123,12 +124,11 @@ class ProgressService:
         if UI_AVAILABLE and self._display_style in ("rich", "auto"):
             try:
                 self._rich_display = create_progress_display(
-                    style=self._display_style,
-                    version=self._version,
-                    update_frequency=0.5
+                    style=self._display_style, version=self._version, update_frequency=0.5
                 )
-                self._use_rich = (self._display_style == "rich" or
-                                (self._display_style == "auto" and RICH_AVAILABLE))
+                self._use_rich = self._display_style == "rich" or (
+                    self._display_style == "auto" and RICH_AVAILABLE
+                )
             except Exception:
                 # Fall back to tqdm if Rich fails
                 self._use_rich = False
@@ -256,20 +256,15 @@ class ProgressService:
             # Update actual progress bar if it exists
             if self._use_rich and self._rich_display:
                 # Update Rich display based on context type
-                if hasattr(context, 'repository_name'):
+                if hasattr(context, "repository_name"):
                     # Repository-specific progress
                     speed = increment / 0.1 if increment > 0 else 0  # Simple speed calculation
                     self._rich_display.update_repository(
-                        context.repository_name,
-                        context.current,
-                        speed
+                        context.repository_name, context.current, speed
                     )
                 else:
                     # Overall progress
-                    self._rich_display.update_overall(
-                        context.current,
-                        description
-                    )
+                    self._rich_display.update_overall(context.current, description)
             elif context.progress_bar:
                 context.progress_bar.update(increment)
                 if description:
@@ -409,7 +404,9 @@ class ProgressService:
             self._captured_events = []
 
     # Rich-specific methods
-    def start_rich_display(self, total_items: int = 100, description: str = "Analyzing repositories"):
+    def start_rich_display(
+        self, total_items: int = 100, description: str = "Analyzing repositories"
+    ):
         """Start the Rich display if available.
 
         Args:
@@ -434,7 +431,9 @@ class ProgressService:
         if self._use_rich and self._rich_display and self._enabled:
             self._rich_display.start_repository(repo_name, total_commits)
 
-    def finish_repository(self, repo_name: str, success: bool = True, error_message: Optional[str] = None):
+    def finish_repository(
+        self, repo_name: str, success: bool = True, error_message: Optional[str] = None
+    ):
         """Finish processing a repository with Rich display.
 
         Args:
@@ -473,7 +472,9 @@ class ProgressService:
         if self._use_rich and self._rich_display and self._enabled:
             self._rich_display.set_phase(phase)
 
-    def create_repository_progress(self, repo_name: str, total: int, description: str) -> ProgressContext:
+    def create_repository_progress(
+        self, repo_name: str, total: int, description: str
+    ) -> ProgressContext:
         """Create a progress context specifically for repository processing.
 
         Args:
@@ -487,7 +488,7 @@ class ProgressService:
         context = self.create_progress(total, description, unit="commits", nested=True)
         # Add repository name to context for Rich display handling
         # Note: We use object.__setattr__ to bypass dataclass frozen status if needed
-        object.__setattr__(context, 'repository_name', repo_name)
+        object.__setattr__(context, "repository_name", repo_name)
 
         if self._use_rich and self._rich_display and self._enabled:
             self.start_repository(repo_name, total)
@@ -500,7 +501,9 @@ _progress_service: Optional[ProgressService] = None
 _service_lock = threading.Lock()
 
 
-def get_progress_service(display_style: Optional[str] = None, version: Optional[str] = None) -> ProgressService:
+def get_progress_service(
+    display_style: Optional[str] = None, version: Optional[str] = None
+) -> ProgressService:
     """Get the global progress service instance.
 
     Args:
@@ -546,6 +549,7 @@ def get_progress_service(display_style: Optional[str] = None, version: Optional[
                     # Try to get version from package
                     try:
                         from .._version import __version__
+
                         version = __version__
                     except ImportError:
                         version = "1.3.11"

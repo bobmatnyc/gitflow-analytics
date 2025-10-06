@@ -326,7 +326,7 @@ class OpenAIClassifier(BaseLLMClassifier):
                 url,
                 headers=headers,
                 json=payload,
-                timeout=(10.0, self.config.timeout_seconds)  # (connection, read) timeouts
+                timeout=(10.0, self.config.timeout_seconds),  # (connection, read) timeouts
             )
         except requests.exceptions.Timeout as e:
             logger.error(f"API request timed out after {self.config.timeout_seconds}s: {e}")

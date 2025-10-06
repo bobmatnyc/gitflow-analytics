@@ -458,7 +458,7 @@ class GitFlowAnalyticsApp(App):
         # Launch analysis progress screen
         analysis_screen = AnalysisProgressScreen(
             config=self.config,
-            weeks=getattr(self, 'default_weeks', 12),  # Use CLI parameter or default to 12
+            weeks=getattr(self, "default_weeks", 12),  # Use CLI parameter or default to 12
             enable_qualitative=getattr(self.config, "qualitative", None)
             and self.config.qualitative.enabled,
         )

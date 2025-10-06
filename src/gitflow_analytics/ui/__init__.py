@@ -1,13 +1,13 @@
 """UI components for GitFlow Analytics."""
 
 from .progress_display import (
-    create_progress_display,
-    RichProgressDisplay,
-    SimpleProgressDisplay,
+    RICH_AVAILABLE,
+    ProgressStatistics,
     RepositoryInfo,
     RepositoryStatus,
-    ProgressStatistics,
-    RICH_AVAILABLE,
+    RichProgressDisplay,
+    SimpleProgressDisplay,
+    create_progress_display,
 )
 
 __all__ = [

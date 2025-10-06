@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
-import threading
 
 from textual.binding import Binding
 from textual.containers import Container, Vertical
@@ -14,14 +13,14 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, Label, Log, Static
 
 from gitflow_analytics.config import Config
+from gitflow_analytics.core import progress as core_progress
 from gitflow_analytics.core.analyzer import GitAnalyzer
 from gitflow_analytics.core.cache import GitAnalysisCache
 from gitflow_analytics.core.identity import DeveloperIdentityResolver
 from gitflow_analytics.integrations.orchestrator import IntegrationOrchestrator
-from gitflow_analytics.core import progress as core_progress
 
+from ..progress_adapter import TUIProgressService
 from ..widgets.progress_widget import AnalysisProgressWidget
-from ..progress_adapter import TUIProgressAdapter, TUIProgressService
 
 
 class AnalysisProgressScreen(Screen):
@@ -243,8 +242,8 @@ class AnalysisProgressScreen(Screen):
 
         # Enable branch analysis with progress logging for TUI
         branch_analysis_config = {
-            'enable_progress_logging': True,
-            'strategy': 'all',
+            "enable_progress_logging": True,
+            "strategy": "all",
         }
 
         self.analyzer = GitAnalyzer(
@@ -300,7 +299,6 @@ class AnalysisProgressScreen(Screen):
     async def _analyze_repositories(self, repositories: list, log: Log) -> tuple:
         """Analyze all repositories and return commits and PRs."""
         # Import progress module at the top of the function
-        from gitflow_analytics.core import progress as core_progress
 
         repo_progress = self.query_one("#repo-progress", AnalysisProgressWidget)
         overall_progress = self.query_one("#overall-progress", AnalysisProgressWidget)
@@ -316,7 +314,7 @@ class AnalysisProgressScreen(Screen):
         repo_adapter = self.progress_service.create_adapter("repo", repo_progress)
 
         # Set initial stats for the adapter
-        repo_adapter.processing_stats['total'] = len(repositories)
+        repo_adapter.processing_stats["total"] = len(repositories)
 
         # Temporarily replace the global progress service with our adapter
         original_progress_service = core_progress._progress_service
@@ -352,19 +350,18 @@ class AnalysisProgressScreen(Screen):
             # Create data fetcher
             # Use skip_remote_fetch=True when analyzing already-cloned repositories
             # to avoid authentication issues with expired tokens
-            data_fetcher = GitDataFetcher(
-                cache=self.cache,
-                skip_remote_fetch=True
-            )
+            data_fetcher = GitDataFetcher(cache=self.cache, skip_remote_fetch=True)
 
             # Prepare repository configurations for parallel processing
             repo_configs = []
             for repo_config in repositories:
-                repo_configs.append({
-                    'path': str(repo_config.path),
-                    'project_key': repo_config.project_key or repo_config.name,
-                    'branch_patterns': [repo_config.branch] if repo_config.branch else None
-                })
+                repo_configs.append(
+                    {
+                        "path": str(repo_config.path),
+                        "project_key": repo_config.project_key or repo_config.name,
+                        "branch_patterns": [repo_config.branch] if repo_config.branch else None,
+                    }
+                )
 
             # Run parallel processing in executor to avoid blocking
             loop = asyncio.get_event_loop()
@@ -381,13 +378,13 @@ class AnalysisProgressScreen(Screen):
                     end_date,
                     repo_progress,
                     overall_progress,
-                    log
+                    log,
                 )
 
                 # Process results
-                for project_key, result in parallel_results['results'].items():
-                    if result and 'commits' in result:
-                        commits_data = result['commits']
+                for project_key, result in parallel_results["results"].items():
+                    if result and "commits" in result:
+                        commits_data = result["commits"]
                         # Add project key and resolve identities
                         for commit in commits_data:
                             commit["project_key"] = project_key
@@ -398,11 +395,13 @@ class AnalysisProgressScreen(Screen):
                         log.write_line(f"   ✅ {project_key}: {len(commits_data)} commits")
 
                 # Log final statistics
-                stats = parallel_results.get('statistics', {})
-                log.write_line(f"\n📊 Analysis Statistics:")
+                stats = parallel_results.get("statistics", {})
+                log.write_line("\n📊 Analysis Statistics:")
                 log.write_line(f"   Total: {stats.get('total', 0)} repositories")
                 log.write_line(f"   Success: {stats.get('success', 0)} (have commits)")
-                log.write_line(f"   No Commits: {stats.get('no_commits', 0)} (no activity in period)")
+                log.write_line(
+                    f"   No Commits: {stats.get('no_commits', 0)} (no activity in period)"
+                )
                 log.write_line(f"   Failed: {stats.get('failed', 0)} (processing errors)")
                 log.write_line(f"   Timeout: {stats.get('timeout', 0)}")
 
@@ -423,7 +422,9 @@ class AnalysisProgressScreen(Screen):
             for i, repo_config in enumerate(repositories):
                 # Update overall progress based on repository completion
                 overall_pct = 20 + ((i / total_repos) * 30)  # 20-50% range for repo analysis
-                overall_progress.update_progress(overall_pct, f"Analyzing repositories ({i+1}/{total_repos})...")
+                overall_progress.update_progress(
+                    overall_pct, f"Analyzing repositories ({i+1}/{total_repos})..."
+                )
 
                 repo_progress.update_progress(0, f"Analyzing {repo_config.name}...")
 
@@ -435,11 +436,13 @@ class AnalysisProgressScreen(Screen):
                     # Run repository analysis in a thread to avoid blocking
                     loop = asyncio.get_event_loop()
                     commits = await loop.run_in_executor(
-                        self.executor if self.executor else None,  # Use managed executor if available
+                        (
+                            self.executor if self.executor else None
+                        ),  # Use managed executor if available
                         self.analyzer.analyze_repository,
                         repo_config.path,
                         start_date,
-                        repo_config.branch
+                        repo_config.branch,
                     )
 
                     log.write_line(f"   ✓ Analysis complete for {repo_config.name}")
@@ -629,7 +632,7 @@ class AnalysisProgressScreen(Screen):
         end_date: datetime,
         repo_progress: AnalysisProgressWidget,
         overall_progress: AnalysisProgressWidget,
-        log: Log
+        log: Log,
     ) -> dict:
         """
         Process repositories asynchronously with proper yielding for UI updates.
@@ -637,16 +640,19 @@ class AnalysisProgressScreen(Screen):
         This method processes repositories one at a time but yields control back
         to the event loop between each repository to allow UI updates.
         """
-        results = {'results': {}, 'statistics': {
-            'total': len(repo_configs),
-            'processed': 0,
-            'success': 0,
-            'no_commits': 0,
-            'failed': 0,
-            'timeout': 0
-        }}
+        results = {
+            "results": {},
+            "statistics": {
+                "total": len(repo_configs),
+                "processed": 0,
+                "success": 0,
+                "no_commits": 0,
+                "failed": 0,
+                "timeout": 0,
+            },
+        }
 
-        stats = results['statistics']
+        stats = results["statistics"]
         loop = asyncio.get_event_loop()
 
         # Create a managed executor for this analysis
@@ -654,20 +660,18 @@ class AnalysisProgressScreen(Screen):
             self.executor = ThreadPoolExecutor(max_workers=1)
 
         for i, repo_config in enumerate(repo_configs):
-            project_key = repo_config['project_key']
+            project_key = repo_config["project_key"]
 
             # Update progress before processing
-            percentage = (i / stats['total']) * 100
+            percentage = (i / stats["total"]) * 100
             repo_progress.update_progress(
-                percentage,
-                f"Processing {project_key} ({i+1}/{stats['total']})..."
+                percentage, f"Processing {project_key} ({i+1}/{stats['total']})..."
             )
 
             # Update overall progress
-            overall_percentage = 25 + ((i / stats['total']) * 25)  # 25-50% range
+            overall_percentage = 25 + ((i / stats["total"]) * 25)  # 25-50% range
             overall_progress.update_progress(
-                overall_percentage,
-                f"Analyzing repository {i+1}/{stats['total']}: {project_key}"
+                overall_percentage, f"Analyzing repository {i+1}/{stats['total']}: {project_key}"
             )
 
             log.write_line(f"🔍 Processing {project_key} ({i+1}/{stats['total']})...")
@@ -682,14 +686,14 @@ class AnalysisProgressScreen(Screen):
                     repo_config,
                     self.weeks,
                     start_date,
-                    end_date
+                    end_date,
                 )
 
                 # Check for commits - data fetcher returns 'daily_commits' not 'commits'
                 if result:
                     # Extract commits from daily_commits structure
-                    daily_commits = result.get('daily_commits', {})
-                    total_commits = result.get('stats', {}).get('total_commits', 0)
+                    daily_commits = result.get("daily_commits", {})
+                    total_commits = result.get("stats", {}).get("total_commits", 0)
 
                     # Convert daily_commits to flat commits list
                     commits = []
@@ -697,30 +701,29 @@ class AnalysisProgressScreen(Screen):
                         commits.extend(day_commits)
 
                     # Add flattened commits to result for compatibility
-                    result['commits'] = commits
+                    result["commits"] = commits
 
                     if total_commits > 0 or commits:
-                        results['results'][project_key] = result
-                        stats['success'] += 1
+                        results["results"][project_key] = result
+                        stats["success"] += 1
                         log.write_line(f"   ✅ {project_key}: {total_commits} commits")
                     else:
-                        stats['no_commits'] += 1
+                        stats["no_commits"] += 1
                         log.write_line(f"   ⏸️  {project_key}: No commits in analysis period")
                 else:
-                    stats['failed'] += 1
+                    stats["failed"] += 1
                     log.write_line(f"   ❌ {project_key}: Failed to process")
 
             except Exception as e:
-                stats['failed'] += 1
+                stats["failed"] += 1
                 log.write_line(f"   ❌ {project_key}: Error - {str(e)[:50]}...")
 
-            stats['processed'] += 1
+            stats["processed"] += 1
 
             # Update progress after processing
-            percentage = ((i + 1) / stats['total']) * 100
+            percentage = ((i + 1) / stats["total"]) * 100
             repo_progress.update_progress(
-                percentage,
-                f"Completed {project_key} ({i+1}/{stats['total']})"
+                percentage, f"Completed {project_key} ({i+1}/{stats['total']})"
             )
 
             # Yield control to event loop for UI updates
@@ -728,14 +731,16 @@ class AnalysisProgressScreen(Screen):
             await asyncio.sleep(0.01)
 
             # Also update live stats
-            await self._update_live_stats({
-                "repositories_analyzed": stats['processed'],
-                "total_repositories": stats['total'],
-                "successful": stats['success'],
-                "no_commits": stats['no_commits'],
-                "failed": stats['failed'],
-                "current_repo": project_key if i < len(repo_configs) - 1 else "Complete"
-            })
+            await self._update_live_stats(
+                {
+                    "repositories_analyzed": stats["processed"],
+                    "total_repositories": stats["total"],
+                    "successful": stats["success"],
+                    "no_commits": stats["no_commits"],
+                    "failed": stats["failed"],
+                    "current_repo": project_key if i < len(repo_configs) - 1 else "Complete",
+                }
+            )
 
         # Final progress update
         repo_progress.complete(f"Processed {stats['total']} repositories")
@@ -753,7 +758,7 @@ class AnalysisProgressScreen(Screen):
         repo_config: dict,
         weeks_back: int,
         start_date: datetime,
-        end_date: datetime
+        end_date: datetime,
     ) -> Optional[dict]:
         """
         Synchronous wrapper for processing a single repository.
@@ -763,21 +768,20 @@ class AnalysisProgressScreen(Screen):
         try:
             # Process the repository using data fetcher
             result = data_fetcher.fetch_repository_data(
-                repo_path=Path(repo_config['path']),
-                project_key=repo_config['project_key'],
+                repo_path=Path(repo_config["path"]),
+                project_key=repo_config["project_key"],
                 weeks_back=weeks_back,
-                branch_patterns=repo_config.get('branch_patterns'),
+                branch_patterns=repo_config.get("branch_patterns"),
                 jira_integration=None,
                 progress_callback=None,
                 start_date=start_date,
-                end_date=end_date
+                end_date=end_date,
             )
             return result
         except Exception as e:
             import logging
-            logging.getLogger(__name__).error(
-                f"Error processing {repo_config['project_key']}: {e}"
-            )
+
+            logging.getLogger(__name__).error(f"Error processing {repo_config['project_key']}: {e}")
             return None
 
     async def _clone_repository(self, repo_config, log: Log) -> None:
@@ -820,10 +824,9 @@ class AnalysisProgressScreen(Screen):
             stats_widget = self.query_one("#live-stats", Static)
 
             # Format stats for display
-            stats_text = "\n".join([
-                f"• {key.replace('_', ' ').title()}: {value}"
-                for key, value in stats.items()
-            ])
+            stats_text = "\n".join(
+                [f"• {key.replace('_', ' ').title()}: {value}" for key, value in stats.items()]
+            )
             stats_widget.update(stats_text)
         except Exception:
             # Silently ignore if widget doesn't exist (e.g., in testing)

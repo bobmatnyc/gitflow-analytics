@@ -2,8 +2,9 @@
 
 import asyncio
 import time
-from typing import Any, Optional
-from gitflow_analytics.core.progress import ProgressService, ProgressContext
+from typing import Optional
+
+from gitflow_analytics.core.progress import ProgressContext, ProgressService
 from gitflow_analytics.tui.widgets.progress_widget import AnalysisProgressWidget
 
 
@@ -27,11 +28,11 @@ class TUIProgressAdapter(ProgressService):
         self.total_items = 100.0
         self._loop = None
         self.processing_stats = {
-            'total': 0,
-            'processed': 0,
-            'success': 0,
-            'failed': 0,
-            'timeout': 0
+            "total": 0,
+            "processed": 0,
+            "success": 0,
+            "failed": 0,
+            "timeout": 0,
         }
         self.repositories_in_progress = {}
 
@@ -50,7 +51,7 @@ class TUIProgressAdapter(ProgressService):
         unit: str = "items",
         nested: bool = False,
         leave: bool = True,
-        position: Optional[int] = None
+        position: Optional[int] = None,
     ) -> ProgressContext:
         """Create a progress context for tracking.
 
@@ -72,11 +73,7 @@ class TUIProgressAdapter(ProgressService):
 
         # Update widget if available
         if self.widget and self._loop:
-            self._loop.call_soon_threadsafe(
-                self._update_widget_sync,
-                0.0,
-                description
-            )
+            self._loop.call_soon_threadsafe(self._update_widget_sync, 0.0, description)
 
         return context
 
@@ -96,12 +93,8 @@ class TUIProgressAdapter(ProgressService):
 
             # Update widget if available
             if self.widget and self._loop:
-                description = getattr(context, 'description', '')
-                self._loop.call_soon_threadsafe(
-                    self._update_widget_sync,
-                    percentage,
-                    description
-                )
+                description = getattr(context, "description", "")
+                self._loop.call_soon_threadsafe(self._update_widget_sync, percentage, description)
 
     def set_description(self, context: ProgressContext, description: str) -> None:
         """Update the description of a progress context.
@@ -114,12 +107,10 @@ class TUIProgressAdapter(ProgressService):
 
         # Update widget description if available
         if self.widget and self._loop:
-            percentage = (self.current_progress / self.total_items) * 100.0 if self.total_items > 0 else 0
-            self._loop.call_soon_threadsafe(
-                self._update_widget_sync,
-                percentage,
-                description
+            percentage = (
+                (self.current_progress / self.total_items) * 100.0 if self.total_items > 0 else 0
             )
+            self._loop.call_soon_threadsafe(self._update_widget_sync, percentage, description)
 
     def complete(self, context: ProgressContext) -> None:
         """Mark a progress context as complete.
@@ -131,11 +122,7 @@ class TUIProgressAdapter(ProgressService):
 
         # Update widget to 100% if available
         if self.widget and self._loop:
-            self._loop.call_soon_threadsafe(
-                self._update_widget_sync,
-                100.0,
-                "Complete"
-            )
+            self._loop.call_soon_threadsafe(self._update_widget_sync, 100.0, "Complete")
 
     def _update_widget_sync(self, percentage: float, description: str) -> None:
         """Synchronously update the widget (called from event loop).
@@ -147,13 +134,13 @@ class TUIProgressAdapter(ProgressService):
         if self.widget:
             try:
                 # Format description with processing statistics if available
-                if self.processing_stats['total'] > 0:
+                if self.processing_stats["total"] > 0:
                     stats_str = (
                         f"Processed: {self.processing_stats['processed']}/{self.processing_stats['total']}, "
                         f"Success: {self.processing_stats['success']}, "
                         f"Failed: {self.processing_stats['failed']}"
                     )
-                    if self.processing_stats['timeout'] > 0:
+                    if self.processing_stats["timeout"] > 0:
                         stats_str += f", Timeout: {self.processing_stats['timeout']}"
 
                     full_description = f"{description}\n{stats_str}"
@@ -162,11 +149,12 @@ class TUIProgressAdapter(ProgressService):
 
                 self.widget.update_progress(percentage, full_description)
                 # Force a refresh of the TUI to ensure updates are visible
-                if hasattr(self.widget, 'refresh'):
+                if hasattr(self.widget, "refresh"):
                     self.widget.refresh()
             except Exception as e:
                 # Log error but don't crash the progress tracking
                 import logging
+
                 logging.getLogger(__name__).error(f"Failed to update TUI widget: {e}")
 
     def start_repository(self, repo_name: str, total_commits: int) -> None:
@@ -177,28 +165,27 @@ class TUIProgressAdapter(ProgressService):
             total_commits: Expected number of commits to process
         """
         self.repositories_in_progress[repo_name] = {
-            'started_at': time.time(),
-            'total_commits': total_commits,
-            'status': 'processing'
+            "started_at": time.time(),
+            "total_commits": total_commits,
+            "status": "processing",
         }
 
         # Update the widget with repository info
         if self.widget and self._loop:
             # Calculate correct percentage based on actual processed count
-            if self.processing_stats['total'] > 0:
-                percentage = (self.processing_stats['processed'] / self.processing_stats['total']) * 100.0
+            if self.processing_stats["total"] > 0:
+                percentage = (
+                    self.processing_stats["processed"] / self.processing_stats["total"]
+                ) * 100.0
             else:
                 percentage = 0
 
             description = f"Processing: {repo_name} ({len(self.repositories_in_progress)}/{self.processing_stats['total']})"
-            self._loop.call_soon_threadsafe(
-                self._update_widget_sync,
-                percentage,
-                description
-            )
+            self._loop.call_soon_threadsafe(self._update_widget_sync, percentage, description)
 
-    def finish_repository(self, repo_name: str, success: bool = True,
-                          error_message: str = None, stats: dict = None) -> None:
+    def finish_repository(
+        self, repo_name: str, success: bool = True, error_message: str = None, stats: dict = None
+    ) -> None:
         """Mark a repository as finished processing.
 
         Args:
@@ -208,9 +195,9 @@ class TUIProgressAdapter(ProgressService):
             stats: Updated processing statistics
         """
         if repo_name in self.repositories_in_progress:
-            self.repositories_in_progress[repo_name]['status'] = 'success' if success else 'failed'
+            self.repositories_in_progress[repo_name]["status"] = "success" if success else "failed"
             if error_message:
-                self.repositories_in_progress[repo_name]['error'] = error_message
+                self.repositories_in_progress[repo_name]["error"] = error_message
 
         # Update stats if provided
         if stats:
@@ -219,10 +206,12 @@ class TUIProgressAdapter(ProgressService):
         # Update the widget with completion info
         if self.widget and self._loop:
             # Calculate correct percentage based on processed count
-            if self.processing_stats['total'] > 0:
-                percentage = (self.processing_stats['processed'] / self.processing_stats['total']) * 100.0
+            if self.processing_stats["total"] > 0:
+                percentage = (
+                    self.processing_stats["processed"] / self.processing_stats["total"]
+                ) * 100.0
             else:
-                percentage = 100.0 if self.processing_stats['processed'] > 0 else 0
+                percentage = 100.0 if self.processing_stats["processed"] > 0 else 0
 
             status = "✅" if success else "❌"
             description = f"{status} {repo_name} completed"
@@ -230,13 +219,17 @@ class TUIProgressAdapter(ProgressService):
                 description += f" - {error_message[:30]}..."
 
             self._loop.call_soon_threadsafe(
-                self._update_widget_sync,
-                min(percentage, 100.0),  # Cap at 100%
-                description
+                self._update_widget_sync, min(percentage, 100.0), description  # Cap at 100%
             )
 
-    def update_stats(self, processed: int = 0, success: int = 0, failed: int = 0,
-                     timeout: int = 0, total: int = 0) -> None:
+    def update_stats(
+        self,
+        processed: int = 0,
+        success: int = 0,
+        failed: int = 0,
+        timeout: int = 0,
+        total: int = 0,
+    ) -> None:
         """Update processing statistics.
 
         Args:
@@ -247,25 +240,28 @@ class TUIProgressAdapter(ProgressService):
             total: Total number of repositories
         """
         if processed > 0:
-            self.processing_stats['processed'] = processed
+            self.processing_stats["processed"] = processed
         if success > 0:
-            self.processing_stats['success'] = success
+            self.processing_stats["success"] = success
         if failed > 0:
-            self.processing_stats['failed'] = failed
+            self.processing_stats["failed"] = failed
         if timeout > 0:
-            self.processing_stats['timeout'] = timeout
+            self.processing_stats["timeout"] = timeout
         if total > 0:
-            self.processing_stats['total'] = total
+            self.processing_stats["total"] = total
 
         # Update widget with latest stats
         if self.widget and self._loop:
-            percentage = (self.processing_stats['processed'] / self.processing_stats['total']) * 100.0 \
-                        if self.processing_stats['total'] > 0 else 0
+            percentage = (
+                (self.processing_stats["processed"] / self.processing_stats["total"]) * 100.0
+                if self.processing_stats["total"] > 0
+                else 0
+            )
 
             self._loop.call_soon_threadsafe(
                 self._update_widget_sync,
                 min(percentage, 100.0),  # Cap at 100%
-                "Processing repositories..."
+                "Processing repositories...",
             )
 
 

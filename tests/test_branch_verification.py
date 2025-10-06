@@ -40,7 +40,7 @@ def test_repository(repo_path: str, repo_name: str):
     print(f"\n{'='*80}")
     print(f"TESTING: {repo_name}")
     print(f"Path: {repo_path}")
-    print('='*80)
+    print("=" * 80)
 
     if not Path(repo_path).exists():
         print(f"Repository not found!")
@@ -55,9 +55,9 @@ def test_repository(repo_path: str, repo_name: str):
 
     # Test each strategy
     strategies = {
-        'main_only': 'Analyzes only main/master branch',
-        'smart': 'Analyzes active branches with filtering',
-        'all': 'Analyzes all branches comprehensively'
+        "main_only": "Analyzes only main/master branch",
+        "smart": "Analyzes active branches with filtering",
+        "all": "Analyzes all branches comprehensively",
     }
 
     results = {}
@@ -74,17 +74,15 @@ def test_repository(repo_path: str, repo_name: str):
 
             # Configure analyzer
             branch_config = {
-                'strategy': strategy,
-                'active_days_threshold': 30,
-                'max_branches_per_repo': 100,
-                'update_repo': False  # Don't try to fetch
+                "strategy": strategy,
+                "active_days_threshold": 30,
+                "max_branches_per_repo": 100,
+                "update_repo": False,  # Don't try to fetch
             }
 
             # Suppress update attempts
             analyzer = GitAnalyzer(
-                cache=cache,
-                batch_size=1000,
-                branch_analysis_config=branch_config
+                cache=cache, batch_size=1000, branch_analysis_config=branch_config
             )
 
             # Override the _update_repository method to prevent fetch attempts
@@ -100,8 +98,8 @@ def test_repository(repo_path: str, repo_name: str):
                 # Get unique branches represented
                 branches = set()
                 for commit in commits:
-                    if 'branch' in commit:
-                        branches.add(commit['branch'])
+                    if "branch" in commit:
+                        branches.add(commit["branch"])
 
                 print(f"Branches analyzed: {len(branches)}")
                 if branches and len(branches) <= 5:
@@ -115,12 +113,12 @@ def test_repository(repo_path: str, repo_name: str):
     # Summary
     print(f"\n{'='*60}")
     print("ANALYSIS SUMMARY")
-    print('='*60)
+    print("=" * 60)
     print(f"Repository: {repo_name}")
     print(f"Actual unique commits: {actual_commits}")
     print()
 
-    for strategy in ['main_only', 'smart', 'all']:
+    for strategy in ["main_only", "smart", "all"]:
         if strategy in results:
             count = results[strategy]
             coverage = (count / actual_commits * 100) if actual_commits > 0 else 0
@@ -133,16 +131,16 @@ def test_repository(repo_path: str, repo_name: str):
     # Recommendations
     print(f"\n{'='*60}")
     print("RECOMMENDATION")
-    print('='*60)
+    print("=" * 60)
 
-    if 'all' in results and 'main_only' in results:
-        missed_by_main = actual_commits - results['main_only']
+    if "all" in results and "main_only" in results:
+        missed_by_main = actual_commits - results["main_only"]
         if missed_by_main > 0:
             print(f"⚠️  Using 'main_only' strategy would miss {missed_by_main} commits")
             print(f"   This could exclude work from {missed_by_main} commits on feature branches")
 
-    if 'all' in results:
-        all_coverage = (results['all'] / actual_commits * 100) if actual_commits > 0 else 0
+    if "all" in results:
+        all_coverage = (results["all"] / actual_commits * 100) if actual_commits > 0 else 0
         if all_coverage >= 95:
             print(f"✅ The 'all' strategy provides {all_coverage:.1f}% coverage")
             print(f"   This ensures comprehensive analysis of all development work")
@@ -155,7 +153,10 @@ def main():
     """Test multiple repositories to demonstrate branch strategy importance."""
 
     test_repos = [
-        ("/Users/masa/Projects/managed/gitflow-analytics/EWTN-test/repos/acidigital-admin", "acidigital-admin"),
+        (
+            "/Users/masa/Projects/managed/gitflow-analytics/EWTN-test/repos/acidigital-admin",
+            "acidigital-admin",
+        ),
         ("/Users/masa/Projects/managed/gitflow-analytics/EWTN-test/repos/ewtn-com", "ewtn-com"),
     ]
 
@@ -167,7 +168,7 @@ def main():
 
     print(f"\n{'='*80}")
     print("CONCLUSION")
-    print('='*80)
+    print("=" * 80)
     print("The 'all' strategy is recommended as the default because:")
     print("1. It ensures complete coverage of all development work")
     print("2. It doesn't miss commits on feature/hotfix branches")

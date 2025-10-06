@@ -100,12 +100,12 @@ class GitDataFetcher:
 
         # Statistics for tracking repository processing
         self.processing_stats = {
-            'total': 0,
-            'processed': 0,
-            'success': 0,
-            'failed': 0,
-            'timeout': 0,
-            'repositories': {}
+            "total": 0,
+            "processed": 0,
+            "success": 0,
+            "failed": 0,
+            "timeout": 0,
+            "repositories": {},
         }
 
     def fetch_repository_data(
@@ -158,13 +158,14 @@ class GitDataFetcher:
         progress = get_progress_service()
 
         # Start Rich display for this repository if enabled
-        if hasattr(progress, '_use_rich') and progress._use_rich:
+        if hasattr(progress, "_use_rich") and progress._use_rich:
             # Count total commits for progress estimation
             try:
                 import git
+
                 git.Repo(repo_path)
                 # Check if we need to clone or pull
-                if not repo_path.exists() or not (repo_path / '.git').exists():
+                if not repo_path.exists() or not (repo_path / ".git").exists():
                     logger.info(f"📥 Repository {project_key} needs cloning")
                     progress.start_repository(f"{project_key} (cloning)", 0)
                 else:
@@ -201,7 +202,9 @@ class GitDataFetcher:
             logger.info(f"🔍 DEBUG: Extracted {len(ticket_ids)} ticket IDs")
 
             if jira_integration and ticket_ids:
-                logger.info(f"Fetching {len(ticket_ids)} unique tickets from JIRA for {project_key}...")
+                logger.info(
+                    f"Fetching {len(ticket_ids)} unique tickets from JIRA for {project_key}..."
+                )
                 self._fetch_detailed_tickets(
                     ticket_ids, jira_integration, project_key, progress_callback
                 )
@@ -302,18 +305,18 @@ class GitDataFetcher:
                 f"✅ Data fetch completed successfully for {project_key}: {actual_stored_commits}/{expected_commits} commits stored, {len(ticket_ids)} tickets"
             )
             # Finish repository in Rich display with success
-            if hasattr(progress, '_use_rich') and progress._use_rich:
+            if hasattr(progress, "_use_rich") and progress._use_rich:
                 progress.finish_repository(project_key, success=True)
         else:
             logger.error(
                 f"⚠️ Data fetch completed with storage issues for {project_key}: {actual_stored_commits}/{expected_commits} commits stored, {len(ticket_ids)} tickets"
             )
             # Finish repository in Rich display with error
-            if hasattr(progress, '_use_rich') and progress._use_rich:
+            if hasattr(progress, "_use_rich") and progress._use_rich:
                 progress.finish_repository(
                     project_key,
                     success=False,
-                    error_message=f"Storage issue: {actual_stored_commits}/{expected_commits} commits"
+                    error_message=f"Storage issue: {actual_stored_commits}/{expected_commits} commits",
                 )
 
         return results
@@ -374,7 +377,7 @@ class GitDataFetcher:
 
                 # Create a temporary git config that disables all authentication
                 tmp_config_path = os.path.join(temp_dir, ".gitconfig")
-                with open(tmp_config_path, 'w') as tmp_config:
+                with open(tmp_config_path, "w") as tmp_config:
                     tmp_config.write("[credential]\n")
                     tmp_config.write("    helper = \n")
                     tmp_config.write("[core]\n")
@@ -395,24 +398,27 @@ class GitDataFetcher:
                     # Clean up temporary config directory
                     try:
                         import shutil
-                        if hasattr(_thread_local, 'temp_dir'):
+
+                        if hasattr(_thread_local, "temp_dir"):
                             shutil.rmtree(_thread_local.temp_dir, ignore_errors=True)
-                            delattr(_thread_local, 'temp_dir')
+                            delattr(_thread_local, "temp_dir")
                     except:
                         pass
 
                 try:
                     # Configure git to never prompt for credentials
                     with repo.config_writer() as git_config:
-                        git_config.set_value('core', 'askpass', '')
-                        git_config.set_value('credential', 'helper', '')
+                        git_config.set_value("core", "askpass", "")
+                        git_config.set_value("credential", "helper", "")
                 except Exception as e:
                     logger.debug(f"Could not update git config: {e}")
 
                 # Note: We can't monkey-patch remotes as it's a property without setter
                 # The skip_remote_fetch flag will prevent remote operations elsewhere
 
-                logger.debug(f"Opened repository {project_key} in offline mode (skip_remote_fetch=true)")
+                logger.debug(
+                    f"Opened repository {project_key} in offline mode (skip_remote_fetch=true)"
+                )
             else:
                 # THREAD SAFETY: Each thread gets its own Repo instance
                 repo = Repo(repo_path)
@@ -421,7 +427,7 @@ class GitDataFetcher:
                 "path": str(repo_path),
                 "remote_update": "skipped" if self.skip_remote_fetch else "pending",
                 "authentication_issues": False,
-                "error": None
+                "error": None,
             }
 
             # Update repository from remote before analysis
@@ -430,17 +436,22 @@ class GitDataFetcher:
 
             update_success = self._update_repository(repo)
             if not self.skip_remote_fetch:
-                self.repository_status[project_key]["remote_update"] = "success" if update_success else "failed"
+                self.repository_status[project_key]["remote_update"] = (
+                    "success" if update_success else "failed"
+                )
                 if not update_success:
-                    logger.warning(f"⚠️ {project_key}: Continuing with local repository state (remote update failed)")
+                    logger.warning(
+                        f"⚠️ {project_key}: Continuing with local repository state (remote update failed)"
+                    )
 
         except Exception as e:
             logger.error(f"Failed to open repository {project_key} at {repo_path}: {e}")
             self.repository_status[project_key] = {
                 "path": str(repo_path),
                 "remote_update": "error",
-                "authentication_issues": "authentication" in str(e).lower() or "password" in str(e).lower(),
-                "error": str(e)
+                "authentication_issues": "authentication" in str(e).lower()
+                or "password" in str(e).lower(),
+                "error": str(e),
             }
             # Restore original environment variables before returning
             for key, value in original_env.items():
@@ -454,7 +465,9 @@ class GitDataFetcher:
         branches_to_analyze = self._get_branches_to_analyze(repo, branch_patterns)
 
         if not branches_to_analyze:
-            logger.warning(f"No accessible branches found in repository {project_key} at {repo_path}")
+            logger.warning(
+                f"No accessible branches found in repository {project_key} at {repo_path}"
+            )
             # Restore original environment variables before returning
             for key, value in original_env.items():
                 if value is None:
@@ -487,9 +500,9 @@ class GitDataFetcher:
         # Count total commits first for Rich display
         try:
             for branch_name in branches_to_analyze[:1]:  # Sample from first branch
-                sample_commits = list(repo.iter_commits(
-                    branch_name, since=start_date, until=end_date
-                ))
+                sample_commits = list(
+                    repo.iter_commits(branch_name, since=start_date, until=end_date)
+                )
                 # Estimate based on first branch (multiply by number of branches for rough estimate)
                 len(sample_commits) * len(branches_to_analyze)
                 break
@@ -497,7 +510,7 @@ class GitDataFetcher:
             len(days_to_process) * 50  # Default estimate
 
         # Update repository in Rich display with estimated commit count
-        if hasattr(progress, '_use_rich') and progress._use_rich:
+        if hasattr(progress, "_use_rich") and progress._use_rich:
             progress.update_repository(project_key, 0, 0.0)
 
         # Create nested progress for day-by-day processing
@@ -536,7 +549,7 @@ class GitDataFetcher:
                             branch_commits = self.git_wrapper.run_with_timeout(
                                 fetch_branch_commits,
                                 timeout=15,  # 15 seconds per branch/day combination
-                                operation_name=f"iter_commits_{branch_name}_{day_str}"
+                                operation_name=f"iter_commits_{branch_name}_{day_str}",
                             )
                         except GitOperationTimeout:
                             logger.warning(
@@ -590,11 +603,12 @@ class GitDataFetcher:
                 progress.update(day_progress_ctx)
 
                 # Update Rich display with current commit count and speed
-                if hasattr(progress, '_use_rich') and progress._use_rich:
+                if hasattr(progress, "_use_rich") and progress._use_rich:
                     total_processed = len(all_commit_hashes)
                     # Calculate speed (commits per second) based on elapsed time
                     import time
-                    if not hasattr(self, '_fetch_start_time'):
+
+                    if not hasattr(self, "_fetch_start_time"):
                         self._fetch_start_time = time.time()
                     elapsed = time.time() - self._fetch_start_time
                     speed = total_processed / elapsed if elapsed > 0 else 0
@@ -905,11 +919,13 @@ class GitDataFetcher:
             try:
                 if repo.remotes and hasattr(repo.remotes, "origin"):
                     # THREAD SAFETY: Create a new list to avoid sharing references
-                    remote_branches = list([
-                        ref.name.replace("origin/", "")
-                        for ref in repo.remotes.origin.refs
-                        if not ref.name.endswith("HEAD")  # Skip HEAD ref
-                    ])
+                    remote_branches = list(
+                        [
+                            ref.name.replace("origin/", "")
+                            for ref in repo.remotes.origin.refs
+                            if not ref.name.endswith("HEAD")  # Skip HEAD ref
+                        ]
+                    )
                     # Only add remote branches that aren't already in local branches
                     for branch in remote_branches:
                         if branch not in available_branches:
@@ -1031,7 +1047,7 @@ class GitDataFetcher:
 
                 if not fetch_success:
                     # Mark this repository as having authentication issues if applicable
-                    if hasattr(self, 'repository_status'):
+                    if hasattr(self, "repository_status"):
                         for key in self.repository_status:
                             if repo.working_dir.endswith(key) or key in repo.working_dir:
                                 self.repository_status[key]["remote_update"] = "failed"
@@ -1088,8 +1104,7 @@ class GitDataFetcher:
             if fetch_head_path.exists():
                 # Get last fetch time from FETCH_HEAD modification time
                 last_fetch_time = datetime.fromtimestamp(
-                    fetch_head_path.stat().st_mtime,
-                    tz=timezone.utc
+                    fetch_head_path.stat().st_mtime, tz=timezone.utc
                 )
                 now = datetime.now(timezone.utc)
                 hours_since_fetch = (now - last_fetch_time).total_seconds() / 3600
@@ -1123,7 +1138,7 @@ class GitDataFetcher:
                 capture_output=True,
                 text=True,
                 timeout=2,
-                env={"GIT_TERMINAL_PROMPT": "0"}
+                env={"GIT_TERMINAL_PROMPT": "0"},
             )
 
             if result.returncode == 0:
@@ -1138,6 +1153,7 @@ class GitDataFetcher:
 
                 for pattern in token_patterns:
                     import re
+
                     if re.search(pattern, output):
                         logger.warning(
                             f"⚠️  SECURITY WARNING for {project_key}: "
@@ -1164,7 +1180,7 @@ class GitDataFetcher:
             "failed_updates": 0,
             "skipped_updates": 0,
             "authentication_issues": [],
-            "errors": []
+            "errors": [],
         }
 
         for project_key, status in self.repository_status.items():
@@ -1177,10 +1193,9 @@ class GitDataFetcher:
             elif status["remote_update"] == "skipped":
                 summary["skipped_updates"] += 1
             elif status["remote_update"] == "error":
-                summary["errors"].append({
-                    "repository": project_key,
-                    "error": status.get("error", "Unknown error")
-                })
+                summary["errors"].append(
+                    {"repository": project_key, "error": status.get("error", "Unknown error")}
+                )
 
         return summary
 
@@ -1462,11 +1477,19 @@ class GitDataFetcher:
                                 "is_merge": commit.get("is_merge", False),
                                 "files_changed_count": commit.get("files_changed_count", 0),
                                 # Store raw unfiltered values in insertions/deletions
-                                "insertions": commit.get("raw_insertions", commit.get("lines_added", 0)),
-                                "deletions": commit.get("raw_deletions", commit.get("lines_deleted", 0)),
+                                "insertions": commit.get(
+                                    "raw_insertions", commit.get("lines_added", 0)
+                                ),
+                                "deletions": commit.get(
+                                    "raw_deletions", commit.get("lines_deleted", 0)
+                                ),
                                 # Store filtered values separately
-                                "filtered_insertions": commit.get("filtered_insertions", commit.get("lines_added", 0)),
-                                "filtered_deletions": commit.get("filtered_deletions", commit.get("lines_deleted", 0)),
+                                "filtered_insertions": commit.get(
+                                    "filtered_insertions", commit.get("lines_added", 0)
+                                ),
+                                "filtered_deletions": commit.get(
+                                    "filtered_deletions", commit.get("lines_deleted", 0)
+                                ),
                                 "story_points": commit.get("story_points"),
                                 "ticket_references": commit.get("ticket_references", []),
                             }
@@ -1776,7 +1799,7 @@ class GitDataFetcher:
                 diff_output = self.git_wrapper.run_with_timeout(
                     get_diff_output,
                     timeout=10,  # 10 seconds for diff operations
-                    operation_name=f"diff_{commit.hexsha[:8]}"
+                    operation_name=f"diff_{commit.hexsha[:8]}",
                 )
             except GitOperationTimeout:
                 logger.warning(f"⏱️ Timeout calculating stats for commit {commit.hexsha[:8]}")
@@ -1879,8 +1902,12 @@ class GitDataFetcher:
                     "insertions": commit.get("raw_insertions", commit.get("lines_added", 0)),
                     "deletions": commit.get("raw_deletions", commit.get("lines_deleted", 0)),
                     # Store filtered values
-                    "filtered_insertions": commit.get("filtered_insertions", commit.get("lines_added", 0)),
-                    "filtered_deletions": commit.get("filtered_deletions", commit.get("lines_deleted", 0)),
+                    "filtered_insertions": commit.get(
+                        "filtered_insertions", commit.get("lines_added", 0)
+                    ),
+                    "filtered_deletions": commit.get(
+                        "filtered_deletions", commit.get("lines_deleted", 0)
+                    ),
                     "story_points": commit.get("story_points"),
                     "ticket_references": commit.get("ticket_references", []),
                 }
@@ -1904,7 +1931,7 @@ class GitDataFetcher:
         jira_integration: Optional[JIRAIntegration] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        max_workers: int = 3
+        max_workers: int = 3,
     ) -> dict[str, Any]:
         """Process multiple repositories in parallel with proper timeout protection.
 
@@ -1919,16 +1946,18 @@ class GitDataFetcher:
         Returns:
             Dictionary containing processing results and statistics
         """
-        logger.info(f"🚀 Starting parallel processing of {len(repositories)} repositories with {max_workers} workers")
+        logger.info(
+            f"🚀 Starting parallel processing of {len(repositories)} repositories with {max_workers} workers"
+        )
 
         # Initialize statistics
         self.processing_stats = {
-            'total': len(repositories),
-            'processed': 0,
-            'success': 0,
-            'failed': 0,
-            'timeout': 0,
-            'repositories': {}
+            "total": len(repositories),
+            "processed": 0,
+            "success": 0,
+            "failed": 0,
+            "timeout": 0,
+            "repositories": {},
         }
 
         # Get progress service for updates
@@ -1944,9 +1973,9 @@ class GitDataFetcher:
                 future_to_repo = {}
 
                 for repo_config in repositories:
-                    repo_path = Path(repo_config.get('path', ''))
-                    project_key = repo_config.get('project_key', repo_path.name)
-                    branch_patterns = repo_config.get('branch_patterns')
+                    repo_path = Path(repo_config.get("path", ""))
+                    project_key = repo_config.get("project_key", repo_path.name)
+                    branch_patterns = repo_config.get("branch_patterns")
 
                     # Submit task with timeout wrapper
                     future = executor.submit(
@@ -1957,12 +1986,12 @@ class GitDataFetcher:
                         branch_patterns,
                         jira_integration,
                         start_date,
-                        end_date
+                        end_date,
                     )
                     future_to_repo[future] = {
-                        'path': repo_path,
-                        'project_key': project_key,
-                        'start_time': time.time()
+                        "path": repo_path,
+                        "project_key": project_key,
+                        "start_time": time.time(),
                     }
 
                     logger.info(f"📋 Submitted {project_key} for processing")
@@ -1970,19 +1999,19 @@ class GitDataFetcher:
                 # Process results as they complete
                 for future in as_completed(future_to_repo):
                     repo_info = future_to_repo[future]
-                    project_key = repo_info['project_key']
-                    elapsed_time = time.time() - repo_info['start_time']
+                    project_key = repo_info["project_key"]
+                    elapsed_time = time.time() - repo_info["start_time"]
 
                     try:
                         result = future.result(timeout=5)  # Short timeout to get result
 
                         if result:
-                            self.processing_stats['success'] += 1
-                            self.processing_stats['repositories'][project_key] = {
-                                'status': 'success',
-                                'elapsed_time': elapsed_time,
-                                'commits': result.get('stats', {}).get('total_commits', 0),
-                                'tickets': result.get('stats', {}).get('unique_tickets', 0)
+                            self.processing_stats["success"] += 1
+                            self.processing_stats["repositories"][project_key] = {
+                                "status": "success",
+                                "elapsed_time": elapsed_time,
+                                "commits": result.get("stats", {}).get("total_commits", 0),
+                                "tickets": result.get("stats", {}).get("unique_tickets", 0),
                             }
                             results[project_key] = result
 
@@ -1992,106 +2021,124 @@ class GitDataFetcher:
                             )
 
                             # Update progress
-                            if hasattr(progress, 'finish_repository'):
+                            if hasattr(progress, "finish_repository"):
                                 # Check if progress adapter supports stats parameter
-                                if hasattr(progress, 'update_stats'):
+                                if hasattr(progress, "update_stats"):
                                     progress.update_stats(
-                                        processed=self.processing_stats['processed'],
-                                        success=self.processing_stats['success'],
-                                        failed=self.processing_stats['failed'],
-                                        timeout=self.processing_stats['timeout'],
-                                        total=self.processing_stats['total']
+                                        processed=self.processing_stats["processed"],
+                                        success=self.processing_stats["success"],
+                                        failed=self.processing_stats["failed"],
+                                        timeout=self.processing_stats["timeout"],
+                                        total=self.processing_stats["total"],
                                     )
                                     progress.finish_repository(project_key, success=True)
                                 else:
                                     progress.finish_repository(project_key, success=True)
                         else:
-                            self.processing_stats['failed'] += 1
-                            self.processing_stats['repositories'][project_key] = {
-                                'status': 'failed',
-                                'elapsed_time': elapsed_time,
-                                'error': 'Processing returned no result'
+                            self.processing_stats["failed"] += 1
+                            self.processing_stats["repositories"][project_key] = {
+                                "status": "failed",
+                                "elapsed_time": elapsed_time,
+                                "error": "Processing returned no result",
                             }
 
-                            logger.error(f"❌ {project_key}: Processing failed after {elapsed_time:.1f}s")
+                            logger.error(
+                                f"❌ {project_key}: Processing failed after {elapsed_time:.1f}s"
+                            )
 
                             # Update progress
-                            if hasattr(progress, 'finish_repository'):
+                            if hasattr(progress, "finish_repository"):
                                 # Check if progress adapter supports stats parameter
-                                if hasattr(progress, 'update_stats'):
+                                if hasattr(progress, "update_stats"):
                                     progress.update_stats(
-                                        processed=self.processing_stats['processed'],
-                                        success=self.processing_stats['success'],
-                                        failed=self.processing_stats['failed'],
-                                        timeout=self.processing_stats['timeout'],
-                                        total=self.processing_stats['total']
+                                        processed=self.processing_stats["processed"],
+                                        success=self.processing_stats["success"],
+                                        failed=self.processing_stats["failed"],
+                                        timeout=self.processing_stats["timeout"],
+                                        total=self.processing_stats["total"],
                                     )
-                                    progress.finish_repository(project_key, success=False, error_message="Processing failed")
+                                    progress.finish_repository(
+                                        project_key,
+                                        success=False,
+                                        error_message="Processing failed",
+                                    )
                                 else:
-                                    progress.finish_repository(project_key, success=False, error_message="Processing failed")
+                                    progress.finish_repository(
+                                        project_key,
+                                        success=False,
+                                        error_message="Processing failed",
+                                    )
 
                     except GitOperationTimeout:
-                        self.processing_stats['timeout'] += 1
-                        self.processing_stats['repositories'][project_key] = {
-                            'status': 'timeout',
-                            'elapsed_time': elapsed_time,
-                            'error': 'Operation timed out'
+                        self.processing_stats["timeout"] += 1
+                        self.processing_stats["repositories"][project_key] = {
+                            "status": "timeout",
+                            "elapsed_time": elapsed_time,
+                            "error": "Operation timed out",
                         }
 
                         logger.error(f"⏱️ {project_key}: Timed out after {elapsed_time:.1f}s")
 
                         # Update progress
-                        if hasattr(progress, 'finish_repository'):
+                        if hasattr(progress, "finish_repository"):
                             # Check if progress adapter supports stats parameter
-                            if hasattr(progress, 'update_stats'):
+                            if hasattr(progress, "update_stats"):
                                 progress.update_stats(
-                                    processed=self.processing_stats['processed'],
-                                    success=self.processing_stats['success'],
-                                    failed=self.processing_stats['failed'],
-                                    timeout=self.processing_stats['timeout'],
-                                    total=self.processing_stats['total']
+                                    processed=self.processing_stats["processed"],
+                                    success=self.processing_stats["success"],
+                                    failed=self.processing_stats["failed"],
+                                    timeout=self.processing_stats["timeout"],
+                                    total=self.processing_stats["total"],
                                 )
-                                progress.finish_repository(project_key, success=False, error_message="Timeout")
+                                progress.finish_repository(
+                                    project_key, success=False, error_message="Timeout"
+                                )
                             else:
-                                progress.finish_repository(project_key, success=False, error_message="Timeout")
+                                progress.finish_repository(
+                                    project_key, success=False, error_message="Timeout"
+                                )
 
                     except Exception as e:
-                        self.processing_stats['failed'] += 1
-                        self.processing_stats['repositories'][project_key] = {
-                            'status': 'failed',
-                            'elapsed_time': elapsed_time,
-                            'error': str(e)
+                        self.processing_stats["failed"] += 1
+                        self.processing_stats["repositories"][project_key] = {
+                            "status": "failed",
+                            "elapsed_time": elapsed_time,
+                            "error": str(e),
                         }
 
                         logger.error(f"❌ {project_key}: Error after {elapsed_time:.1f}s - {e}")
 
                         # Update progress
-                        if hasattr(progress, 'finish_repository'):
+                        if hasattr(progress, "finish_repository"):
                             # Check if progress adapter supports stats parameter
-                            if hasattr(progress, 'update_stats'):
+                            if hasattr(progress, "update_stats"):
                                 progress.update_stats(
-                                    processed=self.processing_stats['processed'],
-                                    success=self.processing_stats['success'],
-                                    failed=self.processing_stats['failed'],
-                                    timeout=self.processing_stats['timeout'],
-                                    total=self.processing_stats['total']
+                                    processed=self.processing_stats["processed"],
+                                    success=self.processing_stats["success"],
+                                    failed=self.processing_stats["failed"],
+                                    timeout=self.processing_stats["timeout"],
+                                    total=self.processing_stats["total"],
                                 )
-                                progress.finish_repository(project_key, success=False, error_message=str(e))
+                                progress.finish_repository(
+                                    project_key, success=False, error_message=str(e)
+                                )
                             else:
-                                progress.finish_repository(project_key, success=False, error_message=str(e))
+                                progress.finish_repository(
+                                    project_key, success=False, error_message=str(e)
+                                )
 
                     finally:
                         # Update processed counter BEFORE logging and progress updates
-                        self.processing_stats['processed'] += 1
+                        self.processing_stats["processed"] += 1
 
                         # Update progress service with actual processing stats
-                        if hasattr(progress, 'update_stats'):
+                        if hasattr(progress, "update_stats"):
                             progress.update_stats(
-                                processed=self.processing_stats['processed'],
-                                success=self.processing_stats['success'],
-                                failed=self.processing_stats['failed'],
-                                timeout=self.processing_stats['timeout'],
-                                total=self.processing_stats['total']
+                                processed=self.processing_stats["processed"],
+                                success=self.processing_stats["success"],
+                                failed=self.processing_stats["failed"],
+                                timeout=self.processing_stats["timeout"],
+                                total=self.processing_stats["total"],
                             )
 
                         # Log progress
@@ -2109,10 +2156,7 @@ class GitDataFetcher:
         logger.info(f"   Timed out: {self.processing_stats['timeout']}")
         logger.info("=" * 60)
 
-        return {
-            'results': results,
-            'statistics': self.processing_stats
-        }
+        return {"results": results, "statistics": self.processing_stats}
 
     def _process_repository_with_timeout(
         self,
@@ -2123,7 +2167,7 @@ class GitDataFetcher:
         jira_integration: Optional[JIRAIntegration] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        timeout_per_operation: int = 30
+        timeout_per_operation: int = 30,
     ) -> Optional[dict[str, Any]]:
         """Process a single repository with comprehensive timeout protection.
 
@@ -2143,7 +2187,7 @@ class GitDataFetcher:
         try:
             # Track this repository in progress
             progress = get_progress_service()
-            if hasattr(progress, 'start_repository'):
+            if hasattr(progress, "start_repository"):
                 progress.start_repository(project_key, 0)
 
             logger.info(f"🔍 Processing repository: {project_key} at {repo_path}")
@@ -2158,7 +2202,7 @@ class GitDataFetcher:
                     jira_integration=jira_integration,
                     progress_callback=None,  # We handle progress at a higher level
                     start_date=start_date,
-                    end_date=end_date
+                    end_date=end_date,
                 )
 
                 return result
@@ -2170,5 +2214,6 @@ class GitDataFetcher:
         except Exception as e:
             logger.error(f"❌ Error processing repository {project_key}: {e}")
             import traceback
+
             logger.debug(f"Full traceback: {traceback.format_exc()}")
             return None

@@ -168,6 +168,7 @@ class IntegrationOrchestrator:
                     if self.debug_mode:
                         print(f"   ⚠️  GitHub enrichment failed: {e}")
                         import traceback
+
                         print(f"   Debug traceback: {traceback.format_exc()}")
 
         # JIRA enrichment for story points

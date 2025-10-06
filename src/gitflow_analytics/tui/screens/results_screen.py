@@ -9,7 +9,17 @@ from rich.table import Table
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Label, RadioButton, Rule, Static, TabbedContent, TabPane
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    Label,
+    RadioButton,
+    Rule,
+    Static,
+    TabbedContent,
+    TabPane,
+)
 
 from gitflow_analytics.config import Config
 
@@ -212,8 +222,8 @@ class ResultsScreen(Screen):
             Horizontal(
                 Button("Export Developers", id="export-developers"),
                 Button("Show Identity Details", id="show-identities"),
-                classes="action-bar"
-            )
+                classes="action-bar",
+            ),
         )
 
     def _create_commits_panel(self) -> Container:
@@ -239,9 +249,9 @@ class ResultsScreen(Screen):
         commits_table.add_column("Files", width=8, justify="right")
 
         # Add rows (limit to recent 100 for performance)
-        for commit in sorted(
-            self.commits, key=lambda c: c.get("timestamp", ""), reverse=True
-        )[:100]:
+        for commit in sorted(self.commits, key=lambda c: c.get("timestamp", ""), reverse=True)[
+            :100
+        ]:
             timestamp = commit.get("timestamp", "")
             date_str = timestamp.strftime("%Y-%m-%d") if timestamp else "Unknown"
 
@@ -270,7 +280,7 @@ class ResultsScreen(Screen):
             Horizontal(
                 Button("Export Commits", id="export-commits"),
                 Button("Show Untracked", id="show-untracked"),
-                classes="action-bar"
+                classes="action-bar",
             )
         )
 
@@ -281,9 +291,7 @@ class ResultsScreen(Screen):
         widgets = []
 
         widgets.append(Label("Pull Request Analysis", classes="section-title"))
-        widgets.append(
-            Static(f"Showing {len(self.prs)} pull requests.", classes="help-text")
-        )
+        widgets.append(Static(f"Showing {len(self.prs)} pull requests.", classes="help-text"))
 
         # Create PR table
         pr_table = Table(show_header=True, header_style="bold magenta", expand=True)
@@ -302,7 +310,11 @@ class ResultsScreen(Screen):
             status = pr.get("state", "unknown")
             created = pr.get("created_at", "")
             if created:
-                created_str = created.strftime("%Y-%m-%d") if hasattr(created, 'strftime') else str(created)[:10]
+                created_str = (
+                    created.strftime("%Y-%m-%d")
+                    if hasattr(created, "strftime")
+                    else str(created)[:10]
+                )
             else:
                 created_str = "Unknown"
             commit_count = pr.get("commit_count", 0)
@@ -322,12 +334,7 @@ class ResultsScreen(Screen):
         widgets.append(prs_table)
 
         # Action buttons
-        widgets.append(
-            Horizontal(
-                Button("Export PRs", id="export-prs"),
-                classes="action-bar"
-            )
-        )
+        widgets.append(Horizontal(Button("Export PRs", id="export-prs"), classes="action-bar"))
 
         return Container(*widgets)
 
@@ -338,9 +345,7 @@ class ResultsScreen(Screen):
         widgets.append(Label("Qualitative Analysis Results", classes="section-title"))
 
         if self._has_qualitative_data():
-            widgets.append(
-                Static("AI-powered insights from commit analysis", classes="help-text")
-            )
+            widgets.append(Static("AI-powered insights from commit analysis", classes="help-text"))
             widgets.append(
                 Static(
                     "Note: Qualitative analysis is based on commit messages and may not reflect "
@@ -377,6 +382,7 @@ class ResultsScreen(Screen):
             change_table.add_row(change_type.title(), str(count), f"{percentage:.1f}%")
 
         from rich.panel import Panel
+
         widgets.append(Static(Panel(change_table, title="Change Types", border_style="cyan")))
 
         # Risk Level Distribution
@@ -422,7 +428,9 @@ class ResultsScreen(Screen):
             conf_table.add_column("Score", width=15)
 
             conf_table.add_row("Average Confidence", f"{conf_scores.get('average', 0):.1f}%")
-            conf_table.add_row("High Confidence", f"{conf_scores.get('high_confidence_pct', 0):.1f}%")
+            conf_table.add_row(
+                "High Confidence", f"{conf_scores.get('high_confidence_pct', 0):.1f}%"
+            )
             conf_table.add_row("Low Confidence", f"{conf_scores.get('low_confidence_pct', 0):.1f}%")
 
             widgets.append(
@@ -451,7 +459,7 @@ class ResultsScreen(Screen):
             Rule(),
             Button("Export Now", variant="primary", id="export-now"),
             Label("", id="export-path-label"),
-            id="export-options"
+            id="export-options",
         )
 
         widgets.append(export_options)

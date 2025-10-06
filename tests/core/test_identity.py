@@ -29,15 +29,13 @@ class TestDeveloperIdentityResolver:
         manual_mappings = [
             {
                 "canonical_email": "john@personal.com",
-                "aliases": ["john.doe@company.com", "jdoe@corp.com"]
+                "aliases": ["john.doe@company.com", "jdoe@corp.com"],
             }
         ]
-        
+
         db_path = temp_dir / "identities.db"
         resolver = DeveloperIdentityResolver(
-            db_path, 
-            similarity_threshold=0.85, 
-            manual_mappings=manual_mappings
+            db_path, similarity_threshold=0.85, manual_mappings=manual_mappings
         )
 
         assert resolver.similarity_threshold == 0.85
@@ -52,7 +50,7 @@ class TestDeveloperIdentityResolver:
 
         assert canonical_id is not None
         assert len(canonical_id) > 0
-        
+
         # Resolving the same developer should return the same ID
         canonical_id2 = resolver.resolve_developer("John Doe", "john@example.com")
         assert canonical_id == canonical_id2
@@ -64,10 +62,10 @@ class TestDeveloperIdentityResolver:
 
         # Add first developer
         canonical_id1 = resolver.resolve_developer("John Doe", "john@example.com")
-        
+
         # Add similar developer (should potentially match based on similarity)
         canonical_id2 = resolver.resolve_developer("John S Doe", "john.doe@example.com")
-        
+
         # The resolver should determine if these are the same person
         # (exact behavior depends on implementation logic)
         assert canonical_id1 is not None
@@ -80,10 +78,10 @@ class TestDeveloperIdentityResolver:
 
         # Add first developer
         canonical_id1 = resolver.resolve_developer("John Smith", "john@example.com")
-        
+
         # Add very different developer (should not match)
         canonical_id2 = resolver.resolve_developer("Jane Williams", "jane@example.com")
-        
+
         # These should be different identities
         assert canonical_id1 != canonical_id2
 
@@ -92,22 +90,19 @@ class TestDeveloperIdentityResolver:
         manual_mappings = [
             {
                 "canonical_email": "john@personal.com",
-                "aliases": ["john.work@company.com", "john.doe@corp.com"]
+                "aliases": ["john.work@company.com", "john.doe@corp.com"],
             }
         ]
 
         db_path = temp_dir / "identities.db"
-        resolver = DeveloperIdentityResolver(
-            db_path, 
-            manual_mappings=manual_mappings
-        )
+        resolver = DeveloperIdentityResolver(db_path, manual_mappings=manual_mappings)
 
         # Resolve using an alias email
         canonical_id1 = resolver.resolve_developer("John Doe", "john.work@company.com")
-        
+
         # Resolve using canonical email
         canonical_id2 = resolver.resolve_developer("John Doe", "john@personal.com")
-        
+
         # Should resolve to the same canonical identity
         assert canonical_id1 == canonical_id2
 
@@ -131,7 +126,7 @@ class TestDeveloperIdentityResolver:
         stats = resolver.get_developer_stats()
 
         assert len(stats) == 2
-        
+
         # Check structure
         for stat in stats:
             assert "canonical_id" in stat
@@ -148,17 +143,17 @@ class TestDeveloperIdentityResolver:
         # Create two separate identities
         canonical_id1 = resolver.resolve_developer("John Doe", "john@personal.com")
         canonical_id2 = resolver.resolve_developer("John D", "john@work.com")
-        
+
         # Verify they are different initially
         assert canonical_id1 != canonical_id2
 
         # Merge the identities
         resolver.merge_identities(canonical_id1, canonical_id2)
-        
+
         # After merging, resolving either should return the same canonical ID
         resolved_id1 = resolver.resolve_developer("John Doe", "john@personal.com")
         resolved_id2 = resolver.resolve_developer("John D", "john@work.com")
-        
+
         assert resolved_id1 == resolved_id2
 
 
@@ -168,15 +163,15 @@ class TestDatabaseIntegration:
     def test_persistence_across_sessions(self, temp_dir):
         """Test that identities persist across resolver sessions."""
         db_path = temp_dir / "identities.db"
-        
+
         # Create first resolver session
         resolver1 = DeveloperIdentityResolver(db_path)
         canonical_id = resolver1.resolve_developer("John Doe", "john@example.com")
-        
+
         # Create second resolver session
         resolver2 = DeveloperIdentityResolver(db_path)
         canonical_id2 = resolver2.resolve_developer("John Doe", "john@example.com")
-        
+
         # Should resolve to the same identity
         assert canonical_id == canonical_id2
 
@@ -184,13 +179,13 @@ class TestDatabaseIntegration:
         """Test that caching improves performance."""
         db_path = temp_dir / "identities.db"
         resolver = DeveloperIdentityResolver(db_path)
-        
+
         # First resolution (populates cache)
         canonical_id1 = resolver.resolve_developer("John Doe", "john@example.com")
-        
+
         # Second resolution (should use cache)
         canonical_id2 = resolver.resolve_developer("John Doe", "john@example.com")
-        
+
         assert canonical_id1 == canonical_id2
         # Verify the result is cached
         cache_key = "john@example.com:john doe"

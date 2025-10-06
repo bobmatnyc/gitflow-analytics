@@ -916,9 +916,11 @@ class ConfigLoader:
             elif isinstance(value, list):
                 # Handle lists that might contain strings or nested dicts
                 resolved[key] = [
-                    cls._resolve_env_var(item) if isinstance(item, str)
-                    else cls._resolve_config_dict(item) if isinstance(item, dict)
-                    else item
+                    (
+                        cls._resolve_env_var(item)
+                        if isinstance(item, str)
+                        else cls._resolve_config_dict(item) if isinstance(item, dict) else item
+                    )
                     for item in value
                 ]
             else:
