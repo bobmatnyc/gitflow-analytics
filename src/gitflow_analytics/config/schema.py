@@ -380,6 +380,17 @@ class PMIntegrationConfig:
 
 
 @dataclass
+class LauncherPreferences:
+    """Interactive launcher preferences."""
+
+    last_selected_repos: list[str] = field(default_factory=list)
+    default_weeks: int = 4
+    auto_clear_cache: bool = False
+    skip_identity_analysis: bool = False
+    last_run: Optional[str] = None
+
+
+@dataclass
 class Config:
     """Main configuration container."""
 
@@ -393,6 +404,7 @@ class Config:
     pm: Optional[Any] = None  # Modern PM framework config
     pm_integration: Optional[PMIntegrationConfig] = None
     qualitative: Optional["QualitativeConfig"] = None
+    launcher: Optional[LauncherPreferences] = None
 
     def discover_organization_repositories(
         self, clone_base_path: Optional[Path] = None

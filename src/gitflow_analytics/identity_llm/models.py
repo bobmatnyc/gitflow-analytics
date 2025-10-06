@@ -54,7 +54,10 @@ class IdentityAnalysisResult:
     analysis_metadata: dict[str, any] = field(default_factory=dict)
 
     def get_manual_mappings(self) -> list[dict[str, any]]:
-        """Convert to manual mappings format for config."""
+        """Convert to manual mappings format for config.
+
+        Returns mappings with confidence scores and reasoning for display.
+        """
         mappings = []
         for cluster in self.clusters:
             if len(cluster.aliases) > 0:
@@ -64,6 +67,9 @@ class IdentityAnalysisResult:
                     mapping["name"] = cluster.preferred_display_name
                 mapping["primary_email"] = cluster.canonical_email
                 mapping["aliases"] = [alias.email for alias in cluster.aliases]
+                # Include confidence and reasoning for user review
+                mapping["confidence"] = cluster.confidence
+                mapping["reasoning"] = cluster.reasoning[:100]  # Truncate for readability
                 mappings.append(mapping)
         return mappings
 

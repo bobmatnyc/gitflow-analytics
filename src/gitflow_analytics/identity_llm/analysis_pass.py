@@ -150,23 +150,33 @@ class IdentityAnalysisPass:
         # Merge new mappings
         existing_emails = set()
         for mapping in existing_mappings:
-            existing_emails.add(mapping.get("canonical_email", "").lower())
+            # Support both canonical_email and primary_email for backward compatibility
+            email = mapping.get("canonical_email") or mapping.get("primary_email", "")
+            existing_emails.add(email.lower())
 
         for new_mapping in new_mappings:
-            canonical_email = new_mapping["canonical_email"].lower()
+            # New mappings use primary_email
+            canonical_email = new_mapping["primary_email"].lower()
             if canonical_email not in existing_emails:
                 existing_mappings.append(new_mapping)
                 logger.info(f"Added identity mapping for: {canonical_email}")
             else:
                 # Update existing mapping with new aliases
                 for existing in existing_mappings:
-                    if existing.get("canonical_email", "").lower() == canonical_email:
+                    existing_email = existing.get("canonical_email") or existing.get(
+                        "primary_email", ""
+                    )
+                    if existing_email.lower() == canonical_email:
                         existing_aliases = set(
                             alias.lower() for alias in existing.get("aliases", [])
                         )
                         new_aliases = set(alias.lower() for alias in new_mapping["aliases"])
                         combined_aliases = existing_aliases | new_aliases
                         existing["aliases"] = list(combined_aliases)
+                        # Update confidence and reasoning if new mapping has higher confidence
+                        if new_mapping.get("confidence", 0) > existing.get("confidence", 0):
+                            existing["confidence"] = new_mapping.get("confidence")
+                            existing["reasoning"] = new_mapping.get("reasoning")
                         if new_aliases - existing_aliases:
                             logger.info(f"Updated aliases for: {canonical_email}")
                         break

@@ -20,9 +20,15 @@ class LLMIdentityAnalyzer:
         self,
         api_key: Optional[str] = None,
         model: str = "openai/gpt-4o-mini",
-        confidence_threshold: float = 0.8,
+        confidence_threshold: float = 0.9,
     ):
-        """Initialize the LLM identity analyzer."""
+        """Initialize the LLM identity analyzer.
+
+        Args:
+            api_key: OpenRouter API key for LLM-based analysis
+            model: LLM model to use (default: openai/gpt-4o-mini)
+            confidence_threshold: Minimum confidence for identity matches (default: 0.9 = 90%)
+        """
         self.api_key = api_key
         self.model = model
         self.confidence_threshold = confidence_threshold
@@ -371,6 +377,12 @@ Respond with a JSON object:
 
             confidence = float(data.get("confidence", 0.8))
             if confidence < self.confidence_threshold:
+                # Log why this cluster was rejected
+                cluster_emails = [id.email for id in cluster_identities]
+                logger.info(
+                    f"Rejected identity cluster: {', '.join(cluster_emails)} "
+                    f"(confidence {confidence:.1%} < threshold {self.confidence_threshold:.1%})"
+                )
                 return None
 
             # Find canonical identity

@@ -4471,6 +4471,114 @@ def merge_identity(config: Path, dev1: str, dev2: str) -> None:
         sys.exit(1)
 
 
+@cli.command(name="run")
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to configuration file (optional, will search for default)",
+)
+def run_launcher(config: Optional[Path]) -> None:
+    """Interactive launcher for gitflow-analytics.
+
+    \b
+    This interactive command guides you through:
+      • Repository selection (multi-select)
+      • Analysis period configuration
+      • Cache management
+      • Identity analysis preferences
+      • Preferences storage
+
+    \b
+    EXAMPLES:
+      # Launch interactive mode
+      gitflow-analytics run
+
+      # Launch with specific config
+      gitflow-analytics run -c config.yaml
+
+    \b
+    PREFERENCES:
+      Your selections are saved to the launcher section
+      in your configuration file for future use.
+
+    \b
+    WORKFLOW:
+      1. Select repositories to analyze
+      2. Choose analysis period (weeks)
+      3. Configure cache clearing
+      4. Set identity analysis preference
+      5. Run analysis with your selections
+    """
+    try:
+        from .cli_wizards.run_launcher import run_interactive_launcher
+
+        success = run_interactive_launcher(config_path=config)
+        sys.exit(0 if success else 1)
+
+    except Exception as e:
+        click.echo(f"❌ Launcher failed: {e}", err=True)
+        logger.error(f"Launcher error: {type(e).__name__}")
+        sys.exit(1)
+
+
+@cli.command(name="install")
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=".",
+    help="Directory for config files (default: current directory)",
+)
+@click.option(
+    "--skip-validation",
+    is_flag=True,
+    help="Skip credential validation (for testing)",
+)
+def install_command(output_dir: Path, skip_validation: bool) -> None:
+    """Interactive installation wizard for GitFlow Analytics.
+
+    \b
+    This wizard will guide you through setting up GitFlow Analytics:
+    • GitHub credentials and repository configuration
+    • Optional JIRA integration
+    • Optional AI-powered insights (OpenRouter/ChatGPT)
+    • Analysis settings and defaults
+
+    \b
+    EXAMPLES:
+      # Run installation wizard in current directory
+      gitflow-analytics install
+
+      # Install to specific directory
+      gitflow-analytics install --output-dir ./my-config
+
+    \b
+    The wizard will:
+    1. Validate all credentials before saving
+    2. Generate config.yaml and .env files
+    3. Set secure permissions on .env (0600)
+    4. Update .gitignore if in a git repository
+    5. Test the configuration
+    6. Optionally run initial analysis
+
+    \b
+    SECURITY NOTES:
+      • .env file contains sensitive credentials
+      • Never commit .env to version control
+      • File permissions set to owner-only (0600)
+    """
+    try:
+        from .cli_wizards.install_wizard import InstallWizard
+
+        wizard = InstallWizard(output_dir=Path(output_dir), skip_validation=skip_validation)
+        success = wizard.run()
+        sys.exit(0 if success else 1)
+
+    except Exception as e:
+        click.echo(f"❌ Installation failed: {e}", err=True)
+        sys.exit(1)
+
+
 @cli.command(name="discover-storypoint-fields")
 @click.option(
     "--config",
@@ -4683,16 +4791,41 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
             # Show suggestions
             click.echo(f"\n⚠️  Found {len(identity_result.clusters)} potential identity clusters:")
 
-            # Display all mappings
+            # Display all mappings with confidence scores
             if suggested_config.get("analysis", {}).get("manual_identity_mappings"):
                 click.echo("\n📋 Suggested identity mappings:")
-                for mapping in suggested_config["analysis"]["manual_identity_mappings"]:
-                    canonical = mapping["canonical_email"]
+                for i, mapping in enumerate(
+                    suggested_config["analysis"]["manual_identity_mappings"], 1
+                ):
+                    canonical = mapping["primary_email"]
                     aliases = mapping.get("aliases", [])
+                    confidence = mapping.get("confidence", 0.0)
+                    reasoning = mapping.get("reasoning", "")
+
+                    # Color-code based on confidence (90%+ threshold)
+                    if confidence >= 0.95:
+                        confidence_indicator = "🟢"  # Very high confidence
+                    elif confidence >= 0.90:
+                        confidence_indicator = "🟡"  # High confidence (above threshold)
+                    else:
+                        confidence_indicator = "🟠"  # Medium confidence (below threshold)
+
                     if aliases:
-                        click.echo(f"   {canonical}")
+                        click.echo(
+                            f"\n   {confidence_indicator} Cluster {i} "
+                            f"(Confidence: {confidence:.1%}):"
+                        )
+                        click.echo(f"      Primary: {canonical}")
                         for alias in aliases:
-                            click.echo(f"     → {alias}")
+                            click.echo(f"      Alias:   {alias}")
+
+                        # Show reasoning if available
+                        if reasoning:
+                            # Truncate reasoning for display
+                            display_reasoning = (
+                                reasoning if len(reasoning) <= 80 else reasoning[:77] + "..."
+                            )
+                            click.echo(f"      Reason:  {display_reasoning}")
 
             # Check for bot exclusions
             if suggested_config.get("exclude", {}).get("authors"):

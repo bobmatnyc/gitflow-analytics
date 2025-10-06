@@ -221,8 +221,9 @@ $RECYCLE.BIN/
 .claude-mpm/logs/
 .claude-mpm/sessions/
 .claude-mpm/tmp/
-.claude/cache/
-.claude/sessions/
+# Claude AI Assistant files
+.claude/
+.claude-mpm/memories/
 .conda/
 .env.*
 .kuzu-memory/
