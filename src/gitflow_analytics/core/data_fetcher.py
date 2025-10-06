@@ -913,23 +913,28 @@ class GitDataFetcher:
         except Exception as e:
             logger.debug(f"Error getting local branches: {e}")
 
-        # If we have remotes, also consider remote branches (but clean the names)
+        # If we have remotes, also consider remote branches (keep full remote reference)
         # Skip remote branch checking if skip_remote_fetch is enabled to avoid auth prompts
         if not self.skip_remote_fetch:
             try:
                 if repo.remotes and hasattr(repo.remotes, "origin"):
+                    # CRITICAL FIX: Keep full remote reference (origin/branch-name) for accessibility testing
+                    # Remote branches need the full reference to work with iter_commits()
                     # THREAD SAFETY: Create a new list to avoid sharing references
                     remote_branches = list(
                         [
-                            ref.name.replace("origin/", "")
+                            ref.name  # Keep full "origin/branch-name" format
                             for ref in repo.remotes.origin.refs
                             if not ref.name.endswith("HEAD")  # Skip HEAD ref
                         ]
                     )
-                    # Only add remote branches that aren't already in local branches
-                    for branch in remote_branches:
-                        if branch not in available_branches:
-                            available_branches.append(branch)
+                    # Add remote branches with full reference (origin/branch-name)
+                    # Extract short name only for duplicate checking against local branches
+                    for branch_ref in remote_branches:
+                        short_name = branch_ref.replace("origin/", "")
+                        # Only add if we don't have this branch locally
+                        if short_name not in available_branches:
+                            available_branches.append(branch_ref)  # Store full reference
                     logger.debug(f"Found remote branches: {remote_branches}")
             except Exception as e:
                 logger.debug(f"Error getting remote branches (may require authentication): {e}")
