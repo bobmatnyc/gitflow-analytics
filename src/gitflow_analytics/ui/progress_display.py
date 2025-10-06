@@ -414,8 +414,20 @@ class RichProgressDisplay:
                 try:
                     self.statistics.memory_usage = self._process.memory_info().rss / 1024 / 1024
                     self.statistics.cpu_percent = self._process.cpu_percent()
-                except:
+                except (AttributeError, OSError) as e:
+                    # Process might have terminated or psutil unavailable
+                    # This is non-critical for analysis, so just skip the update
                     pass
+                except Exception as e:
+                    # Log unexpected errors but don't fail progress display
+                    # Only log once to avoid spam
+                    if not hasattr(self, "_stats_error_logged"):
+                        import logging
+
+                        logging.getLogger(__name__).debug(
+                            f"Could not update process statistics: {e}"
+                        )
+                        self._stats_error_logged = True
 
         stats_items = []
 

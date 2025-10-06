@@ -59,7 +59,7 @@ class GitDataFetcher:
         allowed_ticket_platforms: Optional[list[str]] = None,
         exclude_paths: Optional[list[str]] = None,
         skip_remote_fetch: bool = False,
-    ):
+    ) -> None:
         """Initialize the data fetcher.
 
         Args:
@@ -402,8 +402,13 @@ class GitDataFetcher:
                         if hasattr(_thread_local, "temp_dir"):
                             shutil.rmtree(_thread_local.temp_dir, ignore_errors=True)
                             delattr(_thread_local, "temp_dir")
-                    except:
-                        pass
+                    except OSError as e:
+                        # Log cleanup failures but don't fail the operation
+                        logger.debug(f"Failed to clean up temp directory for {project_key}: {e}")
+                    except Exception as e:
+                        logger.warning(
+                            f"Unexpected error during temp cleanup for {project_key}: {e}"
+                        )
 
                 try:
                     # Configure git to never prompt for credentials
@@ -506,7 +511,13 @@ class GitDataFetcher:
                 # Estimate based on first branch (multiply by number of branches for rough estimate)
                 len(sample_commits) * len(branches_to_analyze)
                 break
-        except:
+        except GitOperationTimeout:
+            logger.warning(
+                f"Timeout while sampling commits for {project_key}, using default estimate"
+            )
+            len(days_to_process) * 50  # Default estimate
+        except Exception as e:
+            logger.debug(f"Could not sample commits for {project_key}: {e}, using default estimate")
             len(days_to_process) * 50  # Default estimate
 
         # Update repository in Rich display with estimated commit count
@@ -537,7 +548,12 @@ class GitDataFetcher:
                 for branch_name in branches_to_analyze:
                     try:
                         # Fetch commits for this specific day and branch with timeout protection
-                        def fetch_branch_commits():
+                        def fetch_branch_commits() -> list[Any]:
+                            """Fetch commits for a specific branch and day range.
+
+                            Returns:
+                                List of GitPython commit objects
+                            """
                             return list(
                                 repo.iter_commits(
                                     branch_name, since=day_start, until=day_end, reverse=False
@@ -1169,9 +1185,12 @@ class GitDataFetcher:
                             f"3) Git credential manager instead."
                         )
                         break
-        except:
-            # Don't fail analysis due to security check
-            pass
+        except AttributeError as e:
+            # Repository might not have remotes attribute (e.g., in tests or unusual repo structures)
+            logger.debug(f"Could not check remote URLs for security scan: {e}")
+        except Exception as e:
+            # Don't fail analysis due to security check, but log unexpected errors
+            logger.warning(f"Error during credential security check: {e}")
 
     def get_repository_status_summary(self) -> dict[str, Any]:
         """Get a summary of repository fetch status.
@@ -1792,7 +1811,12 @@ class GitDataFetcher:
             repo = commit.repo
             Path(repo.working_dir)
 
-            def get_diff_output():
+            def get_diff_output() -> str:
+                """Get diff output for commit using git numstat.
+
+                Returns:
+                    Git diff output string in numstat format
+                """
                 if parent:
                     return repo.git.diff(parent.hexsha, commit.hexsha, "--numstat")
                 else:

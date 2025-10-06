@@ -48,8 +48,19 @@ class RichHelpFormatter:
         return help_text
 
     @staticmethod
-    def format_option_help(description: str, default: Any = None, choices: list = None) -> str:
-        """Format option help with default and choices."""
+    def format_option_help(
+        description: str, default: Optional[str] = None, choices: Optional[list[str]] = None
+    ) -> str:
+        """Format option help with default and choices.
+
+        Args:
+            description: Option description text
+            default: Default value to display (optional)
+            choices: List of valid choices (optional)
+
+        Returns:
+            Formatted help text string
+        """
         help_text = description
         if default is not None:
             help_text += f" [default: {default}]"

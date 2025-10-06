@@ -105,7 +105,14 @@ class SubprocessGit:
 
     @staticmethod
     def check_remotes_safe(repo_path: Path) -> bool:
-        """Check if repository has remotes without triggering authentication."""
+        """Check if repository has remotes without triggering authentication.
+
+        Args:
+            repo_path: Path to the git repository
+
+        Returns:
+            True if repository has remotes, False otherwise or on error
+        """
         cmd = ["git", "remote", "-v"]
 
         env = {
@@ -118,12 +125,26 @@ class SubprocessGit:
                 cmd, cwd=repo_path, capture_output=True, text=True, env=env, timeout=5
             )
             return bool(result.stdout.strip())
-        except:
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Git remote check timed out for {repo_path}")
+            return False
+        except OSError as e:
+            logger.warning(f"Failed to check git remotes for {repo_path}: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error checking git remotes for {repo_path}: {e}")
             return False
 
     @staticmethod
     def get_branches_safe(repo_path: Path) -> list[str]:
-        """Get list of branches without triggering authentication."""
+        """Get list of branches without triggering authentication.
+
+        Args:
+            repo_path: Path to the git repository
+
+        Returns:
+            List of branch names, defaults to common branch names if detection fails
+        """
         branches = []
 
         # Get local branches
@@ -135,11 +156,16 @@ class SubprocessGit:
             if result.returncode == 0:
                 branches = [b.strip() for b in result.stdout.split("\n") if b.strip()]
 
-        except:
-            pass
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Git branch listing timed out for {repo_path}")
+        except OSError as e:
+            logger.warning(f"Failed to list git branches for {repo_path}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error listing git branches for {repo_path}: {e}")
 
         # Default to common branch names if none found
         if not branches:
+            logger.info(f"No branches detected for {repo_path}, using default branch names")
             branches = ["main", "master", "develop"]
 
         return branches
