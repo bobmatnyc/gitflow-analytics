@@ -29,9 +29,9 @@ from ..models.database import (
 )
 from .branch_mapper import BranchToProjectMapper
 from .cache import GitAnalysisCache
+from .git_timeout_wrapper import GitOperationTimeout, GitTimeoutWrapper, HeartbeatLogger
 from .identity import DeveloperIdentityResolver
 from .progress import get_progress_service
-from .git_timeout_wrapper import GitTimeoutWrapper, HeartbeatLogger, GitOperationTimeout
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ class GitDataFetcher:
             # Count total commits for progress estimation
             try:
                 import git
-                repo = git.Repo(repo_path)
+                git.Repo(repo_path)
                 # Check if we need to clone or pull
                 if not repo_path.exists() or not (repo_path / '.git').exists():
                     logger.info(f"📥 Repository {project_key} needs cloning")
@@ -332,7 +332,6 @@ class GitDataFetcher:
         Returns:
             Dictionary mapping date strings (YYYY-MM-DD) to lists of commit data
         """
-        import os
 
         # THREAD SAFETY: Use the module-level thread-local storage to ensure each thread
         # gets its own Repo instance. This prevents thread-safety issues when called from ThreadPoolExecutor
@@ -369,7 +368,6 @@ class GitDataFetcher:
             if self.skip_remote_fetch:
                 # Use a special git configuration that completely disables credential helpers
                 import tempfile
-                import subprocess
 
                 # Create a secure temporary directory for our config
                 temp_dir = tempfile.mkdtemp(prefix="gitflow_")
@@ -487,17 +485,16 @@ class GitDataFetcher:
         all_commit_hashes = set()  # Track all hashes for deduplication
 
         # Count total commits first for Rich display
-        total_expected_commits = 0
         try:
             for branch_name in branches_to_analyze[:1]:  # Sample from first branch
                 sample_commits = list(repo.iter_commits(
                     branch_name, since=start_date, until=end_date
                 ))
                 # Estimate based on first branch (multiply by number of branches for rough estimate)
-                total_expected_commits = len(sample_commits) * len(branches_to_analyze)
+                len(sample_commits) * len(branches_to_analyze)
                 break
         except:
-            total_expected_commits = len(days_to_process) * 50  # Default estimate
+            len(days_to_process) * 50  # Default estimate
 
         # Update repository in Rich display with estimated commit count
         if hasattr(progress, '_use_rich') and progress._use_rich:
@@ -1011,6 +1008,9 @@ class GitDataFetcher:
             logger.info("🚫 Skipping remote fetch (skip_remote_fetch=true)")
             return True
 
+        # Check for stale repository (last fetch > 1 hour ago)
+        self._check_repository_staleness(repo)
+
         try:
             # Check if we have remotes without triggering authentication
             has_remotes = False
@@ -1036,7 +1036,17 @@ class GitDataFetcher:
                             if repo.working_dir.endswith(key) or key in repo.working_dir:
                                 self.repository_status[key]["remote_update"] = "failed"
                                 break
+
+                    # Explicit warning to user about stale data
+                    logger.warning(
+                        f"❌ Failed to fetch updates for {repo_path.name}. "
+                        f"Analysis will use potentially stale local data. "
+                        f"Check authentication or network connectivity."
+                    )
                     return False
+                else:
+                    # Explicit success confirmation
+                    logger.info(f"✅ Successfully fetched updates for {repo_path.name}")
 
                 # Only try to pull if not in detached HEAD state
                 if not repo.head.is_detached:
@@ -1065,6 +1075,38 @@ class GitDataFetcher:
             # Continue with analysis using local state
             return False
 
+    def _check_repository_staleness(self, repo) -> None:
+        """Check if repository hasn't been fetched recently and warn user.
+
+        Args:
+            repo: GitPython Repo object
+        """
+        try:
+            repo_path = Path(repo.working_dir)
+            fetch_head_path = repo_path / ".git" / "FETCH_HEAD"
+
+            if fetch_head_path.exists():
+                # Get last fetch time from FETCH_HEAD modification time
+                last_fetch_time = datetime.fromtimestamp(
+                    fetch_head_path.stat().st_mtime,
+                    tz=timezone.utc
+                )
+                now = datetime.now(timezone.utc)
+                hours_since_fetch = (now - last_fetch_time).total_seconds() / 3600
+
+                if hours_since_fetch > 1:
+                    logger.warning(
+                        f"⏰ Repository {repo_path.name} last fetched {hours_since_fetch:.1f} hours ago. "
+                        f"Data may be stale."
+                    )
+            else:
+                logger.warning(
+                    f"⚠️ Repository {repo_path.name} has never been fetched. "
+                    f"Will attempt to fetch now."
+                )
+        except Exception as e:
+            logger.debug(f"Could not check repository staleness: {e}")
+
     def _check_repository_security(self, repo_path: Path, project_key: str) -> None:
         """Check for security issues in repository configuration.
 
@@ -1072,7 +1114,6 @@ class GitDataFetcher:
         - Exposed tokens in remote URLs
         - Insecure credential storage
         """
-        import subprocess
 
         try:
             # Check for tokens in remote URLs
@@ -1721,7 +1762,7 @@ class GitDataFetcher:
             # THREAD SAFETY: Use the repo reference from the commit object
             # Each thread has its own commit object with its own repo reference
             repo = commit.repo
-            repo_path = Path(repo.working_dir)
+            Path(repo.working_dir)
 
             def get_diff_output():
                 if parent:
@@ -1894,7 +1935,7 @@ class GitDataFetcher:
         progress = get_progress_service()
 
         # Start heartbeat logger for monitoring
-        with HeartbeatLogger(interval=5) as heartbeat:
+        with HeartbeatLogger(interval=5):
             results = {}
 
             # Use ThreadPoolExecutor for parallel processing
@@ -2108,7 +2149,7 @@ class GitDataFetcher:
             logger.info(f"🔍 Processing repository: {project_key} at {repo_path}")
 
             # Use the regular fetch method but with timeout wrapper active
-            with self.git_wrapper.operation_tracker(f"fetch_repository_data", repo_path):
+            with self.git_wrapper.operation_tracker("fetch_repository_data", repo_path):
                 result = self.fetch_repository_data(
                     repo_path=repo_path,
                     project_key=project_key,

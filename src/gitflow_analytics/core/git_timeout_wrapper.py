@@ -6,14 +6,12 @@ when repositories require authentication or have network issues.
 
 import logging
 import os
-import signal
 import subprocess
 import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional, TypeVar
+from typing import Callable, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -204,9 +202,30 @@ class GitTimeoutWrapper:
                 timeout=timeout,
                 check=True
             )
+            logger.info(f"✅ Fetch succeeded for {repo_path.name}")
             return True
         except (GitOperationTimeout, subprocess.CalledProcessError) as e:
-            logger.warning(f"Git fetch failed for {repo_path}: {e}")
+            # Extract detailed error information
+            error_detail = ""
+            if isinstance(e, subprocess.CalledProcessError) and e.stderr:
+                error_detail = e.stderr.strip()
+                # Check for authentication-specific errors
+                if "could not read Username" in error_detail or "could not read Password" in error_detail:
+                    logger.error(
+                        f"🔐 Authentication required for {repo_path.name}. "
+                        f"Repository uses HTTPS but no credentials configured. "
+                        f"Consider: (1) Configure git credential helper, "
+                        f"(2) Use SSH URLs instead, or (3) Set GITHUB_TOKEN in environment."
+                    )
+                elif "Authentication failed" in error_detail or "403" in error_detail:
+                    logger.error(
+                        f"🔐 Authentication failed for {repo_path.name}. "
+                        f"Check that your GitHub token has proper permissions."
+                    )
+                else:
+                    logger.warning(f"Git fetch failed for {repo_path.name}: {error_detail}")
+            else:
+                logger.warning(f"Git fetch failed for {repo_path.name}: {e}")
             return False
 
     def pull_with_timeout(self, repo_path: Path, timeout: int = 30) -> bool:

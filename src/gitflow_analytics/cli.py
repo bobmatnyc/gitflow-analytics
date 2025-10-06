@@ -18,10 +18,10 @@ import pandas as pd
 import yaml
 
 from ._version import __version__
-from .ui.progress_display import create_progress_display
 from .config import ConfigLoader
 from .core.analyzer import GitAnalyzer
 from .core.cache import GitAnalysisCache
+from .core.git_auth import preflight_git_authentication
 from .core.identity import DeveloperIdentityResolver
 from .integrations.orchestrator import IntegrationOrchestrator
 from .metrics.dora import DORAMetricsCalculator
@@ -31,6 +31,7 @@ from .reports.json_exporter import ComprehensiveJSONExporter
 from .reports.narrative_writer import NarrativeReportGenerator
 from .reports.weekly_trends_writer import WeeklyTrendsWriter
 from .training.pipeline import CommitClassificationTrainer
+from .ui.progress_display import create_progress_display
 
 
 class RichHelpFormatter:
@@ -756,6 +757,29 @@ def analyze(
                 for warning in warnings:
                     click.echo(f"   - {warning}")
 
+        # Run pre-flight git authentication check
+        # Convert config object to dict for preflight check
+        config_dict = {
+            "github": {
+                "token": cfg.github.token if cfg.github else None,
+                "organization": cfg.github.organization if cfg.github else None,
+            }
+        }
+
+        if display:
+            display.print_status("Verifying GitHub authentication...", "info")
+        else:
+            click.echo("🔐 Verifying GitHub authentication...")
+
+        if not preflight_git_authentication(config_dict):
+            if display:
+                display.print_status(
+                    "GitHub authentication failed. Cannot proceed with analysis.", "error"
+                )
+            else:
+                click.echo("❌ GitHub authentication failed. Cannot proceed with analysis.")
+            sys.exit(1)
+
         if validate_only:
             if not warnings:
                 if display:
@@ -973,9 +997,9 @@ def analyze(
             else:
                 click.echo("\n🔒 Running security-only analysis...")
 
+            from .core.data_fetcher import GitDataFetcher
             from .security import SecurityAnalyzer, SecurityConfig
             from .security.reports import SecurityReportGenerator
-            from .core.data_fetcher import GitDataFetcher
             # GitAnalysisCache already imported at module level (line 24)
 
             # Load security configuration
@@ -1620,6 +1644,22 @@ def analyze(
                             # Update progress even on failure
                             progress.update(repos_progress_ctx)
                             continue
+
+                # Display repository fetch status summary
+                repo_status = data_fetcher.get_repository_status_summary()
+                if repo_status["failed_updates"] > 0 or repo_status["errors"]:
+                    logger.warning(
+                        f"\n⚠️  Repository Update Summary:\n"
+                        f"   • Total repositories: {repo_status['total_repositories']}\n"
+                        f"   • Successful updates: {repo_status['successful_updates']}\n"
+                        f"   • Failed updates: {repo_status['failed_updates']}\n"
+                        f"   • Skipped updates: {repo_status['skipped_updates']}"
+                    )
+                    if repo_status["failed_updates"] > 0:
+                        logger.warning(
+                            "   ⚠️  Some repositories failed to fetch updates. Analysis uses potentially stale data.\n"
+                            "   Check authentication, network connectivity, or try with --skip-remote-fetch."
+                        )
 
                 if display and display._live:
                     display.update_progress_task(

@@ -102,6 +102,11 @@ class BatchCommitClassifier:
                 f"LLM Classifier initialized with API key: Yes (model: {llm_config_obj.model})"
             )
 
+        # Circuit breaker for LLM API failures
+        self.api_failure_count = 0
+        self.max_consecutive_failures = 5
+        self.circuit_breaker_open = False
+
         # Rule-based fallback patterns for when LLM fails
         self.fallback_patterns = {
             "feature": [
@@ -223,7 +228,9 @@ class BatchCommitClassifier:
 
                 # Check if we've exceeded max processing time
                 if self.classification_start_time:
-                    elapsed_minutes = (datetime.utcnow() - self.classification_start_time).total_seconds() / 60
+                    elapsed_minutes = (
+                        datetime.utcnow() - self.classification_start_time
+                    ).total_seconds() / 60
                     if elapsed_minutes > self.max_processing_time_minutes:
                         logger.error(
                             f"Classification exceeded maximum time limit of {self.max_processing_time_minutes} minutes. "
@@ -430,7 +437,9 @@ class BatchCommitClassifier:
                 for i in range(0, len(week_commits), self.batch_size):
                     # Check for timeout before processing each batch
                     if self.classification_start_time:
-                        elapsed_minutes = (datetime.utcnow() - self.classification_start_time).total_seconds() / 60
+                        elapsed_minutes = (
+                            datetime.utcnow() - self.classification_start_time
+                        ).total_seconds() / 60
                         if elapsed_minutes > self.max_processing_time_minutes:
                             logger.error(
                                 f"Classification timeout after {elapsed_minutes:.1f} minutes. "
@@ -446,7 +455,6 @@ class BatchCommitClassifier:
                                         "confidence": 0.2,
                                         "method": "timeout_fallback",
                                         "error": "Classification timeout",
-                                        "batch_id": batch_id,
                                     }
                                 )
                             break
@@ -647,6 +655,28 @@ class BatchCommitClassifier:
                 )
             return fallback_results
 
+        # Check circuit breaker status
+        if self.circuit_breaker_open:
+            logger.info(
+                f"Circuit breaker OPEN - Skipping LLM API call for batch {batch_id[:8]} "
+                f"after {self.api_failure_count} consecutive failures. Using fallback classification."
+            )
+            # Use fallback for all commits
+            fallback_results = []
+            for commit in commits:
+                category = self._fallback_classify_commit(commit)
+                fallback_results.append(
+                    {
+                        "commit_hash": commit["commit_hash"],
+                        "category": category,
+                        "confidence": 0.3,  # Low confidence for fallback
+                        "method": "circuit_breaker_fallback",
+                        "error": "Circuit breaker open - API repeatedly failing",
+                        "batch_id": batch_id,
+                    }
+                )
+            return fallback_results
+
         try:
             # Use LLM classifier with enhanced context
             logger.debug(f"Calling LLM classifier for batch {batch_id[:8]}...")
@@ -658,6 +688,15 @@ class BatchCommitClassifier:
 
             elapsed = (datetime.utcnow() - start_time).total_seconds()
             logger.info(f"LLM classification for batch {batch_id[:8]} took {elapsed:.2f}s")
+
+            # Reset circuit breaker on successful LLM call
+            if self.api_failure_count > 0:
+                logger.info(
+                    f"LLM API call succeeded - Resetting circuit breaker "
+                    f"(was at {self.api_failure_count} failures)"
+                )
+            self.api_failure_count = 0
+            self.circuit_breaker_open = False
 
             # Process LLM results and add fallbacks
             processed_results = []
@@ -696,7 +735,24 @@ class BatchCommitClassifier:
             return processed_results
 
         except Exception as e:
-            logger.error(f"LLM classification failed for batch {batch_id}: {e}")
+            # Track consecutive failures for circuit breaker
+            self.api_failure_count += 1
+            logger.error(
+                f"LLM classification failed for batch {batch_id}: {e} "
+                f"(Failure {self.api_failure_count}/{self.max_consecutive_failures})"
+            )
+
+            # Open circuit breaker after max consecutive failures
+            if (
+                self.api_failure_count >= self.max_consecutive_failures
+                and not self.circuit_breaker_open
+            ):
+                self.circuit_breaker_open = True
+                logger.error(
+                    f"CIRCUIT BREAKER OPENED after {self.api_failure_count} consecutive API failures. "
+                    f"All subsequent batches will use fallback classification until API recovers. "
+                    f"This prevents the system from hanging on repeated timeouts."
+                )
 
             # Provide more context about the failure
             if "timeout" in str(e).lower():
@@ -708,10 +764,10 @@ class BatchCommitClassifier:
                 )
             elif "connection" in str(e).lower():
                 logger.error(
-                    f"Connection error. Check:\n"
-                    f"  1. Internet connectivity\n"
-                    f"  2. API endpoint availability\n"
-                    f"  3. Firewall/proxy settings"
+                    "Connection error. Check:\n"
+                    "  1. Internet connectivity\n"
+                    "  2. API endpoint availability\n"
+                    "  3. Firewall/proxy settings"
                 )
 
             # Fall back to rule-based classification for entire batch

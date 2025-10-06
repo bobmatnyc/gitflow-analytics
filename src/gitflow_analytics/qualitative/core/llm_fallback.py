@@ -113,6 +113,11 @@ class LLMFallback:
         # Batch processing cache
         self.batch_cache = {}
 
+        # Circuit breaker state
+        self.consecutive_failures = 0
+        self.circuit_breaker_open = False
+        self.max_consecutive_failures = 3  # Open circuit after 3 failures
+
         # Token encoder for cost estimation
         try:
             self.encoding = tiktoken.get_encoding("cl100k_base")  # GPT-4 encoding
@@ -142,6 +147,7 @@ class LLMFallback:
         return openai.OpenAI(
             base_url=self.config.base_url,
             api_key=api_key,
+            timeout=30.0,  # 30 second timeout to prevent hanging
             default_headers={
                 "HTTP-Referer": "https://github.com/bobmatnyc/gitflow-analytics",
                 "X-Title": "GitFlow Analytics - Qualitative Analysis",
@@ -213,6 +219,14 @@ class LLMFallback:
         if not commits:
             return []
 
+        # Check circuit breaker state
+        if self.circuit_breaker_open:
+            self.logger.warning(
+                f"Circuit breaker open ({self.consecutive_failures} consecutive failures), "
+                "using fallback classification"
+            )
+            return self._create_fallback_results(commits)
+
         start_time = time.time()
 
         # Check cache first
@@ -263,6 +277,15 @@ class LLMFallback:
             if results:
                 self.batch_cache[cache_key] = self._create_template_from_results(results)
 
+            # Reset circuit breaker on success
+            if self.consecutive_failures > 0:
+                self.logger.info(
+                    f"API call succeeded, resetting circuit breaker "
+                    f"(was {self.consecutive_failures} failures)"
+                )
+                self.consecutive_failures = 0
+                self.circuit_breaker_open = False
+
             # Update processing time in results
             for result in results:
                 result.processing_time_ms = (processing_time * 1000) / len(results)
@@ -271,6 +294,15 @@ class LLMFallback:
 
         except Exception as e:
             self.logger.error(f"OpenRouter processing failed: {e}")
+
+            # Increment failure counter and check circuit breaker
+            self.consecutive_failures += 1
+            if self.consecutive_failures >= self.max_consecutive_failures:
+                self.circuit_breaker_open = True
+                self.logger.error(
+                    f"Circuit breaker opened after {self.consecutive_failures} consecutive failures. "
+                    "All future LLM calls will use fallback classification until manual reset."
+                )
 
             # Record failed call
             self.cost_tracker.record_call(
@@ -283,8 +315,8 @@ class LLMFallback:
                 error_message=str(e),
             )
 
-            # Try fallback model if primary failed
-            if selected_model != self.config.fallback_model:
+            # Try fallback model if primary failed AND circuit breaker not open
+            if selected_model != self.config.fallback_model and not self.circuit_breaker_open:
                 return self._retry_with_fallback_model(commits, prompt)
             else:
                 return self._create_fallback_results(commits)

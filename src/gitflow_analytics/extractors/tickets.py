@@ -8,6 +8,7 @@ from typing import Any, Optional, cast
 
 try:
     from tqdm import tqdm
+
     TQDM_AVAILABLE = True
 except ImportError:
     TQDM_AVAILABLE = False
@@ -147,7 +148,7 @@ class TicketExtractor:
         # Commit categorization patterns
         self.category_patterns = {
             "bug_fix": [
-                r"^fix:",
+                r"^fix(\([^)]*\))?:",  # Conventional commits: fix: or fix(scope):
                 r"\b(fix|bug|error|issue|problem|crash|exception|failure)\b",
                 r"\b(resolve|solve|repair|correct|corrected|address)\b",
                 r"\b(hotfix|bugfix|patch|quickfix)\b",
@@ -158,9 +159,13 @@ class TicketExtractor:
                 r"\bmissing\s+(space|field|data|property)\b",
                 r"\b(counting|allowing|episodes)\s+(was|not|issue)\b",
                 r"^fixes\s+\b(beacon|beacons|combo|issue|problem)\b",
+                r"\bfixing\b(?!\s+test)",  # "fixing" but not "fixing tests"
+                r"\bfixed?\s+(issue|problem|bug|error)\b",
+                r"\bresolve[ds]?\s+(issue|problem|bug)\b",
+                r"\brepair\b",
             ],
             "feature": [
-                r"^(feat|feature):",
+                r"^(feat|feature)(\([^)]*\))?:",  # Conventional commits: feat: or feat(scope):
                 r"\b(add|new|feature|implement|create|build)\b",
                 r"\b(introduce|enhance|extend|expand)\b",
                 r"\b(functionality|capability|support|enable)\b",
@@ -176,6 +181,7 @@ class TicketExtractor:
                 r"\b(localization)\s+(data|structure)\b",
             ],
             "refactor": [
+                r"^refactor(\([^)]*\))?:",  # Conventional commits: refactor: or refactor(scope):
                 r"\b(refactor|restructure|reorganize|cleanup|clean up)\b",
                 r"\b(optimize|improve|simplify|streamline)\b",
                 r"\b(rename|move|extract|consolidate)\b",
@@ -185,6 +191,13 @@ class TicketExtractor:
                 r"improves?\s+(performance|efficiency|structure)\b",
                 r"improves?\s+(combo|box|focus|behavior)\b",
                 r"using\s+\w+\s+instead\s+of\s+\w+\b",  # "using X instead of Y" pattern
+                r"\brenaming\b",
+                r"\brenamed?\b",
+                r"\breduce\s+code\b",
+                r"\bsimplify\b",
+                r"\bsimplified\b",
+                r"\bboilerplate\b",
+                r"\bcode\s+cleanup\b",
             ],
             "documentation": [
                 r"\b(doc|docs|documentation|readme|comment|comments)\b",
@@ -192,6 +205,9 @@ class TicketExtractor:
                 r"\b(manual|guide|tutorial|how-to|howto)\b",
                 r"\b(explain|clarify|describe)\b",
                 r"\b(changelog|notes|examples)\b",
+                r"\bupdating\s+readme\b",
+                r"\bdoc\s+update\b",
+                r"\bdocumentation\s+fix\b",
             ],
             "deployment": [
                 r"^deploy:",
@@ -289,6 +305,7 @@ class TicketExtractor:
                 r"\b(prepare\s+for\s+release|pre-release)\b",
             ],
             "maintenance": [
+                r"^chore(\([^)]*\))?:",  # Conventional commits: chore: or chore(scope):
                 r"\b(update|upgrade|bump|maintenance|maint)\b",
                 r"\b(dependency|dependencies|package|packages)\b",
                 r"\b(npm\s+update|pip\s+install|yarn\s+upgrade)\b",
@@ -307,6 +324,11 @@ class TicketExtractor:
                 r"\b(mock|stub|fixture|factory)\b",
                 r"\b(e2e|end-to-end|acceptance|smoke)\b",
                 r"\b(coverage|assert|expect|should)\b",
+                r"\bfixing\s+tests?\b",
+                r"\btest.*broke\b",
+                r"\bupdate.*test\b",
+                r"\bbroke.*test\b",
+                r"\btest\s+fix\b",
             ],
             "style": [
                 r"^style:",
@@ -421,16 +443,13 @@ class TicketExtractor:
 
         # Set up progress tracking for commits
         commit_iterator = commits
-        if progress_display and hasattr(progress_display, 'console'):
+        if progress_display and hasattr(progress_display, "console"):
             # Rich progress display available
             commit_iterator = commits  # Rich will handle its own progress
         elif TQDM_AVAILABLE:
             # Fall back to tqdm for simple progress tracking
             commit_iterator = tqdm(
-                commits,
-                desc="🎫 Analyzing commits for tickets",
-                unit="commits",
-                leave=False
+                commits, desc="🎫 Analyzing commits for tickets", unit="commits", leave=False
             )
 
         for commit in commit_iterator:
@@ -500,26 +519,27 @@ class TicketExtractor:
                     untracked_commits.append(commit_data)
 
             # Update progress if using tqdm
-            if TQDM_AVAILABLE and hasattr(commit_iterator, 'set_postfix'):
-                commit_iterator.set_postfix({
-                    'tickets': tickets_found,
-                    'with_tickets': commits_with_ticket_refs,
-                    'untracked': len(untracked_commits)
-                })
+            if TQDM_AVAILABLE and hasattr(commit_iterator, "set_postfix"):
+                commit_iterator.set_postfix(
+                    {
+                        "tickets": tickets_found,
+                        "with_tickets": commits_with_ticket_refs,
+                        "untracked": len(untracked_commits),
+                    }
+                )
 
         # Analyze PRs
         pr_tickets_found = 0
 
         # Set up progress tracking for PRs (only if there are PRs to analyze)
         pr_iterator = prs
-        if prs and TQDM_AVAILABLE and not (progress_display and hasattr(progress_display, 'console')):
+        if (
+            prs
+            and TQDM_AVAILABLE
+            and not (progress_display and hasattr(progress_display, "console"))
+        ):
             # Only show PR progress if there are PRs and we're not using Rich
-            pr_iterator = tqdm(
-                prs,
-                desc="🎫 Analyzing PRs for tickets",
-                unit="PRs",
-                leave=False
-            )
+            pr_iterator = tqdm(prs, desc="🎫 Analyzing PRs for tickets", unit="PRs", leave=False)
 
         for pr in pr_iterator:
             # Extract tickets from PR title and description
@@ -537,11 +557,10 @@ class TicketExtractor:
                     pr_tickets_found += 1
 
             # Update PR progress if using tqdm
-            if TQDM_AVAILABLE and hasattr(pr_iterator, 'set_postfix'):
-                pr_iterator.set_postfix({
-                    'tickets': pr_tickets_found,
-                    'with_tickets': results["prs_with_tickets"]
-                })
+            if TQDM_AVAILABLE and hasattr(pr_iterator, "set_postfix"):
+                pr_iterator.set_postfix(
+                    {"tickets": pr_tickets_found, "with_tickets": results["prs_with_tickets"]}
+                )
 
         # Calculate coverage percentages
         total_commits = cast(int, results["total_commits"])
