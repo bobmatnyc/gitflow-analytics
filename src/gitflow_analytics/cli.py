@@ -976,7 +976,7 @@ def analyze(
             from .security import SecurityAnalyzer, SecurityConfig
             from .security.reports import SecurityReportGenerator
             from .core.data_fetcher import GitDataFetcher
-            from .core.cache import GitAnalysisCache
+            # GitAnalysisCache already imported at module level (line 24)
 
             # Load security configuration
             security_config = SecurityConfig.from_dict(cfg.analysis.security if hasattr(cfg.analysis, "security") else {})
