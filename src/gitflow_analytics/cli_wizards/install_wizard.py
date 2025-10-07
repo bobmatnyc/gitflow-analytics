@@ -117,7 +117,7 @@ class InstallWizard:
             return getpass.getpass(prompt)
         else:
             click.echo(f"⚠️  Non-interactive mode detected - {field_name} will be visible", err=True)
-            return click.prompt(prompt, hide_input=False)
+            return click.prompt(prompt, hide_input=False).strip()
 
     def _select_profile(self) -> dict:
         """Let user select installation profile."""
@@ -484,7 +484,7 @@ class InstallWizard:
                 if not click.confirm("Add anyway?", default=False):
                     continue
 
-            repo_name = click.prompt("Repository name", default=path_obj.name)
+            repo_name = click.prompt("Repository name", default=path_obj.name).strip()
 
             repositories.append({"name": repo_name, "path": str(path_obj)})
             click.echo(f"Added repository #{len(repositories)}\n")
@@ -850,7 +850,7 @@ class InstallWizard:
                 "Output directory for reports",
                 type=str,
                 default="./reports",
-            )
+            ).strip()
             output_path = self._validate_directory_path(output_dir, "Output directory")
             if output_path is not None:
                 output_dir = str(output_path)
@@ -863,7 +863,7 @@ class InstallWizard:
                 "Cache directory",
                 type=str,
                 default="./.gitflow-cache",
-            )
+            ).strip()
             cache_path = self._validate_directory_path(cache_dir, "Cache directory")
             if cache_path is not None:
                 cache_dir = str(cache_path)
@@ -928,7 +928,7 @@ class InstallWizard:
                 # Use existing file
                 aliases_path = click.prompt(
                     "Path to aliases.yaml (relative to config)", default="../shared/aliases.yaml"
-                )
+                ).strip()
 
                 # Ensure analysis.identity section exists
                 if "identity" not in self.config_data.get("analysis", {}):
