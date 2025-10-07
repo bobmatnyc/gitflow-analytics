@@ -4493,11 +4493,123 @@ def merge_identity(config: Path, dev1: str, dev2: str) -> None:
         sys.exit(1)
 
 
+def _resolve_config_path(config: Optional[Path]) -> Optional[Path]:
+    """Resolve configuration file path, offering to create if missing.
+
+    Args:
+        config: User-specified config path or None
+
+    Returns:
+        Validated config path or None if user cancels
+    """
+    # Default config locations to search
+    default_locations = [
+        Path.cwd() / "config.yaml",
+        Path.cwd() / ".gitflow-analytics.yaml",
+        Path.home() / ".gitflow-analytics" / "config.yaml",
+    ]
+
+    # Case 1: Config specified but doesn't exist
+    if config:
+        config_path = Path(config).resolve()
+        if not config_path.exists():
+            click.echo(f"❌ Configuration file not found: {config_path}\n", err=True)
+
+            if click.confirm("Would you like to create a new configuration?", default=True):
+                click.echo("\n🚀 Launching installation wizard...\n")
+
+                from .cli_wizards.install_wizard import InstallWizard
+
+                wizard = InstallWizard(output_dir=config_path.parent, skip_validation=False)
+
+                # Store the desired config filename for the wizard
+                wizard.config_filename = config_path.name
+
+                success = wizard.run()
+
+                if not success:
+                    click.echo("\n❌ Installation wizard cancelled or failed.", err=True)
+                    return None
+
+                click.echo(f"\n✅ Configuration created: {config_path}")
+                click.echo("\n🎉 Ready to run analysis!\n")
+                return config_path
+            else:
+                click.echo("\n💡 Create a configuration file with:")
+                click.echo("   gitflow-analytics install")
+                click.echo(f"\nOr manually create: {config_path}\n")
+                return None
+
+        return config_path
+
+    # Case 2: No config specified, search for defaults
+    click.echo("🔍 Looking for configuration files...\n")
+
+    for location in default_locations:
+        if location.exists():
+            click.echo(f"📋 Found configuration: {location}\n")
+            return location
+
+    # No config found anywhere
+    click.echo("No configuration file found. Let's create one!\n")
+
+    # Offer to create config
+    locations = [
+        ("./config.yaml", "Current directory"),
+        (str(Path.home() / ".gitflow-analytics" / "config.yaml"), "User directory"),
+    ]
+
+    click.echo("Where would you like to save the configuration?")
+    for i, (path, desc) in enumerate(locations, 1):
+        click.echo(f"  {i}. {path} ({desc})")
+    click.echo("  3. Custom path")
+
+    try:
+        choice = click.prompt("\nSelect option", type=click.Choice(["1", "2", "3"]), default="1")
+    except (click.exceptions.Abort, EOFError):
+        click.echo("\n⚠️  Cancelled by user.")
+        return None
+
+    if choice == "1":
+        config_path = Path.cwd() / "config.yaml"
+    elif choice == "2":
+        config_path = Path.home() / ".gitflow-analytics" / "config.yaml"
+    else:
+        try:
+            custom_path = click.prompt("Enter configuration file path")
+            config_path = Path(custom_path).expanduser().resolve()
+        except (click.exceptions.Abort, EOFError):
+            click.echo("\n⚠️  Cancelled by user.")
+            return None
+
+    # Launch install wizard
+    click.echo(f"\n🚀 Creating configuration at: {config_path}")
+    click.echo("Launching installation wizard...\n")
+
+    from .cli_wizards.install_wizard import InstallWizard
+
+    wizard = InstallWizard(output_dir=config_path.parent, skip_validation=False)
+
+    # Store the desired config filename for the wizard
+    wizard.config_filename = config_path.name
+
+    success = wizard.run()
+
+    if not success:
+        click.echo("\n❌ Installation wizard cancelled or failed.", err=True)
+        return None
+
+    click.echo(f"\n✅ Configuration created: {config_path}")
+    click.echo("\n🎉 Ready to run analysis!\n")
+
+    return config_path
+
+
 @cli.command(name="run")
 @click.option(
     "--config",
     "-c",
-    type=click.Path(exists=True, path_type=Path),
+    type=click.Path(path_type=Path),  # Remove exists=True to allow missing files
     help="Path to configuration file (optional, will search for default)",
 )
 def run_launcher(config: Optional[Path]) -> None:
@@ -4533,11 +4645,21 @@ def run_launcher(config: Optional[Path]) -> None:
       5. Run analysis with your selections
     """
     try:
+        # Handle missing config file gracefully
+        config_path = _resolve_config_path(config)
+
+        if not config_path:
+            # No config found or user cancelled
+            sys.exit(1)
+
         from .cli_wizards.run_launcher import run_interactive_launcher
 
-        success = run_interactive_launcher(config_path=config)
+        success = run_interactive_launcher(config_path=config_path)
         sys.exit(0 if success else 1)
 
+    except (KeyboardInterrupt, click.exceptions.Abort):
+        click.echo("\n\n⚠️  Launcher cancelled by user.")
+        sys.exit(130)
     except Exception as e:
         click.echo(f"❌ Launcher failed: {e}", err=True)
         logger.error(f"Launcher error: {type(e).__name__}")

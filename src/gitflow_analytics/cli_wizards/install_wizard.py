@@ -90,6 +90,7 @@ class InstallWizard:
         self.config_data = {}
         self.env_data = {}
         self.profile = None  # Selected installation profile
+        self.config_filename = "config.yaml"  # Default config filename (can be overridden)
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -968,8 +969,8 @@ class InstallWizard:
         click.echo("-" * 50)
 
         try:
-            # Generate config.yaml
-            config_path = self.output_dir / "config.yaml"
+            # Generate config file with custom filename
+            config_path = self.output_dir / self.config_filename
             if config_path.exists() and not click.confirm(
                 f"⚠️  {config_path} already exists. Overwrite?", default=False
             ):
@@ -1084,7 +1085,7 @@ class InstallWizard:
         click.echo("\n📋 Step 7: Validating Installation")
         click.echo("-" * 50)
 
-        config_path = self.output_dir / "config.yaml"
+        config_path = self.output_dir / self.config_filename
 
         if not config_path.exists():
             click.echo("❌ Configuration file not found")
@@ -1155,7 +1156,7 @@ class InstallWizard:
         click.echo("✅ Installation Complete!")
         click.echo("=" * 50)
 
-        config_path = self.output_dir / "config.yaml"
+        config_path = self.output_dir / self.config_filename
         env_path = self.output_dir / ".env"
 
         click.echo("\n📁 Generated Files:")
