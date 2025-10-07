@@ -201,7 +201,6 @@ class InteractiveLauncher:
         """
         import os
         import re
-        from pathlib import Path
 
         # Load .env file if it exists next to config
         env_path = self.config_path.parent / ".env"

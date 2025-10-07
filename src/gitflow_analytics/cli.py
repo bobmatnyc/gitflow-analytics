@@ -5067,7 +5067,7 @@ def aliases_command(
         # Run analysis
         result = llm_analyzer.analyze_identities(all_commits)
 
-        click.echo(f"✅ Analysis complete:")
+        click.echo("✅ Analysis complete:")
         click.echo(f"   - Found {len(result.clusters)} identity clusters")
         click.echo(f"   - {len(result.unresolved_identities)} unresolved identities")
         click.echo(f"   - Method: {result.analysis_metadata.get('analysis_method', 'unknown')}\n")
@@ -5134,7 +5134,7 @@ def aliases_command(
                         if alias.confidence >= 0.9
                         else "yellow" if alias.confidence >= 0.8 else "red"
                     )
-                    click.echo(f"    Confidence: ", nl=False)
+                    click.echo("    Confidence: ", nl=False)
                     click.secho(f"{alias.confidence:.0%}", fg=confidence_color)
 
                 click.echo()  # Blank line between aliases
@@ -5183,11 +5183,11 @@ def aliases_command(
         if not apply:
             click.echo("💡 Next steps:")
             click.echo(f"   1. Review the aliases in {output}")
-            click.echo(f"   2. Update your config.yaml to reference the aliases file:")
+            click.echo("   2. Update your config.yaml to reference the aliases file:")
             click.echo("      analysis:")
             click.echo("        identity:")
             click.echo(f"          aliases_file: {output.name}")
-            click.echo(f"   3. Or run with --apply flag to update automatically\n")
+            click.echo("   3. Or run with --apply flag to update automatically\n")
 
     except Exception as e:
         click.echo(f"\n❌ Error generating aliases: {e}", err=True)

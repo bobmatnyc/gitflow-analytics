@@ -1,5 +1,6 @@
 """YAML configuration loading and environment variable expansion."""
 
+import logging
 import os
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -32,6 +33,8 @@ from .schema import (
     RepositoryConfig,
 )
 from .validator import ConfigValidator
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigLoader:

@@ -169,10 +169,9 @@ class InstallWizard:
             elif self.profile["repositories"] == "local":
                 if not self._setup_local_repositories():
                     return False
-            elif self.profile["repositories"] is None:
+            elif self.profile["repositories"] is None and not self._setup_repositories():
                 # Custom mode - ask user
-                if not self._setup_repositories():
-                    return False
+                return False
 
             # Step 3: JIRA Setup (conditional based on profile)
             if self.profile["jira"]:
@@ -921,7 +920,7 @@ class InstallWizard:
 
                 click.echo(f"\n✅ Created {aliases_path}")
                 click.echo("   Generate aliases after installation with:")
-                click.echo(f"   gitflow-analytics aliases -c config.yaml --apply\n")
+                click.echo("   gitflow-analytics aliases -c config.yaml --apply\n")
 
             elif aliases_choice == "2":
                 # Use existing file
