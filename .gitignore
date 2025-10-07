@@ -253,3 +253,7 @@ tmp/
 virtualenv/
 yarn-debug.log*
 yarn-error.log*
+
+# Added by Claude MPM /mpm-init
+.claude/cache/
+.claude/sessions/
