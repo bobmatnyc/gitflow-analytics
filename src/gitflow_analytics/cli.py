@@ -1448,6 +1448,11 @@ def analyze(
                 else:
                     click.echo("🔄 Force fetch enabled - analyzing all repositories")
 
+            # Initialize counters before fetching (used in validation even if skipped)
+            total_commits = 0
+            total_tickets = 0
+            total_developers = set()
+
             # Step 1: Fetch data only for repos that need analysis
             if repos_needing_analysis:
                 if display and display._live:
@@ -1551,11 +1556,6 @@ def analyze(
 
                         progress.initialize_repositories(all_repo_list)
                         progress.set_phase("Step 1: Data Fetching")
-
-                # Fetch data for repositories that need analysis
-                total_commits = 0
-                total_tickets = 0
-                total_developers = set()  # Track unique developers
 
                 # Create top-level progress for all repositories
                 with progress.progress(
