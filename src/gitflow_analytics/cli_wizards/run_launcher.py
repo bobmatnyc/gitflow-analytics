@@ -173,9 +173,13 @@ class InteractiveLauncher:
                                 repos.append(repo.full_name)
 
                         if repos:
-                            click.echo(f"🔍 Discovered {len(repos)} repositories from organization '{org_name}'\n")
+                            click.echo(
+                                f"🔍 Discovered {len(repos)} repositories from organization '{org_name}'\n"
+                            )
                     except Exception as e:
-                        click.echo(f"⚠️  Could not fetch organization repos: {type(e).__name__}", err=True)
+                        click.echo(
+                            f"⚠️  Could not fetch organization repos: {type(e).__name__}", err=True
+                        )
                         logger.error(f"Organization repo fetch error: {e}")
 
             # Fall back to explicit repositories

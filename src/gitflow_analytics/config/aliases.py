@@ -103,9 +103,7 @@ class AliasesManager:
             self.aliases = []
             for alias_data in data.get("developer_aliases", []):
                 # Support both 'primary_email' (new) and 'canonical_email' (old)
-                primary_email = alias_data.get("primary_email") or alias_data.get(
-                    "canonical_email"
-                )
+                primary_email = alias_data.get("primary_email") or alias_data.get("canonical_email")
 
                 if not primary_email:
                     logger.warning(f"Skipping alias entry without primary_email: {alias_data}")

@@ -4894,8 +4894,12 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
     default=0.9,
     help="Minimum confidence threshold for LLM matches (default: 0.9)",
 )
-@click.option("--apply", is_flag=True, help="Automatically update config to use generated aliases file")
-@click.option("--weeks", type=int, default=12, help="Number of weeks of history to analyze (default: 12)")
+@click.option(
+    "--apply", is_flag=True, help="Automatically update config to use generated aliases file"
+)
+@click.option(
+    "--weeks", type=int, default=12, help="Number of weeks of history to analyze (default: 12)"
+)
 def aliases_command(
     config: Path,
     output: Optional[Path],
@@ -5020,7 +5024,9 @@ def aliases_command(
 
         # Collect commits from all repositories
         with click.progressbar(
-            repositories, label="Analyzing repositories", item_show_func=lambda r: r.name if r else ""
+            repositories,
+            label="Analyzing repositories",
+            item_show_func=lambda r: r.name if r else "",
         ) as repos:
             for repo_config in repos:
                 try:
@@ -5060,9 +5066,13 @@ def aliases_command(
                 api_key = api_key_value
 
         if not api_key:
-            click.echo("⚠️  No OpenRouter API key configured - using heuristic analysis only", err=True)
+            click.echo(
+                "⚠️  No OpenRouter API key configured - using heuristic analysis only", err=True
+            )
 
-        llm_analyzer = LLMIdentityAnalyzer(api_key=api_key, confidence_threshold=confidence_threshold)
+        llm_analyzer = LLMIdentityAnalyzer(
+            api_key=api_key, confidence_threshold=confidence_threshold
+        )
 
         # Run analysis
         result = llm_analyzer.analyze_identities(all_commits)
@@ -5095,7 +5105,9 @@ def aliases_command(
                 primary_email=cluster.canonical_email,
                 aliases=[a.email for a in cluster.aliases],
                 confidence=cluster.confidence,
-                reasoning=cluster.reasoning[:200] if cluster.reasoning else "",  # Truncate for readability
+                reasoning=(
+                    cluster.reasoning[:200] if cluster.reasoning else ""
+                ),  # Truncate for readability
             )
 
             if existing:

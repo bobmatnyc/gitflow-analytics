@@ -129,7 +129,9 @@ class InstallWizard:
             click.echo()
 
         profile_choice = click.prompt(
-            "Select installation profile", type=click.Choice(list(self.PROFILES.keys())), default="1"
+            "Select installation profile",
+            type=click.Choice(list(self.PROFILES.keys())),
+            default="1",
         )
 
         selected = self.PROFILES[profile_choice].copy()
@@ -245,8 +247,7 @@ class InstallWizard:
                 time.sleep(delay)
 
             token = self._get_password(
-                "Enter GitHub Personal Access Token: ",
-                "GitHub token"
+                "Enter GitHub Personal Access Token: ", "GitHub token"
             ).strip()
 
             if not token:
@@ -942,9 +943,7 @@ class InstallWizard:
                 # Will generate after installation
                 click.echo("\n💡 After installation, run:")
                 click.echo("   gitflow-analytics aliases -c config.yaml --apply")
-                click.echo(
-                    "   This will analyze your repos and generate aliases automatically.\n"
-                )
+                click.echo("   This will analyze your repos and generate aliases automatically.\n")
 
     def _clear_sensitive_data(self) -> None:
         """Clear sensitive data from memory after use."""
