@@ -5,7 +5,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy import (
     JSON,
@@ -869,8 +869,29 @@ class WeeklyTrends(Base):
     )
 
 
+class SchemaVersion(Base):
+    """Track database schema versions for automatic migrations.
+
+    WHY: Schema changes (like timezone-aware timestamps) require migration
+    to ensure old cache databases work correctly without user intervention.
+    This table tracks the current schema version to trigger automatic upgrades.
+    """
+
+    __tablename__ = "schema_version"
+
+    id = Column(Integer, primary_key=True)
+    version = Column(String, nullable=False)  # e.g., "2.0"
+    upgraded_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+    previous_version = Column(String, nullable=True)
+    migration_notes = Column(String, nullable=True)
+
+
 class Database:
     """Database connection manager with robust permission handling."""
+
+    # Schema version constants
+    CURRENT_SCHEMA_VERSION = "2.0"  # Timezone-aware timestamps
+    LEGACY_SCHEMA_VERSION = "1.0"  # Timezone-naive timestamps
 
     def __init__(self, db_path: Path):
         """
@@ -949,10 +970,21 @@ class Database:
                 },
             )
 
-            # Test the connection and create tables
-            Base.metadata.create_all(self.engine)
+            # Check schema version BEFORE creating tables to detect legacy databases
             self.SessionLocal = sessionmaker(bind=self.engine)
-            # Apply migrations for existing databases
+            needs_migration = self._check_schema_version_before_create()
+
+            # Create/update tables
+            Base.metadata.create_all(self.engine)
+
+            # Perform migration if needed (after tables are created/updated)
+            if needs_migration:
+                self._perform_schema_migration()
+            else:
+                # No migration needed - record current schema version if not already recorded
+                self._ensure_schema_version_recorded()
+
+            # Apply other migrations for existing databases
             self._apply_migrations()
 
             # Test that we can actually write to the database
@@ -988,9 +1020,21 @@ class Database:
                 },
             )
 
-            Base.metadata.create_all(self.engine)
+            # Check schema version BEFORE creating tables to detect legacy databases
             self.SessionLocal = sessionmaker(bind=self.engine)
-            # Apply migrations for existing databases
+            needs_migration = self._check_schema_version_before_create()
+
+            # Create/update tables
+            Base.metadata.create_all(self.engine)
+
+            # Perform migration if needed (after tables are created/updated)
+            if needs_migration:
+                self._perform_schema_migration()
+            else:
+                # No migration needed - record current schema version if not already recorded
+                self._ensure_schema_version_recorded()
+
+            # Apply other migrations for existing databases
             self._apply_migrations()
 
             # Test write capability
@@ -1023,9 +1067,21 @@ class Database:
                 "sqlite:///:memory:", connect_args={"check_same_thread": False}
             )
 
-            Base.metadata.create_all(self.engine)
+            # Check schema version BEFORE creating tables to detect legacy databases
             self.SessionLocal = sessionmaker(bind=self.engine)
-            # Apply migrations for existing databases
+            needs_migration = self._check_schema_version_before_create()
+
+            # Create/update tables
+            Base.metadata.create_all(self.engine)
+
+            # Perform migration if needed (after tables are created/updated)
+            if needs_migration:
+                self._perform_schema_migration()
+            else:
+                # No migration needed - record current schema version if not already recorded
+                self._ensure_schema_version_recorded()
+
+            # Apply other migrations for existing databases
             self._apply_migrations()
 
             self.is_readonly_fallback = True
@@ -1117,8 +1173,173 @@ class Database:
 
     def init_db(self) -> None:
         """Initialize database tables and apply migrations."""
+        needs_migration = self._check_schema_version_before_create()
         Base.metadata.create_all(self.engine)
+        if needs_migration:
+            self._perform_schema_migration()
+        else:
+            self._ensure_schema_version_recorded()
         self._apply_migrations()
+
+    def _check_schema_version_before_create(self) -> bool:
+        """Check if database needs migration BEFORE create_all is called.
+
+        WHY: We need to check for legacy databases BEFORE creating new tables,
+        otherwise we can't distinguish between a fresh database and a legacy one.
+
+        Returns:
+            True if migration is needed, False otherwise
+        """
+        try:
+            with self.engine.connect() as conn:
+                # Check if schema_version table exists
+                result = conn.execute(
+                    text(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
+                    )
+                )
+                schema_table_exists = result.fetchone() is not None
+
+                if schema_table_exists:
+                    # Check current version
+                    result = conn.execute(
+                        text("SELECT version FROM schema_version ORDER BY id DESC LIMIT 1")
+                    )
+                    row = result.fetchone()
+
+                    if row and row[0] != self.CURRENT_SCHEMA_VERSION:
+                        # Version mismatch - needs migration
+                        logger.warning(
+                            f"⚠️  Schema version mismatch: {row[0]} → {self.CURRENT_SCHEMA_VERSION}"
+                        )
+                        return True
+                    # else: Already at current version or no version record yet
+                    return False
+                else:
+                    # No schema_version table - check if this is legacy or new
+                    result = conn.execute(
+                        text(
+                            "SELECT name FROM sqlite_master WHERE type='table' AND name='cached_commits'"
+                        )
+                    )
+                    has_cached_commits = result.fetchone() is not None
+
+                    if has_cached_commits:
+                        # Check if table has data
+                        result = conn.execute(text("SELECT COUNT(*) FROM cached_commits"))
+                        commit_count = result.fetchone()[0]
+
+                        if commit_count > 0:
+                            # Legacy database with data - needs migration
+                            logger.warning("⚠️  Old cache schema detected (v1.0 → v2.0)")
+                            logger.info("   This is a one-time operation due to timezone fix")
+                            return True
+
+                    # New database or empty legacy database - no migration needed
+                    return False
+
+        except Exception as e:
+            # Don't fail initialization due to schema check issues
+            logger.debug(f"Schema version check failed: {e}")
+            return False
+
+    def _perform_schema_migration(self) -> None:
+        """Perform the actual schema migration after tables are created.
+
+        WHY: Separating migration from detection allows us to update table schemas
+        via create_all before clearing/migrating data.
+        """
+        try:
+            with self.engine.connect() as conn:
+                logger.info("🔄 Automatically upgrading cache database...")
+                logger.info("   Clearing old cache data (timezone schema incompatible)...")
+
+                # Clear cached data tables
+                conn.execute(text("DELETE FROM cached_commits"))
+                conn.execute(text("DELETE FROM pull_request_cache"))
+                conn.execute(text("DELETE FROM issue_cache"))
+                conn.execute(text("DELETE FROM repository_analysis_status"))
+
+                # Also clear qualitative analysis data if it exists
+                try:
+                    conn.execute(text("DELETE FROM qualitative_commits"))
+                    conn.execute(text("DELETE FROM pattern_cache"))
+                except Exception:
+                    # These tables might not exist in all databases
+                    pass
+
+                conn.commit()
+
+                # Record the schema upgrade
+                self._record_schema_version(
+                    conn,
+                    self.CURRENT_SCHEMA_VERSION,
+                    self.LEGACY_SCHEMA_VERSION,
+                    "Migrated to timezone-aware timestamps (v2.0)",
+                )
+
+                logger.info("   Migration complete - cache will be rebuilt on next analysis")
+                logger.info("✅ Cache database upgraded successfully")
+
+        except Exception as e:
+            logger.error(f"Migration failed: {e}")
+            # Don't raise - let the system continue and rebuild cache from scratch
+
+    def _ensure_schema_version_recorded(self) -> None:
+        """Ensure schema version is recorded for databases that didn't need migration.
+
+        WHY: Fresh databases and already-migrated databases need to have their
+        schema version recorded for future migration detection.
+        """
+        try:
+            with self.engine.connect() as conn:
+                # Check if version is already recorded
+                result = conn.execute(text("SELECT COUNT(*) FROM schema_version"))
+                count = result.fetchone()[0]
+
+                if count == 0:
+                    # No version recorded - this is a fresh database
+                    self._record_schema_version(
+                        conn, self.CURRENT_SCHEMA_VERSION, None, "Initial schema creation"
+                    )
+                    logger.debug(f"Recorded initial schema version: {self.CURRENT_SCHEMA_VERSION}")
+
+        except Exception as e:
+            # Don't fail if we can't record version
+            logger.debug(f"Could not ensure schema version recorded: {e}")
+
+    def _record_schema_version(
+        self, conn, version: str, previous_version: Optional[str], notes: Optional[str]
+    ) -> None:
+        """Record schema version in the database.
+
+        Args:
+            conn: Database connection
+            version: New schema version
+            previous_version: Previous schema version (None for initial)
+            notes: Migration notes
+        """
+        try:
+            from datetime import datetime, timezone
+
+            # Insert new schema version record
+            conn.execute(
+                text(
+                    """
+                INSERT INTO schema_version (version, upgraded_at, previous_version, migration_notes)
+                VALUES (:version, :upgraded_at, :previous_version, :notes)
+            """
+                ),
+                {
+                    "version": version,
+                    "upgraded_at": datetime.now(timezone.utc),
+                    "previous_version": previous_version,
+                    "notes": notes,
+                },
+            )
+            conn.commit()
+        except Exception as e:
+            logger.debug(f"Could not record schema version: {e}")
 
     def _apply_migrations(self) -> None:
         """Apply database migrations for backward compatibility.
