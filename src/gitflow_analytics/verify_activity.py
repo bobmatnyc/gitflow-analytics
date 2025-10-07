@@ -8,7 +8,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import click
 import git
@@ -48,7 +48,7 @@ class ActivityVerifier:
         if config.github and config.github.token:
             self.github_client = Github(config.github.token)
 
-    def verify_all_projects(self) -> Dict[str, Any]:
+    def verify_all_projects(self) -> dict[str, Any]:
         """Verify activity for all configured projects.
 
         Returns:
@@ -115,7 +115,7 @@ class ActivityVerifier:
 
         return results
 
-    def _get_repositories(self) -> List[Dict[str, Any]]:
+    def _get_repositories(self) -> list[dict[str, Any]]:
         """Get list of repositories to analyze.
 
         Returns:
@@ -209,23 +209,22 @@ class ActivityVerifier:
             try:
                 org = self.github_client.get_organization(self.config.github.organization)
                 for repo in org.get_repos(type="all"):
-                    if not repo.archived:
-                        # Check if not already added
-                        if not any(r["name"] == repo.full_name for r in repositories):
-                            repositories.append(
-                                {
-                                    "name": repo.full_name,
-                                    "path": None,
-                                    "is_local": False,
-                                    "github_name": repo.full_name,
-                                }
-                            )
+                    # Check if not archived and not already added
+                    if not repo.archived and not any(r["name"] == repo.full_name for r in repositories):
+                        repositories.append(
+                            {
+                                "name": repo.full_name,
+                                "path": None,
+                                "is_local": False,
+                                "github_name": repo.full_name,
+                            }
+                        )
             except GithubException as e:
                 logger.error(f"Error fetching organization repos: {e}")
 
         return repositories
 
-    def _verify_project_activity(self, repo_info: Dict[str, Any]) -> Dict[str, Any]:
+    def _verify_project_activity(self, repo_info: dict[str, Any]) -> dict[str, Any]:
         """Verify activity for a single project.
 
         Args:
@@ -241,7 +240,7 @@ class ActivityVerifier:
         else:
             raise ValueError(f"No valid path or GitHub name for repository {repo_info['name']}")
 
-    def _verify_github_activity(self, repo_name: str) -> Dict[str, Any]:
+    def _verify_github_activity(self, repo_name: str) -> dict[str, Any]:
         """Verify activity for a GitHub repository using API.
 
         Args:
@@ -327,7 +326,7 @@ class ActivityVerifier:
 
         return result
 
-    def _verify_local_activity(self, repo_path: Path) -> Dict[str, Any]:
+    def _verify_local_activity(self, repo_path: Path) -> dict[str, Any]:
         """Verify activity for a local Git repository.
 
         Args:
@@ -451,7 +450,7 @@ class ActivityVerifier:
 
         return result
 
-    def _initialize_daily_matrix(self) -> Dict[str, Dict[str, int]]:
+    def _initialize_daily_matrix(self) -> dict[str, dict[str, int]]:
         """Initialize the daily activity matrix structure.
 
         Returns:
@@ -468,7 +467,7 @@ class ActivityVerifier:
         return matrix
 
     def _update_daily_matrix(
-        self, matrix: Dict[str, Dict[str, int]], project_name: str, daily_commits: Dict[str, int]
+        self, matrix: dict[str, dict[str, int]], project_name: str, daily_commits: dict[str, int]
     ) -> None:
         """Update the daily matrix with project commit data.
 
@@ -481,7 +480,7 @@ class ActivityVerifier:
             if date_str in matrix:
                 matrix[date_str][project_name] = count
 
-    def format_report(self, results: Dict[str, Any]) -> str:
+    def format_report(self, results: dict[str, Any]) -> str:
         """Format the verification results as a readable report.
 
         Args:
@@ -527,7 +526,7 @@ class ActivityVerifier:
             set(
                 project
                 for date_data in results["daily_matrix"].values()
-                for project in date_data.keys()
+                for project in date_data
             )
         )
 
@@ -691,7 +690,7 @@ def verify_activity_command(
             click.echo(f"   - {project}")
 
     zero_days = len(
-        [d for d in results["daily_matrix"].keys() if sum(results["daily_matrix"][d].values()) == 0]
+        [d for d in results["daily_matrix"] if sum(results["daily_matrix"][d].values()) == 0]
     )
     if zero_days > 0:
         click.echo(f"\n⚠️  WARNING: Found {zero_days} days with zero activity across all projects!")
