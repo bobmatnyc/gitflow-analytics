@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 # Try to import psutil, but make it optional
 try:
@@ -23,10 +23,7 @@ except ImportError:
 
 try:
     from rich import box
-    from rich.align import Align
-    from rich.columns import Columns
     from rich.console import Console, Group
-    from rich.layout import Layout
     from rich.live import Live
     from rich.panel import Panel
     from rich.progress import (
@@ -35,7 +32,6 @@ try:
         Progress,
         SpinnerColumn,
         TextColumn,
-        TimeElapsedColumn,
         TimeRemainingColumn,
     )
     from rich.table import Table
@@ -160,7 +156,7 @@ class RichProgressDisplay:
         )
 
         # Data tracking
-        self.repositories: Dict[str, RepositoryInfo] = {}
+        self.repositories: dict[str, RepositoryInfo] = {}
         self.statistics = ProgressStatistics()
         self.current_repo: Optional[str] = None
 
@@ -414,7 +410,7 @@ class RichProgressDisplay:
                 try:
                     self.statistics.memory_usage = self._process.memory_info().rss / 1024 / 1024
                     self.statistics.cpu_percent = self._process.cpu_percent()
-                except (AttributeError, OSError) as e:
+                except (AttributeError, OSError):
                     # Process might have terminated or psutil unavailable
                     # This is non-critical for analysis, so just skip the update
                     pass
@@ -495,26 +491,26 @@ class RichProgressDisplay:
 
         # Estimate total time if possible
         eta_text = ""
-        if self.statistics.processed_repositories > 0 and self.statistics.total_repositories > 0:
-            if self.statistics.processed_repositories < self.statistics.total_repositories:
-                elapsed_seconds = (
-                    (datetime.now() - self.statistics.start_time).total_seconds()
-                    if self.statistics.start_time
+        if (
+            self.statistics.processed_repositories > 0
+            and self.statistics.total_repositories > 0
+            and self.statistics.processed_repositories < self.statistics.total_repositories
+        ):
+            elapsed_seconds = (
+                (datetime.now() - self.statistics.start_time).total_seconds()
+                if self.statistics.start_time
+                else 0
+            )
+            if elapsed_seconds > 0:
+                rate = self.statistics.processed_repositories / elapsed_seconds
+                remaining = (
+                    (self.statistics.total_repositories - self.statistics.processed_repositories)
+                    / rate
+                    if rate > 0
                     else 0
                 )
-                if elapsed_seconds > 0:
-                    rate = self.statistics.processed_repositories / elapsed_seconds
-                    remaining = (
-                        (
-                            self.statistics.total_repositories
-                            - self.statistics.processed_repositories
-                        )
-                        / rate
-                        if rate > 0
-                        else 0
-                    )
-                    if remaining > 0:
-                        eta_text = f" • ETA: {timedelta(seconds=int(remaining))}"
+                if remaining > 0:
+                    eta_text = f" • ETA: {timedelta(seconds=int(remaining))}"
 
         stats_items.append(f"{phase_text} • {elapsed_text}{eta_text}")
 
@@ -778,7 +774,7 @@ class RichProgressDisplay:
         """
         with self._lock:
             # Pre-populate all repositories with their status
-            for idx, repo in enumerate(repository_list):
+            for _idx, repo in enumerate(repository_list):
                 repo_name = repo.get("name", "Unknown")
                 status_str = repo.get("status", "pending")
 
@@ -882,9 +878,8 @@ class RichProgressDisplay:
             # Update overall progress (handle both "repos" and "main" for compatibility)
             if description:
                 self.update_overall(completed or 0, description)
-            elif advance:
-                if self.overall_task_id is not None:
-                    self.overall_progress.advance(self.overall_task_id, advance)
+            elif advance and self.overall_task_id is not None:
+                self.overall_progress.advance(self.overall_task_id, advance)
         elif hasattr(self, "_task_ids") and task_id in self._task_ids:
             # Update specific task
             update_kwargs = {}

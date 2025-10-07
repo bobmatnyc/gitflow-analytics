@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import toml
 
@@ -23,7 +23,7 @@ class DependencyChecker:
         self.config = config
         self.vulnerability_cache = {}
 
-    def check_files(self, files_changed: List[str], repo_path: Path) -> List[Dict]:
+    def check_files(self, files_changed: list[str], repo_path: Path) -> list[dict]:
         """Check dependency files for vulnerable packages.
 
         Args:
@@ -68,7 +68,7 @@ class DependencyChecker:
         file_name = Path(file_path).name
         return file_name in dependency_files
 
-    def _check_dependency_file(self, file_path: Path, relative_path: str) -> List[Dict]:
+    def _check_dependency_file(self, file_path: Path, relative_path: str) -> list[dict]:
         """Check a specific dependency file for vulnerabilities."""
         findings = []
         file_name = file_path.name
@@ -99,7 +99,7 @@ class DependencyChecker:
 
         return findings
 
-    def _parse_package_json(self, file_path: Path) -> Dict[str, str]:
+    def _parse_package_json(self, file_path: Path) -> dict[str, str]:
         """Parse package.json for dependencies."""
         dependencies = {}
 
@@ -120,7 +120,7 @@ class DependencyChecker:
 
         return dependencies
 
-    def _parse_requirements_txt(self, file_path: Path) -> Dict[str, str]:
+    def _parse_requirements_txt(self, file_path: Path) -> dict[str, str]:
         """Parse requirements.txt for Python packages."""
         dependencies = {}
 
@@ -143,7 +143,7 @@ class DependencyChecker:
 
         return dependencies
 
-    def _parse_pyproject_toml(self, file_path: Path) -> Dict[str, str]:
+    def _parse_pyproject_toml(self, file_path: Path) -> dict[str, str]:
         """Parse pyproject.toml for Python dependencies."""
         dependencies = {}
 
@@ -183,7 +183,7 @@ class DependencyChecker:
 
         return dependencies
 
-    def _parse_go_mod(self, file_path: Path) -> Dict[str, str]:
+    def _parse_go_mod(self, file_path: Path) -> dict[str, str]:
         """Parse go.mod for Go dependencies."""
         dependencies = {}
 
@@ -211,7 +211,7 @@ class DependencyChecker:
 
         return dependencies
 
-    def _parse_gemfile(self, file_path: Path) -> Dict[str, str]:
+    def _parse_gemfile(self, file_path: Path) -> dict[str, str]:
         """Parse Gemfile for Ruby dependencies."""
         dependencies = {}
 
@@ -232,7 +232,7 @@ class DependencyChecker:
 
         return dependencies
 
-    def _check_npm_dependencies(self, dependencies: Dict[str, str], file_path: str) -> List[Dict]:
+    def _check_npm_dependencies(self, dependencies: dict[str, str], file_path: str) -> list[dict]:
         """Check NPM packages for vulnerabilities using GitHub Advisory Database."""
         findings = []
 
@@ -259,8 +259,8 @@ class DependencyChecker:
         return findings
 
     def _check_python_dependencies(
-        self, dependencies: Dict[str, str], file_path: str
-    ) -> List[Dict]:
+        self, dependencies: dict[str, str], file_path: str
+    ) -> list[dict]:
         """Check Python packages for vulnerabilities."""
         findings = []
 
@@ -286,7 +286,7 @@ class DependencyChecker:
 
         return findings
 
-    def _check_go_dependencies(self, dependencies: Dict[str, str], file_path: str) -> List[Dict]:
+    def _check_go_dependencies(self, dependencies: dict[str, str], file_path: str) -> list[dict]:
         """Check Go modules for vulnerabilities."""
         findings = []
 
@@ -312,7 +312,7 @@ class DependencyChecker:
 
         return findings
 
-    def _check_ruby_dependencies(self, dependencies: Dict[str, str], file_path: str) -> List[Dict]:
+    def _check_ruby_dependencies(self, dependencies: dict[str, str], file_path: str) -> list[dict]:
         """Check Ruby gems for vulnerabilities."""
         findings = []
 
@@ -338,7 +338,7 @@ class DependencyChecker:
 
     def _query_vulnerability_db(
         self, ecosystem: str, package: str, package_version: str
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Query vulnerability database for package vulnerabilities.
 
         This is a simplified implementation. In production, you would:

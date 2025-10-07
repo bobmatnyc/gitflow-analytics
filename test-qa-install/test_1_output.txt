@@ -1,0 +1,41 @@
+### TEST 1.1: Command Exists
+Usage: gitflow-analytics install [OPTIONS]
+
+  Interactive installation wizard for GitFlow Analytics.
+
+  This wizard will guide you through setting up GitFlow Analytics:
+  • GitHub credentials and repository configuration
+  • Optional JIRA integration
+  • Optional AI-powered insights (OpenRouter/ChatGPT)
+  • Analysis settings and defaults
+
+  EXAMPLES:
+    # Run installation wizard in current directory
+    gitflow-analytics install
+
+    # Install to specific directory   gitflow-analytics install --output-dir
+    ./my-config
+
+  The wizard will:
+  1. Validate all credentials before saving
+  2. Generate config.yaml and .env files
+  3. Set secure permissions on .env (0600)
+  4. Update .gitignore if in a git repository
+  5. Test the configuration
+  6. Optionally run initial analysis
+
+  SECURITY NOTES:
+    • .env file contains sensitive credentials
+    • Never commit .env to version control
+    • File permissions set to owner-only (0600)
+
+Options:
+  --output-dir PATH  Directory for config files (default: current directory)
+  --skip-validation  Skip credential validation (for testing)
+  --help             Show this message and exit.
+
+### TEST 1.2: Help Text Check
+  install                     Interactive installation wizard for GitFlow...
+  list-developers             List all known developers with statistics.
+  merge-identity              Merge two developer identities into one.
+  train                       Train custom ML models for improved commit...

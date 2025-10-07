@@ -1,0 +1,9 @@
+dummy_github_token_for_testing
+A
+test-org
+n
+n
+4
+./reports
+./.gitflow-cache
+n

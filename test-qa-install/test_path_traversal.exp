@@ -1,0 +1,39 @@
+#!/usr/bin/expect -f
+# Test 3.3: Path Traversal Protection
+
+set timeout 30
+
+spawn gitflow-analytics install --output-dir test-security --skip-validation
+
+expect "Enter GitHub Personal Access Token:" {
+    send "dummy_token_for_testing\r"
+}
+
+expect "Select mode" {
+    send "B\r"
+}
+
+expect "Enter repository path" {
+    send "/etc/passwd\r"
+}
+
+expect {
+    "must be within home directory or current directory" {
+        puts "\n✅ TEST 3.3 PASS: Path traversal blocked"
+    }
+    "Valid git repository" {
+        puts "\n❌ TEST 3.3 FAIL: Path traversal allowed"
+        exit 1
+    }
+    timeout {
+        puts "\n❌ TEST 3.3 FAIL: Timeout"
+        exit 1
+    }
+}
+
+# Send empty to finish and exit
+expect "Enter repository path" {
+    send "\003"
+}
+
+expect eof

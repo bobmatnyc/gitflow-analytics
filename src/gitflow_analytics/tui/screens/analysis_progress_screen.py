@@ -697,7 +697,7 @@ class AnalysisProgressScreen(Screen):
 
                     # Convert daily_commits to flat commits list
                     commits = []
-                    for date_str, day_commits in daily_commits.items():
+                    for _date_str, day_commits in daily_commits.items():
                         commits.extend(day_commits)
 
                     # Add flattened commits to result for compatibility

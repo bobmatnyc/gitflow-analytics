@@ -1,0 +1,7 @@
+github:
+  token: ${GITHUB_TOKEN}
+  organization: test-org
+analysis:
+  period_weeks: 4
+  output_directory: ./reports
+  cache_directory: ./.gitflow-cache

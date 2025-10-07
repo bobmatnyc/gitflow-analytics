@@ -549,16 +549,18 @@ class GitDataFetcher:
                 for branch_name in branches_to_analyze:
                     try:
                         # Fetch commits for this specific day and branch with timeout protection
-                        def fetch_branch_commits() -> list[Any]:
+                        def fetch_branch_commits(
+                            branch: str = branch_name,
+                            start: datetime = day_start,
+                            end: datetime = day_end,
+                        ) -> list[Any]:
                             """Fetch commits for a specific branch and day range.
 
                             Returns:
                                 List of GitPython commit objects
                             """
                             return list(
-                                repo.iter_commits(
-                                    branch_name, since=day_start, until=day_end, reverse=False
-                                )
+                                repo.iter_commits(branch, since=start, until=end, reverse=False)
                             )
 
                         # Use timeout wrapper to prevent hanging on iter_commits

@@ -210,7 +210,9 @@ class ActivityVerifier:
                 org = self.github_client.get_organization(self.config.github.organization)
                 for repo in org.get_repos(type="all"):
                     # Check if not archived and not already added
-                    if not repo.archived and not any(r["name"] == repo.full_name for r in repositories):
+                    if not repo.archived and not any(
+                        r["name"] == repo.full_name for r in repositories
+                    ):
                         repositories.append(
                             {
                                 "name": repo.full_name,
@@ -523,11 +525,7 @@ class ActivityVerifier:
         matrix_data = []
         dates = sorted(results["daily_matrix"].keys())
         projects = sorted(
-            set(
-                project
-                for date_data in results["daily_matrix"].values()
-                for project in date_data
-            )
+            set(project for date_data in results["daily_matrix"].values() for project in date_data)
         )
 
         if projects and dates:

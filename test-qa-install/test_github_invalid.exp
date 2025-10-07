@@ -1,0 +1,30 @@
+#!/usr/bin/expect -f
+# Test 2.2: Invalid GitHub Token
+
+set timeout 30
+
+spawn gitflow-analytics install --output-dir test-invalid
+
+expect "Enter GitHub Personal Access Token:" {
+    send "invalid_token_123\r"
+}
+
+expect {
+    "Validation failed" {
+        puts "\n✅ TEST 2.2 PASS: Invalid token rejected"
+    }
+    "Token verified" {
+        puts "\n❌ TEST 2.2 FAIL: Invalid token accepted"
+        exit 1
+    }
+    timeout {
+        puts "\n❌ TEST 2.2 FAIL: Timeout"
+        exit 1
+    }
+}
+
+expect "Try again?" {
+    send "n\r"
+}
+
+expect eof

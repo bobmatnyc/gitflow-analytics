@@ -1,7 +1,7 @@
 """Security configuration module."""
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Optional
 
 
 @dataclass
@@ -9,7 +9,7 @@ class SecretScanningConfig:
     """Configuration for secret detection."""
 
     enabled: bool = True
-    patterns: Dict[str, str] = field(
+    patterns: dict[str, str] = field(
         default_factory=lambda: {
             # AWS
             "aws_access_key": r"AKIA[0-9A-Z]{16}",
@@ -36,7 +36,7 @@ class SecretScanningConfig:
         }
     )
     entropy_threshold: float = 4.5
-    exclude_paths: List[str] = field(
+    exclude_paths: list[str] = field(
         default_factory=lambda: [
             "*.test.*",
             "*.spec.*",
@@ -58,7 +58,7 @@ class VulnerabilityScanningConfig:
 
     # Tool-specific configurations
     enable_semgrep: bool = True
-    semgrep_rules: List[str] = field(
+    semgrep_rules: list[str] = field(
         default_factory=lambda: [
             "auto",  # Use Semgrep's auto configuration
             "p/security-audit",
@@ -74,7 +74,7 @@ class VulnerabilityScanningConfig:
     enable_brakeman: bool = False  # Ruby on Rails
 
     # Custom patterns for quick checks
-    vulnerability_patterns: Dict[str, str] = field(
+    vulnerability_patterns: dict[str, str] = field(
         default_factory=lambda: {
             "sql_injection": r"(SELECT|DELETE|INSERT|UPDATE|DROP).*\+.*(?:request|params|input)",
             "command_injection": r"(exec|eval|system|popen|subprocess).*\+.*(?:request|params|input)",
@@ -160,7 +160,7 @@ class SecurityConfig:
     scan_timeout_seconds: int = 30
 
     @classmethod
-    def from_dict(cls, data: Dict) -> "SecurityConfig":
+    def from_dict(cls, data: dict) -> "SecurityConfig":
         """Create SecurityConfig from dictionary."""
         if not data:
             return cls()

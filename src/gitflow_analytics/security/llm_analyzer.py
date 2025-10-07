@@ -5,7 +5,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -33,7 +33,7 @@ class LLMSecurityAnalyzer:
         # Cache LLM responses for 7 days to save costs
         self.cache_ttl = timedelta(days=7)
 
-    def analyze_commit(self, commit_data: Dict) -> List[Dict]:
+    def analyze_commit(self, commit_data: dict) -> list[dict]:
         """Analyze a commit for security issues using LLM.
 
         Args:
@@ -72,7 +72,7 @@ class LLMSecurityAnalyzer:
 
         return findings
 
-    def _analyze_commit_message(self, commit_data: Dict) -> List[Dict]:
+    def _analyze_commit_message(self, commit_data: dict) -> list[dict]:
         """Analyze commit message for security implications."""
         prompt = self.config.commit_review_prompt.format(
             message=commit_data.get("message", ""),
@@ -83,7 +83,7 @@ class LLMSecurityAnalyzer:
         response = self._call_llm(prompt)
         return self._parse_llm_response(response, commit_data)
 
-    def _analyze_code_changes(self, commit_data: Dict) -> List[Dict]:
+    def _analyze_code_changes(self, commit_data: dict) -> list[dict]:
         """Analyze actual code changes for security issues."""
         # Limit the amount of code sent to LLM for cost control
         lines_added = commit_data.get("diff_content", "")
@@ -176,8 +176,8 @@ class LLMSecurityAnalyzer:
             return ""
 
     def _parse_llm_response(
-        self, response: str, commit_data: Dict, is_code_analysis: bool = False
-    ) -> List[Dict]:
+        self, response: str, commit_data: dict, is_code_analysis: bool = False
+    ) -> list[dict]:
         """Parse LLM response and extract security findings."""
         findings = []
 
@@ -273,7 +273,7 @@ class LLMSecurityAnalyzer:
 
         return "high" if len(response) > 100 else "medium"
 
-    def _get_cache_key(self, commit_data: Dict) -> str:
+    def _get_cache_key(self, commit_data: dict) -> str:
         """Generate cache key for commit data."""
         key_parts = [
             commit_data.get("commit_hash", ""),
@@ -286,7 +286,7 @@ class LLMSecurityAnalyzer:
 
         return hashlib.sha256(key_str.encode()).hexdigest()[:16]
 
-    def _get_cached_result(self, cache_key: str) -> Optional[List[Dict]]:
+    def _get_cached_result(self, cache_key: str) -> Optional[list[dict]]:
         """Get cached result if it exists and is not expired."""
         cache_file = self.cache_dir / f"{cache_key}.json"
         if not cache_file.exists():
@@ -305,7 +305,7 @@ class LLMSecurityAnalyzer:
             logger.debug(f"Error reading cache: {e}")
             return None
 
-    def _cache_result(self, cache_key: str, result: List[Dict]) -> None:
+    def _cache_result(self, cache_key: str, result: list[dict]) -> None:
         """Cache the analysis result."""
         cache_file = self.cache_dir / f"{cache_key}.json"
         try:
@@ -314,7 +314,7 @@ class LLMSecurityAnalyzer:
         except Exception as e:
             logger.debug(f"Error writing cache: {e}")
 
-    def generate_security_insights(self, all_findings: List[Dict]) -> str:
+    def generate_security_insights(self, all_findings: list[dict]) -> str:
         """Generate high-level security insights from all findings."""
         if not all_findings:
             return "No security issues detected in the analyzed period."

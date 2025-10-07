@@ -31,7 +31,7 @@ import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from tqdm import tqdm
 
@@ -39,8 +39,6 @@ from tqdm import tqdm
 try:
     from ..ui.progress_display import (
         RICH_AVAILABLE,
-        RepositoryInfo,
-        RepositoryStatus,
         create_progress_display,
     )
 
@@ -109,7 +107,7 @@ class ProgressService:
 
         # Rich display components
         self._rich_display = None
-        self._repository_contexts: Dict[str, Any] = {}
+        self._repository_contexts: dict[str, Any] = {}
         self._use_rich = False
 
         # Initialize display based on configuration

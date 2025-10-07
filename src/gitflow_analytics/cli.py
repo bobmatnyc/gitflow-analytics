@@ -33,6 +33,8 @@ from .reports.weekly_trends_writer import WeeklyTrendsWriter
 from .training.pipeline import CommitClassificationTrainer
 from .ui.progress_display import create_progress_display
 
+logger = logging.getLogger(__name__)
+
 
 class RichHelpFormatter:
     """Rich help formatter for enhanced CLI help display."""
@@ -292,12 +294,18 @@ class TUIAsDefaultGroup(click.Group):
         if args and args[0].startswith("-"):
             # Check if TUI dependencies are available
             try:
-                import textual
+                import importlib.util
 
+                textual_spec = importlib.util.find_spec("textual")
                 # TUI is available - route to TUI
-                new_args = ["tui"] + args
-                return super().parse_args(ctx, new_args)
-            except ImportError:
+                if textual_spec is not None:
+                    new_args = ["tui"] + args
+                    return super().parse_args(ctx, new_args)
+                else:
+                    # TUI not available - fallback to analyze
+                    new_args = ["analyze"] + args
+                    return super().parse_args(ctx, new_args)
+            except (ImportError, ValueError):
                 # TUI not available - fallback to analyze
                 new_args = ["analyze"] + args
                 return super().parse_args(ctx, new_args)
@@ -1077,10 +1085,7 @@ def analyze(
                 )
 
                 # Extract commits from the raw data
-                if raw_data and raw_data.get("commits"):
-                    commits = raw_data["commits"]
-                else:
-                    commits = []
+                commits = raw_data["commits"] if raw_data and raw_data.get("commits") else []
                 all_commits.extend(commits)
 
             if not all_commits:

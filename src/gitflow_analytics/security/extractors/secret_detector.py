@@ -3,7 +3,7 @@
 import logging
 import math
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +13,9 @@ class SecretDetector:
 
     def __init__(
         self,
-        patterns: Dict[str, str],
+        patterns: dict[str, str],
         entropy_threshold: float = 4.5,
-        exclude_paths: List[str] = None,
+        exclude_paths: list[str] = None,
     ):
         """Initialize secret detector.
 
@@ -37,7 +37,7 @@ class SecretDetector:
             re.compile(r"xxx+|placeholder|your[_-]?api[_-]?key", re.IGNORECASE),
         ]
 
-    def scan_text(self, text: str, file_path: Optional[str] = None) -> List[Dict]:
+    def scan_text(self, text: str, file_path: Optional[str] = None) -> list[dict]:
         """Scan text for potential secrets.
 
         Args:
@@ -93,7 +93,7 @@ class SecretDetector:
 
         return findings
 
-    def scan_commit(self, commit_data: Dict) -> List[Dict]:
+    def scan_commit(self, commit_data: dict) -> list[dict]:
         """Scan a commit for secrets.
 
         Args:
@@ -118,17 +118,11 @@ class SecretDetector:
         """Check if file should be excluded from scanning."""
         from fnmatch import fnmatch
 
-        for pattern in self.exclude_paths:
-            if fnmatch(file_path, pattern):
-                return True
-        return False
+        return any(fnmatch(file_path, pattern) for pattern in self.exclude_paths)
 
     def _is_false_positive(self, value: str) -> bool:
         """Check if a detected secret is likely a false positive."""
-        for pattern in self.false_positive_patterns:
-            if pattern.search(value):
-                return True
-        return False
+        return any(pattern.search(value) for pattern in self.false_positive_patterns)
 
     def _get_severity(self, secret_type: str) -> str:
         """Determine severity based on secret type."""
@@ -164,7 +158,7 @@ class SecretDetector:
 
     def _find_high_entropy_strings(
         self, text: str, min_length: int = 20
-    ) -> List[Tuple[str, float]]:
+    ) -> list[tuple[str, float]]:
         """Find strings with high entropy (potential secrets).
 
         Args:

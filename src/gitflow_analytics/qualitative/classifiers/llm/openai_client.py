@@ -330,13 +330,15 @@ class OpenAIClassifier(BaseLLMClassifier):
             )
         except requests.exceptions.Timeout as e:
             logger.error(f"API request timed out after {self.config.timeout_seconds}s: {e}")
-            raise Exception(f"API request timed out after {self.config.timeout_seconds} seconds")
+            raise Exception(
+                f"API request timed out after {self.config.timeout_seconds} seconds"
+            ) from e
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Connection error during API request: {e}")
-            raise Exception(f"Connection error: Unable to reach API at {url}")
+            raise Exception(f"Connection error: Unable to reach API at {url}") from e
         except requests.exceptions.RequestException as e:
             logger.error(f"Request failed: {e}")
-            raise Exception(f"Request failed: {str(e)}")
+            raise Exception(f"Request failed: {str(e)}") from e
 
         # Check response
         if response.status_code != 200:

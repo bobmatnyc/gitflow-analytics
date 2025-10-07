@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 
 from .config import SecurityConfig
 from .extractors import DependencyChecker, SecretDetector, VulnerabilityScanner
@@ -20,13 +20,13 @@ class SecurityAnalysis:
 
     commit_hash: str
     timestamp: datetime
-    files_changed: List[str]
+    files_changed: list[str]
 
     # Findings by type
-    secrets: List[Dict]
-    vulnerabilities: List[Dict]
-    dependency_issues: List[Dict]
-    llm_findings: List[Dict]
+    secrets: list[dict]
+    vulnerabilities: list[dict]
+    dependency_issues: list[dict]
+    llm_findings: list[dict]
 
     # Summary metrics
     total_findings: int
@@ -83,7 +83,7 @@ class SecurityAnalyzer:
         else:
             self.llm_analyzer = None
 
-    def analyze_commit(self, commit_data: Dict) -> SecurityAnalysis:
+    def analyze_commit(self, commit_data: dict) -> SecurityAnalysis:
         """Analyze a single commit for security issues.
 
         Args:
@@ -153,7 +153,7 @@ class SecurityAnalyzer:
             risk_score=risk_score,
         )
 
-    def analyze_batch(self, commits: List[Dict]) -> List[SecurityAnalysis]:
+    def analyze_batch(self, commits: list[dict]) -> list[SecurityAnalysis]:
         """Analyze multiple commits for security issues.
 
         Args:
@@ -184,7 +184,7 @@ class SecurityAnalyzer:
 
         return results
 
-    def _run_secret_detection(self, commit_data: Dict) -> List[Dict]:
+    def _run_secret_detection(self, commit_data: dict) -> list[dict]:
         """Run secret detection on commit."""
         try:
             return self.secret_detector.scan_commit(commit_data)
@@ -192,7 +192,7 @@ class SecurityAnalyzer:
             logger.warning(f"Secret detection error: {e}")
             return []
 
-    def _run_vulnerability_scan(self, commit_data: Dict) -> List[Dict]:
+    def _run_vulnerability_scan(self, commit_data: dict) -> list[dict]:
         """Run vulnerability scanning on changed files."""
         try:
             files_changed = commit_data.get("files_changed", [])
@@ -201,7 +201,7 @@ class SecurityAnalyzer:
             logger.warning(f"Vulnerability scanning error: {e}")
             return []
 
-    def _run_dependency_check(self, commit_data: Dict) -> List[Dict]:
+    def _run_dependency_check(self, commit_data: dict) -> list[dict]:
         """Check for vulnerable dependencies."""
         try:
             files_changed = commit_data.get("files_changed", [])
@@ -210,7 +210,7 @@ class SecurityAnalyzer:
             logger.warning(f"Dependency checking error: {e}")
             return []
 
-    def _run_llm_analysis(self, commit_data: Dict) -> List[Dict]:
+    def _run_llm_analysis(self, commit_data: dict) -> list[dict]:
         """Run LLM-based security analysis."""
         try:
             return self.llm_analyzer.analyze_commit(commit_data)
@@ -218,7 +218,7 @@ class SecurityAnalyzer:
             logger.warning(f"LLM analysis error: {e}")
             return []
 
-    def _count_severities(self, findings: List[Dict]) -> Dict[str, int]:
+    def _count_severities(self, findings: list[dict]) -> dict[str, int]:
         """Count findings by severity level."""
         counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
 
@@ -229,7 +229,7 @@ class SecurityAnalyzer:
 
         return counts
 
-    def _calculate_risk_score(self, severity_counts: Dict[str, int]) -> float:
+    def _calculate_risk_score(self, severity_counts: dict[str, int]) -> float:
         """Calculate overall risk score (0-100).
 
         Weighted formula:
@@ -249,7 +249,7 @@ class SecurityAnalyzer:
 
         return min(100.0, float(score))
 
-    def generate_summary_report(self, analyses: List[SecurityAnalysis]) -> Dict:
+    def generate_summary_report(self, analyses: list[SecurityAnalysis]) -> dict:
         """Generate summary report from multiple analyses.
 
         Args:
@@ -324,7 +324,7 @@ class SecurityAnalyzer:
 
         return summary
 
-    def _identify_top_issues(self, analyses: List[SecurityAnalysis]) -> List[Dict]:
+    def _identify_top_issues(self, analyses: list[SecurityAnalysis]) -> list[dict]:
         """Identify the most common/critical issues."""
         issue_counts = {}
 
@@ -374,7 +374,7 @@ class SecurityAnalyzer:
 
         return top_issues
 
-    def _generate_recommendations(self, analyses: List[SecurityAnalysis]) -> List[str]:
+    def _generate_recommendations(self, analyses: list[SecurityAnalysis]) -> list[str]:
         """Generate actionable security recommendations."""
         recommendations = []
 
