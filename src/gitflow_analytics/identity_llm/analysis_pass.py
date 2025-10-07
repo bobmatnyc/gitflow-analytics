@@ -155,8 +155,13 @@ class IdentityAnalysisPass:
             existing_emails.add(email.lower())
 
         for new_mapping in new_mappings:
-            # New mappings use primary_email
-            canonical_email = new_mapping["primary_email"].lower()
+            # New mappings use primary_email, but support canonical_email for backward compat
+            canonical_email = (
+                new_mapping.get("primary_email") or new_mapping.get("canonical_email", "")
+            ).lower()
+            if not canonical_email:
+                logger.warning(f"Skipping mapping with no email: {new_mapping}")
+                continue
             if canonical_email not in existing_emails:
                 existing_mappings.append(new_mapping)
                 logger.info(f"Added identity mapping for: {canonical_email}")

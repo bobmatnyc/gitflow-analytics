@@ -20,12 +20,13 @@ class RepositoryManager:
         self.github_config = github_config
 
     def discover_organization_repositories(
-        self, clone_base_path: Optional[Path] = None
+        self, clone_base_path: Optional[Path] = None, progress_callback=None
     ) -> list[RepositoryConfig]:
         """Discover repositories from GitHub organization.
 
         Args:
             clone_base_path: Base directory where repos should be cloned/found.
+            progress_callback: Optional callback function(repo_name, count) for progress updates.
 
         Returns:
             List of discovered repository configurations.
@@ -42,7 +43,14 @@ class RepositoryManager:
             if clone_base_path is None:
                 raise ValueError("No base path available for repository cloning")
 
+            repo_count = 0
             for repo in org.get_repos():
+                repo_count += 1
+
+                # Call progress callback if provided
+                if progress_callback:
+                    progress_callback(repo.name, repo_count)
+
                 # Skip archived repositories
                 if repo.archived:
                     continue

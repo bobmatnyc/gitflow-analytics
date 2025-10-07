@@ -944,7 +944,7 @@ def analyze(
             data_fetcher = GitDataFetcher(
                 cache=cache,
                 branch_mapping_rules=cfg.analysis.branch_mapping_rules,
-                allowed_ticket_platforms=cfg.analysis.ticket_platforms,
+                allowed_ticket_platforms=cfg.get_effective_ticket_platforms(),
                 exclude_paths=cfg.analysis.exclude_paths,
             )
 
@@ -1135,9 +1135,7 @@ def analyze(
         analyzer = GitAnalyzer(
             cache,
             branch_mapping_rules=cfg.analysis.branch_mapping_rules,
-            allowed_ticket_platforms=getattr(
-                cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]
-            ),
+            allowed_ticket_platforms=cfg.get_effective_ticket_platforms(),
             exclude_paths=cfg.analysis.exclude_paths,
             story_point_patterns=cfg.analysis.story_point_patterns,
             ml_categorization_config=ml_config,
@@ -1164,8 +1162,27 @@ def analyze(
                 # Use a 'repos' directory in the config directory for cloned repositories
                 config_dir = Path(config).parent if config else Path.cwd()
                 repos_dir = config_dir / "repos"
-                discovered_repos = cfg.discover_organization_repositories(clone_base_path=repos_dir)
+
+                # Progress callback for repository discovery
+                def discovery_progress(repo_name, count):
+                    if display and display._live:
+                        display.update_progress_task(
+                            "main",
+                            description=f"🔍 Discovering: {repo_name} ({count} repos checked)",
+                            completed=15 + min(count % 5, 4),  # Show some movement
+                        )
+                    else:
+                        # Simple inline progress - just show count
+                        click.echo(f"\r   📦 Checking repositories... {count}", nl=False)
+
+                discovered_repos = cfg.discover_organization_repositories(
+                    clone_base_path=repos_dir, progress_callback=discovery_progress
+                )
                 repositories_to_analyze = discovered_repos
+
+                # Clear the progress line
+                if not (display and display._live):
+                    click.echo("\r" + " " * 60 + "\r", nl=False)  # Clear line
 
                 if display and display._live:
                     # We're in full-screen mode, update progress and initialize repo list
@@ -1703,14 +1720,14 @@ def analyze(
                             "📊 No commits or batches found for date range - proceeding with data fetch"
                         )
 
-            # PROCEED WITH EMERGENCY FETCH if validation didn't pass
+            # PROCEED WITH INITIAL FETCH if validation didn't pass
             if not validation_passed:
                 if display:
                     display.print_status(
-                        "Data validation failed - running emergency data fetch", "warning"
+                        "Data validation failed - running initial data fetch", "warning"
                     )
                 else:
-                    click.echo("⚠️ Data validation failed - running emergency data fetch")
+                    click.echo("⚠️ Data validation failed - running initial data fetch")
 
                 # Force data fetch for all repositories since we have no batches
                 repos_needing_analysis = repositories_to_analyze
@@ -1719,12 +1736,12 @@ def analyze(
                 if repos_needing_analysis:
                     if display:
                         display.print_status(
-                            f"Emergency fetch: Fetching data for {len(repos_needing_analysis)} repositories...",
+                            f"Initial fetch: Fetching data for {len(repos_needing_analysis)} repositories...",
                             "info",
                         )
                     else:
                         click.echo(
-                            f"🚨 Emergency fetch: Fetching data for {len(repos_needing_analysis)} repositories..."
+                            f"🚨 Initial fetch: Fetching data for {len(repos_needing_analysis)} repositories..."
                         )
                         click.echo(
                             "   📋 Reason: Need to ensure commits and batches exist for classification"
@@ -1760,89 +1777,145 @@ def analyze(
                             # Check if repo exists, clone if needed (critical for organization mode)
                             if not repo_path.exists():
                                 if repo_config.github_repo and cfg.github.organization:
-                                    if display:
-                                        display.print_status(
-                                            f"   📥 Cloning {repo_config.github_repo} from GitHub...",
-                                            "info",
-                                        )
-                                    else:
-                                        click.echo(f"   📥 Cloning {repo_config.github_repo} from GitHub...")
-                                    try:
-                                        # Ensure parent directory exists
-                                        repo_path.parent.mkdir(parents=True, exist_ok=True)
+                                    # Retry logic for cloning
+                                    max_retries = 2
+                                    retry_count = 0
+                                    clone_success = False
 
-                                        # Build clone URL with authentication
-                                        clone_url = f"https://github.com/{repo_config.github_repo}.git"
-                                        if cfg.github.token:
-                                            clone_url = f"https://{cfg.github.token}@github.com/{repo_config.github_repo}.git"
+                                    while retry_count <= max_retries and not clone_success:
+                                        if retry_count > 0:
+                                            if display:
+                                                display.print_status(
+                                                    f"   🔄 Retry {retry_count}/{max_retries}: {repo_config.github_repo}",
+                                                    "warning",
+                                                )
+                                            else:
+                                                click.echo(
+                                                    f"   🔄 Retry {retry_count}/{max_retries}: {repo_config.github_repo}"
+                                                )
+                                        else:
+                                            if display:
+                                                display.print_status(
+                                                    f"   📥 Cloning {repo_config.github_repo} from GitHub...",
+                                                    "info",
+                                                )
+                                            else:
+                                                click.echo(f"   📥 Cloning {repo_config.github_repo} from GitHub...")
 
-                                        # Clone using subprocess for better control
-                                        env = os.environ.copy()
-                                        env["GIT_TERMINAL_PROMPT"] = "0"
-                                        env["GIT_ASKPASS"] = ""
-                                        env["GCM_INTERACTIVE"] = "never"
+                                        try:
+                                            # Ensure parent directory exists
+                                            repo_path.parent.mkdir(parents=True, exist_ok=True)
 
-                                        cmd = ["git", "clone", "--config", "credential.helper="]
-                                        if repo_config.branch:
-                                            cmd.extend(["-b", repo_config.branch])
-                                        cmd.extend([clone_url, str(repo_path)])
+                                            # Build clone URL with authentication
+                                            clone_url = f"https://github.com/{repo_config.github_repo}.git"
+                                            if cfg.github.token:
+                                                clone_url = f"https://{cfg.github.token}@github.com/{repo_config.github_repo}.git"
 
-                                        result = subprocess.run(
-                                            cmd,
-                                            env=env,
-                                            capture_output=True,
-                                            text=True,
-                                            timeout=30,
-                                        )
+                                            # Clone using subprocess for better control
+                                            env = os.environ.copy()
+                                            env["GIT_TERMINAL_PROMPT"] = "0"
+                                            env["GIT_ASKPASS"] = ""
+                                            env["GCM_INTERACTIVE"] = "never"
+                                            env["GIT_PROGRESS"] = "1"  # Force progress output
 
-                                        if result.returncode != 0:
-                                            error_msg = result.stderr or result.stdout
-                                            if any(
-                                                x in error_msg.lower()
-                                                for x in ["authentication", "permission denied", "401", "403"]
-                                            ):
+                                            cmd = ["git", "clone", "--progress", "--config", "credential.helper="]
+                                            if repo_config.branch:
+                                                cmd.extend(["-b", repo_config.branch])
+                                            cmd.extend([clone_url, str(repo_path)])
+
+                                            # Track start time for timeout reporting
+                                            import time
+
+                                            start_time = time.time()
+                                            timeout_seconds = 300  # 5 minutes for large repos
+
+                                            # Run without capturing stderr to show git progress
+                                            result = subprocess.run(
+                                                cmd,
+                                                env=env,
+                                                stdout=subprocess.PIPE,
+                                                stderr=None,  # Let stderr (progress) flow to terminal
+                                                text=True,
+                                                timeout=timeout_seconds,
+                                            )
+
+                                            elapsed = time.time() - start_time
+
+                                            if result.returncode != 0:
+                                                error_msg = "Clone failed"
+                                                if any(
+                                                    x in error_msg.lower()
+                                                    for x in ["authentication", "permission denied", "401", "403"]
+                                                ):
+                                                    if display:
+                                                        display.print_status(
+                                                            f"   ❌ Authentication failed for {repo_config.github_repo}",
+                                                            "error",
+                                                        )
+                                                    else:
+                                                        click.echo(
+                                                            f"   ❌ Authentication failed for {repo_config.github_repo}"
+                                                        )
+                                                    break  # Don't retry auth failures
+                                                else:
+                                                    raise subprocess.CalledProcessError(
+                                                        result.returncode, cmd, result.stdout, result.stderr
+                                                    )
+                                            else:
+                                                clone_success = True
                                                 if display:
                                                     display.print_status(
-                                                        f"   ❌ Authentication failed for {repo_config.github_repo}",
+                                                        f"   ✅ Cloned {repo_config.github_repo} ({elapsed:.1f}s)",
+                                                        "success",
+                                                    )
+                                                else:
+                                                    click.echo(
+                                                        f"   ✅ Cloned {repo_config.github_repo} ({elapsed:.1f}s)"
+                                                    )
+
+                                        except subprocess.TimeoutExpired:
+                                            retry_count += 1
+                                            if display:
+                                                display.print_status(
+                                                    f"   ⏱️  Clone timeout after {timeout_seconds}s: {repo_config.github_repo}",
+                                                    "error",
+                                                )
+                                            else:
+                                                click.echo(
+                                                    f"   ⏱️  Clone timeout after {timeout_seconds}s: {repo_config.github_repo}"
+                                                )
+                                            # Clean up partial clone
+                                            if repo_path.exists():
+                                                import shutil
+
+                                                shutil.rmtree(repo_path, ignore_errors=True)
+                                            if retry_count > max_retries:
+                                                if display:
+                                                    display.print_status(
+                                                        f"   ❌ Skipping {repo_config.github_repo} after {max_retries} timeouts",
                                                         "error",
                                                     )
                                                 else:
                                                     click.echo(
-                                                        f"   ❌ Authentication failed for {repo_config.github_repo}"
+                                                        f"   ❌ Skipping {repo_config.github_repo} after {max_retries} timeouts"
                                                     )
-                                                continue
-                                            else:
-                                                raise subprocess.CalledProcessError(
-                                                    result.returncode, cmd, result.stdout, result.stderr
+                                                break
+                                            continue  # Try again
+
+                                        except Exception as e:
+                                            retry_count += 1
+                                            if display:
+                                                display.print_status(
+                                                    f"   ❌ Clone error: {e}", "error"
                                                 )
+                                            else:
+                                                click.echo(f"   ❌ Clone error: {e}")
+                                            if retry_count > max_retries:
+                                                break
+                                            continue  # Try again
 
-                                        if display:
-                                            display.print_status(
-                                                f"   ✅ Cloned {repo_config.github_repo}", "success"
-                                            )
-                                        else:
-                                            click.echo(f"   ✅ Cloned {repo_config.github_repo}")
-
-                                    except subprocess.TimeoutExpired:
-                                        if display:
-                                            display.print_status(
-                                                f"   ❌ Clone timeout for {repo_config.github_repo}",
-                                                "error",
-                                            )
-                                        else:
-                                            click.echo(f"   ❌ Clone timeout for {repo_config.github_repo}")
-                                        continue
-                                    except Exception as e:
-                                        if display:
-                                            display.print_status(
-                                                f"   ❌ Failed to clone {repo_config.github_repo}: {e}",
-                                                "error",
-                                            )
-                                        else:
-                                            click.echo(
-                                                f"   ❌ Failed to clone {repo_config.github_repo}: {e}"
-                                            )
-                                        continue
+                                    if not clone_success:
+                                        continue  # Skip this repo and move to next
                                 else:
                                     # No github_repo configured, can't clone
                                     if display:
@@ -1928,15 +2001,15 @@ def analyze(
 
                     if display:
                         display.print_status(
-                            f"Emergency fetch complete: {total_commits} commits, {total_tickets} tickets",
+                            f"Initial fetch complete: {total_commits} commits, {total_tickets} tickets",
                             "success",
                         )
                     else:
                         click.echo(
-                            f"🚨 Emergency fetch complete: {total_commits} commits, {total_tickets} tickets"
+                            f"🚨 Initial fetch complete: {total_commits} commits, {total_tickets} tickets"
                         )
 
-                    # RE-VALIDATE after emergency fetch
+                    # RE-VALIDATE after initial fetch
                     with cache.get_session() as session:
                         final_commits = (
                             session.query(CachedCommit)
@@ -1961,7 +2034,7 @@ def analyze(
                         )
 
                         if final_commits == 0:
-                            error_msg = "❌ CRITICAL: Emergency fetch completed but still 0 commits stored in database"
+                            error_msg = "❌ CRITICAL: Initial fetch completed but still 0 commits stored in database"
                             if display:
                                 display.print_status(error_msg, "error")
                             else:
@@ -1969,7 +2042,7 @@ def analyze(
                             click.echo(
                                 f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
                             )
-                            click.echo(f"   📊 Emergency stats: {total_commits} commits reported")
+                            click.echo(f"   📊 Initial fetch stats: {total_commits} commits reported")
                             click.echo(
                                 f"   🗃️ Database result: {final_commits} commits, {final_batches} batches"
                             )
@@ -1983,7 +2056,7 @@ def analyze(
                                 "      - Repository has no commits in the specified time range"
                             )
                             raise click.ClickException(
-                                "Emergency fetch failed validation - no data available for classification"
+                                "Initial fetch failed validation - no data available for classification"
                             )
 
                         if display:
@@ -2342,25 +2415,27 @@ def analyze(
                                 env["GIT_TERMINAL_PROMPT"] = "0"
                                 env["GIT_ASKPASS"] = ""
                                 env["GCM_INTERACTIVE"] = "never"
+                                env["GIT_PROGRESS"] = "1"  # Force progress output
 
                                 # Build git clone command
-                                cmd = ["git", "clone", "--config", "credential.helper="]
+                                cmd = ["git", "clone", "--progress", "--config", "credential.helper="]
                                 if repo_config.branch:
                                     cmd.extend(["-b", repo_config.branch])
                                 cmd.extend([clone_url, str(repo_config.path)])
 
-                                # Run with timeout to prevent hanging
+                                # Run with timeout to prevent hanging, let progress show on stderr
                                 result = subprocess.run(
                                     cmd,
                                     env=env,
-                                    capture_output=True,
+                                    stdout=subprocess.PIPE,
+                                    stderr=None,  # Let stderr (progress) flow to terminal
                                     text=True,
-                                    timeout=30,  # 30 second timeout
+                                    timeout=120,  # Increase timeout for large repos
                                 )
 
                                 if result.returncode != 0:
                                     raise git.GitCommandError(
-                                        cmd, result.returncode, stderr=result.stderr
+                                        cmd, result.returncode, stderr="Clone failed"
                                     )
                             except subprocess.TimeoutExpired:
                                 if display:
@@ -2409,13 +2484,14 @@ def analyze(
                                     cmd = [
                                         "git",
                                         "clone",
+                                        "--progress",
                                         "--config",
                                         "credential.helper=",
                                         clone_url,
                                         str(repo_config.path),
                                     ]
                                     result = subprocess.run(
-                                        cmd, env=env, capture_output=True, text=True, timeout=30
+                                        cmd, env=env, stdout=subprocess.PIPE, stderr=None, text=True, timeout=120
                                     )
                                     if result.returncode != 0:
                                         raise git.GitCommandError(
@@ -4192,9 +4268,7 @@ def fetch(
         data_fetcher = GitDataFetcher(
             cache=cache,
             branch_mapping_rules=getattr(cfg.analysis, "branch_mapping_rules", {}),
-            allowed_ticket_platforms=getattr(
-                cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]
-            ),
+            allowed_ticket_platforms=cfg.get_effective_ticket_platforms(),
             exclude_paths=getattr(cfg.analysis, "exclude_paths", None),
         )
 
@@ -4217,8 +4291,22 @@ def fetch(
                 # Use a 'repos' directory in the config directory for cloned repositories
                 config_dir = Path(config).parent if config else Path.cwd()
                 repos_dir = config_dir / "repos"
-                discovered_repos = cfg.discover_organization_repositories(clone_base_path=repos_dir)
+
+                # Progress callback for repository discovery
+                def discovery_progress(repo_name, count):
+                    if display:
+                        display.print_status(f"   📦 Checking: {repo_name} ({count})", "info")
+                    else:
+                        click.echo(f"\r   📦 Checking repositories... {count}", nl=False)
+
+                discovered_repos = cfg.discover_organization_repositories(
+                    clone_base_path=repos_dir, progress_callback=discovery_progress
+                )
                 repositories_to_fetch = discovered_repos
+
+                # Clear the progress line
+                if not display:
+                    click.echo("\r" + " " * 60 + "\r", nl=False)  # Clear line
 
                 if display:
                     display.print_status(
@@ -4862,9 +4950,7 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
         analyzer = GitAnalyzer(
             cache,
             branch_mapping_rules=cfg.analysis.branch_mapping_rules,
-            allowed_ticket_platforms=getattr(
-                cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]
-            ),
+            allowed_ticket_platforms=cfg.get_effective_ticket_platforms(),
             exclude_paths=cfg.analysis.exclude_paths,
             story_point_patterns=cfg.analysis.story_point_patterns,
             ml_categorization_config=ml_config,
@@ -5099,9 +5185,7 @@ def aliases_command(
         analyzer = GitAnalyzer(
             cache,
             branch_mapping_rules=cfg.analysis.branch_mapping_rules,
-            allowed_ticket_platforms=getattr(
-                cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]
-            ),
+            allowed_ticket_platforms=cfg.get_effective_ticket_platforms(),
             exclude_paths=cfg.analysis.exclude_paths,
             story_point_patterns=cfg.analysis.story_point_patterns,
             ml_categorization_config=ml_config,
@@ -5551,8 +5635,18 @@ def train(
             try:
                 config_dir = Path(config).parent if config else Path.cwd()
                 repos_dir = config_dir / "repos"
-                discovered_repos = cfg.discover_organization_repositories(clone_base_path=repos_dir)
+
+                # Progress callback for repository discovery
+                def discovery_progress(repo_name, count):
+                    click.echo(f"\r   📦 Checking repositories... {count}", nl=False)
+
+                discovered_repos = cfg.discover_organization_repositories(
+                    clone_base_path=repos_dir, progress_callback=discovery_progress
+                )
                 repositories_to_analyze = discovered_repos
+
+                # Clear the progress line and show result
+                click.echo("\r" + " " * 60 + "\r", nl=False)
                 click.echo(f"✅ Found {len(discovered_repos)} repositories in organization")
             except Exception as e:
                 click.echo(f"❌ Failed to discover repositories: {e}")

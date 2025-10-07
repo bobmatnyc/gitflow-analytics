@@ -456,3 +456,43 @@ class Config:
             raise ValueError(
                 f"Failed to discover repositories from organization {self.github.organization}: {e}"
             ) from e
+
+    def get_effective_ticket_platforms(self) -> list[str]:
+        """Get the effective list of ticket platforms to extract.
+
+        If ticket_platforms is explicitly configured in analysis config, use that.
+        Otherwise, infer from which PM platforms are actually configured.
+
+        Returns:
+            List of ticket platform names to extract (e.g., ['jira', 'github'])
+        """
+        # If explicitly configured, use that
+        if self.analysis.ticket_platforms is not None:
+            return self.analysis.ticket_platforms
+
+        # Otherwise, infer from configured PM platforms
+        platforms = []
+
+        # Check modern PM framework config
+        if self.pm:
+            if hasattr(self.pm, 'jira') and self.pm.jira:
+                platforms.append('jira')
+            if hasattr(self.pm, 'linear') and self.pm.linear:
+                platforms.append('linear')
+            if hasattr(self.pm, 'clickup') and self.pm.clickup:
+                platforms.append('clickup')
+
+        # Check legacy JIRA config
+        if self.jira or self.jira_integration:
+            if 'jira' not in platforms:
+                platforms.append('jira')
+
+        # Always include GitHub if we have GitHub configured (for issue tracking)
+        if self.github.token:
+            platforms.append('github')
+
+        # If nothing configured, fall back to common platforms
+        if not platforms:
+            platforms = ['jira', 'github', 'clickup', 'linear']
+
+        return platforms
