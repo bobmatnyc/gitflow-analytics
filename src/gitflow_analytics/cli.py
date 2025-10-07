@@ -4488,6 +4488,8 @@ def cache_stats(config: Path) -> None:
     - Decide when to clear cache
     - Troubleshoot slow analyses
     """
+    from .core.cache import GitAnalysisCache
+
     try:
         cfg = ConfigLoader.load(config)
         cache = GitAnalysisCache(cfg.cache.directory)
@@ -4542,6 +4544,8 @@ def merge_identity(config: Path, dev1: str, dev2: str) -> None:
     - Refreshes cached statistics
     - Updates identity mappings
     """
+    from .core.identity import DeveloperIdentityResolver
+
     try:
         cfg = ConfigLoader.load(config)
         identity_resolver = DeveloperIdentityResolver(cfg.cache.directory / "identities.db")
@@ -4807,6 +4811,7 @@ def discover_storypoint_fields(config: Path) -> None:
             return
 
         # Initialize PM integration (currently JIRA)
+        from .core.cache import GitAnalysisCache
         from .integrations.jira_integration import JIRAIntegration
 
         # Create minimal cache for integration
@@ -4890,6 +4895,9 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
       Mappings are saved to 'analysis.identity.manual_mappings'
       Bot exclusions go to 'analysis.exclude.authors'
     """
+    from .core.analyzer import GitAnalyzer
+    from .core.cache import GitAnalysisCache
+
     try:
         cfg = ConfigLoader.load(config)
         cache = GitAnalysisCache(cfg.cache.directory)
@@ -5118,6 +5126,8 @@ def aliases_command(
     """
     try:
         from .config.aliases import AliasesManager, DeveloperAlias
+        from .core.analyzer import GitAnalyzer
+        from .core.cache import GitAnalysisCache
         from .identity_llm.analyzer import LLMIdentityAnalyzer
 
         # Load configuration
@@ -5419,6 +5429,8 @@ def list_developers(config: Path) -> None:
     - Finding developer email addresses
     - Checking contribution statistics
     """
+    from .core.identity import DeveloperIdentityResolver
+
     try:
         cfg = ConfigLoader.load(config)
         identity_resolver = DeveloperIdentityResolver(cfg.cache.directory / "identities.db")
@@ -5552,6 +5564,8 @@ def train(
       - scikit-learn and pandas dependencies
       - ~100MB disk space for model storage
     """
+    from .core.cache import GitAnalysisCache
+    from .integrations.orchestrator import IntegrationOrchestrator
 
     # Configure logging
     if log.upper() != "NONE":

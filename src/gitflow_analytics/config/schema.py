@@ -483,9 +483,8 @@ class Config:
                 platforms.append('clickup')
 
         # Check legacy JIRA config
-        if self.jira or self.jira_integration:
-            if 'jira' not in platforms:
-                platforms.append('jira')
+        if (self.jira or self.jira_integration) and 'jira' not in platforms:
+            platforms.append('jira')
 
         # Always include GitHub if we have GitHub configured (for issue tracking)
         if self.github.token:
