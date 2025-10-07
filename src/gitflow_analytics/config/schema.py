@@ -475,23 +475,23 @@ class Config:
 
         # Check modern PM framework config
         if self.pm:
-            if hasattr(self.pm, 'jira') and self.pm.jira:
-                platforms.append('jira')
-            if hasattr(self.pm, 'linear') and self.pm.linear:
-                platforms.append('linear')
-            if hasattr(self.pm, 'clickup') and self.pm.clickup:
-                platforms.append('clickup')
+            if hasattr(self.pm, "jira") and self.pm.jira:
+                platforms.append("jira")
+            if hasattr(self.pm, "linear") and self.pm.linear:
+                platforms.append("linear")
+            if hasattr(self.pm, "clickup") and self.pm.clickup:
+                platforms.append("clickup")
 
         # Check legacy JIRA config
-        if (self.jira or self.jira_integration) and 'jira' not in platforms:
-            platforms.append('jira')
+        if (self.jira or self.jira_integration) and "jira" not in platforms:
+            platforms.append("jira")
 
         # Always include GitHub if we have GitHub configured (for issue tracking)
         if self.github.token:
-            platforms.append('github')
+            platforms.append("github")
 
         # If nothing configured, fall back to common platforms
         if not platforms:
-            platforms = ['jira', 'github', 'clickup', 'linear']
+            platforms = ["jira", "github", "clickup", "linear"]
 
         return platforms

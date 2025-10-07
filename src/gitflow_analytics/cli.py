@@ -1800,14 +1800,18 @@ def analyze(
                                                     "info",
                                                 )
                                             else:
-                                                click.echo(f"   📥 Cloning {repo_config.github_repo} from GitHub...")
+                                                click.echo(
+                                                    f"   📥 Cloning {repo_config.github_repo} from GitHub..."
+                                                )
 
                                         try:
                                             # Ensure parent directory exists
                                             repo_path.parent.mkdir(parents=True, exist_ok=True)
 
                                             # Build clone URL with authentication
-                                            clone_url = f"https://github.com/{repo_config.github_repo}.git"
+                                            clone_url = (
+                                                f"https://github.com/{repo_config.github_repo}.git"
+                                            )
                                             if cfg.github.token:
                                                 clone_url = f"https://{cfg.github.token}@github.com/{repo_config.github_repo}.git"
 
@@ -1818,7 +1822,13 @@ def analyze(
                                             env["GCM_INTERACTIVE"] = "never"
                                             env["GIT_PROGRESS"] = "1"  # Force progress output
 
-                                            cmd = ["git", "clone", "--progress", "--config", "credential.helper="]
+                                            cmd = [
+                                                "git",
+                                                "clone",
+                                                "--progress",
+                                                "--config",
+                                                "credential.helper=",
+                                            ]
                                             if repo_config.branch:
                                                 cmd.extend(["-b", repo_config.branch])
                                             cmd.extend([clone_url, str(repo_path)])
@@ -1845,7 +1855,12 @@ def analyze(
                                                 error_msg = "Clone failed"
                                                 if any(
                                                     x in error_msg.lower()
-                                                    for x in ["authentication", "permission denied", "401", "403"]
+                                                    for x in [
+                                                        "authentication",
+                                                        "permission denied",
+                                                        "401",
+                                                        "403",
+                                                    ]
                                                 ):
                                                     if display:
                                                         display.print_status(
@@ -1859,7 +1874,10 @@ def analyze(
                                                     break  # Don't retry auth failures
                                                 else:
                                                     raise subprocess.CalledProcessError(
-                                                        result.returncode, cmd, result.stdout, result.stderr
+                                                        result.returncode,
+                                                        cmd,
+                                                        result.stdout,
+                                                        result.stderr,
                                                     )
                                             else:
                                                 clone_success = True
@@ -2042,7 +2060,9 @@ def analyze(
                             click.echo(
                                 f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
                             )
-                            click.echo(f"   📊 Initial fetch stats: {total_commits} commits reported")
+                            click.echo(
+                                f"   📊 Initial fetch stats: {total_commits} commits reported"
+                            )
                             click.echo(
                                 f"   🗃️ Database result: {final_commits} commits, {final_batches} batches"
                             )
@@ -2418,7 +2438,13 @@ def analyze(
                                 env["GIT_PROGRESS"] = "1"  # Force progress output
 
                                 # Build git clone command
-                                cmd = ["git", "clone", "--progress", "--config", "credential.helper="]
+                                cmd = [
+                                    "git",
+                                    "clone",
+                                    "--progress",
+                                    "--config",
+                                    "credential.helper=",
+                                ]
                                 if repo_config.branch:
                                     cmd.extend(["-b", repo_config.branch])
                                 cmd.extend([clone_url, str(repo_config.path)])
@@ -2491,7 +2517,12 @@ def analyze(
                                         str(repo_config.path),
                                     ]
                                     result = subprocess.run(
-                                        cmd, env=env, stdout=subprocess.PIPE, stderr=None, text=True, timeout=120
+                                        cmd,
+                                        env=env,
+                                        stdout=subprocess.PIPE,
+                                        stderr=None,
+                                        text=True,
+                                        timeout=120,
                                     )
                                     if result.returncode != 0:
                                         raise git.GitCommandError(
