@@ -3,7 +3,7 @@
 import logging
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +28,19 @@ logger = logging.getLogger(__name__)
 Base: Any = declarative_base()
 
 
+def utcnow_tz_aware() -> datetime:
+    """Return current UTC time as timezone-aware datetime.
+
+    WHY: SQLAlchemy DateTime(timezone=True) requires timezone-aware datetimes.
+    Using timezone-naive datetime.utcnow() causes query mismatches when filtering
+    by timezone-aware date ranges.
+
+    Returns:
+        Timezone-aware datetime in UTC
+    """
+    return datetime.now(timezone.utc)
+
+
 class CachedCommit(Base):
     """Cached commit analysis results."""
 
@@ -44,7 +57,7 @@ class CachedCommit(Base):
     author_name = Column(String)
     author_email = Column(String)
     message = Column(String)
-    timestamp = Column(DateTime)
+    timestamp = Column(DateTime(timezone=True))  # CRITICAL: Preserve timezone for date filtering
     branch = Column(String)
     is_merge = Column(Boolean, default=False)
 
@@ -62,7 +75,7 @@ class CachedCommit(Base):
     ticket_references = Column(JSON)  # List of ticket IDs
 
     # Cache metadata
-    cached_at = Column(DateTime, default=datetime.utcnow)
+    cached_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
     cache_version = Column(String, default="1.0")
 
     # Indexes for performance
@@ -87,12 +100,12 @@ class DeveloperIdentity(Base):
     # Statistics
     total_commits = Column(Integer, default=0)
     total_story_points = Column(Integer, default=0)
-    first_seen = Column(DateTime, default=datetime.utcnow)
-    last_seen = Column(DateTime, default=datetime.utcnow)
+    first_seen = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+    last_seen = Column(DateTime(timezone=True), default=utcnow_tz_aware)
 
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+    updated_at = Column(DateTime(timezone=True), default=utcnow_tz_aware, onupdate=utcnow_tz_aware)
 
     __table_args__ = (
         Index("idx_primary_email", "primary_email"),
@@ -130,8 +143,8 @@ class PullRequestCache(Base):
     title = Column(String)
     description = Column(String)
     author = Column(String)
-    created_at = Column(DateTime)
-    merged_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True))
+    merged_at = Column(DateTime(timezone=True), nullable=True)
 
     # Extracted data
     story_points = Column(Integer, nullable=True)
@@ -141,7 +154,7 @@ class PullRequestCache(Base):
     commit_hashes = Column(JSON)  # List of commit hashes
 
     # Cache metadata
-    cached_at = Column(DateTime, default=datetime.utcnow)
+    cached_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
 
     __table_args__ = (Index("idx_repo_pr", "repo_path", "pr_number", unique=True),)
 
@@ -163,9 +176,9 @@ class IssueCache(Base):
     description = Column(String)
     status = Column(String)
     assignee = Column(String, nullable=True)
-    created_at = Column(DateTime)
-    updated_at = Column(DateTime)
-    resolved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True))
+    updated_at = Column(DateTime(timezone=True))
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
 
     # Extracted data
     story_points = Column(Integer, nullable=True)
@@ -175,7 +188,7 @@ class IssueCache(Base):
     platform_data = Column(JSON)  # Additional platform-specific fields
 
     # Cache metadata
-    cached_at = Column(DateTime, default=datetime.utcnow)
+    cached_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
 
     __table_args__ = (
         Index("idx_platform_issue", "platform", "issue_id", unique=True),
@@ -215,7 +228,7 @@ class QualitativeCommitData(Base):
     confidence_score = Column(Float, nullable=False)
 
     # Timestamps
-    analyzed_at = Column(DateTime, default=datetime.utcnow)
+    analyzed_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
     analysis_version = Column(String, default="1.0")
 
     # Indexes for efficient querying
@@ -250,8 +263,8 @@ class PatternCache(Base):
 
     # Usage tracking for cache management
     hit_count = Column(Integer, default=1)
-    last_used = Column(DateTime, default=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    last_used = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+    created_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
 
     # Source tracking
     source_method = Column(String, nullable=False)  # 'nlp' or 'llm'
@@ -284,7 +297,7 @@ class LLMUsageStats(Base):
     # API call metadata
     model_name = Column(String, nullable=False)
     api_provider = Column(String, default="openrouter")
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime(timezone=True), default=utcnow_tz_aware)
 
     # Usage metrics
     input_tokens = Column(Integer, nullable=False)
@@ -342,8 +355,8 @@ class TrainingData(Base):
 
     # Training metadata
     training_session_id = Column(String, nullable=False)  # Groups related training data
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=utcnow_tz_aware)
 
     # Quality assurance
     validated = Column(Boolean, default=False)  # Human validation flag
@@ -399,7 +412,7 @@ class RepositoryAnalysisStatus(Base):
     unique_developers = Column(Integer, default=0)
 
     # Analysis metadata
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=utcnow_tz_aware)
     analysis_version = Column(String, default="2.0")  # For tracking schema changes
 
     # Configuration hash to detect config changes
@@ -438,8 +451,8 @@ class TrainingSession(Base):
     session_id = Column(String, unique=True, nullable=False)
 
     # Session metadata
-    started_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime)
+    started_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+    completed_at = Column(DateTime(timezone=True))
     status = Column(String, default="running")  # running, completed, failed
 
     # Configuration
@@ -500,7 +513,7 @@ class ClassificationModel(Base):
     name = Column(String, nullable=False)
     version = Column(String, nullable=False)
     model_type = Column(String, nullable=False)  # 'sklearn', 'spacy', 'custom'
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
 
     # Training information
     training_session_id = Column(String, ForeignKey("training_sessions.session_id"))
@@ -521,7 +534,7 @@ class ClassificationModel(Base):
     # Usage tracking
     active = Column(Boolean, default=True)  # Whether model is active
     usage_count = Column(Integer, default=0)  # Number of times used
-    last_used = Column(DateTime)
+    last_used = Column(DateTime(timezone=True))
 
     # Model validation
     cross_validation_scores = Column(JSON)  # Cross-validation results
@@ -564,11 +577,11 @@ class DailyCommitBatch(Base):
     unique_tickets = Column(JSON)  # List of ticket IDs referenced on this day
 
     # Processing status
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
     classification_status = Column(
         String, default="pending"
     )  # pending, processing, completed, failed
-    classified_at = Column(DateTime, nullable=True)
+    classified_at = Column(DateTime(timezone=True), nullable=True)
 
     # Batch context for LLM classification
     context_summary = Column(String, nullable=True)  # Brief summary of day's activity
@@ -613,9 +626,9 @@ class DetailedTicketData(Base):
     # People and dates
     assignee = Column(String, nullable=True)
     reporter = Column(String, nullable=True)
-    created_at = Column(DateTime)
-    updated_at = Column(DateTime)
-    resolved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True))
+    updated_at = Column(DateTime(timezone=True))
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
 
     # Metrics for classification context
     story_points = Column(Integer, nullable=True)
@@ -636,7 +649,7 @@ class DetailedTicketData(Base):
     platform_data = Column(JSON)  # Additional platform-specific fields
 
     # Fetch metadata
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
     fetch_version = Column(String, default="2.0")  # Version for schema evolution
 
     # Indexes for efficient lookup and context building
@@ -683,8 +696,8 @@ class CommitClassificationBatch(Base):
 
     # Processing results
     processing_status = Column(String, default="pending")  # pending, processing, completed, failed
-    started_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
+    started_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     processing_time_ms = Column(Float, nullable=True)
 
     # Quality metrics
@@ -741,7 +754,7 @@ class CommitTicketCorrelation(Base):
     matching_pattern = Column(String, nullable=True)  # Regex pattern that matched
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
     validated = Column(Boolean, default=False)  # Manual validation flag
 
     # Indexes for efficient correlation lookup
@@ -801,8 +814,8 @@ class DailyMetrics(Base):
     complex_commits = Column(Integer, default=0)  # Commits with >5 files changed
 
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=utcnow_tz_aware)
 
     # Indexes for efficient querying
     __table_args__ = (
@@ -846,7 +859,7 @@ class WeeklyTrends(Base):
     avg_commits_per_day = Column(Float, default=0.0)
 
     # Metadata
-    calculated_at = Column(DateTime, default=datetime.utcnow)
+    calculated_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
 
     # Indexes for trend queries
     __table_args__ = (

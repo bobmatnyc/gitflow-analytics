@@ -5,7 +5,7 @@ import json
 import logging
 import os
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -990,7 +990,7 @@ class GitAnalysisCache:
                 "complexity_delta": commit_data.get("complexity_delta", 0.0),
                 "story_points": commit_data.get("story_points"),
                 "ticket_references": commit_data.get("ticket_references", []),
-                "cached_at": datetime.utcnow(),
+                "cached_at": datetime.now(timezone.utc),
             }
             mappings.append(mapping)
 
@@ -1101,7 +1101,7 @@ class GitAnalysisCache:
                         "complexity_delta": commit_data.get("complexity_delta"),
                         "story_points": commit_data.get("story_points"),
                         "ticket_references": commit_data.get("ticket_references"),
-                        "cached_at": datetime.utcnow(),
+                        "cached_at": datetime.now(timezone.utc),
                     }
 
                     # Only include non-None values in update
