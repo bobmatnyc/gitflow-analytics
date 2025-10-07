@@ -173,6 +173,28 @@ pip install --user gitflow-analytics
 pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org gitflow-analytics
 ```
 
+**"dyld: Library not loaded" (macOS) or broken pipx installation**
+```bash
+# This error occurs when Homebrew upgrades Python, breaking pipx virtual environments
+# The error typically shows: "Library not loaded: /opt/homebrew/Cellar/python@3.12..."
+
+# Solution 1: Recreate the pipx virtual environment (recommended)
+pipx uninstall gitflow-analytics
+pipx install gitflow-analytics
+
+# Solution 2: If uninstall fails, force reinstall all pipx packages
+pipx reinstall-all
+
+# Solution 3: Manual cleanup if the above fail
+rm -rf ~/.local/pipx/venvs/gitflow-analytics
+rm -rf ~/.local/pipx/shared
+pipx install gitflow-analytics
+
+# Explanation: When Homebrew upgrades Python (e.g., 3.12.11_1 → 3.12.12),
+# existing pipx virtual environments still reference the old Python version,
+# causing dynamic library loading failures. Recreating the venv fixes this.
+```
+
 ### Dependency Issues
 
 **"No module named 'git'"**

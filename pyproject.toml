@@ -65,12 +65,8 @@ github = [
     "pygithub>=1.58",
 ]
 
-tui = [
-    "textual>=0.41.0",
-]
-
 all = [
-    "gitflow-analytics[github,tui]",
+    "gitflow-analytics[github]",
 ]
 
 [project.scripts]

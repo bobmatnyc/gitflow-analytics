@@ -257,64 +257,33 @@ class ImprovedErrorHandler:
         click.echo("\nFor help: gitflow-analytics help", err=True)
 
 
-class TUIAsDefaultGroup(click.Group):
+class AnalyzeAsDefaultGroup(click.Group):
     """
-    Custom Click group that defaults to TUI when no explicit subcommand is provided.
-    This allows 'gitflow-analytics -c config.yaml' to launch the TUI by default.
-    For explicit CLI analysis, use 'gitflow-analytics analyze -c config.yaml'
+    Custom Click group that defaults to analyze when no explicit subcommand is provided.
+    This allows 'gitflow-analytics -c config.yaml' to run analysis by default.
     """
 
     def parse_args(self, ctx, args):
-        """Override parse_args to default to TUI unless explicit subcommand or CLI-only options."""
+        """Override parse_args to default to analyze unless explicit subcommand provided."""
         # Check if the first argument is a known subcommand
         if args and args[0] in self.list_commands(ctx):
             return super().parse_args(ctx, args)
 
-        # Check for global options that should NOT be routed to TUI
+        # Check for global options that should NOT be routed to analyze
         global_options = {"--version", "--help", "-h"}
         if args and args[0] in global_options:
             return super().parse_args(ctx, args)
 
-        # Check if we have arguments that indicate explicit CLI analysis request
-        cli_only_indicators = {
-            "--no-rich",
-            "--generate-csv",
-            "--validate-only",
-            "--warm-cache",
-            "--validate-cache",
-            "--qualitative-only",
-        }
-
-        # If user explicitly requests CLI-only features, route to analyze
-        if args and any(arg in cli_only_indicators for arg in args):
+        # For all other cases (including -c config.yaml), default to analyze
+        if args and args[0].startswith("-"):
             new_args = ["analyze"] + args
             return super().parse_args(ctx, new_args)
-
-        # For all other cases (including -c config.yaml), default to TUI
-        if args and args[0].startswith("-"):
-            # Check if TUI dependencies are available
-            try:
-                import importlib.util
-
-                textual_spec = importlib.util.find_spec("textual")
-                # TUI is available - route to TUI
-                if textual_spec is not None:
-                    new_args = ["tui"] + args
-                    return super().parse_args(ctx, new_args)
-                else:
-                    # TUI not available - fallback to analyze
-                    new_args = ["analyze"] + args
-                    return super().parse_args(ctx, new_args)
-            except (ImportError, ValueError):
-                # TUI not available - fallback to analyze
-                new_args = ["analyze"] + args
-                return super().parse_args(ctx, new_args)
 
         # Otherwise, use default behavior
         return super().parse_args(ctx, args)
 
 
-@click.group(cls=TUIAsDefaultGroup, invoke_without_command=True)
+@click.group(cls=AnalyzeAsDefaultGroup, invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="GitFlow Analytics")
 @click.help_option("-h", "--help")
 @click.pass_context
@@ -374,119 +343,6 @@ def cli(ctx: click.Context) -> None:
         ctx.exit(0)
 
 
-# TUI command - Terminal User Interface
-@cli.command(name="tui")
-@click.option(
-    "--config",
-    "-c",
-    type=click.Path(exists=True, path_type=Path),
-    default=None,
-    help="Path to YAML configuration file (optional - can be loaded in TUI)",
-)
-@click.option(
-    "--weeks",
-    "-w",
-    type=int,
-    default=None,
-    help="Number of weeks to analyze (passed to TUI)",
-)
-@click.option(
-    "--clear-cache",
-    is_flag=True,
-    help="Clear cache before analysis (passed to TUI)",
-)
-@click.option(
-    "--output",
-    "-o",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Output directory for reports (passed to TUI)",
-)
-def tui_command(
-    config: Optional[Path],
-    weeks: Optional[int],
-    clear_cache: bool,
-    output: Optional[Path],
-) -> None:
-    """Launch the Terminal User Interface for GitFlow Analytics.
-
-    \b
-    The TUI provides an interactive interface for:
-    - Loading and editing configuration files
-    - Running analysis with real-time progress updates
-    - Viewing results in an organized, navigable format
-    - Exporting reports in various formats
-
-    \b
-    FEATURES:
-    • Full-screen terminal interface with keyboard navigation
-    • Real-time progress tracking during analysis
-    • Interactive configuration management
-    • Results browser with filtering and export options
-    • Built-in help system and keyboard shortcuts
-
-    \b
-    EXAMPLES:
-    # Launch TUI without pre-loading configuration
-    gitflow-analytics tui
-
-    # Launch TUI with a specific configuration file
-    gitflow-analytics tui -c config.yaml
-
-    \b
-    KEYBOARD SHORTCUTS:
-    • Ctrl+Q / Ctrl+C: Quit application
-    • F1: Show help
-    • Ctrl+D: Toggle dark/light mode
-    • Escape: Go back/cancel current action
-    """
-    try:
-        # Import TUI components only when needed
-        from .tui.app import GitFlowAnalyticsApp
-
-        # Create and run the TUI application
-        app = GitFlowAnalyticsApp()
-
-        # Pass CLI parameters to TUI
-        if weeks is not None:
-            app.default_weeks = weeks
-        if clear_cache:
-            app.clear_cache_on_start = True
-        if output:
-            app.default_output_dir = output
-
-        # If config path provided, try to load it
-        if config:
-            try:
-                from .config import ConfigLoader
-
-                loaded_config = ConfigLoader.load(config)
-                app.config = loaded_config
-                app.config_path = config
-                app.initialization_complete = True
-            except Exception as e:
-                # Don't fail - let TUI handle config loading
-                click.echo(f"⚠️  Could not pre-load config: {e}")
-                click.echo("   You can load the configuration within the TUI.")
-
-        # Run the TUI
-        app.run()
-
-    except ImportError as e:
-        click.echo("❌ TUI dependencies not installed.", err=True)
-        click.echo(f"   Error: {e}", err=True)
-        click.echo("\n💡 Install TUI dependencies:", err=True)
-        click.echo("   pip install 'gitflow-analytics[tui]'", err=True)
-        click.echo("   # or", err=True)
-        click.echo("   pip install textual>=0.41.0", err=True)
-        sys.exit(1)
-    except Exception as e:
-        click.echo(f"❌ Failed to launch TUI: {e}", err=True)
-        if "--debug" in sys.argv:
-            raise
-        sys.exit(1)
-
-
 @cli.command(name="analyze")
 @click.option(
     "--config",
@@ -534,7 +390,7 @@ def tui_command(
     "--no-rich",
     is_flag=True,
     default=True,
-    help="Disable rich terminal output (simple output is default to prevent TUI hanging)",
+    help="Disable rich terminal output (use simple text progress instead)",
 )
 @click.option(
     "--log",
@@ -710,7 +566,7 @@ def analyze(
     # Initialize progress service with user's preference
     progress = get_progress_service(display_style=progress_style, version=version)
 
-    # Initialize display - simple output by default to prevent TUI hanging
+    # Initialize display - simple output by default for better compatibility
     # Create display - only create if rich output is explicitly enabled (--no-rich=False)
     display = (
         create_progress_display(style="simple" if no_rich else "rich", version=__version__)
@@ -1885,6 +1741,102 @@ def analyze(
                         try:
                             repo_path = Path(repo_config.path)
                             project_key = repo_config.project_key or repo_path.name
+
+                            # Check if repo exists, clone if needed (critical for organization mode)
+                            if not repo_path.exists():
+                                if repo_config.github_repo and cfg.github.organization:
+                                    if display:
+                                        display.print_status(
+                                            f"   📥 Cloning {repo_config.github_repo} from GitHub...",
+                                            "info",
+                                        )
+                                    else:
+                                        click.echo(f"   📥 Cloning {repo_config.github_repo} from GitHub...")
+                                    try:
+                                        # Ensure parent directory exists
+                                        repo_path.parent.mkdir(parents=True, exist_ok=True)
+
+                                        # Build clone URL with authentication
+                                        clone_url = f"https://github.com/{repo_config.github_repo}.git"
+                                        if cfg.github.token:
+                                            clone_url = f"https://{cfg.github.token}@github.com/{repo_config.github_repo}.git"
+
+                                        # Clone using subprocess for better control
+                                        env = os.environ.copy()
+                                        env["GIT_TERMINAL_PROMPT"] = "0"
+                                        env["GIT_ASKPASS"] = ""
+                                        env["GCM_INTERACTIVE"] = "never"
+
+                                        cmd = ["git", "clone", "--config", "credential.helper="]
+                                        if repo_config.branch:
+                                            cmd.extend(["-b", repo_config.branch])
+                                        cmd.extend([clone_url, str(repo_path)])
+
+                                        result = subprocess.run(
+                                            cmd,
+                                            env=env,
+                                            capture_output=True,
+                                            text=True,
+                                            timeout=30,
+                                        )
+
+                                        if result.returncode != 0:
+                                            error_msg = result.stderr or result.stdout
+                                            if any(
+                                                x in error_msg.lower()
+                                                for x in ["authentication", "permission denied", "401", "403"]
+                                            ):
+                                                if display:
+                                                    display.print_status(
+                                                        f"   ❌ Authentication failed for {repo_config.github_repo}",
+                                                        "error",
+                                                    )
+                                                else:
+                                                    click.echo(
+                                                        f"   ❌ Authentication failed for {repo_config.github_repo}"
+                                                    )
+                                                continue
+                                            else:
+                                                raise subprocess.CalledProcessError(
+                                                    result.returncode, cmd, result.stdout, result.stderr
+                                                )
+
+                                        if display:
+                                            display.print_status(
+                                                f"   ✅ Cloned {repo_config.github_repo}", "success"
+                                            )
+                                        else:
+                                            click.echo(f"   ✅ Cloned {repo_config.github_repo}")
+
+                                    except subprocess.TimeoutExpired:
+                                        if display:
+                                            display.print_status(
+                                                f"   ❌ Clone timeout for {repo_config.github_repo}",
+                                                "error",
+                                            )
+                                        else:
+                                            click.echo(f"   ❌ Clone timeout for {repo_config.github_repo}")
+                                        continue
+                                    except Exception as e:
+                                        if display:
+                                            display.print_status(
+                                                f"   ❌ Failed to clone {repo_config.github_repo}: {e}",
+                                                "error",
+                                            )
+                                        else:
+                                            click.echo(
+                                                f"   ❌ Failed to clone {repo_config.github_repo}: {e}"
+                                            )
+                                        continue
+                                else:
+                                    # No github_repo configured, can't clone
+                                    if display:
+                                        display.print_status(
+                                            f"   ❌ Repository not found: {repo_path}", "error"
+                                        )
+                                    else:
+                                        click.echo(f"   ❌ Repository not found: {repo_path}")
+                                    continue
 
                             # Progress callback for fetch
                             def progress_callback(message: str):
@@ -4111,7 +4063,7 @@ def analyze(
     "--no-rich",
     is_flag=True,
     default=True,
-    help="Disable rich terminal output (simple output is default to prevent TUI hanging)",
+    help="Disable rich terminal output (use simple text progress instead)",
 )
 def fetch(
     config: Path,
@@ -4161,7 +4113,7 @@ def fetch(
       - Use --clear-cache to force fresh fetch
     """
     # Initialize display
-    # Create display - simple output by default to prevent TUI hanging, rich only when explicitly enabled
+    # Create display - simple output by default for better compatibility, rich only when explicitly enabled
     display = (
         create_progress_display(style="simple" if no_rich else "rich", version=__version__)
         if not no_rich
