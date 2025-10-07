@@ -533,6 +533,36 @@ class ConfigLoader:
             BranchAnalysisConfig(**branch_data) if branch_data else BranchAnalysisConfig()
         )
 
+        # Process aliases file and manual identity mappings
+        manual_mappings = list(analysis_data.get("identity", {}).get("manual_mappings", []))
+        aliases_file_path = None
+
+        # Load aliases from external file if specified
+        aliases_file = analysis_data.get("identity", {}).get("aliases_file")
+        if aliases_file:
+            aliases_path = Path(aliases_file).expanduser()
+            # Make relative paths relative to config file directory
+            if not aliases_path.is_absolute():
+                aliases_path = config_path.parent / aliases_path
+
+            aliases_file_path = aliases_path
+
+            # Load and merge aliases if file exists
+            if aliases_path.exists():
+                try:
+                    from .aliases import AliasesManager
+
+                    aliases_mgr = AliasesManager(aliases_path)
+                    # Merge aliases with existing manual mappings
+                    manual_mappings.extend(aliases_mgr.to_manual_mappings())
+                    logger.info(
+                        f"Loaded {len(aliases_mgr.aliases)} identity aliases from {aliases_path}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not load aliases file {aliases_path}: {e}")
+            else:
+                logger.warning(f"Aliases file not found: {aliases_path}")
+
         return AnalysisConfig(
             story_point_patterns=analysis_data.get(
                 "story_point_patterns",
@@ -550,7 +580,8 @@ class ConfigLoader:
             similarity_threshold=analysis_data.get("identity", {}).get(
                 "similarity_threshold", 0.85
             ),
-            manual_identity_mappings=analysis_data.get("identity", {}).get("manual_mappings", []),
+            manual_identity_mappings=manual_mappings,
+            aliases_file=aliases_file_path,
             default_ticket_platform=analysis_data.get("default_ticket_platform"),
             branch_mapping_rules=analysis_data.get("branch_mapping_rules", {}),
             ticket_platforms=analysis_data.get("ticket_platforms"),

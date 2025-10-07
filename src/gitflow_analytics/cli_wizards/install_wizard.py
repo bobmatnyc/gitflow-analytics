@@ -4,10 +4,12 @@ This module provides a user-friendly installation experience with credential val
 and comprehensive configuration generation.
 """
 
+import getpass
 import logging
 import os
 import stat
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +29,55 @@ logger = logging.getLogger(__name__)
 class InstallWizard:
     """Interactive installation wizard for GitFlow Analytics setup."""
 
+    # Installation profiles
+    PROFILES = {
+        "1": {
+            "name": "Standard",
+            "description": "GitHub + JIRA + AI (Full featured)",
+            "github": True,
+            "repositories": "manual",
+            "jira": True,
+            "ai": True,
+            "analysis": True,
+        },
+        "2": {
+            "name": "GitHub Only",
+            "description": "GitHub integration without PM tools",
+            "github": True,
+            "repositories": "manual",
+            "jira": False,
+            "ai": False,
+            "analysis": True,
+        },
+        "3": {
+            "name": "Organization Mode",
+            "description": "Auto-discover repos from GitHub org",
+            "github": True,
+            "repositories": "organization",
+            "jira": True,
+            "ai": True,
+            "analysis": True,
+        },
+        "4": {
+            "name": "Minimal",
+            "description": "Local repos only, no integrations",
+            "github": False,
+            "repositories": "local",
+            "jira": False,
+            "ai": False,
+            "analysis": True,
+        },
+        "5": {
+            "name": "Custom",
+            "description": "Configure everything manually",
+            "github": None,  # Ask user
+            "repositories": None,  # Ask user
+            "jira": None,  # Ask user
+            "ai": None,  # Ask user
+            "analysis": True,
+        },
+    }
+
     def __init__(self, output_dir: Path, skip_validation: bool = False):
         """Initialize the installation wizard.
 
@@ -38,9 +89,53 @@ class InstallWizard:
         self.skip_validation = skip_validation
         self.config_data = {}
         self.env_data = {}
+        self.profile = None  # Selected installation profile
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _is_interactive(self) -> bool:
+        """Check if running in interactive terminal.
+
+        Returns:
+            True if stdin and stdout are connected to a TTY
+        """
+        return sys.stdin.isatty() and sys.stdout.isatty()
+
+    def _get_password(self, prompt: str, field_name: str = "password") -> str:
+        """Get password input with non-interactive detection.
+
+        Args:
+            prompt: Prompt text to display
+            field_name: Field name for error messages
+
+        Returns:
+            Password string
+        """
+        if self._is_interactive():
+            return getpass.getpass(prompt)
+        else:
+            click.echo(f"⚠️  Non-interactive mode detected - {field_name} will be visible", err=True)
+            return click.prompt(prompt, hide_input=False)
+
+    def _select_profile(self) -> dict:
+        """Let user select installation profile."""
+        click.echo("\n📋 Installation Profiles")
+        click.echo("=" * 60 + "\n")
+
+        for key, profile in self.PROFILES.items():
+            click.echo(f"  {key}. {profile['name']}")
+            click.echo(f"     {profile['description']}")
+            click.echo()
+
+        profile_choice = click.prompt(
+            "Select installation profile", type=click.Choice(list(self.PROFILES.keys())), default="1"
+        )
+
+        selected = self.PROFILES[profile_choice].copy()
+        click.echo(f"\n✅ Selected: {selected['name']}\n")
+
+        return selected
 
     def run(self) -> bool:
         """Run the installation wizard.
@@ -53,22 +148,49 @@ class InstallWizard:
             click.echo("=" * 50)
             click.echo()
 
-            # Step 1: GitHub Setup (REQUIRED)
-            if not self._setup_github():
-                return False
+            # Step 0: Select profile
+            self.profile = self._select_profile()
 
-            # Step 2: Repository Configuration
-            if not self._setup_repositories():
-                return False
+            # Step 1: GitHub Setup (conditional based on profile)
+            if self.profile["github"] is not False:
+                if not self._setup_github():
+                    return False
+            else:
+                # Minimal mode - no GitHub
+                pass
 
-            # Step 3: JIRA Setup (OPTIONAL)
-            self._setup_jira()
+            # Step 2: Repository Configuration (based on profile)
+            if self.profile["repositories"] == "organization":
+                # Organization mode - already handled in GitHub setup
+                pass
+            elif self.profile["repositories"] == "manual":
+                if not self._setup_repositories():
+                    return False
+            elif self.profile["repositories"] == "local":
+                if not self._setup_local_repositories():
+                    return False
+            elif self.profile["repositories"] is None:
+                # Custom mode - ask user
+                if not self._setup_repositories():
+                    return False
 
-            # Step 4: OpenRouter/ChatGPT Setup (OPTIONAL)
-            self._setup_ai()
+            # Step 3: JIRA Setup (conditional based on profile)
+            if self.profile["jira"]:
+                self._setup_jira()
+            elif self.profile["jira"] is None:
+                # Custom mode - ask user
+                self._setup_jira()
+
+            # Step 4: OpenRouter/ChatGPT Setup (conditional based on profile)
+            if self.profile["ai"]:
+                self._setup_ai()
+            elif self.profile["ai"] is None:
+                # Custom mode - ask user
+                self._setup_ai()
 
             # Step 5: Analysis Configuration
-            self._setup_analysis()
+            if self.profile["analysis"]:
+                self._setup_analysis()
 
             # Step 6: Generate Files
             if not self._generate_files():
@@ -123,10 +245,9 @@ class InstallWizard:
                 click.echo(f"⏳ Waiting {delay} seconds before retry...")
                 time.sleep(delay)
 
-            token = click.prompt(
-                "Enter GitHub Personal Access Token",
-                hide_input=True,
-                type=str,
+            token = self._get_password(
+                "Enter GitHub Personal Access Token: ",
+                "GitHub token"
             ).strip()
 
             if not token:
@@ -319,6 +440,61 @@ class InstallWizard:
         self.config_data["github"]["repositories"] = repositories
         return True
 
+    def _setup_local_repositories(self) -> bool:
+        """Setup local repository paths (no GitHub).
+
+        Returns:
+            True if setup successful, False otherwise
+        """
+        click.echo("\n📦 Local Repository Mode")
+        click.echo("Specify local Git repository paths to analyze.")
+        click.echo()
+
+        repositories = []
+        while True:
+            repo_path_str = click.prompt(
+                "Enter repository path (or press Enter to finish)",
+                type=str,
+                default="",
+                show_default=False,
+            ).strip()
+
+            if not repo_path_str:
+                if not repositories:
+                    click.echo("❌ At least one repository is required")
+                    continue
+                break
+
+            # Validate path is safe
+            path_obj = self._validate_directory_path(repo_path_str, "Repository path")
+            if path_obj is None:
+                continue  # Re-prompt
+
+            if not path_obj.exists():
+                click.echo(f"⚠️  Path does not exist: {path_obj}")
+                if not click.confirm("Add anyway?", default=False):
+                    continue
+
+            # Check if it's a git repository
+            if (path_obj / ".git").exists():
+                click.echo(f"✅ Valid git repository: {path_obj}")
+            else:
+                click.echo(f"⚠️  Not a git repository: {path_obj}")
+                if not click.confirm("Add anyway?", default=False):
+                    continue
+
+            repo_name = click.prompt("Repository name", default=path_obj.name)
+
+            repositories.append({"name": repo_name, "path": str(path_obj)})
+            click.echo(f"Added repository #{len(repositories)}\n")
+
+            if not click.confirm("Add another repository?", default=False):
+                break
+
+        # Store repositories directly without GitHub section
+        self.config_data["repositories"] = repositories
+        return True
+
     def _setup_jira(self) -> None:
         """Setup JIRA integration (optional)."""
         click.echo("\n📋 Step 3: JIRA Setup (OPTIONAL)")
@@ -347,7 +523,7 @@ class InstallWizard:
 
             base_url = click.prompt("JIRA base URL", type=str).strip()
             access_user = click.prompt("JIRA email", type=str).strip()
-            access_token = click.prompt("JIRA API token", hide_input=True, type=str).strip()
+            access_token = self._get_password("JIRA API token: ", "JIRA token").strip()
 
             if not all([base_url, access_user, access_token]):
                 click.echo("❌ All JIRA fields are required")
@@ -550,7 +726,7 @@ class InstallWizard:
                 click.echo(f"⏳ Waiting {delay} seconds before retry...")
                 time.sleep(delay)
 
-            api_key = click.prompt("Enter API key", hide_input=True, type=str).strip()
+            api_key = self._get_password("Enter API key: ", "AI API key").strip()
 
             if not api_key:
                 click.echo("❌ API key cannot be empty")
@@ -699,6 +875,77 @@ class InstallWizard:
         self.config_data["analysis"]["period_weeks"] = period_weeks
         self.config_data["analysis"]["output_directory"] = output_dir
         self.config_data["analysis"]["cache_directory"] = cache_dir
+
+        # NEW: Aliases configuration
+        click.echo("\n🔗 Developer Identity Aliases")
+        click.echo("-" * 40 + "\n")
+
+        click.echo("Aliases consolidate multiple email addresses for the same developer.")
+        click.echo("You can use a shared aliases.yaml file across multiple configs.\n")
+
+        use_aliases = click.confirm("Configure aliases file?", default=True)
+
+        if use_aliases:
+            aliases_options = [
+                "1. Create new aliases.yaml in this directory",
+                "2. Use existing shared aliases file",
+                "3. Generate aliases using LLM (after installation)",
+            ]
+
+            click.echo("\nOptions:")
+            for option in aliases_options:
+                click.echo(f"  {option}")
+
+            aliases_choice = click.prompt(
+                "\nSelect option", type=click.Choice(["1", "2", "3"]), default="1"
+            )
+
+            if aliases_choice == "1":
+                # Create new aliases file
+                aliases_path = "aliases.yaml"
+
+                # Ensure analysis.identity section exists
+                if "identity" not in self.config_data.get("analysis", {}):
+                    if "analysis" not in self.config_data:
+                        self.config_data["analysis"] = {}
+                    self.config_data["analysis"]["identity"] = {}
+
+                self.config_data["analysis"]["identity"]["aliases_file"] = aliases_path
+
+                # Create empty aliases file
+                from ..config.aliases import AliasesManager
+
+                aliases_full_path = self.output_dir / aliases_path
+                aliases_mgr = AliasesManager(aliases_full_path)
+                aliases_mgr.save()  # Creates empty file with comments
+
+                click.echo(f"\n✅ Created {aliases_path}")
+                click.echo("   Generate aliases after installation with:")
+                click.echo(f"   gitflow-analytics aliases -c config.yaml --apply\n")
+
+            elif aliases_choice == "2":
+                # Use existing file
+                aliases_path = click.prompt(
+                    "Path to aliases.yaml (relative to config)", default="../shared/aliases.yaml"
+                )
+
+                # Ensure analysis.identity section exists
+                if "identity" not in self.config_data.get("analysis", {}):
+                    if "analysis" not in self.config_data:
+                        self.config_data["analysis"] = {}
+                    self.config_data["analysis"]["identity"] = {}
+
+                self.config_data["analysis"]["identity"]["aliases_file"] = aliases_path
+
+                click.echo(f"\n✅ Configured to use: {aliases_path}\n")
+
+            else:  # choice == "3"
+                # Will generate after installation
+                click.echo("\n💡 After installation, run:")
+                click.echo("   gitflow-analytics aliases -c config.yaml --apply")
+                click.echo(
+                    "   This will analyze your repos and generate aliases automatically.\n"
+                )
 
     def _clear_sensitive_data(self) -> None:
         """Clear sensitive data from memory after use."""
@@ -852,7 +1099,7 @@ class InstallWizard:
             from ..config import ConfigLoader
 
             ConfigLoader.load(config_path)
-            click.echo("✅ Configuration loaded successfully")
+            click.echo("✅ Configuration validated successfully")
 
             # Offer to run first analysis
             if click.confirm("\nRun initial analysis now?", default=False):
@@ -861,7 +1108,7 @@ class InstallWizard:
             return True
 
         except Exception as e:
-            click.echo("⚠️  Configuration validation warning occurred")
+            click.echo(f"❌ Configuration validation failed: {e}", err=True)
             click.echo("You may need to adjust the configuration manually.")
             logger.error(f"Configuration validation error type: {type(e).__name__}")
             return True  # Don't fail installation on validation error

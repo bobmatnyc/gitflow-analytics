@@ -301,6 +301,7 @@ class AnalysisConfig:
     exclude_paths: list[str] = field(default_factory=list)
     similarity_threshold: float = 0.85
     manual_identity_mappings: list[dict[str, Any]] = field(default_factory=list)
+    aliases_file: Optional[Path] = None  # Path to shared aliases.yaml file
     default_ticket_platform: Optional[str] = None
     branch_mapping_rules: dict[str, list[str]] = field(default_factory=dict)
     ticket_platforms: Optional[list[str]] = None

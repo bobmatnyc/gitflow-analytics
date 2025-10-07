@@ -139,13 +139,101 @@ class InteractiveLauncher:
             logger.warning(f"Could not load preferences: {e}")
             self.preferences = {}
 
+    def _get_available_repositories(self) -> list[str]:
+        """Get list of available repositories from config.
+
+        Supports both explicit repository configuration and organization mode.
+
+        Returns:
+            List of repository names
+        """
+        repos = []
+
+        # Check for organization mode
+        try:
+            with open(self.config_path) as f:
+                config_data = yaml.safe_load(f)
+
+            github_config = config_data.get("github", {})
+
+            if github_config.get("organization"):
+                # Organization mode - fetch repos from GitHub
+                token = self._resolve_env_var(github_config.get("token", ""))
+                if token:
+                    from github import Github
+
+                    try:
+                        gh = Github(token)
+                        org_name = github_config["organization"]
+                        org = gh.get_organization(org_name)
+
+                        # Get all non-archived repos
+                        for repo in org.get_repos(type="all"):
+                            if not repo.archived:
+                                repos.append(repo.full_name)
+
+                        if repos:
+                            click.echo(f"🔍 Discovered {len(repos)} repositories from organization '{org_name}'\n")
+                    except Exception as e:
+                        click.echo(f"⚠️  Could not fetch organization repos: {type(e).__name__}", err=True)
+                        logger.error(f"Organization repo fetch error: {e}")
+
+            # Fall back to explicit repositories
+            if not repos and self.config and self.config.repositories:
+                repos = [repo.path.name for repo in self.config.repositories]
+
+        except Exception as e:
+            logger.warning(f"Could not determine repositories: {e}")
+            # Final fallback
+            if self.config and self.config.repositories:
+                repos = [repo.path.name for repo in self.config.repositories]
+
+        return repos
+
+    def _resolve_env_var(self, value: str) -> str:
+        """Resolve environment variable in config value.
+
+        Args:
+            value: Config value that may contain ${VAR_NAME}
+
+        Returns:
+            Resolved value
+        """
+        import os
+        import re
+        from pathlib import Path
+
+        # Load .env file if it exists next to config
+        env_path = self.config_path.parent / ".env"
+        if env_path.exists():
+            try:
+                with open(env_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, val = line.split("=", 1)
+                            os.environ.setdefault(key.strip(), val.strip())
+            except Exception as e:
+                logger.debug(f"Could not load .env: {e}")
+
+        # Resolve ${VAR_NAME} patterns
+        pattern = r"\$\{([^}]+)\}"
+
+        def replace_var(match):
+            var_name = match.group(1)
+            return os.environ.get(var_name, match.group(0))
+
+        return re.sub(pattern, replace_var, value)
+
     def _select_repositories(self) -> list[str]:
         """Interactive repository selection with multi-select.
 
         Returns:
             List of selected repository names.
         """
-        if not self.config or not self.config.repositories:
+        # Check for organization mode first
+        repos = self._get_available_repositories()
+        if not repos:
             click.echo("❌ No repositories configured!")
             return []
 
@@ -155,10 +243,9 @@ class InteractiveLauncher:
         last_selected = self.preferences.get("last_selected_repos", [])
 
         # Display repositories with numbering and selection status
-        for i, repo in enumerate(self.config.repositories, 1):
-            repo_name = repo.path.name
+        for i, repo_name in enumerate(repos, 1):
             status = "✓" if repo_name in last_selected else " "
-            click.echo(f"   [{status}] {i}. {repo_name} ({repo.path})")
+            click.echo(f"   [{status}] {i}. {repo_name}")
 
         # Get user selection
         click.echo("\n📝 Select repositories:")
@@ -169,7 +256,7 @@ class InteractiveLauncher:
         selection = click.prompt("Selection", default="", show_default=False).strip()
 
         if selection.lower() == "all":
-            selected = [repo.path.name for repo in self.config.repositories]
+            selected = repos
             click.echo(f"✅ Selected all {len(selected)} repositories\n")
             return selected
         elif not selection and last_selected:
@@ -177,7 +264,7 @@ class InteractiveLauncher:
             return last_selected
         elif not selection:
             # Default to all repos if no previous selection
-            selected = [repo.path.name for repo in self.config.repositories]
+            selected = repos
             click.echo(f"✅ Selected all {len(selected)} repositories (default)\n")
             return selected
         else:
@@ -186,8 +273,8 @@ class InteractiveLauncher:
                 indices = [int(x.strip()) for x in selection.split(",")]
                 selected = []
                 for i in indices:
-                    if 1 <= i <= len(self.config.repositories):
-                        selected.append(self.config.repositories[i - 1].path.name)
+                    if 1 <= i <= len(repos):
+                        selected.append(repos[i - 1])
                     else:
                         click.echo(f"⚠️  Invalid index: {i} (ignored)")
 

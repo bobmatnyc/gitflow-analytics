@@ -6,6 +6,7 @@ sub-modules while maintaining backward compatibility.
 """
 
 # Re-export main interfaces for backward compatibility
+from .aliases import AliasesManager, DeveloperAlias
 from .loader import ConfigLoader
 from .schema import (
     AnalysisConfig,
@@ -40,4 +41,6 @@ __all__ = [
     "LLMClassificationConfig",
     "CommitClassificationConfig",
     "BranchAnalysisConfig",
+    "AliasesManager",
+    "DeveloperAlias",
 ]

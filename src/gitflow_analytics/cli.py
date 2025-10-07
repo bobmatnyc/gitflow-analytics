@@ -342,10 +342,27 @@ def cli(ctx: click.Context) -> None:
     \b
     COMMANDS:
       analyze    Analyze repositories and generate reports (default)
+      install    Interactive installation wizard
+      run        Interactive launcher with preferences
+      aliases    Generate developer identity aliases using LLM
       identities Manage developer identity resolution
       train      Train ML models for commit classification
       fetch      Fetch external data (GitHub PRs, PM tickets)
       help       Show detailed help and documentation
+
+    \b
+    EXAMPLES:
+      # Interactive installation
+      gitflow-analytics install
+
+      # Interactive launcher
+      gitflow-analytics run -c config.yaml
+
+      # Generate developer aliases
+      gitflow-analytics aliases -c config.yaml --apply
+
+      # Run analysis
+      gitflow-analytics -c config.yaml --weeks 4
 
     \b
     For detailed command help: gitflow-analytics COMMAND --help
@@ -4854,6 +4871,330 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
 
     except Exception as e:
         click.echo(f"❌ Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command(name="aliases")
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to configuration file",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output path for aliases.yaml (default: same dir as config)",
+)
+@click.option(
+    "--confidence-threshold",
+    type=float,
+    default=0.9,
+    help="Minimum confidence threshold for LLM matches (default: 0.9)",
+)
+@click.option("--apply", is_flag=True, help="Automatically update config to use generated aliases file")
+@click.option("--weeks", type=int, default=12, help="Number of weeks of history to analyze (default: 12)")
+def aliases_command(
+    config: Path,
+    output: Optional[Path],
+    confidence_threshold: float,
+    apply: bool,
+    weeks: int,
+) -> None:
+    """Generate developer identity aliases using LLM analysis.
+
+    \b
+    This command analyzes commit history and uses LLM to identify
+    developer aliases (same person with different email addresses).
+    Results are saved to aliases.yaml which can be shared across
+    multiple config files.
+
+    \b
+    EXAMPLES:
+        # Generate aliases and review
+        gitflow-analytics aliases -c config.yaml
+
+        # Generate and apply automatically
+        gitflow-analytics aliases -c config.yaml --apply
+
+        # Save to specific location
+        gitflow-analytics aliases -c config.yaml -o ~/shared/aliases.yaml
+
+        # Use longer history for better accuracy
+        gitflow-analytics aliases -c config.yaml --weeks 24
+
+    \b
+    CONFIGURATION:
+        Aliases are saved to aliases.yaml and can be referenced in
+        multiple config files for consistent identity resolution.
+    """
+    try:
+        from .config.aliases import AliasesManager, DeveloperAlias
+        from .identity_llm.analyzer import LLMIdentityAnalyzer
+
+        # Load configuration
+        click.echo(f"\n📋 Loading configuration from {config}...")
+        cfg = ConfigLoader.load(config)
+
+        # Determine output path
+        if not output:
+            output = config.parent / "aliases.yaml"
+
+        click.echo(f"🔍 Analyzing developer identities (last {weeks} weeks)")
+        click.echo(f"📊 Confidence threshold: {confidence_threshold:.0%}")
+        click.echo(f"💾 Output: {output}\n")
+
+        # Set up date range
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(weeks=weeks)
+
+        # Analyze repositories to collect commits
+        click.echo("📥 Fetching commit history...\n")
+        cache = GitAnalysisCache(cfg.cache.directory)
+
+        # Prepare ML categorization config for analyzer
+        ml_config = None
+        if hasattr(cfg.analysis, "ml_categorization"):
+            ml_config = {
+                "enabled": cfg.analysis.ml_categorization.enabled,
+                "min_confidence": cfg.analysis.ml_categorization.min_confidence,
+                "semantic_weight": cfg.analysis.ml_categorization.semantic_weight,
+                "file_pattern_weight": cfg.analysis.ml_categorization.file_pattern_weight,
+                "hybrid_threshold": cfg.analysis.ml_categorization.hybrid_threshold,
+                "cache_duration_days": cfg.analysis.ml_categorization.cache_duration_days,
+                "batch_size": cfg.analysis.ml_categorization.batch_size,
+                "enable_caching": cfg.analysis.ml_categorization.enable_caching,
+                "spacy_model": cfg.analysis.ml_categorization.spacy_model,
+            }
+
+        # LLM classification configuration
+        llm_config = {
+            "enabled": cfg.analysis.llm_classification.enabled,
+            "api_key": cfg.analysis.llm_classification.api_key,
+            "model": cfg.analysis.llm_classification.model,
+            "confidence_threshold": cfg.analysis.llm_classification.confidence_threshold,
+            "max_tokens": cfg.analysis.llm_classification.max_tokens,
+            "temperature": cfg.analysis.llm_classification.temperature,
+            "timeout_seconds": cfg.analysis.llm_classification.timeout_seconds,
+            "cache_duration_days": cfg.analysis.llm_classification.cache_duration_days,
+            "enable_caching": cfg.analysis.llm_classification.enable_caching,
+            "max_daily_requests": cfg.analysis.llm_classification.max_daily_requests,
+            "domain_terms": cfg.analysis.llm_classification.domain_terms,
+        }
+
+        # Configure branch analysis
+        branch_analysis_config = {
+            "strategy": cfg.analysis.branch_analysis.strategy,
+            "max_branches_per_repo": cfg.analysis.branch_analysis.max_branches_per_repo,
+            "active_days_threshold": cfg.analysis.branch_analysis.active_days_threshold,
+            "include_main_branches": cfg.analysis.branch_analysis.include_main_branches,
+            "always_include_patterns": cfg.analysis.branch_analysis.always_include_patterns,
+            "always_exclude_patterns": cfg.analysis.branch_analysis.always_exclude_patterns,
+            "enable_progress_logging": cfg.analysis.branch_analysis.enable_progress_logging,
+            "branch_commit_limit": cfg.analysis.branch_analysis.branch_commit_limit,
+        }
+
+        analyzer = GitAnalyzer(
+            cache,
+            branch_mapping_rules=cfg.analysis.branch_mapping_rules,
+            allowed_ticket_platforms=getattr(
+                cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]
+            ),
+            exclude_paths=cfg.analysis.exclude_paths,
+            story_point_patterns=cfg.analysis.story_point_patterns,
+            ml_categorization_config=ml_config,
+            llm_config=llm_config,
+            branch_analysis_config=branch_analysis_config,
+        )
+
+        all_commits = []
+
+        # Get repositories to analyze
+        repositories = cfg.repositories if cfg.repositories else []
+
+        if not repositories:
+            click.echo("❌ No repositories configured", err=True)
+            sys.exit(1)
+
+        # Collect commits from all repositories
+        with click.progressbar(
+            repositories, label="Analyzing repositories", item_show_func=lambda r: r.name if r else ""
+        ) as repos:
+            for repo_config in repos:
+                try:
+                    if not repo_config.path.exists():
+                        continue
+
+                    # Fetch commits
+                    repo_commits = analyzer.analyze_repository(
+                        repo_config.path, start_date=start_date, branch=repo_config.branch
+                    )
+
+                    if repo_commits:
+                        all_commits.extend(repo_commits)
+
+                except Exception as e:
+                    click.echo(f"\n⚠️  Warning: Failed to analyze repository: {e}", err=True)
+                    continue
+
+        click.echo(f"\n✅ Collected {len(all_commits)} commits\n")
+
+        if not all_commits:
+            click.echo("❌ No commits found to analyze", err=True)
+            sys.exit(1)
+
+        # Initialize LLM identity analyzer
+        click.echo("🤖 Running LLM identity analysis...\n")
+
+        # Get OpenRouter API key from config
+        api_key = None
+        if cfg.chatgpt and cfg.chatgpt.api_key:
+            # Resolve environment variable if needed
+            api_key_value = cfg.chatgpt.api_key
+            if api_key_value.startswith("${") and api_key_value.endswith("}"):
+                var_name = api_key_value[2:-1]
+                api_key = os.getenv(var_name)
+            else:
+                api_key = api_key_value
+
+        if not api_key:
+            click.echo("⚠️  No OpenRouter API key configured - using heuristic analysis only", err=True)
+
+        llm_analyzer = LLMIdentityAnalyzer(api_key=api_key, confidence_threshold=confidence_threshold)
+
+        # Run analysis
+        result = llm_analyzer.analyze_identities(all_commits)
+
+        click.echo(f"✅ Analysis complete:")
+        click.echo(f"   - Found {len(result.clusters)} identity clusters")
+        click.echo(f"   - {len(result.unresolved_identities)} unresolved identities")
+        click.echo(f"   - Method: {result.analysis_metadata.get('analysis_method', 'unknown')}\n")
+
+        # Create aliases manager and add clusters
+        aliases_mgr = AliasesManager(output)
+
+        # Load existing aliases if file exists
+        if output.exists():
+            click.echo(f"📂 Loading existing aliases from {output}...")
+            aliases_mgr.load()
+            existing_count = len(aliases_mgr.aliases)
+            click.echo(f"   Found {existing_count} existing aliases\n")
+
+        # Add new clusters
+        new_count = 0
+        updated_count = 0
+
+        for cluster in result.clusters:
+            # Check if this is a new or updated alias
+            existing = aliases_mgr.get_alias(cluster.canonical_email)
+
+            alias = DeveloperAlias(
+                name=cluster.preferred_display_name or cluster.canonical_name,
+                primary_email=cluster.canonical_email,
+                aliases=[a.email for a in cluster.aliases],
+                confidence=cluster.confidence,
+                reasoning=cluster.reasoning[:200] if cluster.reasoning else "",  # Truncate for readability
+            )
+
+            if existing:
+                updated_count += 1
+            else:
+                new_count += 1
+
+            aliases_mgr.add_alias(alias)
+
+        # Save aliases
+        click.echo("💾 Saving aliases...\n")
+        aliases_mgr.save()
+
+        click.echo(f"✅ Saved to {output}")
+        click.echo(f"   - New aliases: {new_count}")
+        click.echo(f"   - Updated aliases: {updated_count}")
+        click.echo(f"   - Total aliases: {len(aliases_mgr.aliases)}\n")
+
+        # Display summary
+        if aliases_mgr.aliases:
+            click.echo("📋 Generated Aliases:\n")
+
+            for alias in sorted(aliases_mgr.aliases, key=lambda a: a.primary_email):
+                name_display = (
+                    f"{alias.name} <{alias.primary_email}>" if alias.name else alias.primary_email
+                )
+                click.echo(f"  • {name_display}")
+
+                if alias.aliases:
+                    for alias_email in alias.aliases:
+                        click.echo(f"    → {alias_email}")
+
+                if alias.confidence < 1.0:
+                    confidence_color = (
+                        "green"
+                        if alias.confidence >= 0.9
+                        else "yellow" if alias.confidence >= 0.8 else "red"
+                    )
+                    click.echo(f"    Confidence: ", nl=False)
+                    click.secho(f"{alias.confidence:.0%}", fg=confidence_color)
+
+                click.echo()  # Blank line between aliases
+
+        # Apply to config if requested
+        if apply:
+            click.echo(f"🔄 Updating {config} to reference aliases file...\n")
+
+            # Read current config
+            with open(config) as f:
+                config_data = yaml.safe_load(f)
+
+            # Ensure analysis section exists
+            if "analysis" not in config_data:
+                config_data["analysis"] = {}
+
+            if "identity" not in config_data["analysis"]:
+                config_data["analysis"]["identity"] = {}
+
+            # Calculate relative path from config to aliases file
+            try:
+                rel_path = output.relative_to(config.parent)
+                config_data["analysis"]["identity"]["aliases_file"] = str(rel_path)
+            except ValueError:
+                # Not relative, use absolute
+                config_data["analysis"]["identity"]["aliases_file"] = str(output)
+
+            # Remove manual_mappings if present (now in aliases file)
+            if "manual_identity_mappings" in config_data["analysis"].get("identity", {}):
+                del config_data["analysis"]["identity"]["manual_identity_mappings"]
+                click.echo("   Removed inline manual_identity_mappings (now in aliases file)")
+
+            # Save updated config
+            with open(config, "w") as f:
+                yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+            click.echo(f"✅ Updated {config}")
+            click.echo(
+                f"   Added: analysis.identity.aliases_file = "
+                f"{config_data['analysis']['identity']['aliases_file']}\n"
+            )
+
+        # Summary and next steps
+        click.echo("✨ Identity alias generation complete!\n")
+
+        if not apply:
+            click.echo("💡 Next steps:")
+            click.echo(f"   1. Review the aliases in {output}")
+            click.echo(f"   2. Update your config.yaml to reference the aliases file:")
+            click.echo("      analysis:")
+            click.echo("        identity:")
+            click.echo(f"          aliases_file: {output.name}")
+            click.echo(f"   3. Or run with --apply flag to update automatically\n")
+
+    except Exception as e:
+        click.echo(f"\n❌ Error generating aliases: {e}", err=True)
+        import traceback
+
+        if os.getenv("GITFLOW_DEBUG"):
+            traceback.print_exc()
         sys.exit(1)
 
 
