@@ -258,3 +258,5 @@ yarn-error.log*
 .claude/cache/
 .claude/sessions/
 .claude-mpm/mcp_auto_config_preference.json
+.qualitative_cache/
+uv.lock
