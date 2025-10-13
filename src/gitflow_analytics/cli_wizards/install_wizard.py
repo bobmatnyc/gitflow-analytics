@@ -359,19 +359,16 @@ class InstallWizard:
         choices = selection.split()
 
         platforms = []
-        platform_map = {
-            "1": "jira",
-            "2": "linear",
-            "3": "clickup",
-            "4": "github"
-        }
+        platform_map = {"1": "jira", "2": "linear", "3": "clickup", "4": "github"}
 
         for choice in choices:
             if choice in platform_map:
                 platforms.append(platform_map[choice])
 
         if not platforms:
-            click.echo("⚠️  No valid platforms selected, defaulting to JIRA for backward compatibility")
+            click.echo(
+                "⚠️  No valid platforms selected, defaulting to JIRA for backward compatibility"
+            )
             return ["jira"]
 
         # Display selected platforms
@@ -379,7 +376,7 @@ class InstallWizard:
             "jira": "JIRA",
             "linear": "Linear",
             "clickup": "ClickUp",
-            "github": "GitHub Issues"
+            "github": "GitHub Issues",
         }
         selected_names = [platform_names[p] for p in platforms]
         click.echo(f"\n✅ Selected platforms: {', '.join(selected_names)}\n")
@@ -701,7 +698,7 @@ class InstallWizard:
                         "Team IDs (comma-separated, press Enter to skip)",
                         type=str,
                         default="",
-                        show_default=False
+                        show_default=False,
                     ).strip()
 
                     # Store configuration
