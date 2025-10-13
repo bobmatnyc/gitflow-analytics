@@ -71,6 +71,7 @@ all = [
 
 [project.scripts]
 gitflow-analytics = "gitflow_analytics.cli:main"
+gfa = "gitflow_analytics.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/bobmatnyc/gitflow-analytics"
