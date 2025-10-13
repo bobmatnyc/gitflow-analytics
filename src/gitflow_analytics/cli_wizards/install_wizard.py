@@ -182,7 +182,6 @@ class InstallWizard:
                 selected_platforms = self._select_pm_platforms()
 
                 # Setup each selected platform
-                pm_config = {}
                 if "jira" in selected_platforms:
                     self._setup_jira()
                 if "linear" in selected_platforms:
