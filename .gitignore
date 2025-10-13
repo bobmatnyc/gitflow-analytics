@@ -257,3 +257,4 @@ yarn-error.log*
 # Added by Claude MPM /mpm-init
 .claude/cache/
 .claude/sessions/
+.claude-mpm/mcp_auto_config_preference.json
