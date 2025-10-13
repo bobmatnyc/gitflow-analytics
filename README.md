@@ -280,13 +280,13 @@ Here's a complete example showing `.env` file and corresponding YAML configurati
 GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
 GITHUB_ORG=your-organization
 
-# JIRA Configuration
+# PM Platform Configuration
 JIRA_ACCESS_USER=developer@company.com
 JIRA_ACCESS_TOKEN=ATATT3xxxxxxxxxxx
+LINEAR_API_KEY=lin_api_xxxxxxxxxxxx
+CLICKUP_API_TOKEN=pk_xxxxxxxxxxxx
 
-# Optional: Other integrations
-# CLICKUP_TOKEN=pk_xxxxxxxxxxxx
-# LINEAR_TOKEN=lin_api_xxxxxxxxxxxx
+# Note: GitHub Issues uses GITHUB_TOKEN automatically
 ```
 
 ### `config.yaml` file
@@ -298,12 +298,22 @@ github:
   token: "${GITHUB_TOKEN}"
   organization: "${GITHUB_ORG}"
 
-# JIRA integration for story points
-jira:
-  access_user: "${JIRA_ACCESS_USER}"
-  access_token: "${JIRA_ACCESS_TOKEN}"
-  base_url: "https://company.atlassian.net"
+# Multi-platform PM integration
+pm:
+  jira:
+    access_user: "${JIRA_ACCESS_USER}"
+    access_token: "${JIRA_ACCESS_TOKEN}"
+    base_url: "https://company.atlassian.net"
 
+  linear:
+    api_key: "${LINEAR_API_KEY}"
+    team_ids: ["team_123abc"]  # Optional: filter by specific teams
+
+  clickup:
+    api_token: "${CLICKUP_API_TOKEN}"
+    workspace_url: "https://app.clickup.com/12345/v/"
+
+# JIRA story point integration (optional)
 jira_integration:
   enabled: true
   fetch_story_points: true
@@ -313,9 +323,12 @@ jira_integration:
 
 # Analysis configuration
 analysis:
-  # Only track JIRA tickets (ignore GitHub issues, etc.)
+  # Track tickets from all configured platforms
   ticket_platforms:
     - jira
+    - linear
+    - clickup
+    - github  # GitHub Issues (uses GITHUB_TOKEN)
   
   # Exclude bot commits and boilerplate files
   exclude:
@@ -608,24 +621,97 @@ story_point_patterns:
 
 ## Ticket Platform Support
 
-Automatically detects and tracks tickets from:
+Automatically detects and tracks tickets from multiple PM platforms:
 - **JIRA**: `PROJ-123`
-- **GitHub**: `#123`, `GH-123`
+- **GitHub Issues**: `#123`, `GH-123`
 - **ClickUp**: `CU-abc123`
 - **Linear**: `ENG-123`
 
-### JIRA Integration
+### Multi-Platform PM Integration
 
-GitFlow Analytics can fetch story points directly from JIRA tickets. Configure your JIRA instance:
+GitFlow Analytics supports multiple project management platforms simultaneously. You can configure one or more platforms based on your team's workflow:
 
 ```yaml
-jira:
-  access_user: "${JIRA_ACCESS_USER}"
-  access_token: "${JIRA_ACCESS_TOKEN}"
-  base_url: "https://your-company.atlassian.net"
+# Configure which platforms to track
+analysis:
+  ticket_platforms:
+    - jira
+    - linear
+    - clickup
+    - github  # GitHub Issues
 
+# Platform-specific configuration
+pm:
+  jira:
+    access_user: "${JIRA_ACCESS_USER}"
+    access_token: "${JIRA_ACCESS_TOKEN}"
+    base_url: "https://your-company.atlassian.net"
+
+  linear:
+    api_key: "${LINEAR_API_KEY}"
+    team_ids:  # Optional: filter by team
+      - "team_123abc"
+
+  clickup:
+    api_token: "${CLICKUP_API_TOKEN}"
+    workspace_url: "https://app.clickup.com/12345/v/"
+
+# GitHub Issues uses existing GitHub token automatically
+github:
+  token: "${GITHUB_TOKEN}"
+```
+
+### Platform Setup Guides
+
+#### JIRA Setup
+1. **Get API Token**: Go to [Atlassian API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
+2. **Required Permissions**: Read access to projects and issues
+3. **Configuration**:
+   ```yaml
+   pm:
+     jira:
+       access_user: "${JIRA_ACCESS_USER}"  # Your Atlassian email
+       access_token: "${JIRA_ACCESS_TOKEN}"
+       base_url: "https://your-company.atlassian.net"
+   ```
+
+#### Linear Setup
+1. **Get API Key**: Go to [Linear Settings → API](https://linear.app/settings/api)
+2. **Required Permissions**: Read access to issues
+3. **Configuration**:
+   ```yaml
+   pm:
+     linear:
+       api_key: "${LINEAR_API_KEY}"
+       team_ids: ["team_123abc"]  # Optional: specify team IDs
+   ```
+
+#### ClickUp Setup
+1. **Get API Token**: Go to [ClickUp Settings → Apps](https://app.clickup.com/settings/apps)
+2. **Get Workspace URL**: Copy from browser when viewing your workspace
+3. **Configuration**:
+   ```yaml
+   pm:
+     clickup:
+       api_token: "${CLICKUP_API_TOKEN}"
+       workspace_url: "https://app.clickup.com/12345/v/"
+   ```
+
+#### GitHub Issues Setup
+GitHub Issues is automatically enabled when GitHub integration is configured. No additional setup required:
+```yaml
+github:
+  token: "${GITHUB_TOKEN}"  # Same token for repo access and issues
+```
+
+### JIRA Story Point Integration
+
+GitFlow Analytics can fetch story points directly from JIRA tickets:
+
+```yaml
 jira_integration:
   enabled: true
+  fetch_story_points: true
   story_point_fields:
     - "Story point estimate"  # Your custom field name
     - "customfield_10016"     # Or use field ID
@@ -634,6 +720,21 @@ jira_integration:
 To discover your JIRA story point fields:
 ```bash
 gitflow-analytics discover-storypoint-fields -c config.yaml
+```
+
+### Environment Variables for Credentials
+
+Store credentials securely in a `.env` file:
+
+```bash
+# .env file (keep this secure and don't commit to git!)
+GITHUB_TOKEN=ghp_your_token_here
+
+# PM Platform Credentials
+JIRA_ACCESS_USER=your.email@company.com
+JIRA_ACCESS_TOKEN=ATATT3xxxxxxxxxxx
+LINEAR_API_KEY=lin_api_xxxxxxxxxxxx
+CLICKUP_API_TOKEN=pk_xxxxxxxxxxxx
 ```
 
 ## Caching

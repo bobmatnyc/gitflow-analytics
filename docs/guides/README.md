@@ -12,11 +12,20 @@ Master the YAML configuration format with detailed examples covering:
 - Advanced analysis options and filters
 - Report customization and output formats
 
-### [ML Categorization Setup](ml-categorization.md)  
+### [PM Platform Setup](pm-platform-setup.md)
+Configure multiple project management platforms for ticket tracking:
+- **JIRA** - Enterprise project management integration
+- **Linear** - Modern issue tracking setup
+- **ClickUp** - All-in-one productivity platform
+- **GitHub Issues** - Native GitHub integration
+- Multi-platform configuration and credential management
+- Story point extraction and ticket coverage analysis
+
+### [ML Categorization Setup](ml-categorization.md)
 Enable machine learning features for intelligent commit classification:
 - Install and configure spaCy language models
 - Set up ML-powered commit categorization (85-95% accuracy)
-- Customize classification categories and thresholds  
+- Customize classification categories and thresholds
 - Monitor and improve model performance
 
 ### [Organization-Wide Setup](organization-setup.md)
@@ -59,8 +68,11 @@ Solutions to common issues and problems:
 **Analyze a single repository**
 → [Configuration Guide](configuration.md) → [Repository Setup Section](configuration.md#repository-configuration)
 
-**Analyze my entire organization**  
+**Analyze my entire organization**
 → [Organization Setup](organization-setup.md) → [Organization Discovery](organization-setup.md#automatic-discovery)
+
+**Track tickets from JIRA, Linear, or ClickUp**
+→ [PM Platform Setup](pm-platform-setup.md) → [Platform Configuration](pm-platform-setup.md#platform-configuration)
 
 **Get better commit categorization**
 → [ML Categorization](ml-categorization.md) → [Model Setup](ml-categorization.md#installation)
@@ -71,7 +83,7 @@ Solutions to common issues and problems:
 **Fix configuration issues**
 → [Troubleshooting](troubleshooting.md) → [Configuration Errors](troubleshooting.md#configuration-issues)
 
-**Add AI insights**  
+**Add AI insights**
 → [ChatGPT Setup](chatgpt-setup.md) → [API Configuration](chatgpt-setup.md#setup)
 
 **Solve authentication problems**
@@ -82,7 +94,7 @@ Solutions to common issues and problems:
 
 ## 📚 Guide Difficulty Levels
 
-- 🟢 **Beginner**: Configuration Guide, Troubleshooting
+- 🟢 **Beginner**: Configuration Guide, PM Platform Setup, Troubleshooting
 - 🟡 **Intermediate**: Organization Setup, Report Customization
 - 🔴 **Advanced**: ML Categorization, ChatGPT Integration
 

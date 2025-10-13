@@ -68,7 +68,7 @@ GitFlow Analytics will automatically install required dependencies:
    ```bash
    # Option 1: Set in your shell profile (.bashrc, .zshrc, etc.)
    export GITHUB_TOKEN="ghp_your_token_here"
-   
+
    # Option 2: Create a .env file (recommended)
    echo "GITHUB_TOKEN=ghp_your_token_here" > .env
    ```
@@ -78,6 +78,24 @@ GitFlow Analytics will automatically install required dependencies:
    # Test GitHub API access
    curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
    ```
+
+### PM Platform Setup (Optional)
+
+GitFlow Analytics supports multiple project management platforms for enhanced ticket tracking:
+
+- **JIRA** - Enterprise project management
+- **Linear** - Modern issue tracking
+- **ClickUp** - All-in-one productivity
+- **GitHub Issues** - Native GitHub integration (auto-configured with GitHub token)
+
+**Quick Setup**: Use the interactive launcher:
+```bash
+gitflow-analytics launcher
+```
+
+Select **Profile 1 (Standard)** and choose which PM platforms to configure.
+
+**Manual Setup**: See the [PM Platform Setup Guide](../guides/pm-platform-setup.md) for detailed instructions on obtaining and configuring credentials for each platform.
 
 ## 🧪 Verify Installation
 

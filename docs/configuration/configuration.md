@@ -98,6 +98,50 @@ reports:
   anonymize: false                      # Anonymize developer names
 ```
 
+### PM Platform Configuration
+
+GitFlow Analytics supports multiple project management platforms for ticket tracking:
+
+```yaml
+# Configure which platforms to track
+analysis:
+  ticket_platforms:
+    - jira        # Track JIRA tickets (PROJ-123)
+    - linear      # Track Linear issues (ENG-123)
+    - clickup     # Track ClickUp tasks (CU-abc123)
+    - github      # Track GitHub Issues (#123, GH-123)
+
+# Platform-specific configuration
+pm:
+  jira:
+    access_user: "${JIRA_ACCESS_USER}"
+    access_token: "${JIRA_ACCESS_TOKEN}"
+    base_url: "https://company.atlassian.net"
+
+  linear:
+    api_key: "${LINEAR_API_KEY}"
+    team_ids:  # Optional: filter by team
+      - "team_123abc"
+
+  clickup:
+    api_token: "${CLICKUP_API_TOKEN}"
+    workspace_url: "https://app.clickup.com/12345/v/"
+
+# GitHub Issues uses github.token automatically - no separate config needed
+github:
+  token: "${GITHUB_TOKEN}"
+
+# Optional: JIRA story point integration
+jira_integration:
+  enabled: true
+  fetch_story_points: true
+  story_point_fields:
+    - "Story point estimate"
+    - "customfield_10016"
+```
+
+See the [PM Platform Setup Guide](../guides/pm-platform-setup.md) for detailed setup instructions for each platform.
+
 ## Configuration Profiles
 
 Configuration profiles provide pre-configured settings optimized for specific use cases. This allows you to quickly set up GitFlow Analytics for different scenarios without manually configuring every setting.
@@ -317,9 +361,27 @@ For teams, create a shared base configuration:
 version: "1.0"
 github:
   organization: "our-company"
+
+# Multi-platform PM configuration
+pm:
+  jira:
+    access_user: "${JIRA_ACCESS_USER}"
+    access_token: "${JIRA_ACCESS_TOKEN}"
+    base_url: "https://company.atlassian.net"
+
+  linear:
+    api_key: "${LINEAR_API_KEY}"
+    team_ids: ["team_123"]
+
 analysis:
+  ticket_platforms:
+    - jira
+    - linear
+    - github
+
   exclude:
     authors: ["bot-accounts"]
+
   identity:
     manual_mappings:
       - name: "John Smith"

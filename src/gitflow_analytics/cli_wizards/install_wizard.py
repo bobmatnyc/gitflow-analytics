@@ -33,7 +33,7 @@ class InstallWizard:
     PROFILES = {
         "1": {
             "name": "Standard",
-            "description": "GitHub + JIRA + AI (Full featured)",
+            "description": "GitHub + PM Tools (JIRA/Linear/ClickUp/GitHub Issues) + AI (Full featured)",
             "github": True,
             "repositories": "manual",
             "jira": True,
@@ -176,12 +176,56 @@ class InstallWizard:
                 # Custom mode - ask user
                 return False
 
-            # Step 3: JIRA Setup (conditional based on profile)
+            # Step 3: PM Platform Setup (conditional based on profile)
             if self.profile["jira"]:
-                self._setup_jira()
+                # Profile includes PM tools - let user select which ones
+                selected_platforms = self._select_pm_platforms()
+
+                # Setup each selected platform
+                pm_config = {}
+                if "jira" in selected_platforms:
+                    self._setup_jira()
+                if "linear" in selected_platforms:
+                    linear_config = self._setup_linear()
+                    if linear_config:
+                        if "pm" not in self.config_data:
+                            self.config_data["pm"] = {}
+                        self.config_data["pm"]["linear"] = linear_config
+                if "clickup" in selected_platforms:
+                    clickup_config = self._setup_clickup()
+                    if clickup_config:
+                        if "pm" not in self.config_data:
+                            self.config_data["pm"] = {}
+                        self.config_data["pm"]["clickup"] = clickup_config
+                # GitHub Issues uses github.token automatically - no separate setup needed
+
+                # Store selected platforms for analysis configuration
+                self._selected_pm_platforms = selected_platforms
             elif self.profile["jira"] is None:
                 # Custom mode - ask user
-                self._setup_jira()
+                selected_platforms = self._select_pm_platforms()
+
+                # Setup each selected platform
+                if "jira" in selected_platforms:
+                    self._setup_jira()
+                if "linear" in selected_platforms:
+                    linear_config = self._setup_linear()
+                    if linear_config:
+                        if "pm" not in self.config_data:
+                            self.config_data["pm"] = {}
+                        self.config_data["pm"]["linear"] = linear_config
+                if "clickup" in selected_platforms:
+                    clickup_config = self._setup_clickup()
+                    if clickup_config:
+                        if "pm" not in self.config_data:
+                            self.config_data["pm"] = {}
+                        self.config_data["pm"]["clickup"] = clickup_config
+
+                # Store selected platforms for analysis configuration
+                self._selected_pm_platforms = selected_platforms
+            else:
+                # Profile excludes PM tools
+                self._selected_pm_platforms = []
 
             # Step 4: OpenRouter/ChatGPT Setup (conditional based on profile)
             if self.profile["ai"]:
@@ -281,6 +325,67 @@ class InstallWizard:
                 return True
 
         return False
+
+    def _select_pm_platforms(self) -> list:
+        """Let user select which PM platforms to configure.
+
+        Returns:
+            List of selected platform names (e.g., ['jira', 'linear'])
+        """
+        click.echo("\n📋 Project Management Platform Selection")
+        click.echo("-" * 50)
+        click.echo("Select which PM platforms you want to configure:\n")
+        click.echo("  1. JIRA (Atlassian)")
+        click.echo("  2. Linear (linear.app)")
+        click.echo("  3. ClickUp (clickup.com)")
+        click.echo("  4. GitHub Issues (Auto-configured with your GitHub token)")
+        click.echo()
+        click.echo("Enter numbers separated by spaces or commas (e.g., '1 2 4' or '1,2,4')")
+        click.echo("Press Enter to skip all PM platform setup")
+        click.echo()
+
+        selection = click.prompt(
+            "Select platforms",
+            type=str,
+            default="",
+            show_default=False,
+        ).strip()
+
+        if not selection:
+            click.echo("⏭️  Skipping all PM platform setup")
+            return []
+
+        # Parse selection (handle both space and comma separated)
+        selection = selection.replace(",", " ")
+        choices = selection.split()
+
+        platforms = []
+        platform_map = {
+            "1": "jira",
+            "2": "linear",
+            "3": "clickup",
+            "4": "github"
+        }
+
+        for choice in choices:
+            if choice in platform_map:
+                platforms.append(platform_map[choice])
+
+        if not platforms:
+            click.echo("⚠️  No valid platforms selected, defaulting to JIRA for backward compatibility")
+            return ["jira"]
+
+        # Display selected platforms
+        platform_names = {
+            "jira": "JIRA",
+            "linear": "Linear",
+            "clickup": "ClickUp",
+            "github": "GitHub Issues"
+        }
+        selected_names = [platform_names[p] for p in platforms]
+        click.echo(f"\n✅ Selected platforms: {', '.join(selected_names)}\n")
+
+        return platforms
 
     def _setup_repositories(self) -> bool:
         """Setup repository configuration.
@@ -557,6 +662,271 @@ class InstallWizard:
                 return
 
         click.echo("⏭️  Skipping JIRA setup")
+
+    def _setup_linear(self) -> Optional[dict]:
+        """Setup Linear integration (optional).
+
+        Returns:
+            Linear configuration dict if successful, None otherwise
+        """
+        click.echo("\n📋 Linear Setup")
+        click.echo("-" * 50)
+        click.echo("\nLinear Configuration:")
+        click.echo("You'll need:")
+        click.echo("  • Linear API key from: https://linear.app/settings/api")
+        click.echo("  • Optional: Team IDs to filter issues")
+        click.echo()
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            if attempt > 0:
+                # Add exponential backoff to prevent rate limiting
+                delay = 2 ** (attempt - 1)  # 1, 2, 4 seconds
+                click.echo(f"⏳ Waiting {delay} seconds before retry...")
+                time.sleep(delay)
+
+            api_key = self._get_password("Linear API key: ", "Linear API key").strip()
+
+            if not api_key:
+                click.echo("❌ API key cannot be empty")
+                continue
+
+            # Validate Linear credentials
+            if not self.skip_validation:
+                click.echo("🔍 Validating Linear API key...")
+                if self._validate_linear(api_key):
+                    click.echo("✅ Linear API key validated!")
+
+                    # Optional: Team IDs
+                    team_ids = click.prompt(
+                        "Team IDs (comma-separated, press Enter to skip)",
+                        type=str,
+                        default="",
+                        show_default=False
+                    ).strip()
+
+                    # Store configuration
+                    self.env_data["LINEAR_API_KEY"] = api_key
+                    linear_config = {
+                        "api_key": "${LINEAR_API_KEY}",
+                    }
+
+                    if team_ids:
+                        team_list = [tid.strip() for tid in team_ids.split(",") if tid.strip()]
+                        if team_list:
+                            linear_config["team_ids"] = team_list
+                            click.echo(f"✅ Configured {len(team_list)} team ID(s)")
+
+                    return linear_config
+                else:
+                    if attempt < max_retries - 1:
+                        retry = click.confirm("Linear validation failed. Try again?", default=True)
+                        if not retry:
+                            click.echo("⏭️  Skipping Linear setup")
+                            return None
+                    else:
+                        click.echo("❌ Maximum retry attempts reached")
+                        click.echo("⏭️  Skipping Linear setup")
+                        return None
+            else:
+                # Skip validation mode
+                self.env_data["LINEAR_API_KEY"] = api_key
+                return {"api_key": "${LINEAR_API_KEY}"}
+
+        click.echo("⏭️  Skipping Linear setup")
+        return None
+
+    def _validate_linear(self, api_key: str) -> bool:
+        """Validate Linear API key.
+
+        Args:
+            api_key: Linear API key
+
+        Returns:
+            True if credentials are valid, False otherwise
+        """
+        # Suppress requests logging to prevent credential exposure
+        urllib3_logger = logging.getLogger("urllib3")
+        requests_logger = logging.getLogger("requests")
+        original_urllib3 = urllib3_logger.level
+        original_requests = requests_logger.level
+
+        urllib3_logger.setLevel(logging.WARNING)
+        requests_logger.setLevel(logging.WARNING)
+
+        try:
+            headers = {
+                "Authorization": api_key,
+                "Content-Type": "application/json",
+            }
+
+            # Simple GraphQL query to validate authentication
+            query = {"query": "{ viewer { name } }"}
+
+            response = requests.post(
+                "https://api.linear.app/graphql",
+                headers=headers,
+                json=query,
+                timeout=10,
+                verify=True,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if "data" in data and "viewer" in data["data"]:
+                    viewer_name = data["data"]["viewer"].get("name", "Unknown")
+                    click.echo(f"   Authenticated as: {viewer_name}")
+                    return True
+                else:
+                    click.echo("   Authentication failed: Invalid response")
+                    return False
+            else:
+                click.echo(f"   Authentication failed (status {response.status_code})")
+                return False
+
+        except requests.exceptions.RequestException as e:
+            # Never expose raw exception - could contain credentials
+            error_type = type(e).__name__
+            click.echo(f"   Connection error: {error_type}")
+            logger.debug(f"Linear connection error type: {error_type}")
+            return False
+        except Exception as e:
+            click.echo("   Linear validation failed")
+            logger.error(f"Linear validation error type: {type(e).__name__}")
+            return False
+        finally:
+            # Always restore logging levels
+            urllib3_logger.setLevel(original_urllib3)
+            requests_logger.setLevel(original_requests)
+
+    def _setup_clickup(self) -> Optional[dict]:
+        """Setup ClickUp integration (optional).
+
+        Returns:
+            ClickUp configuration dict if successful, None otherwise
+        """
+        click.echo("\n📋 ClickUp Setup")
+        click.echo("-" * 50)
+        click.echo("\nClickUp Configuration:")
+        click.echo("You'll need:")
+        click.echo("  • ClickUp API token from: https://app.clickup.com/settings/apps")
+        click.echo("  • Workspace URL (e.g., https://app.clickup.com/12345/v/)")
+        click.echo()
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            if attempt > 0:
+                # Add exponential backoff to prevent rate limiting
+                delay = 2 ** (attempt - 1)  # 1, 2, 4 seconds
+                click.echo(f"⏳ Waiting {delay} seconds before retry...")
+                time.sleep(delay)
+
+            api_token = self._get_password("ClickUp API token: ", "ClickUp API token").strip()
+            workspace_url = click.prompt("ClickUp workspace URL", type=str).strip()
+
+            if not all([api_token, workspace_url]):
+                click.echo("❌ All ClickUp fields are required")
+                continue
+
+            # Normalize workspace_url
+            workspace_url = workspace_url.rstrip("/")
+
+            # Validate ClickUp credentials
+            if not self.skip_validation:
+                click.echo("🔍 Validating ClickUp credentials...")
+                if self._validate_clickup(api_token):
+                    click.echo("✅ ClickUp credentials validated!")
+
+                    # Store configuration
+                    self.env_data["CLICKUP_API_TOKEN"] = api_token
+                    self.env_data["CLICKUP_WORKSPACE_URL"] = workspace_url
+
+                    clickup_config = {
+                        "api_token": "${CLICKUP_API_TOKEN}",
+                        "workspace_url": "${CLICKUP_WORKSPACE_URL}",
+                    }
+
+                    return clickup_config
+                else:
+                    if attempt < max_retries - 1:
+                        retry = click.confirm("ClickUp validation failed. Try again?", default=True)
+                        if not retry:
+                            click.echo("⏭️  Skipping ClickUp setup")
+                            return None
+                    else:
+                        click.echo("❌ Maximum retry attempts reached")
+                        click.echo("⏭️  Skipping ClickUp setup")
+                        return None
+            else:
+                # Skip validation mode
+                self.env_data["CLICKUP_API_TOKEN"] = api_token
+                self.env_data["CLICKUP_WORKSPACE_URL"] = workspace_url
+                return {
+                    "api_token": "${CLICKUP_API_TOKEN}",
+                    "workspace_url": "${CLICKUP_WORKSPACE_URL}",
+                }
+
+        click.echo("⏭️  Skipping ClickUp setup")
+        return None
+
+    def _validate_clickup(self, api_token: str) -> bool:
+        """Validate ClickUp API token.
+
+        Args:
+            api_token: ClickUp API token
+
+        Returns:
+            True if credentials are valid, False otherwise
+        """
+        # Suppress requests logging to prevent credential exposure
+        urllib3_logger = logging.getLogger("urllib3")
+        requests_logger = logging.getLogger("requests")
+        original_urllib3 = urllib3_logger.level
+        original_requests = requests_logger.level
+
+        urllib3_logger.setLevel(logging.WARNING)
+        requests_logger.setLevel(logging.WARNING)
+
+        try:
+            headers = {
+                "Authorization": api_token,
+                "Content-Type": "application/json",
+            }
+
+            response = requests.get(
+                "https://api.clickup.com/api/v2/user",
+                headers=headers,
+                timeout=10,
+                verify=True,
+            )
+
+            if response.status_code == 200:
+                user_info = response.json()
+                if "user" in user_info:
+                    username = user_info["user"].get("username", "Unknown")
+                    click.echo(f"   Authenticated as: {username}")
+                    return True
+                else:
+                    click.echo("   Authentication failed: Invalid response")
+                    return False
+            else:
+                click.echo(f"   Authentication failed (status {response.status_code})")
+                return False
+
+        except requests.exceptions.RequestException as e:
+            # Never expose raw exception - could contain credentials
+            error_type = type(e).__name__
+            click.echo(f"   Connection error: {error_type}")
+            logger.debug(f"ClickUp connection error type: {error_type}")
+            return False
+        except Exception as e:
+            click.echo("   ClickUp validation failed")
+            logger.error(f"ClickUp validation error type: {type(e).__name__}")
+            return False
+        finally:
+            # Always restore logging levels
+            urllib3_logger.setLevel(original_urllib3)
+            requests_logger.setLevel(original_requests)
 
     def _validate_jira(self, base_url: str, username: str, api_token: str) -> bool:
         """Validate JIRA credentials.
@@ -945,6 +1315,25 @@ class InstallWizard:
                 click.echo("\n💡 After installation, run:")
                 click.echo("   gitflow-analytics aliases -c config.yaml --apply")
                 click.echo("   This will analyze your repos and generate aliases automatically.\n")
+
+        # Configure ticket platforms based on selected PM tools
+        if hasattr(self, "_selected_pm_platforms") and self._selected_pm_platforms:
+            ticket_platforms = []
+
+            # Add platforms in order of setup
+            if "jira" in self._selected_pm_platforms:
+                ticket_platforms.append("jira")
+            if "linear" in self._selected_pm_platforms:
+                ticket_platforms.append("linear")
+            if "clickup" in self._selected_pm_platforms:
+                ticket_platforms.append("clickup")
+            if "github" in self._selected_pm_platforms or "github" in self.config_data:
+                # GitHub Issues auto-configured with GitHub token
+                ticket_platforms.append("github")
+
+            if ticket_platforms:
+                self.config_data["analysis"]["ticket_platforms"] = ticket_platforms
+                click.echo(f"✅ Configured ticket platforms: {', '.join(ticket_platforms)}\n")
 
     def _clear_sensitive_data(self) -> None:
         """Clear sensitive data from memory after use."""
