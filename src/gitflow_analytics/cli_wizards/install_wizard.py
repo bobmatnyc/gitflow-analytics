@@ -13,7 +13,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 import click
 import requests
@@ -508,12 +508,9 @@ class InstallWizard:
 
         input_str = input_str.strip()
 
-        if re.match(https_pattern, input_str, re.IGNORECASE):
-            # Ensure .git extension for consistency
-            if not input_str.endswith(".git"):
-                input_str = input_str + ".git"
-            return input_str
-        elif re.match(ssh_pattern, input_str):
+        if re.match(https_pattern, input_str, re.IGNORECASE) or re.match(
+            ssh_pattern, input_str
+        ):
             # Ensure .git extension for consistency
             if not input_str.endswith(".git"):
                 input_str = input_str + ".git"
@@ -521,7 +518,7 @@ class InstallWizard:
 
         return None
 
-    def _clone_git_repository(self, git_url: str) -> Optional[Tuple[Path, str]]:
+    def _clone_git_repository(self, git_url: str) -> Optional[tuple[Path, str]]:
         """Clone a Git repository to the local repos/ directory.
 
         Args:
@@ -531,6 +528,7 @@ class InstallWizard:
             Tuple of (local_path, original_url) if successful, None if failed
         """
         import re
+
         from git import Repo, GitCommandError
         from git.exc import InvalidGitRepositoryError
 
@@ -580,7 +578,7 @@ class InstallWizard:
 
                                 return (target_path, git_url)
                             else:
-                                click.echo(f"⚠️  Remote URL mismatch:")
+                                click.echo("⚠️  Remote URL mismatch:")
                                 click.echo(f"   Existing: {origin_url}")
                                 click.echo(f"   Requested: {git_url}")
                                 if not click.confirm("Use existing repository anyway?", default=False):
@@ -600,7 +598,7 @@ class InstallWizard:
                     import shutil
 
                     shutil.rmtree(target_path)
-                    click.echo(f"🗑️  Removed existing directory")
+                    click.echo("🗑️  Removed existing directory")
 
             # Clone the repository
             click.echo(f"🔄 Cloning {git_url}...")
