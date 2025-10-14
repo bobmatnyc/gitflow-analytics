@@ -82,11 +82,15 @@ class ActivityScorer:
             + complexity_score * self.WEIGHTS["complexity"]
         )
 
+        # Determine if PR data is available for proper normalization
+        has_pr_data = prs > 0
+
         return {
             "raw_score": raw_score,
-            "normalized_score": self._normalize_score(raw_score),
+            "normalized_score": self._normalize_score(raw_score, has_pr_data),
             "components": components,
-            "activity_level": self._get_activity_level(raw_score),
+            "activity_level": self._get_activity_level(raw_score, has_pr_data),
+            "has_pr_data": has_pr_data,
         }
 
     def _calculate_commit_score(self, commits: int) -> float:
@@ -169,8 +173,13 @@ class ActivityScorer:
 
         return max(0, file_score + complexity_bonus)
 
-    def _normalize_score(self, raw_score: float) -> float:
-        """Normalize score to 0-100 range."""
+    def _normalize_score(self, raw_score: float, has_pr_data: bool = True) -> float:
+        """Normalize score to 0-100 range.
+
+        Args:
+            raw_score: The calculated raw activity score
+            has_pr_data: Whether PR data was available (affects normalization divisor)
+        """
         # Based on research, a highly productive week might have:
         # - 15 commits (150 points after scaling)
         # - 3 PRs of optimal size (180 points)
@@ -178,12 +187,17 @@ class ActivityScorer:
         # - 20 files changed (50 points)
         # Total: ~500 points = 100 normalized
 
-        normalized = (raw_score / 500) * 100
+        # When PR data is unavailable (e.g., weekly reports), adjust divisor
+        # since PR component (30% weight) contributes 0
+        # Effective max becomes 70% of 50 = 35
+        divisor = 35 if not has_pr_data else 50
+
+        normalized = (raw_score / divisor) * 100
         return min(100, normalized)  # Cap at 100
 
-    def _get_activity_level(self, raw_score: float) -> str:
+    def _get_activity_level(self, raw_score: float, has_pr_data: bool = True) -> str:
         """Categorize activity level based on score."""
-        normalized = self._normalize_score(raw_score)
+        normalized = self._normalize_score(raw_score, has_pr_data)
 
         if normalized >= 80:
             return "exceptional"
