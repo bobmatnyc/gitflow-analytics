@@ -7,6 +7,8 @@ and comprehensive configuration generation.
 import getpass
 import logging
 import os
+import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -527,8 +529,6 @@ class InstallWizard:
         Returns:
             Tuple of (local_path, original_url) if successful, None if failed
         """
-        import re
-
         from git import Repo, GitCommandError
         from git.exc import InvalidGitRepositoryError
 
@@ -595,8 +595,6 @@ class InstallWizard:
                         return None
 
                     # Remove existing directory
-                    import shutil
-
                     shutil.rmtree(target_path)
                     click.echo("🗑️  Removed existing directory")
 
