@@ -512,9 +512,7 @@ class InstallWizard:
 
         input_str = input_str.strip()
 
-        if re.match(https_pattern, input_str, re.IGNORECASE) or re.match(
-            ssh_pattern, input_str
-        ):
+        if re.match(https_pattern, input_str, re.IGNORECASE) or re.match(ssh_pattern, input_str):
             # Ensure .git extension for consistency
             if not input_str.endswith(".git"):
                 input_str = input_str + ".git"
@@ -569,7 +567,9 @@ class InstallWizard:
                                 click.echo(f"✅ Remote URL matches: {origin_url}")
 
                                 # Offer to update
-                                if click.confirm("Update existing repository (git pull)?", default=True):
+                                if click.confirm(
+                                    "Update existing repository (git pull)?", default=True
+                                ):
                                     click.echo("🔄 Updating repository...")
                                     origin = existing_repo.remotes.origin
                                     origin.pull()
@@ -580,7 +580,9 @@ class InstallWizard:
                                 click.echo("⚠️  Remote URL mismatch:")
                                 click.echo(f"   Existing: {origin_url}")
                                 click.echo(f"   Requested: {git_url}")
-                                if not click.confirm("Use existing repository anyway?", default=False):
+                                if not click.confirm(
+                                    "Use existing repository anyway?", default=False
+                                ):
                                     return None
                                 return (target_path, git_url)
                         except Exception as e:
