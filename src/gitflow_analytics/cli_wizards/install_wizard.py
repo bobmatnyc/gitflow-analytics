@@ -529,7 +529,7 @@ class InstallWizard:
         Returns:
             Tuple of (local_path, original_url) if successful, None if failed
         """
-        from git import Repo, GitCommandError
+        from git import GitCommandError, Repo
         from git.exc import InvalidGitRepositoryError
 
         try:
