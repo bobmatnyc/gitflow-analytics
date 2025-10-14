@@ -20,6 +20,8 @@ from typing import Optional
 import click
 import requests
 import yaml
+from git import GitCommandError, Repo
+from git.exc import InvalidGitRepositoryError
 from github import Github
 from github.GithubException import GithubException
 
@@ -529,9 +531,6 @@ class InstallWizard:
         Returns:
             Tuple of (local_path, original_url) if successful, None if failed
         """
-        from git import GitCommandError, Repo
-        from git.exc import InvalidGitRepositoryError
-
         try:
             # Extract repository name from URL
             # Handle both HTTPS and SSH formats
