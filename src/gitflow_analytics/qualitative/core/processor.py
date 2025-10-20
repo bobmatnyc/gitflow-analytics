@@ -49,7 +49,15 @@ class QualitativeProcessor:
         self.schema_manager = create_schema_manager(cache_dir)
 
         # Initialize core components
-        self.nlp_engine = NLPEngine(config.nlp_config)
+        try:
+            self.nlp_engine = NLPEngine(config.nlp_config)
+        except OSError as e:
+            self.logger.warning(
+                f"Failed to initialize NLP engine: {e}. "
+                f"Qualitative analysis will be disabled for this session."
+            )
+            self.nlp_engine = None
+
         self.pattern_cache = PatternCache(config.cache_config, database)
 
         # Initialize LLM fallback if enabled
@@ -197,6 +205,12 @@ class QualitativeProcessor:
             self.logger.info("Qualitative analysis disabled in configuration")
             return self._create_disabled_results(commits)
 
+        if self.nlp_engine is None:
+            self.logger.warning(
+                "Qualitative analysis skipped: NLP engine not available (spaCy model not installed)"
+            )
+            return self._create_disabled_results(commits)
+
         # Filter commits for incremental processing
         commits_to_process = self._filter_commits_for_processing(commits, force_reprocess)
 
@@ -316,6 +330,10 @@ class QualitativeProcessor:
             List of QualitativeCommitData from NLP processing
         """
         if not commits:
+            return []
+
+        if self.nlp_engine is None:
+            self.logger.warning("NLP engine not available, skipping NLP processing")
             return []
 
         def process_batch_with_progress(batch: list[dict[str, Any]]) -> list[QualitativeCommitData]:
@@ -596,7 +614,11 @@ class QualitativeProcessor:
         """
         # Get component statistics
         cache_stats = self.pattern_cache.get_cache_statistics()
-        nlp_stats = self.nlp_engine.get_performance_stats()
+        nlp_stats = (
+            self.nlp_engine.get_performance_stats()
+            if self.nlp_engine is not None
+            else {"status": "unavailable", "reason": "spaCy model not installed"}
+        )
 
         # Calculate processing rates
         total_time = time.time() - (self.processing_stats["processing_start_time"] or time.time())
@@ -649,9 +671,12 @@ class QualitativeProcessor:
         issues = []
 
         # Validate NLP engine
-        nlp_valid, nlp_issues = self.nlp_engine.validate_setup()
-        if not nlp_valid:
-            issues.extend([f"NLP: {issue}" for issue in nlp_issues])
+        if self.nlp_engine is None:
+            issues.append("NLP: Engine not available (spaCy model not installed)")
+        else:
+            nlp_valid, nlp_issues = self.nlp_engine.validate_setup()
+            if not nlp_valid:
+                issues.extend([f"NLP: {issue}" for issue in nlp_issues])
 
         # Validate LLM fallback if configured
         if self.config.llm_config.openrouter_api_key and self.llm_fallback is None:

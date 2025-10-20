@@ -21,13 +21,11 @@ A comprehensive Python package for analyzing Git repositories to generate develo
 Get up and running in 5 minutes:
 
 ```bash
-# 1. Install GitFlow Analytics
+# 1. Install GitFlow Analytics (includes ML dependencies)
 pip install gitflow-analytics
+# Note: spaCy model (en_core_web_sm) is automatically installed
 
-# 2. Install ML dependencies (optional but recommended)
-python -m spacy download en_core_web_sm
-
-# 3. Create a simple configuration
+# 2. Create a simple configuration
 echo 'version: "1.0"
 github:
   token: "${GITHUB_TOKEN}"
@@ -111,15 +109,10 @@ Comprehensive guides for every use case:
 
 ## ⚡ Installation Options
 
-### Standard Installation
+### Standard Installation (Includes ML)
 ```bash
 pip install gitflow-analytics
-```
-
-### With ML Enhancement (Recommended)
-```bash
-pip install gitflow-analytics
-python -m spacy download en_core_web_sm
+# Note: Automatically installs spaCy model (en_core_web_sm) for ML features
 ```
 
 ### Development Installation
@@ -127,7 +120,7 @@ python -m spacy download en_core_web_sm
 git clone https://github.com/bobmatnyc/gitflow-analytics.git
 cd gitflow-analytics
 pip install -e ".[dev]"
-python -m spacy download en_core_web_sm
+# Note: spaCy model is automatically installed during pip install
 ```
 
 ## 🔧 Configuration
@@ -918,26 +911,37 @@ analysis:
 
 ### Installation Requirements
 
-For ML categorization, install the spaCy English model:
+ML categorization is automatically enabled when you install GitFlow Analytics. The spaCy English model (`en_core_web_sm`) is included as a dependency and installed automatically.
 
+**Verify installation:**
 ```bash
-python -m spacy download en_core_web_sm
+python -m spacy list
+# Should show: en_core_web_sm
 ```
 
-**Alternative models** (if the default is unavailable):
+**Alternative models** (optional, for higher accuracy):
 ```bash
-# Medium model (more accurate, larger)
+# Medium model (more accurate, larger - ~40MB)
 python -m spacy download en_core_web_md
 
-# Large model (most accurate, largest) 
+# Large model (most accurate, largest - ~560MB)
 python -m spacy download en_core_web_lg
+```
+
+**If model installation fails:**
+```bash
+# Reinstall to trigger automatic download
+pip install --upgrade --force-reinstall gitflow-analytics
+
+# Or install model manually
+python -m spacy download en_core_web_sm
 ```
 
 ### Performance Expectations
 
 - **Accuracy**: 85-95% accuracy on typical commit messages
 - **Speed**: ~50-100 commits/second with caching enabled
-- **Fallback**: Graceful degradation to rule-based when ML unavailable
+- **Fallback**: Gracefully disables qualitative analysis if spaCy model unavailable (provides helpful error messages)
 - **Memory**: ~200MB additional memory usage for spaCy models
 
 ### Enhanced Reports
