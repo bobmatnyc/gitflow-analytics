@@ -316,6 +316,7 @@ class AnalysisConfig:
     )
     llm_classification: LLMClassificationConfig = field(default_factory=LLMClassificationConfig)
     security: Optional[dict[str, Any]] = field(default_factory=dict)  # Security configuration
+    qualitative: Optional["QualitativeConfig"] = None  # Nested qualitative config support
 
 
 @dataclass

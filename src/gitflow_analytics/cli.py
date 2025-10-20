@@ -628,6 +628,29 @@ def analyze(
 
         cfg = ConfigLoader.load(config)
 
+        # Helper function to check if qualitative analysis is enabled
+        # Supports both top-level cfg.qualitative and nested cfg.analysis.qualitative
+        def is_qualitative_enabled() -> bool:
+            """Check if qualitative analysis is enabled in either location."""
+            if cfg.qualitative and cfg.qualitative.enabled:
+                return True
+            if (
+                hasattr(cfg.analysis, "qualitative")
+                and cfg.analysis.qualitative
+                and cfg.analysis.qualitative.enabled
+            ):
+                return True
+            return False
+
+        # Helper function to get qualitative config from either location
+        def get_qualitative_config():
+            """Get qualitative config from either top-level or nested location."""
+            if cfg.qualitative:
+                return cfg.qualitative
+            if hasattr(cfg.analysis, "qualitative") and cfg.analysis.qualitative:
+                return cfg.analysis.qualitative
+            return None
+
         # Apply CLI overrides for PM integration
         if disable_pm:
             # Disable PM integration if explicitly requested
@@ -2974,9 +2997,8 @@ def analyze(
         # Perform qualitative analysis if enabled
         qualitative_results = []
         qual_cost_stats = None
-        if (
-            enable_qualitative or qualitative_only or (cfg.qualitative and cfg.qualitative.enabled)
-        ) and cfg.qualitative:
+        qual_config = get_qualitative_config()
+        if (enable_qualitative or qualitative_only or is_qualitative_enabled()) and qual_config:
             if display:
                 display.print_status("Performing qualitative analysis...", "info")
             else:
@@ -2988,7 +3010,7 @@ def analyze(
 
                 # Initialize qualitative analysis components
                 qual_db = Database(cfg.cache.directory / "qualitative.db")
-                qual_processor = QualitativeProcessor(cfg.qualitative, qual_db)
+                qual_processor = QualitativeProcessor(qual_config, qual_db)
 
                 # Validate setup
                 is_valid, issues = qual_processor.validate_setup()
@@ -3143,8 +3165,8 @@ def analyze(
                         display.print_status("Continuing with standard analysis...", "info")
                     else:
                         click.echo("   ⏭️  Continuing with standard analysis...")
-        elif enable_qualitative and not cfg.qualitative:
-            warning_msg = "Qualitative analysis requested but not configured in config file\n\nAdd a 'qualitative:' section to your configuration"
+        elif enable_qualitative and not get_qualitative_config():
+            warning_msg = "Qualitative analysis requested but not configured in config file\n\nAdd a 'qualitative:' section (top-level or under 'analysis:') to your configuration"
             if display:
                 display.show_warning(warning_msg)
             else:
@@ -4085,12 +4107,12 @@ def analyze(
                         )
             else:
                 # Show note about token tracking when qualitative analysis is not configured
-                if not (enable_qualitative or (cfg.qualitative and cfg.qualitative.enabled)):
+                if not (enable_qualitative or is_qualitative_enabled()):
                     click.echo(
                         "\n💡 Note: Token/cost tracking is only available with qualitative analysis enabled."
                     )
                     click.echo(
-                        "   Add 'qualitative:' section to your config to enable detailed LLM cost tracking."
+                        "   Add 'qualitative:' section (top-level or under 'analysis:') to your config to enable detailed LLM cost tracking."
                     )
 
             # Display cache statistics in simple format

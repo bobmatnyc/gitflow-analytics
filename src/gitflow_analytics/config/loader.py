@@ -258,7 +258,14 @@ class ConfigLoader:
         jira_integration_config = cls._process_jira_integration_config(
             data.get("jira_integration", {})
         )
-        qualitative_config = cls._process_qualitative_config(data.get("qualitative", {}))
+
+        # Check for qualitative config in both top-level and nested under analysis
+        # Prioritize top-level for backward compatibility, but support nested location
+        qualitative_data = data.get("qualitative", {})
+        if not qualitative_data and "analysis" in data:
+            qualitative_data = data["analysis"].get("qualitative", {})
+        qualitative_config = cls._process_qualitative_config(qualitative_data)
+
         pm_config = cls._process_pm_config(data.get("pm", {}))
         pm_integration_config = cls._process_pm_integration_config(data.get("pm_integration", {}))
 
@@ -536,6 +543,12 @@ class ConfigLoader:
             BranchAnalysisConfig(**branch_data) if branch_data else BranchAnalysisConfig()
         )
 
+        # Process qualitative configuration (support nested under analysis)
+        qualitative_data = analysis_data.get("qualitative", {})
+        qualitative_config = (
+            cls._process_qualitative_config(qualitative_data) if qualitative_data else None
+        )
+
         # Process aliases file and manual identity mappings
         manual_mappings = list(analysis_data.get("identity", {}).get("manual_mappings", []))
         aliases_file_path = None
@@ -595,6 +608,7 @@ class ConfigLoader:
             commit_classification=commit_classification_config,
             llm_classification=llm_classification_config,
             security=analysis_data.get("security", {}),
+            qualitative=qualitative_config,
         )
 
     @classmethod
