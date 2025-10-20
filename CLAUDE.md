@@ -128,6 +128,7 @@ GitFlow Analytics uses a comprehensive documentation system organized for differ
 
 - **[docs/STRUCTURE.md](docs/STRUCTURE.md)** - Complete documentation organization guide
 - **[docs/README.md](docs/README.md)** - Main documentation index and navigation
+- **[docs/reference/PROJECT_ORGANIZATION.md](docs/reference/PROJECT_ORGANIZATION.md)** - **Official project organization standard**
 - **[docs/getting-started/](docs/getting-started/)** - New user onboarding and tutorials
 - **[docs/guides/](docs/guides/)** - Task-oriented configuration and usage guides
 - **[docs/examples/](docs/examples/)** - Real-world usage scenarios and templates
@@ -140,6 +141,7 @@ GitFlow Analytics uses a comprehensive documentation system organized for differ
 ### 🟢 Documentation Guidelines for Developers
 
 When working on the project:
+- **Follow PROJECT_ORGANIZATION.md** - See [docs/reference/PROJECT_ORGANIZATION.md](docs/reference/PROJECT_ORGANIZATION.md) for file placement rules
 - **Update docs with code changes** - Documentation should stay current with implementation
 - **Follow the structure** - Place new documentation in the appropriate section
 - **Cross-reference related topics** - Use relative links to connect related information
@@ -589,6 +591,8 @@ When adding features:
 
 ## 🟡 Project Structure
 
+**See [docs/reference/PROJECT_ORGANIZATION.md](docs/reference/PROJECT_ORGANIZATION.md) for complete organization standards.**
+
 ```
 gitflow-analytics/
 ├── src/gitflow_analytics/
@@ -636,12 +640,16 @@ gitflow-analytics/
 ├── tests/                   # Test suite
 │   └── qualitative/        # ML system tests
 ├── docs/                    # Documentation
+│   ├── reference/           # Technical reference
+│   │   └── PROJECT_ORGANIZATION.md  # Official organization standard
 │   ├── design/              # Design documents
-│   └── DEPLOY.md            # Deployment guide
-├── config-sample.yaml       # Sample configuration
-├── config-sample-ml.yaml    # ML configuration sample
-├── pyproject.toml           # Project metadata
-└── README.md                # User documentation
+│   └── [other sections]/   # See docs/STRUCTURE.md
+├── configs/                 # Sample configuration files
+│   ├── config-sample.yaml  # Sample configuration
+│   └── config-sample-ml.yaml # ML configuration sample
+├── scripts/                 # Utility scripts
+├── pyproject.toml          # Project metadata
+└── README.md               # User documentation
 ```
 
 ## 🟡 Atomic Versioning System
