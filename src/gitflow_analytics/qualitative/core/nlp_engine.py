@@ -100,15 +100,9 @@ class NLPEngine:
         except OSError as e:
             self.logger.warning(
                 f"spaCy model '{self.config.spacy_model}' not found. "
-                f"Qualitative analysis will be disabled. "
-                f"\nTo enable ML features, install the model with:\n"
-                f"  python -m spacy download {self.config.spacy_model}\n"
-                f"Or reinstall the package to auto-download:\n"
-                f"  pip install --upgrade --force-reinstall gitflow-analytics"
+                f"ML features will be disabled. To enable, install with: python -m spacy download {self.config.spacy_model}"
             )
-            # Set nlp to None to enable graceful degradation
-            self.nlp = None
-            # Raise error to signal NLP engine initialization failed
+            # Raise the original error since the NLP engine requires spaCy
             raise OSError(
                 f"spaCy model '{self.config.spacy_model}' not found. "
                 f"Install with: python -m spacy download {self.config.spacy_model}"

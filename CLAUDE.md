@@ -97,7 +97,7 @@ semantic-release version --dry-run
 git clone <repository>
 cd gitflow-analytics
 pip install -e ".[dev]"
-# Note: spaCy model (en_core_web_sm) is automatically installed with the package
+python -m spacy download en_core_web_sm  # For ML features
 
 # THE way to test changes
 make quality  # If Makefile exists, otherwise use individual commands above
@@ -811,8 +811,8 @@ All YAML error messages follow this structure:
 12. **Category matching**: Commit categorization is case-insensitive and uses regex - test patterns carefully
 13. **Dual percentage metrics**: Require proper developer identity resolution to calculate individual work percentages
 14. **Merge commit filtering**: Merge commits are automatically excluded from untracked analysis regardless of file changes
-15. **ML model dependencies**: spaCy model (en_core_web_sm) is automatically installed with the package. If installation fails, qualitative analysis will be gracefully disabled.
-16. **ML graceful degradation**: System disables qualitative analysis if spaCy model is not available, providing clear error messages with installation instructions.
+15. **ML model dependencies**: spaCy models must be downloaded separately (`python -m spacy download en_core_web_sm`)
+16. **ML graceful degradation**: System falls back to rule-based categorization if ML components fail to load
 17. **ML cache location**: ML predictions cached in `.gitflow-cache/ml_predictions.db` - clear cache to reset ML results
 18. **ML confidence thresholds**: Low confidence thresholds may result in poor categorizations, high thresholds fall back to rules more often
 19. **spaCy model size**: Larger models (md, lg) provide better accuracy but use more memory and are slower to load
@@ -860,8 +860,8 @@ semantic-release version           # Create release (CI only)
 gitflow-analytics --version       # Check current version
 
 # ML categorization commands
-# Note: spaCy model is automatically installed with package
-python -m spacy list  # List installed spaCy models (verify en_core_web_sm is present)
+python -m spacy download en_core_web_sm  # Install spaCy model for ML
+python -m spacy list                     # List installed spaCy models
 
 # Test ML categorization
 python -c "
