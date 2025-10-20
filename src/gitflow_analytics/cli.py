@@ -634,13 +634,11 @@ def analyze(
             """Check if qualitative analysis is enabled in either location."""
             if cfg.qualitative and cfg.qualitative.enabled:
                 return True
-            if (
+            return (
                 hasattr(cfg.analysis, "qualitative")
                 and cfg.analysis.qualitative
                 and cfg.analysis.qualitative.enabled
-            ):
-                return True
-            return False
+            )
 
         # Helper function to get qualitative config from either location
         def get_qualitative_config():
