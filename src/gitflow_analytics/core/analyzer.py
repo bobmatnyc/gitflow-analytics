@@ -14,6 +14,8 @@ from git import Repo
 
 from ..extractors.story_points import StoryPointExtractor
 from ..extractors.tickets import TicketExtractor
+from ..types import FilteredCommitStats
+from ..utils.commit_utils import is_merge_commit
 from .branch_mapper import BranchToProjectMapper
 from .cache import GitAnalysisCache
 from .progress import get_progress_service
@@ -1231,17 +1233,17 @@ class GitAnalyzer:
 
         return False
 
-    def _calculate_filtered_stats(self, commit: git.Commit) -> dict[str, int]:
+    def _calculate_filtered_stats(self, commit: git.Commit) -> FilteredCommitStats:
         """Calculate commit statistics excluding boilerplate/generated files using git diff --numstat.
 
         When exclude_merge_commits is enabled, merge commits (commits with 2+ parents) will have
         their filtered line counts set to 0 to exclude them from productivity metrics.
         """
-        filtered_stats = {"files": 0, "insertions": 0, "deletions": 0}
+        filtered_stats: FilteredCommitStats = {"files": 0, "insertions": 0, "deletions": 0}
 
         # Check if this is a merge commit and we should exclude it from filtered counts
-        is_merge_commit = len(commit.parents) > 1
-        if self.exclude_merge_commits and is_merge_commit:
+        is_merge = is_merge_commit(commit)
+        if self.exclude_merge_commits and is_merge:
             logger.debug(
                 f"Excluding merge commit {commit.hexsha[:8]} from filtered line counts "
                 f"(has {len(commit.parents)} parents)"

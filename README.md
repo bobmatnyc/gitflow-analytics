@@ -177,6 +177,79 @@ gitflow-analytics -c config.yaml --weeks 8 --output ./reports
 
 > 💡 **Need more configuration options?** See the [Complete Configuration Guide](docs/guides/configuration.md) for advanced features, integrations, and customization.
 
+## 🎯 Excluding Merge Commits from Metrics
+
+GitFlow Analytics can exclude merge commits from filtered line count calculations, following DORA metrics best practices.
+
+### Why Exclude Merge Commits?
+
+Merge commits represent repository management, not original development work:
+- **Average merge commit**: 236.6 filtered lines vs 30.8 for regular commits (7.7x higher)
+- Merge commits can **skew productivity metrics** and velocity calculations
+- **DORA metrics best practice**: Focus on original development work, not repository management
+
+### Configuration
+
+Add this setting to your analysis configuration:
+
+```yaml
+analysis:
+  # Exclude merge commits from filtered line counts (DORA metrics best practice)
+  exclude_merge_commits: true  # Default: false
+```
+
+### Impact Example
+
+Real metrics from EWTN dataset analysis:
+
+| Metric | With Merge Commits | Without Merge Commits | Change |
+|--------|-------------------|----------------------|--------|
+| **Total Filtered Lines** | 138,730 | 54,808 | -60% |
+| **Merge Commits** | 355 commits | 355 commits | (excluded from line counts) |
+| **Regular Commits** | 1,426 commits | 1,426 commits | (unchanged) |
+
+### What Gets Excluded?
+
+When `exclude_merge_commits: true`:
+
+✅ **Filtered Stats**: Merge commits (2+ parents) have `filtered_insertions = 0` and `filtered_deletions = 0`
+✅ **Raw Stats**: Always preserved for all commits (accurate commit counts)
+✅ **Reports**: Line count metrics reflect only original development work
+
+❌ **Not affected**: Commit counts, developer activity tracking, ticket references
+
+### When to Use
+
+**✅ Enable when:**
+- You want DORA-compliant metrics for productivity tracking
+- Your workflow uses merge commits for pull requests
+- You need accurate developer velocity without repository overhead
+- You're comparing metrics across teams with different merge strategies
+
+**❌ Disable when:**
+- You want to track all repository activity including management overhead
+- Merge commits represent significant manual conflict resolution in your workflow
+- You're analyzing repositories without merge-heavy workflows
+- You need to measure total repository churn including merges
+
+### Example Configuration
+
+```yaml
+# Full configuration example
+analysis:
+  weeks_back: 8
+  include_weekends: true
+
+  # DORA-compliant metrics: exclude merge commits
+  exclude_merge_commits: true
+
+  # Analyze ALL branches to capture feature branch work
+  branch_patterns:
+    - "*"  # Include all branches (feature, develop, hotfix, etc.)
+```
+
+> 💡 **Pro Tip**: Combine `exclude_merge_commits: true` with `branch_patterns: ["*"]` to analyze all development work without merge overhead.
+
 ## 📊 Generated Reports
 
 GitFlow Analytics generates comprehensive reports for different audiences:

@@ -60,7 +60,13 @@ clickup:
 analysis:
   # Default ticket platform for this project
   default_ticket_platform: "jira"  # or "github", "clickup", "linear"
-  
+
+  # Exclude merge commits from filtered line counts (DORA metrics best practice)
+  # Merge commits represent repository management, not original development work
+  # Average merge commit: 236.6 filtered lines vs 30.8 for regular commits (7.7x higher)
+  # Impact: Reduces line counts by ~60% for typical workflows, focusing on actual development
+  exclude_merge_commits: true
+
   # Branch to project mapping rules (optional)
   branch_mapping_rules:
     FRONTEND:

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+import git
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -28,6 +29,8 @@ from ..models.database import (
     DailyCommitBatch,
     DetailedTicketData,
 )
+from ..types import CommitStats
+from ..utils.commit_utils import is_merge_commit
 from .branch_mapper import BranchToProjectMapper
 from .cache import GitAnalysisCache
 from .git_timeout_wrapper import GitOperationTimeout, GitTimeoutWrapper, HeartbeatLogger
@@ -649,7 +652,7 @@ class GitDataFetcher:
         return daily_commits
 
     def _extract_commit_data(
-        self, commit: Any, branch_name: str, project_key: str, repo_path: Path
+        self, commit: git.Commit, branch_name: str, project_key: str, repo_path: Path
     ) -> Optional[dict[str, Any]]:
         """Extract comprehensive data from a Git commit.
 
@@ -1795,14 +1798,14 @@ class GitDataFetcher:
         finally:
             session.close()
 
-    def _calculate_commit_stats(self, commit: Any) -> dict[str, int]:
+    def _calculate_commit_stats(self, commit: git.Commit) -> CommitStats:
         """Calculate commit statistics using reliable git diff --numstat with exclude_paths filtering.
 
         When exclude_merge_commits is enabled, merge commits (commits with 2+ parents) will have
         their filtered line counts set to 0 to exclude them from productivity metrics.
 
         Returns:
-            Dictionary with both raw and filtered statistics:
+            CommitStats dictionary with both raw and filtered statistics:
             - 'files', 'insertions', 'deletions': filtered counts (0 for merge commits if excluded)
             - 'raw_insertions', 'raw_deletions': unfiltered counts (always calculated)
 
@@ -1816,8 +1819,8 @@ class GitDataFetcher:
         excluded_stats = {"files": 0, "insertions": 0, "deletions": 0}
 
         # Check if this is a merge commit and we should exclude it from filtered counts
-        is_merge_commit = len(commit.parents) > 1
-        if self.exclude_merge_commits and is_merge_commit:
+        is_merge = is_merge_commit(commit)
+        if self.exclude_merge_commits and is_merge:
             logger.debug(
                 f"Excluding merge commit {commit.hexsha[:8]} from filtered line counts "
                 f"(has {len(commit.parents)} parents)"
@@ -1855,7 +1858,14 @@ class GitDataFetcher:
                 )
             except GitOperationTimeout:
                 logger.warning(f"⏱️ Timeout calculating stats for commit {commit.hexsha[:8]}")
-                return stats  # Return zeros
+                timeout_result: CommitStats = {
+                    "files": 0,
+                    "insertions": 0,
+                    "deletions": 0,
+                    "raw_insertions": 0,
+                    "raw_deletions": 0,
+                }
+                return timeout_result
 
             # Parse the numstat output: insertions\tdeletions\tfilename
             for line in diff_output.strip().split("\n"):
@@ -1920,16 +1930,25 @@ class GitDataFetcher:
 
         # If this is a merge commit and we're excluding them, return zeros for filtered stats
         # but keep the raw stats
-        if self.exclude_merge_commits and is_merge_commit:
-            stats = {"files": 0, "insertions": 0, "deletions": 0}
-            stats["raw_insertions"] = raw_stats["insertions"]
-            stats["raw_deletions"] = raw_stats["deletions"]
-            return stats
+        if self.exclude_merge_commits and is_merge:
+            result: CommitStats = {
+                "files": 0,
+                "insertions": 0,
+                "deletions": 0,
+                "raw_insertions": raw_stats["insertions"],
+                "raw_deletions": raw_stats["deletions"],
+            }
+            return result
 
         # Return both raw and filtered stats
-        stats["raw_insertions"] = raw_stats["insertions"]
-        stats["raw_deletions"] = raw_stats["deletions"]
-        return stats
+        result: CommitStats = {
+            "files": stats["files"],
+            "insertions": stats["insertions"],
+            "deletions": stats["deletions"],
+            "raw_insertions": raw_stats["insertions"],
+            "raw_deletions": raw_stats["deletions"],
+        }
+        return result
 
     def _store_day_commits_incremental(
         self, repo_path: Path, date_str: str, commits: list[dict[str, Any]], project_key: str
@@ -1946,9 +1965,36 @@ class GitDataFetcher:
             project_key: Project identifier
         """
         try:
+            # Collect summary statistics for INFO-level logging
+            merge_count = 0
+            excluded_file_count = 0
+            total_excluded_insertions = 0
+            total_excluded_deletions = 0
+
             # Transform commits to cache format
             cache_format_commits = []
             for commit in commits:
+                # Track merge commits for summary logging
+                if commit.get("is_merge", False):
+                    merge_count += 1
+
+                # Track excluded file statistics
+                raw_insertions = commit.get("raw_insertions", commit.get("lines_added", 0))
+                raw_deletions = commit.get("raw_deletions", commit.get("lines_deleted", 0))
+                filtered_insertions = commit.get(
+                    "filtered_insertions", commit.get("lines_added", 0)
+                )
+                filtered_deletions = commit.get(
+                    "filtered_deletions", commit.get("lines_deleted", 0)
+                )
+
+                excluded_insertions = raw_insertions - filtered_insertions
+                excluded_deletions = raw_deletions - filtered_deletions
+                if excluded_insertions > 0 or excluded_deletions > 0:
+                    excluded_file_count += 1
+                    total_excluded_insertions += excluded_insertions
+                    total_excluded_deletions += excluded_deletions
+
                 cache_format_commit = {
                     "hash": commit["commit_hash"],
                     "author_name": commit.get("author_name", ""),
@@ -1959,15 +2005,11 @@ class GitDataFetcher:
                     "is_merge": commit.get("is_merge", False),
                     "files_changed_count": commit.get("files_changed_count", 0),
                     # Store raw unfiltered values
-                    "insertions": commit.get("raw_insertions", commit.get("lines_added", 0)),
-                    "deletions": commit.get("raw_deletions", commit.get("lines_deleted", 0)),
+                    "insertions": raw_insertions,
+                    "deletions": raw_deletions,
                     # Store filtered values
-                    "filtered_insertions": commit.get(
-                        "filtered_insertions", commit.get("lines_added", 0)
-                    ),
-                    "filtered_deletions": commit.get(
-                        "filtered_deletions", commit.get("lines_deleted", 0)
-                    ),
+                    "filtered_insertions": filtered_insertions,
+                    "filtered_deletions": filtered_deletions,
                     "story_points": commit.get("story_points"),
                     "ticket_references": commit.get("ticket_references", []),
                 }
@@ -1980,6 +2022,21 @@ class GitDataFetcher:
                     f"Incrementally stored {bulk_stats['inserted']} commits for {date_str} "
                     f"({bulk_stats['skipped']} already cached)"
                 )
+
+            # Summary logging at INFO level for user-facing visibility
+            if self.exclude_merge_commits and merge_count > 0:
+                logger.info(
+                    f"{date_str}: Excluded {merge_count} merge commits from filtered line counts "
+                    f"(exclude_merge_commits enabled)"
+                )
+
+            if self.exclude_paths and excluded_file_count > 0:
+                logger.info(
+                    f"{date_str}: Excluded changes from {excluded_file_count} commits "
+                    f"(+{total_excluded_insertions} -{total_excluded_deletions} lines) "
+                    f"due to path exclusions"
+                )
+
         except Exception as e:
             # Log error but don't fail - commits will be stored again in batch at the end
             logger.warning(f"Failed to incrementally store commits for {date_str}: {e}")
