@@ -117,7 +117,6 @@ def test_repo_with_merges(temp_workspace, test_author):
         expected_lines_with_merges += 10
 
     # Switch back to default branch (main or master) and create merge commit
-    default_branch = repo.active_branch
     default_branch.checkout()
 
     # Merge feature branch (no-ff to ensure merge commit is created)

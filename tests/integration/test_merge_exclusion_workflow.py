@@ -611,6 +611,9 @@ class TestMergeExclusionEdgeCases:
         repo.index.add(["test.txt"])
         repo.index.commit("Initial commit", author=test_author, committer=test_author)
 
+        # Capture default branch for merging
+        default_branch = repo.active_branch
+
         # Create two merge commits
         for i in range(2):
             # Create branch
@@ -622,8 +625,8 @@ class TestMergeExclusionEdgeCases:
             repo.index.add(["test.txt"])
             repo.index.commit(f"Feature {i}", author=test_author, committer=test_author)
 
-            # Merge to main
-            repo.heads.main.checkout()
+            # Merge to default branch (main or master)
+            default_branch.checkout()
             repo.git.merge(f"feature{i}", no_ff=True, m=f"Merge feature{i}")
 
         # Fetch with merge exclusion
