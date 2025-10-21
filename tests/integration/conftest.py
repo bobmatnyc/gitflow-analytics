@@ -99,6 +99,9 @@ def test_repo_with_merges(temp_workspace, test_author):
         expected_lines_regular += 10
         expected_lines_with_merges += 10
 
+    # Capture default branch name before creating feature branch
+    default_branch = repo.active_branch
+
     # Create feature branch
     feature_branch = repo.create_head("feature")
     feature_branch.checkout()
@@ -113,8 +116,9 @@ def test_repo_with_merges(temp_workspace, test_author):
         expected_lines_regular += 10
         expected_lines_with_merges += 10
 
-    # Switch back to main and create merge commit
-    repo.heads.main.checkout()
+    # Switch back to default branch (main or master) and create merge commit
+    default_branch = repo.active_branch
+    default_branch.checkout()
 
     # Merge feature branch (no-ff to ensure merge commit is created)
     repo.git.merge("feature", no_ff=True, m="Merge feature branch")
