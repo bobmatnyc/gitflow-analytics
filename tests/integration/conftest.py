@@ -143,7 +143,7 @@ def test_repo_with_merges(temp_workspace, test_author):
         expected_lines_with_merges += 10
 
     # Merge second feature branch
-    repo.heads.main.checkout()
+    default_branch.checkout()
     repo.git.merge("feature2", no_ff=True, m="Merge feature2 branch")
     merge_commit2 = repo.head.commit
     merge_commits.append(merge_commit2.hexsha)
