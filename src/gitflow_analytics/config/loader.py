@@ -593,6 +593,7 @@ class ConfigLoader:
             ),
             exclude_message_patterns=analysis_data.get("exclude", {}).get("message_patterns", []),
             exclude_paths=exclude_paths,
+            exclude_merge_commits=analysis_data.get("exclude_merge_commits", False),
             similarity_threshold=analysis_data.get("identity", {}).get(
                 "similarity_threshold", 0.85
             ),

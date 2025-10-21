@@ -299,6 +299,7 @@ class AnalysisConfig:
     exclude_authors: list[str] = field(default_factory=list)
     exclude_message_patterns: list[str] = field(default_factory=list)
     exclude_paths: list[str] = field(default_factory=list)
+    exclude_merge_commits: bool = False  # Exclude merge commits from filtered line counts
     similarity_threshold: float = 0.85
     manual_identity_mappings: list[dict[str, Any]] = field(default_factory=list)
     aliases_file: Optional[Path] = None  # Path to shared aliases.yaml file

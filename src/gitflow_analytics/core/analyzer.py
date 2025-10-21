@@ -45,6 +45,7 @@ class GitAnalyzer:
         llm_config: Optional[dict[str, Any]] = None,
         classification_config: Optional[dict[str, Any]] = None,
         branch_analysis_config: Optional[dict[str, Any]] = None,
+        exclude_merge_commits: bool = False,
     ):
         """Initialize analyzer with cache and optional ML categorization and commit classification.
 
@@ -59,9 +60,11 @@ class GitAnalyzer:
             llm_config: Configuration for LLM-based commit classification
             classification_config: Configuration for commit classification
             branch_analysis_config: Configuration for branch analysis optimization
+            exclude_merge_commits: Exclude merge commits from filtered line count calculations
         """
         self.cache = cache
         self.batch_size = batch_size
+        self.exclude_merge_commits = exclude_merge_commits
         self.story_point_extractor = StoryPointExtractor(patterns=story_point_patterns)
 
         # Initialize ticket extractor (ML or standard based on config and availability)
@@ -1149,7 +1152,11 @@ class GitAnalyzer:
                 return dir_name in path.parts
             else:
                 # File pattern like *.min.js
-                return fnmatch.fnmatch(path.name, suffix_pattern)
+                # Check both filename AND full path to handle patterns like **/pnpm-lock.yaml
+                # matching root-level files (e.g., pnpm-lock.yaml)
+                return fnmatch.fnmatch(path.name, suffix_pattern) or fnmatch.fnmatch(
+                    filepath, suffix_pattern
+                )
 
         elif pattern.endswith("/**"):
             # Pattern like vendor/** or docs/build/** - matches files inside directory at root level
@@ -1225,8 +1232,21 @@ class GitAnalyzer:
         return False
 
     def _calculate_filtered_stats(self, commit: git.Commit) -> dict[str, int]:
-        """Calculate commit statistics excluding boilerplate/generated files using git diff --numstat."""
+        """Calculate commit statistics excluding boilerplate/generated files using git diff --numstat.
+
+        When exclude_merge_commits is enabled, merge commits (commits with 2+ parents) will have
+        their filtered line counts set to 0 to exclude them from productivity metrics.
+        """
         filtered_stats = {"files": 0, "insertions": 0, "deletions": 0}
+
+        # Check if this is a merge commit and we should exclude it from filtered counts
+        is_merge_commit = len(commit.parents) > 1
+        if self.exclude_merge_commits and is_merge_commit:
+            logger.debug(
+                f"Excluding merge commit {commit.hexsha[:8]} from filtered line counts "
+                f"(has {len(commit.parents)} parents)"
+            )
+            return filtered_stats  # Return zeros for merge commits
 
         # For initial commits or commits without parents
         parent = commit.parents[0] if commit.parents else None

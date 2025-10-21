@@ -60,6 +60,7 @@ class GitDataFetcher:
         allowed_ticket_platforms: Optional[list[str]] = None,
         exclude_paths: Optional[list[str]] = None,
         skip_remote_fetch: bool = False,
+        exclude_merge_commits: bool = False,
     ) -> None:
         """Initialize the data fetcher.
 
@@ -69,9 +70,11 @@ class GitDataFetcher:
             allowed_ticket_platforms: List of allowed ticket platforms
             exclude_paths: List of file paths to exclude from analysis
             skip_remote_fetch: If True, skip git fetch/pull operations
+            exclude_merge_commits: Exclude merge commits from filtered line count calculations
         """
         self.cache = cache
         self.skip_remote_fetch = skip_remote_fetch
+        self.exclude_merge_commits = exclude_merge_commits
         self.repository_status = {}  # Track status of each repository
         # CRITICAL FIX: Use the same database instance as the cache to avoid session conflicts
         self.database = cache.db
@@ -1795,10 +1798,13 @@ class GitDataFetcher:
     def _calculate_commit_stats(self, commit: Any) -> dict[str, int]:
         """Calculate commit statistics using reliable git diff --numstat with exclude_paths filtering.
 
+        When exclude_merge_commits is enabled, merge commits (commits with 2+ parents) will have
+        their filtered line counts set to 0 to exclude them from productivity metrics.
+
         Returns:
             Dictionary with both raw and filtered statistics:
-            - 'files', 'insertions', 'deletions': filtered counts
-            - 'raw_insertions', 'raw_deletions': unfiltered counts
+            - 'files', 'insertions', 'deletions': filtered counts (0 for merge commits if excluded)
+            - 'raw_insertions', 'raw_deletions': unfiltered counts (always calculated)
 
         THREAD SAFETY: This method is thread-safe as it works with commit objects
         that have their own repo references.
@@ -1808,6 +1814,16 @@ class GitDataFetcher:
         # Track raw stats for storage
         raw_stats = {"files": 0, "insertions": 0, "deletions": 0}
         excluded_stats = {"files": 0, "insertions": 0, "deletions": 0}
+
+        # Check if this is a merge commit and we should exclude it from filtered counts
+        is_merge_commit = len(commit.parents) > 1
+        if self.exclude_merge_commits and is_merge_commit:
+            logger.debug(
+                f"Excluding merge commit {commit.hexsha[:8]} from filtered line counts "
+                f"(has {len(commit.parents)} parents)"
+            )
+            # Still need to calculate raw stats for the commit, but filtered stats will be 0
+            # Continue with calculation but will return zeros for filtered stats at the end
 
         # For initial commits or commits without parents
         parent = commit.parents[0] if commit.parents else None
@@ -1901,6 +1917,14 @@ class GitDataFetcher:
         except Exception as e:
             # Log the error for debugging but don't crash
             logger.warning(f"Error calculating commit stats for {commit.hexsha[:8]}: {e}")
+
+        # If this is a merge commit and we're excluding them, return zeros for filtered stats
+        # but keep the raw stats
+        if self.exclude_merge_commits and is_merge_commit:
+            stats = {"files": 0, "insertions": 0, "deletions": 0}
+            stats["raw_insertions"] = raw_stats["insertions"]
+            stats["raw_deletions"] = raw_stats["deletions"]
+            return stats
 
         # Return both raw and filtered stats
         stats["raw_insertions"] = raw_stats["insertions"]

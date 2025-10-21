@@ -967,6 +967,7 @@ def analyze(
                 branch_mapping_rules=cfg.analysis.branch_mapping_rules,
                 allowed_ticket_platforms=cfg.get_effective_ticket_platforms(),
                 exclude_paths=cfg.analysis.exclude_paths,
+                exclude_merge_commits=cfg.analysis.exclude_merge_commits,
             )
 
             # Get commits from all repositories
@@ -1162,6 +1163,7 @@ def analyze(
             ml_categorization_config=ml_config,
             llm_config=llm_config,
             branch_analysis_config=branch_analysis_config,
+            exclude_merge_commits=cfg.analysis.exclude_merge_commits,
         )
         orchestrator = IntegrationOrchestrator(cfg, cache)
 
@@ -1289,6 +1291,7 @@ def analyze(
                 "enable_qualitative": enable_qualitative,
                 "enable_pm": enable_pm,
                 "pm_platforms": list(pm_platform) if pm_platform else [],
+                "exclude_merge_commits": cfg.analysis.exclude_merge_commits,
             },
         )
 
@@ -1386,6 +1389,7 @@ def analyze(
                         cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]
                     ),
                     exclude_paths=getattr(cfg.analysis, "exclude_paths", None),
+                    exclude_merge_commits=cfg.analysis.exclude_merge_commits,
                 )
 
                 # Initialize integrations for ticket fetching
@@ -1780,6 +1784,7 @@ def analyze(
                             ["jira", "github", "clickup", "linear"],
                         ),
                         exclude_paths=getattr(cfg.analysis, "exclude_paths", None),
+                        exclude_merge_commits=cfg.analysis.exclude_merge_commits,
                     )
 
                     # Initialize integrations for ticket fetching
@@ -4321,6 +4326,7 @@ def fetch(
             branch_mapping_rules=getattr(cfg.analysis, "branch_mapping_rules", {}),
             allowed_ticket_platforms=cfg.get_effective_ticket_platforms(),
             exclude_paths=getattr(cfg.analysis, "exclude_paths", None),
+            exclude_merge_commits=cfg.analysis.exclude_merge_commits,
         )
 
         # Initialize integrations for ticket fetching
@@ -5015,6 +5021,7 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
             ml_categorization_config=ml_config,
             llm_config=llm_config,
             branch_analysis_config=branch_analysis_config,
+            exclude_merge_commits=cfg.analysis.exclude_merge_commits,
         )
 
         click.echo("🔍 Analyzing repositories for developer identities...")
@@ -5252,6 +5259,7 @@ def aliases_command(
             ml_categorization_config=ml_config,
             llm_config=llm_config,
             branch_analysis_config=branch_analysis_config,
+            exclude_merge_commits=cfg.analysis.exclude_merge_commits,
         )
 
         all_commits = []
