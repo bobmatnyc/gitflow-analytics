@@ -1,6 +1,5 @@
 """Utilities for working with Git commit objects."""
 
-
 import git
 
 
