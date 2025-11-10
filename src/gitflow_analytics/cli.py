@@ -18,6 +18,7 @@ import yaml
 
 from ._version import __version__
 from .config import ConfigLoader
+from .config.errors import ConfigurationError
 from .ui.progress_display import create_progress_display
 
 # Heavy imports are lazy-loaded to improve CLI startup time
@@ -158,7 +159,8 @@ def handle_timezone_error(
         for i, commit in enumerate(sample_commits):
             timestamp = commit.get("timestamp")
             logger.error(
-                f"  Sample commit {i}: timestamp={timestamp} (tzinfo: {getattr(timestamp, 'tzinfo', 'N/A')})"
+                f"  Sample commit {i}: timestamp={timestamp} "
+                f"(tzinfo: {getattr(timestamp, 'tzinfo', 'N/A')})"
             )
 
         click.echo(f"   ❌ Timezone comparison error in {report_name}")
@@ -300,16 +302,16 @@ def cli(ctx: click.Context) -> None:
 
     \b
     QUICK START:
-      1. Create a configuration file (see config-sample.yaml)
-      2. Run analysis: gitflow-analytics -c config.yaml --weeks 4
+      1. Create a configuration file named config.yaml (see config-sample.yaml)
+      2. Run analysis: gitflow-analytics --weeks 4
       3. View reports in the output directory
 
     \b
     COMMON WORKFLOWS:
-      Analyze last 4 weeks:     gitflow-analytics -c config.yaml --weeks 4
-      Generate specific report: gitflow-analytics -c config.yaml --format csv
-      Clear cache and analyze:  gitflow-analytics -c config.yaml --clear-cache
-      Validate configuration:   gitflow-analytics -c config.yaml --validate-only
+      Analyze last 4 weeks:     gitflow-analytics --weeks 4
+      Use custom config:        gitflow-analytics -c myconfig.yaml --weeks 4
+      Clear cache and analyze:  gitflow-analytics --clear-cache
+      Validate configuration:   gitflow-analytics --validate-only
 
     \b
     COMMANDS:
@@ -328,21 +330,28 @@ def cli(ctx: click.Context) -> None:
       gitflow-analytics install
 
       # Interactive launcher
-      gitflow-analytics run -c config.yaml
+      gitflow-analytics run
 
       # Generate developer aliases
-      gitflow-analytics aliases -c config.yaml --apply
+      gitflow-analytics aliases --apply
 
-      # Run analysis
-      gitflow-analytics -c config.yaml --weeks 4
+      # Run analysis (uses config.yaml by default)
+      gitflow-analytics --weeks 4
 
     \b
     For detailed command help: gitflow-analytics COMMAND --help
     For documentation: https://github.com/yourusername/gitflow-analytics
     """
-    # If no subcommand was invoked, show help
+    # If no subcommand was invoked, show interactive menu or help
     if ctx.invoked_subcommand is None:
-        click.echo(ctx.get_help())
+        # Check if running in interactive terminal
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            from gitflow_analytics.cli_wizards.menu import show_main_menu
+
+            show_main_menu()
+        else:
+            # Non-interactive terminal, show help
+            click.echo(ctx.get_help())
         ctx.exit(0)
 
 
@@ -350,9 +359,9 @@ def cli(ctx: click.Context) -> None:
 @click.option(
     "--config",
     "-c",
-    type=click.Path(exists=True, path_type=Path),
-    required=True,
-    help="Path to YAML configuration file",
+    type=click.Path(path_type=Path),
+    default="config.yaml",
+    help="Path to YAML configuration file (default: config.yaml)",
 )
 @click.option(
     "--weeks", "-w", type=int, default=12, help="Number of weeks to analyze (default: 12)"
@@ -419,7 +428,10 @@ def cli(ctx: click.Context) -> None:
 @click.option(
     "--use-batch-classification/--use-legacy-classification",
     default=True,
-    help="Use batch LLM classification on pre-fetched data (Step 2 of 2) - now the default behavior",
+    help=(
+        "Use batch LLM classification on pre-fetched data (Step 2 of 2) - "
+        "now the default behavior"
+    ),
 )
 @click.option(
     "--force-fetch", is_flag=True, help="Force fetch fresh data even if cached data exists"
@@ -472,20 +484,23 @@ def analyze_subcommand(
 
     \b
     EXAMPLES:
-      # Basic analysis of last 4 weeks
-      gitflow-analytics analyze -c config.yaml --weeks 4
+      # Basic analysis of last 4 weeks (uses config.yaml by default)
+      gitflow-analytics analyze --weeks 4
+
+      # Use a custom configuration file
+      gitflow-analytics analyze -c myconfig.yaml --weeks 4
 
       # Generate CSV reports with fresh data
-      gitflow-analytics analyze -c config.yaml --generate-csv --clear-cache
+      gitflow-analytics analyze --generate-csv --clear-cache
 
       # Quick validation of configuration
-      gitflow-analytics analyze -c config.yaml --validate-only
+      gitflow-analytics analyze --validate-only
 
       # Analyze with qualitative insights
-      gitflow-analytics analyze -c config.yaml --enable-qualitative
+      gitflow-analytics analyze --enable-qualitative
 
       # Run only security analysis (requires security config)
-      gitflow-analytics analyze -c config.yaml --security-only
+      gitflow-analytics analyze --security-only
 
     \b
     OUTPUT FILES:
@@ -626,7 +641,28 @@ def analyze(
         else:
             click.echo(f"📋 Loading configuration from {config}...")
 
-        cfg = ConfigLoader.load(config)
+        try:
+            cfg = ConfigLoader.load(config)
+        except (FileNotFoundError, ConfigurationError) as e:
+            # Provide user-friendly guidance for missing config file
+            error_msg = str(e)
+            if "not found" in error_msg.lower() or isinstance(e, FileNotFoundError):
+                friendly_msg = (
+                    f"❌ Configuration file not found: {config}\n\n"
+                    "To get started:\n"
+                    "  1. Copy the sample: cp examples/config/config-sample.yaml config.yaml\n"
+                    "  2. Edit config.yaml with your repository settings\n"
+                    "  3. Run: gitflow-analytics -w 4\n\n"
+                    "Or use the interactive installer: gitflow-analytics install"
+                )
+                if display:
+                    display.print_status(friendly_msg, "error")
+                else:
+                    click.echo(friendly_msg, err=True)
+                sys.exit(1)
+            else:
+                # Re-raise other configuration errors (they already have good messages)
+                raise
 
         # Helper function to check if qualitative analysis is enabled
         # Supports both top-level cfg.qualitative and nested cfg.analysis.qualitative
@@ -797,7 +833,10 @@ def analyze(
                 if display and display._live:
                     display.update_progress_task(
                         "main",
-                        description=f"Cache cleared: {cleared_counts['commits']} commits, {cleared_counts['total']} total",
+                        description=(
+                            f"Cache cleared: {cleared_counts['commits']} commits, "
+                            f"{cleared_counts['total']} total"
+                        ),
                         completed=10,
                     )
                 elif display:
@@ -935,7 +974,6 @@ def analyze(
             from .security.reports import SecurityReportGenerator
 
             # GitAnalysisCache already imported at module level (line 24)
-
             # Load security configuration
             security_config = SecurityConfig.from_dict(
                 cfg.analysis.security if hasattr(cfg.analysis, "security") else {}
@@ -1174,7 +1212,10 @@ def analyze(
                 # We're in full-screen mode, update the task
                 display.update_progress_task(
                     "main",
-                    description=f"🔍 Discovering repositories from organization: {cfg.github.organization}",
+                    description=(
+                        f"🔍 Discovering repositories from organization: "
+                        f"{cfg.github.organization}"
+                    ),
                     completed=15,
                 )
             else:
@@ -1211,7 +1252,10 @@ def analyze(
                     # We're in full-screen mode, update progress and initialize repo list
                     display.update_progress_task(
                         "main",
-                        description=f"✅ Found {len(discovered_repos)} repositories in {cfg.github.organization}",
+                        description=(
+                            f"✅ Found {len(discovered_repos)} repositories in "
+                            f"{cfg.github.organization}"
+                        ),
                         completed=20,
                     )
                     # Initialize repository list for the full-screen display
@@ -1341,12 +1385,16 @@ def analyze(
                     if display and hasattr(display, "_live") and display._live:
                         display.update_progress_task(
                             "repos",
-                            description=f"Found {len(cached_repos)} repos with cached data ({total_cached_commits} commits)",
+                            description=(
+                                f"Found {len(cached_repos)} repos with cached data "
+                                f"({total_cached_commits} commits)"
+                            ),
                             completed=10,
                         )
                     else:
                         click.echo(
-                            f"✅ Found {len(cached_repos)} repos with cached data ({total_cached_commits} commits)"
+                            f"✅ Found {len(cached_repos)} repos with cached data "
+                            f"({total_cached_commits} commits)"
                         )
             else:
                 # Force fetch: analyze all repositories
@@ -1370,12 +1418,16 @@ def analyze(
                 if display and display._live:
                     display.update_progress_task(
                         "repos",
-                        description=f"Step 1: Fetching data for {len(repos_needing_analysis)} repositories...",
+                        description=(
+                            f"Step 1: Fetching data for "
+                            f"{len(repos_needing_analysis)} repositories..."
+                        ),
                         completed=15,
                     )
                 else:
                     click.echo(
-                        f"📥 Step 1: Fetching data for {len(repos_needing_analysis)} repositories..."
+                        f"📥 Step 1: Fetching data for "
+                        f"{len(repos_needing_analysis)} repositories..."
                     )
 
                 # Perform data fetch for repositories that need analysis
@@ -1404,7 +1456,10 @@ def analyze(
                     # Update the existing task since display was already started
                     display.update_progress_task(
                         "repos",
-                        description=f"Step 1: Fetching data for {len(repos_needing_analysis)} repositories",
+                        description=(
+                            f"Step 1: Fetching data for "
+                            f"{len(repos_needing_analysis)} repositories"
+                        ),
                         completed=0,
                     )
 
@@ -1450,7 +1505,8 @@ def analyze(
                             description=f"Analyzing {len(repos_needing_analysis)} repositories",
                         )
 
-                        # Initialize ALL repositories (both cached and to-be-fetched) with their status
+                        # Initialize ALL repositories (both cached and to-be-fetched)
+                        # with their status
                         all_repo_list = []
 
                         # Add cached repos as COMPLETE
@@ -1486,14 +1542,18 @@ def analyze(
                             repo_display_name = repo_config.name or project_key
                             progress.set_description(
                                 repos_progress_ctx,
-                                f"🔄 Analyzing repository: {repo_display_name} ({idx}/{len(repos_needing_analysis)})",
+                                f"🔄 Analyzing repository: {repo_display_name} "
+                                f"({idx}/{len(repos_needing_analysis)})",
                             )
 
                             # Also update the display if available
                             if display:
                                 display.update_progress_task(
                                     "repos",
-                                    description=f"🔄 Processing: {repo_display_name} ({idx}/{len(repos_needing_analysis)})",
+                                    description=(
+                                        f"🔄 Processing: {repo_display_name} "
+                                        f"({idx}/{len(repos_needing_analysis)})"
+                                    ),
                                     completed=idx - 1,
                                 )
                                 # Update repository status to processing
@@ -1551,7 +1611,8 @@ def analyze(
 
                             if display:
                                 display.print_status(
-                                    f"   ✅ {project_key}: {result['stats']['total_commits']} commits, "
+                                    f"   ✅ {project_key}: "
+                                    f"{result['stats']['total_commits']} commits, "
                                     f"{result['stats']['unique_tickets']} tickets",
                                     "success",
                                 )
@@ -1624,21 +1685,27 @@ def analyze(
                     )
                     if repo_status["failed_updates"] > 0:
                         logger.warning(
-                            "   ⚠️  Some repositories failed to fetch updates. Analysis uses potentially stale data.\n"
-                            "   Check authentication, network connectivity, or try with --skip-remote-fetch."
+                            "   ⚠️  Some repositories failed to fetch updates. "
+                            "Analysis uses potentially stale data.\n"
+                            "   Check authentication, network connectivity, or try "
+                            "with --skip-remote-fetch."
                         )
 
                 if display and display._live:
                     display.update_progress_task(
                         "repos",
-                        description=f"Step 1 complete: {total_commits} commits, {total_tickets} tickets fetched",
+                        description=(
+                            f"Step 1 complete: {total_commits} commits, "
+                            f"{total_tickets} tickets fetched"
+                        ),
                         completed=100,
                     )
                     # Stop the live display after Step 1
                     display.stop_live_display()
                 else:
                     click.echo(
-                        f"📥 Step 1 complete: {total_commits} commits, {total_tickets} tickets fetched"
+                        f"📥 Step 1 complete: {total_commits} commits, "
+                        f"{total_tickets} tickets fetched"
                     )
             else:
                 if display and display._live:
@@ -1690,41 +1757,50 @@ def analyze(
                     validation_passed = True
                     if display:
                         display.print_status(
-                            f"✅ Data validation passed: {stored_commits} commits, {existing_batches} batches ready",
+                            f"✅ Data validation passed: {stored_commits} commits, "
+                            f"{existing_batches} batches ready",
                             "success",
                         )
                     else:
                         click.echo(
-                            f"✅ Data validation passed: {stored_commits} commits, {existing_batches} batches ready"
+                            f"✅ Data validation passed: {stored_commits} commits, "
+                            f"{existing_batches} batches ready"
                         )
 
                 elif stored_commits > 0 and existing_batches == 0:
                     # We have commits but no batches - this shouldn't happen but we can recover
                     if display:
                         display.print_status(
-                            f"⚠️ Found {stored_commits} commits but no daily batches - data inconsistency detected",
+                            f"⚠️ Found {stored_commits} commits but no daily batches - "
+                            f"data inconsistency detected",
                             "warning",
                         )
                     else:
                         click.echo(
-                            f"⚠️ Found {stored_commits} commits but no daily batches - data inconsistency detected"
+                            f"⚠️ Found {stored_commits} commits but no daily batches - "
+                            f"data inconsistency detected"
                         )
 
                 elif stored_commits == 0 and total_commits > 0:
                     # Step 1 claimed success but no commits were stored - critical error
-                    error_msg = f"❌ VALIDATION FAILED: Step 1 reported {total_commits} commits but database contains 0 commits for date range"
+                    error_msg = (
+                        f"❌ VALIDATION FAILED: Step 1 reported {total_commits} commits "
+                        f"but database contains 0 commits for date range"
+                    )
                     if display:
                         display.print_status(error_msg, "error")
                     else:
                         click.echo(error_msg)
                     click.echo(
-                        f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+                        f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to "
+                        f"{end_date.strftime('%Y-%m-%d')}"
                     )
                     click.echo(
                         f"   📊 Step 1 stats: {total_commits} commits, {total_tickets} tickets"
                     )
                     click.echo(
-                        f"   🗃️ Database reality: {stored_commits} commits, {existing_batches} batches"
+                        f"   🗃️ Database reality: {stored_commits} commits, "
+                        f"{existing_batches} batches"
                     )
                     click.echo(
                         "   💡 This suggests a timezone, date filtering, or database storage issue"
@@ -1737,12 +1813,14 @@ def analyze(
                     # No data at all - need to fetch or explain why
                     if display:
                         display.print_status(
-                            "📊 No commits or batches found for date range - proceeding with data fetch",
+                            "📊 No commits or batches found for date range - "
+                            "proceeding with data fetch",
                             "warning",
                         )
                     else:
                         click.echo(
-                            "📊 No commits or batches found for date range - proceeding with data fetch"
+                            "📊 No commits or batches found for date range - "
+                            "proceeding with data fetch"
                         )
 
             # PROCEED WITH INITIAL FETCH if validation didn't pass
@@ -1761,15 +1839,18 @@ def analyze(
                 if repos_needing_analysis:
                     if display:
                         display.print_status(
-                            f"Initial fetch: Fetching data for {len(repos_needing_analysis)} repositories...",
+                            f"Initial fetch: Fetching data for "
+                            f"{len(repos_needing_analysis)} repositories...",
                             "info",
                         )
                     else:
                         click.echo(
-                            f"🚨 Initial fetch: Fetching data for {len(repos_needing_analysis)} repositories..."
+                            f"🚨 Initial fetch: Fetching data for "
+                            f"{len(repos_needing_analysis)} repositories..."
                         )
                         click.echo(
-                            "   📋 Reason: Need to ensure commits and batches exist for classification"
+                            "   📋 Reason: Need to ensure commits and batches exist "
+                            "for classification"
                         )
 
                     # Perform data fetch for repositories that need analysis
@@ -1812,22 +1893,26 @@ def analyze(
                                         if retry_count > 0:
                                             if display:
                                                 display.print_status(
-                                                    f"   🔄 Retry {retry_count}/{max_retries}: {repo_config.github_repo}",
+                                                    f"   🔄 Retry {retry_count}/{max_retries}: "
+                                                    f"{repo_config.github_repo}",
                                                     "warning",
                                                 )
                                             else:
                                                 click.echo(
-                                                    f"   🔄 Retry {retry_count}/{max_retries}: {repo_config.github_repo}"
+                                                    f"   🔄 Retry {retry_count}/{max_retries}: "
+                                                    f"{repo_config.github_repo}"
                                                 )
                                         else:
                                             if display:
                                                 display.print_status(
-                                                    f"   📥 Cloning {repo_config.github_repo} from GitHub...",
+                                                    f"   📥 Cloning {repo_config.github_repo} "
+                                                    f"from GitHub...",
                                                     "info",
                                                 )
                                             else:
                                                 click.echo(
-                                                    f"   📥 Cloning {repo_config.github_repo} from GitHub..."
+                                                    f"   📥 Cloning {repo_config.github_repo} "
+                                                    f"from GitHub..."
                                                 )
 
                                         try:
@@ -1870,7 +1955,7 @@ def analyze(
                                                 cmd,
                                                 env=env,
                                                 stdout=subprocess.PIPE,
-                                                stderr=None,  # Let stderr (progress) flow to terminal
+                                                stderr=None,  # Let stderr flow to terminal
                                                 text=True,
                                                 timeout=timeout_seconds,
                                             )
@@ -1890,12 +1975,14 @@ def analyze(
                                                 ):
                                                     if display:
                                                         display.print_status(
-                                                            f"   ❌ Authentication failed for {repo_config.github_repo}",
+                                                            f"   ❌ Authentication failed for "
+                                                            f"{repo_config.github_repo}",
                                                             "error",
                                                         )
                                                     else:
                                                         click.echo(
-                                                            f"   ❌ Authentication failed for {repo_config.github_repo}"
+                                                            f"   ❌ Authentication failed for "
+                                                            f"{repo_config.github_repo}"
                                                         )
                                                     break  # Don't retry auth failures
                                                 else:
@@ -1909,24 +1996,28 @@ def analyze(
                                                 clone_success = True
                                                 if display:
                                                     display.print_status(
-                                                        f"   ✅ Cloned {repo_config.github_repo} ({elapsed:.1f}s)",
+                                                        f"   ✅ Cloned {repo_config.github_repo} "
+                                                        f"({elapsed:.1f}s)",
                                                         "success",
                                                     )
                                                 else:
                                                     click.echo(
-                                                        f"   ✅ Cloned {repo_config.github_repo} ({elapsed:.1f}s)"
+                                                        f"   ✅ Cloned {repo_config.github_repo} "
+                                                        f"({elapsed:.1f}s)"
                                                     )
 
                                         except subprocess.TimeoutExpired:
                                             retry_count += 1
                                             if display:
                                                 display.print_status(
-                                                    f"   ⏱️  Clone timeout after {timeout_seconds}s: {repo_config.github_repo}",
+                                                    f"   ⏱️ Clone timeout ({timeout_seconds}s): "
+                                                    f"{repo_config.github_repo}",
                                                     "error",
                                                 )
                                             else:
                                                 click.echo(
-                                                    f"   ⏱️  Clone timeout after {timeout_seconds}s: {repo_config.github_repo}"
+                                                    f"   ⏱️ Clone timeout ({timeout_seconds}s): "
+                                                    f"{repo_config.github_repo}"
                                                 )
                                             # Clean up partial clone
                                             if repo_path.exists():
@@ -1936,12 +2027,14 @@ def analyze(
                                             if retry_count > max_retries:
                                                 if display:
                                                     display.print_status(
-                                                        f"   ❌ Skipping {repo_config.github_repo} after {max_retries} timeouts",
+                                                        f"   ❌ Skipping {repo_config.github_repo} "
+                                                        f"after {max_retries} timeouts",
                                                         "error",
                                                     )
                                                 else:
                                                     click.echo(
-                                                        f"   ❌ Skipping {repo_config.github_repo} after {max_retries} timeouts"
+                                                        f"   ❌ Skipping {repo_config.github_repo} "
+                                                        f"after {max_retries} timeouts"
                                                     )
                                                 break
                                             continue  # Try again
@@ -2016,7 +2109,8 @@ def analyze(
 
                             if display:
                                 display.print_status(
-                                    f"   ✅ {project_key}: {result['stats']['total_commits']} commits, "
+                                    f"   ✅ {project_key}: "
+                                    f"{result['stats']['total_commits']} commits, "
                                     f"{result['stats']['unique_tickets']} tickets",
                                     "success",
                                 )
@@ -2037,7 +2131,8 @@ def analyze(
                         except Exception as e:
                             if display:
                                 display.print_status(
-                                    f"   ❌ Error fetching {project_key}: {e}", "error"
+                                    f"   ❌ Error fetching {project_key}: {e}",
+                                    "error",
                                 )
                             else:
                                 click.echo(f"   ❌ Error fetching {project_key}: {e}")
@@ -2045,12 +2140,14 @@ def analyze(
 
                     if display:
                         display.print_status(
-                            f"Initial fetch complete: {total_commits} commits, {total_tickets} tickets",
+                            f"Initial fetch complete: {total_commits} commits, "
+                            f"{total_tickets} tickets",
                             "success",
                         )
                     else:
                         click.echo(
-                            f"🚨 Initial fetch complete: {total_commits} commits, {total_tickets} tickets"
+                            f"🚨 Initial fetch complete: {total_commits} commits, "
+                            f"{total_tickets} tickets"
                         )
 
                     # RE-VALIDATE after initial fetch
@@ -2078,7 +2175,10 @@ def analyze(
                         )
 
                         if final_commits == 0:
-                            error_msg = "❌ CRITICAL: Initial fetch completed but still 0 commits stored in database"
+                            error_msg = (
+                                "❌ CRITICAL: Initial fetch completed but still 0 commits "
+                                "stored in database"
+                            )
                             if display:
                                 display.print_status(error_msg, "error")
                             else:
@@ -2090,11 +2190,13 @@ def analyze(
                                 f"   📊 Initial fetch stats: {total_commits} commits reported"
                             )
                             click.echo(
-                                f"   🗃️ Database result: {final_commits} commits, {final_batches} batches"
+                                f"   🗃️ Database result: {final_commits} commits, "
+                                f"{final_batches} batches"
                             )
                             click.echo("   🔍 Possible causes:")
                             click.echo(
-                                "      - Timezone mismatch between commit timestamps and analysis range"
+                                "      - Timezone mismatch between commit timestamps "
+                                "and analysis range"
                             )
                             click.echo("      - Date filtering excluding all commits")
                             click.echo("      - Database transaction not committed")
@@ -2102,17 +2204,20 @@ def analyze(
                                 "      - Repository has no commits in the specified time range"
                             )
                             raise click.ClickException(
-                                "Initial fetch failed validation - no data available for classification"
+                                "Initial fetch failed validation - "
+                                "no data available for classification"
                             )
 
                         if display:
                             display.print_status(
-                                f"✅ Post-fetch validation: {final_commits} commits, {final_batches} batches confirmed",
+                                f"✅ Post-fetch validation: {final_commits} commits, "
+                                f"{final_batches} batches confirmed",
                                 "success",
                             )
                         else:
                             click.echo(
-                                f"✅ Post-fetch validation: {final_commits} commits, {final_batches} batches confirmed"
+                                f"✅ Post-fetch validation: {final_commits} commits, "
+                                f"{final_batches} batches confirmed"
                             )
 
             # FINAL PRE-CLASSIFICATION CHECK: Ensure we have data before starting batch classifier
@@ -2139,39 +2244,52 @@ def analyze(
                 )
 
                 if pre_classification_commits == 0:
-                    error_msg = "❌ PRE-CLASSIFICATION CHECK FAILED: No commits available for batch classification"
+                    error_msg = (
+                        "❌ PRE-CLASSIFICATION CHECK FAILED: "
+                        "No commits available for batch classification"
+                    )
                     if display:
                         display.print_status(error_msg, "error")
                     else:
                         click.echo(error_msg)
                     click.echo(
-                        f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+                        f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to "
+                        f"{end_date.strftime('%Y-%m-%d')}"
                     )
                     click.echo(
-                        f"   🗃️ Database state: {pre_classification_commits} commits, {pre_classification_batches} batches"
+                        f"   🗃️ Database state: {pre_classification_commits} commits, "
+                        f"{pre_classification_batches} batches"
                     )
                     click.echo(
-                        "   💡 This indicates all previous validation and fetch steps failed to store any data"
+                        "   💡 This indicates all previous validation and fetch steps "
+                        "failed to store any data"
                     )
                     raise click.ClickException(
                         "No data available for batch classification - cannot proceed"
                     )
 
                 if pre_classification_batches == 0:
-                    error_msg = "❌ PRE-CLASSIFICATION CHECK FAILED: No daily batches available for classification"
+                    error_msg = (
+                        "❌ PRE-CLASSIFICATION CHECK FAILED: "
+                        "No daily batches available for classification"
+                    )
                     if display:
                         display.print_status(error_msg, "error")
                     else:
                         click.echo(error_msg)
                     click.echo(
-                        f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+                        f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to "
+                        f"{end_date.strftime('%Y-%m-%d')}"
                     )
                     click.echo(
-                        f"   🗃️ Database state: {pre_classification_commits} commits, {pre_classification_batches} batches"
+                        f"   🗃️ Database state: {pre_classification_commits} commits, "
+                        f"{pre_classification_batches} batches"
                     )
-                    click.echo("   💡 Commits exist but no daily batches - batch creation failed")
+                    click.echo(
+                        "   💡 Commits exist but no daily batches - " "batch creation failed"
+                    )
                     raise click.ClickException(
-                        "No batches available for classification - batch creation process failed"
+                        "No batches available for classification - " "batch creation process failed"
                     )
 
             if display:
@@ -2227,7 +2345,7 @@ def analyze(
                 cache_dir=cfg.cache.directory,
                 llm_config=llm_config,
                 batch_size=50,
-                confidence_threshold=cfg.analysis.llm_classification.confidence_threshold,
+                confidence_threshold=(cfg.analysis.llm_classification.confidence_threshold),
                 fallback_enabled=True,
             )
 
@@ -2238,7 +2356,8 @@ def analyze(
                 project_keys.append(project_key)
 
             # Run batch classification
-            # Note: The batch classifier will create its own progress bars, but our display should remain active
+            # Note: The batch classifier will create its own progress bars,
+            # but our display should remain active
             classification_result = batch_classifier.classify_date_range(
                 start_date=start_date,
                 end_date=end_date,
@@ -2249,7 +2368,8 @@ def analyze(
             # Update display progress after classification
             if display and hasattr(display, "update_progress_task"):
                 display.update_progress_task(
-                    "repos", completed=total_batches if "total_batches" in locals() else 0
+                    "repos",
+                    completed=total_batches if "total_batches" in locals() else 0,
                 )
 
             if display:
@@ -2257,7 +2377,8 @@ def analyze(
                 display.complete_progress_task("repos", "Batch classification complete")
                 display.stop_live_display()
                 display.print_status(
-                    f"✅ Batch classification completed: {classification_result['processed_batches']} batches, "
+                    f"✅ Batch classification completed: "
+                    f"{classification_result['processed_batches']} batches, "
                     f"{classification_result['total_commits']} commits",
                     "success",
                 )
@@ -2591,9 +2712,12 @@ def analyze(
                         else:
                             commit["project_key"] = commit.get("inferred_project", "UNKNOWN")
 
-                        commit["canonical_id"] = identity_resolver.resolve_developer(
+                        canonical_id = identity_resolver.resolve_developer(
                             commit["author_name"], commit["author_email"]
                         )
+                        commit["canonical_id"] = canonical_id
+                        # Also add canonical display name for reports
+                        commit["canonical_name"] = identity_resolver.get_canonical_name(canonical_id)
 
                     all_commits.extend(commits)
                     if display:
@@ -3128,7 +3252,10 @@ def analyze(
                             click.echo(f"   💰 LLM Cost: ${llm_stats['total_cost']:.4f}")
 
             except ImportError as e:
-                error_msg = f"Qualitative analysis dependencies missing: {e}\n\n💡 Install with: pip install spacy scikit-learn openai tiktoken"
+                error_msg = (
+                    f"Qualitative analysis dependencies missing: {e}\n\n"
+                    "💡 Install with: pip install spacy scikit-learn openai tiktoken"
+                )
                 if display:
                     display.show_error(error_msg)
                 else:
@@ -3169,7 +3296,11 @@ def analyze(
                     else:
                         click.echo("   ⏭️  Continuing with standard analysis...")
         elif enable_qualitative and not get_qualitative_config():
-            warning_msg = "Qualitative analysis requested but not configured in config file\n\nAdd a 'qualitative:' section (top-level or under 'analysis:') to your configuration"
+            warning_msg = (
+                "Qualitative analysis requested but not configured in config file\n\n"
+                "Add a 'qualitative:' section (top-level or under 'analysis:') "
+                "to your configuration"
+            )
             if display:
                 display.show_warning(warning_msg)
             else:
@@ -4115,7 +4246,8 @@ def analyze(
                         "\n💡 Note: Token/cost tracking is only available with qualitative analysis enabled."
                     )
                     click.echo(
-                        "   Add 'qualitative:' section (top-level or under 'analysis:') to your config to enable detailed LLM cost tracking."
+                        "   Add 'qualitative:' section (top-level or under 'analysis:') "
+                        "to your config to enable detailed LLM cost tracking."
                     )
 
             # Display cache statistics in simple format
@@ -5521,6 +5653,532 @@ def list_developers(config: Path) -> None:
         sys.exit(1)
 
 
+@cli.command(name="create-alias-interactive")
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to YAML configuration file",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output path for aliases.yaml (default: same dir as config)",
+)
+def create_alias_interactive(config: Path, output: Optional[Path]) -> None:
+    """Create developer aliases interactively with numbered selection.
+
+    \b
+    This command provides an interactive interface to create developer
+    aliases by selecting from a numbered list of developers in the database.
+    You can merge multiple developer identities and save them to aliases.yaml.
+
+    \b
+    EXAMPLES:
+      # Start interactive alias creation
+      gitflow-analytics create-alias-interactive -c config.yaml
+
+      # Save to specific location
+      gitflow-analytics create-alias-interactive -c config.yaml -o ~/shared/aliases.yaml
+
+    \b
+    WORKFLOW:
+      1. Displays numbered list of all developers from database
+      2. Select multiple developer numbers to merge (space-separated)
+      3. Choose which one should be the primary identity
+      4. Create alias mapping
+      5. Option to save to aliases.yaml
+      6. Option to continue creating more aliases
+
+    \b
+    Useful for:
+    - Consolidating developer identities across email addresses
+    - Cleaning up duplicate developer entries
+    - Maintaining consistent identity resolution
+    """
+    from .config.aliases import AliasesManager, DeveloperAlias
+    from .core.identity import DeveloperIdentityResolver
+
+    try:
+        # Load configuration
+        cfg = ConfigLoader.load(config)
+
+        # Determine output path for aliases file
+        if not output:
+            output = config.parent / "aliases.yaml"
+
+        # Initialize identity resolver
+        identity_resolver = DeveloperIdentityResolver(cfg.cache.directory / "identities.db")
+
+        # Initialize aliases manager
+        aliases_manager = AliasesManager(output if output.exists() else None)
+
+        click.echo("\n" + "=" * 80)
+        click.echo(click.style("🔧 Interactive Alias Creator", fg="cyan", bold=True))
+        click.echo("=" * 80 + "\n")
+
+        # Main loop for creating multiple aliases
+        continue_creating = True
+
+        while continue_creating:
+            # Get all developers from database
+            developers = identity_resolver.get_developer_stats()
+
+            if not developers:
+                click.echo("❌ No developers found. Run analysis first.")
+                sys.exit(1)
+
+            # Display numbered list of developers
+            click.echo(
+                click.style(f"\n📋 Found {len(developers)} developers:\n", fg="green", bold=True)
+            )
+            click.echo(f"{'#':<6} {'Name':<30} {'Email':<40} {'Commits':<10}")
+            click.echo("-" * 86)
+
+            for idx, dev in enumerate(developers, start=1):
+                click.echo(
+                    f"{idx:<6} "
+                    f"{dev['primary_name']:<30} "
+                    f"{dev['primary_email']:<40} "
+                    f"{dev['total_commits']:<10}"
+                )
+
+            click.echo()
+
+            # Get user selection
+            while True:
+                try:
+                    selection_input = click.prompt(
+                        click.style(
+                            "Select developers to merge (enter numbers separated by spaces, or 'q' to quit)",
+                            fg="yellow",
+                        ),
+                        type=str,
+                    ).strip()
+
+                    # Handle quit
+                    if selection_input.lower() in ["q", "quit", "exit"]:
+                        click.echo("\n👋 Exiting alias creation.")
+                        sys.exit(0)
+
+                    # Parse selection
+                    selected_indices = []
+                    for num_str in selection_input.split():
+                        try:
+                            num = int(num_str)
+                            if 1 <= num <= len(developers):
+                                selected_indices.append(num)
+                            else:
+                                click.echo(
+                                    click.style(
+                                        f"⚠️  Number {num} is out of range (1-{len(developers)})",
+                                        fg="red",
+                                    )
+                                )
+                                raise ValueError("Invalid range")
+                        except ValueError:
+                            click.echo(
+                                click.style(
+                                    f"⚠️  Invalid input: '{num_str}' is not a valid number", fg="red"
+                                )
+                            )
+                            raise
+
+                    # Check minimum selection
+                    if len(selected_indices) < 2:
+                        click.echo(
+                            click.style(
+                                "⚠️  You must select at least 2 developers to merge", fg="red"
+                            )
+                        )
+                        continue
+
+                    # Remove duplicates and sort
+                    selected_indices = sorted(set(selected_indices))
+                    break
+
+                except ValueError:
+                    continue
+                except click.exceptions.Abort:
+                    click.echo("\n\n👋 Exiting alias creation.")
+                    sys.exit(0)
+
+            # Display selected developers
+            selected_devs = [developers[idx - 1] for idx in selected_indices]
+
+            click.echo(click.style("\n✅ Selected developers:", fg="green", bold=True))
+            for idx, dev in zip(selected_indices, selected_devs):
+                click.echo(
+                    f"  [{idx}] {dev['primary_name']} <{dev['primary_email']}> "
+                    f"({dev['total_commits']} commits)"
+                )
+
+            # Ask which one should be primary
+            click.echo()
+            while True:
+                try:
+                    primary_input = click.prompt(
+                        click.style(
+                            f"Which developer should be the primary identity? "
+                            f"Enter number ({', '.join(map(str, selected_indices))})",
+                            fg="yellow",
+                        ),
+                        type=int,
+                    )
+
+                    if primary_input in selected_indices:
+                        primary_idx = primary_input
+                        break
+                    else:
+                        click.echo(
+                            click.style(
+                                f"⚠️  Please select one of: {', '.join(map(str, selected_indices))}",
+                                fg="red",
+                            )
+                        )
+                except ValueError:
+                    click.echo(click.style("⚠️  Please enter a valid number", fg="red"))
+                except click.exceptions.Abort:
+                    click.echo("\n\n👋 Exiting alias creation.")
+                    sys.exit(0)
+
+            # Build alias configuration
+            primary_dev = developers[primary_idx - 1]
+            alias_emails = [
+                dev["primary_email"]
+                for idx, dev in zip(selected_indices, selected_devs)
+                if idx != primary_idx
+            ]
+
+            # Create the alias
+            new_alias = DeveloperAlias(
+                primary_email=primary_dev["primary_email"],
+                aliases=alias_emails,
+                name=primary_dev["primary_name"],
+                confidence=1.0,  # Manual aliases have full confidence
+                reasoning="Manually created via interactive CLI",
+            )
+
+            # Display the alias configuration
+            click.echo(click.style("\n📝 Alias Configuration:", fg="cyan", bold=True))
+            click.echo(f"  Primary: {new_alias.name} <{new_alias.primary_email}>")
+            click.echo("  Aliases:")
+            for alias_email in new_alias.aliases:
+                click.echo(f"    - {alias_email}")
+
+            # Add to aliases manager
+            aliases_manager.add_alias(new_alias)
+
+            # Ask if user wants to save
+            click.echo()
+            if click.confirm(click.style(f"💾 Save alias to {output}?", fg="green"), default=True):
+                try:
+                    aliases_manager.save()
+                    click.echo(click.style(f"✅ Alias saved to {output}", fg="green"))
+
+                    # Also update the database directly by merging identities
+                    # For each alias email, find its canonical_id and merge with primary
+                    for alias_email in alias_emails:
+                        # Find the developer entry for this alias email
+                        alias_dev = next(
+                            (dev for dev in developers if dev["primary_email"] == alias_email), None
+                        )
+
+                        if alias_dev:
+                            # Merge using canonical IDs
+                            identity_resolver.merge_identities(
+                                primary_dev["canonical_id"],  # Primary's canonical_id
+                                alias_dev["canonical_id"],  # Alias's canonical_id
+                            )
+                        else:
+                            # Edge case: alias email doesn't match any developer
+                            # This shouldn't happen, but log a warning
+                            click.echo(
+                                click.style(
+                                    f"⚠️  Warning: Could not find developer entry for {alias_email}",
+                                    fg="yellow",
+                                )
+                            )
+
+                    click.echo(
+                        click.style("✅ Database updated with merged identities", fg="green")
+                    )
+
+                except Exception as e:
+                    click.echo(click.style(f"❌ Error saving alias: {e}", fg="red"), err=True)
+            else:
+                click.echo(click.style("⏭️  Alias not saved", fg="yellow"))
+
+            # Ask if user wants to create more aliases
+            click.echo()
+            if not click.confirm(click.style("🔄 Create another alias?", fg="cyan"), default=True):
+                continue_creating = False
+
+        click.echo(click.style("\n✅ Alias creation completed!", fg="green", bold=True))
+        click.echo(f"📄 Aliases file: {output}")
+        click.echo("\n💡 To use these aliases, ensure your config references: {output}\n")
+
+    except KeyboardInterrupt:
+        click.echo("\n\n👋 Interrupted by user. Exiting.")
+        sys.exit(0)
+    except Exception as e:
+        click.echo(click.style(f"\n❌ Error: {e}", fg="red"), err=True)
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command(name="alias-rename")
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to YAML configuration file",
+)
+@click.option(
+    "--old-name",
+    required=True,
+    help="Current canonical name to rename (must match a name in manual_mappings)",
+)
+@click.option(
+    "--new-name",
+    required=True,
+    help="New canonical display name to use in reports",
+)
+@click.option(
+    "--update-cache",
+    is_flag=True,
+    help="Update cached database records with the new name",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be changed without applying changes",
+)
+def alias_rename(
+    config: Path,
+    old_name: str,
+    new_name: str,
+    update_cache: bool,
+    dry_run: bool,
+) -> None:
+    """Rename a developer's canonical display name.
+
+    \b
+    Updates the developer's name in:
+    - Configuration file (analysis.identity.manual_mappings)
+    - Database cache (if --update-cache is specified)
+
+    \b
+    EXAMPLES:
+      # Rename with dry-run to see changes
+      gitflow-analytics alias-rename -c config.yaml \\
+        --old-name "bianco-zaelot" \\
+        --new-name "Emiliozzo Bianco" \\
+        --dry-run
+
+      # Apply rename to config only
+      gitflow-analytics alias-rename -c config.yaml \\
+        --old-name "bianco-zaelot" \\
+        --new-name "Emiliozzo Bianco"
+
+      # Apply rename to config and update cache
+      gitflow-analytics alias-rename -c config.yaml \\
+        --old-name "bianco-zaelot" \\
+        --new-name "Emiliozzo Bianco" \\
+        --update-cache
+
+    \b
+    NOTE:
+      This command searches through analysis.identity.manual_mappings
+      in your config file and updates the 'name' field for the matching
+      entry. It preserves all other fields (primary_email, aliases).
+    """
+    try:
+        from .core.identity import DeveloperIdentityResolver
+
+        # Validate inputs
+        if not old_name.strip():
+            click.echo("❌ Error: --old-name cannot be empty", err=True)
+            sys.exit(1)
+
+        if not new_name.strip():
+            click.echo("❌ Error: --new-name cannot be empty", err=True)
+            sys.exit(1)
+
+        old_name = old_name.strip()
+        new_name = new_name.strip()
+
+        if old_name == new_name:
+            click.echo("❌ Error: old-name and new-name are identical", err=True)
+            sys.exit(1)
+
+        # Load the YAML config file
+        click.echo(f"\n📋 Loading configuration from {config}...")
+
+        try:
+            with open(config, "r", encoding="utf-8") as f:
+                config_data = yaml.safe_load(f)
+        except Exception as e:
+            click.echo(f"❌ Error loading config file: {e}", err=True)
+            sys.exit(1)
+
+        # Navigate to analysis.identity.manual_mappings
+        if "analysis" not in config_data:
+            click.echo("❌ Error: 'analysis' section not found in config", err=True)
+            sys.exit(1)
+
+        if "identity" not in config_data["analysis"]:
+            click.echo("❌ Error: 'analysis.identity' section not found in config", err=True)
+            sys.exit(1)
+
+        if "manual_mappings" not in config_data["analysis"]["identity"]:
+            click.echo("❌ Error: 'analysis.identity.manual_mappings' not found in config", err=True)
+            sys.exit(1)
+
+        manual_mappings = config_data["analysis"]["identity"]["manual_mappings"]
+
+        if not manual_mappings:
+            click.echo("❌ Error: manual_mappings is empty", err=True)
+            sys.exit(1)
+
+        # Find the matching entry
+        matching_entry = None
+        matching_index = None
+
+        for idx, mapping in enumerate(manual_mappings):
+            if mapping.get("name") == old_name:
+                matching_entry = mapping
+                matching_index = idx
+                break
+
+        if not matching_entry:
+            click.echo(f"❌ Error: No manual mapping found with name '{old_name}'", err=True)
+            click.echo("\nAvailable names in manual_mappings:")
+            for mapping in manual_mappings:
+                if "name" in mapping:
+                    click.echo(f"  - {mapping['name']}")
+            sys.exit(1)
+
+        # Display what will be changed
+        click.echo(f"\n🔍 Found matching entry:")
+        click.echo(f"   Current name: {old_name}")
+        click.echo(f"   New name:     {new_name}")
+        click.echo(f"   Email:        {matching_entry.get('primary_email', 'N/A')}")
+        click.echo(f"   Aliases:      {len(matching_entry.get('aliases', []))} email(s)")
+
+        if dry_run:
+            click.echo(f"\n🔎 DRY RUN - No changes will be made")
+
+        # Update the config file
+        if not dry_run:
+            click.echo(f"\n📝 Updating configuration file...")
+            manual_mappings[matching_index]["name"] = new_name
+
+            try:
+                with open(config, "w", encoding="utf-8") as f:
+                    yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                click.echo(f"✅ Configuration file updated")
+            except Exception as e:
+                click.echo(f"❌ Error writing config file: {e}", err=True)
+                sys.exit(1)
+        else:
+            click.echo(f"   [Would update config: {config}]")
+
+        # Update database cache if requested
+        if update_cache:
+            click.echo(f"\n💾 Checking database cache...")
+
+            # Load config to get cache directory
+            cfg = ConfigLoader.load(config)
+            identity_db_path = cfg.cache.directory / "identities.db"
+
+            if not identity_db_path.exists():
+                click.echo(f"⚠️  Warning: Identity database not found at {identity_db_path}")
+                click.echo(f"   Skipping cache update")
+            else:
+                # Initialize identity resolver to access database
+                identity_resolver = DeveloperIdentityResolver(
+                    str(identity_db_path),
+                    manual_mappings=None,  # Don't apply mappings during rename
+                )
+
+                # Count affected records
+                from sqlalchemy import text
+
+                with identity_resolver.get_session() as session:
+                    # Count developer_identities records
+                    result = session.execute(
+                        text("SELECT COUNT(*) FROM developer_identities WHERE primary_name = :old_name"),
+                        {"old_name": old_name}
+                    )
+                    identity_count = result.scalar()
+
+                    # Count developer_aliases records
+                    result = session.execute(
+                        text("SELECT COUNT(*) FROM developer_aliases WHERE name = :old_name"),
+                        {"old_name": old_name}
+                    )
+                    alias_count = result.scalar()
+
+                click.echo(f"   Found {identity_count} identity record(s)")
+                click.echo(f"   Found {alias_count} alias record(s)")
+
+                if identity_count == 0 and alias_count == 0:
+                    click.echo(f"   ℹ️  No database records to update")
+                elif not dry_run:
+                    click.echo(f"   Updating database records...")
+
+                    with identity_resolver.get_session() as session:
+                        # Update developer_identities
+                        if identity_count > 0:
+                            session.execute(
+                                text("UPDATE developer_identities SET primary_name = :new_name WHERE primary_name = :old_name"),
+                                {"new_name": new_name, "old_name": old_name}
+                            )
+
+                        # Update developer_aliases
+                        if alias_count > 0:
+                            session.execute(
+                                text("UPDATE developer_aliases SET name = :new_name WHERE name = :old_name"),
+                                {"new_name": new_name, "old_name": old_name}
+                            )
+
+                    click.echo(f"   ✅ Database updated")
+                else:
+                    click.echo(f"   [Would update {identity_count + alias_count} database record(s)]")
+
+        # Summary
+        click.echo(f"\n{'🔎 DRY RUN SUMMARY' if dry_run else '✅ RENAME COMPLETE'}")
+        click.echo(f"   Old name: {old_name}")
+        click.echo(f"   New name: {new_name}")
+        click.echo(f"   Config:   {'Would update' if dry_run else 'Updated'}")
+        if update_cache:
+            click.echo(f"   Cache:    {'Would update' if dry_run else 'Updated'}")
+        else:
+            click.echo(f"   Cache:    Skipped (use --update-cache to update)")
+
+        if dry_run:
+            click.echo(f"\n💡 Run without --dry-run to apply changes")
+        else:
+            click.echo(f"\n💡 Next steps:")
+            click.echo(f"   - Review the updated config file: {config}")
+            click.echo(f"   - Re-run analysis to see updated reports with new name")
+
+    except KeyboardInterrupt:
+        click.echo("\n\n👋 Interrupted by user. Exiting.")
+        sys.exit(0)
+    except Exception as e:
+        click.echo(f"❌ Unexpected error: {e}", err=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
 @cli.command()
 @click.option(
     "--config",
@@ -5943,31 +6601,31 @@ def show_help() -> None:
 ────────────────────
   1. Create a configuration file:
      cp config-sample.yaml myconfig.yaml
-     
+
   2. Edit configuration with your repositories:
      repositories:
        - path: /path/to/repo
          branch: main
-     
+
   3. Run your first analysis:
      gitflow-analytics -c myconfig.yaml --weeks 4
-     
+
   4. View reports in the output directory
 
 🔧 COMMON WORKFLOWS
 ──────────────────
   Weekly team report:
     gitflow-analytics -c config.yaml --weeks 1
-    
+
   Monthly metrics with all formats:
     gitflow-analytics -c config.yaml --weeks 4 --generate-csv
-    
+
   Identity resolution:
     gitflow-analytics identities -c config.yaml
-    
+
   Fresh analysis (bypass cache):
     gitflow-analytics -c config.yaml --clear-cache
-    
+
   Quick config validation:
     gitflow-analytics -c config.yaml --validate-only
 
@@ -5984,15 +6642,15 @@ def show_help() -> None:
   Slow analysis?
     → Use caching (default) or reduce --weeks
     → Check cache stats: cache-stats command
-    
+
   Wrong developer names?
     → Run: identities command
     → Add manual mappings to config
-    
+
   Missing ticket references?
     → Check ticket_platforms configuration
     → Verify commit message format
-    
+
   API errors?
     → Verify credentials in config or .env
     → Check rate limits
@@ -6005,13 +6663,13 @@ def show_help() -> None:
     • weekly_metrics: Time-based trends
     • activity_distribution: Work patterns
     • untracked_commits: Process gaps
-    
+
   Narrative Report (default):
     • Executive summary
     • Team composition analysis
     • Development patterns
     • Recommendations
-    
+
   JSON Export:
     • Complete data for integration
     • All metrics and metadata
@@ -6022,12 +6680,12 @@ def show_help() -> None:
     • Pull requests and reviews
     • Issues and milestones
     • DORA metrics
-    
+
   JIRA:
     • Story points and velocity
     • Sprint tracking
     • Issue types
-    
+
   ClickUp:
     • Task tracking
     • Time estimates

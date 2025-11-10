@@ -178,6 +178,160 @@ Found 3 potential aliases:
 Apply these aliases? [y/N]:
 ```
 
+## Renaming Developers
+
+Sometimes you need to change a developer's display name in reports (e.g., fixing a typo, using their preferred name, or updating after a name change). The `alias-rename` command makes this easy.
+
+### Basic Usage
+
+```bash
+# Rename a developer's canonical display name
+gitflow-analytics alias-rename -c config.yaml \
+  --old-name "bianco-zaelot" \
+  --new-name "Emiliozzo Bianco"
+```
+
+This command:
+1. Searches for the developer in `analysis.identity.manual_mappings`
+2. Updates the `name` field to the new name
+3. Preserves all other fields (primary_email, aliases)
+4. Writes the updated configuration back to the file
+
+### Dry-Run Mode
+
+Preview changes before applying them:
+
+```bash
+# See what would be changed without applying
+gitflow-analytics alias-rename -c config.yaml \
+  --old-name "John Developer" \
+  --new-name "John D. Developer" \
+  --dry-run
+```
+
+Example output:
+```
+📋 Loading configuration from config.yaml...
+
+🔍 Found matching entry:
+   Current name: John Developer
+   New name:     John D. Developer
+   Email:        john@example.com
+   Aliases:      2 email(s)
+
+🔎 DRY RUN - No changes will be made
+   [Would update config: config.yaml]
+
+🔎 DRY RUN SUMMARY
+   Old name: John Developer
+   New name: John D. Developer
+   Config:   Would update
+   Cache:    Skipped (use --update-cache to update)
+
+💡 Run without --dry-run to apply changes
+```
+
+### Updating the Database Cache
+
+By default, `alias-rename` only updates the configuration file. To also update cached database records with the new name, use the `--update-cache` flag:
+
+```bash
+# Update both config and database cache
+gitflow-analytics alias-rename -c config.yaml \
+  --old-name "John Developer" \
+  --new-name "John D. Developer" \
+  --update-cache
+```
+
+This will:
+- Update the `primary_name` field in the `developer_identities` table
+- Update the `name` field in the `developer_aliases` table
+- Show the number of affected records
+
+Example output:
+```
+💾 Checking database cache...
+   Found 1 identity record(s)
+   Found 3 alias record(s)
+   Updating database records...
+   ✅ Database updated
+
+✅ RENAME COMPLETE
+   Old name: John Developer
+   New name: John D. Developer
+   Config:   Updated
+   Cache:    Updated
+```
+
+**Note**: If you don't use `--update-cache`, cached data will use the old name until you re-run analysis or clear the cache. The next analysis run will automatically apply the new name from the updated configuration.
+
+### Common Use Cases
+
+**Fix a typo in someone's name:**
+```bash
+gitflow-analytics alias-rename -c config.yaml \
+  --old-name "Jon Developer" \
+  --new-name "John Developer"
+```
+
+**Use a developer's preferred name:**
+```bash
+gitflow-analytics alias-rename -c config.yaml \
+  --old-name "Robert Smith" \
+  --new-name "Bob Smith"
+```
+
+**Update after a name change:**
+```bash
+gitflow-analytics alias-rename -c config.yaml \
+  --old-name "Jane Doe" \
+  --new-name "Jane Smith" \
+  --update-cache
+```
+
+### Error Handling
+
+The command performs thorough validation:
+
+**Name not found:**
+```bash
+$ gitflow-analytics alias-rename -c config.yaml \
+    --old-name "Nonexistent Name" \
+    --new-name "New Name"
+
+❌ Error: No manual mapping found with name 'Nonexistent Name'
+
+Available names in manual_mappings:
+  - John Developer
+  - Jane Doe
+  - Bob Smith
+```
+
+**Empty names:**
+```bash
+$ gitflow-analytics alias-rename -c config.yaml \
+    --old-name "" \
+    --new-name "New Name"
+
+❌ Error: --old-name cannot be empty
+```
+
+**Identical names:**
+```bash
+$ gitflow-analytics alias-rename -c config.yaml \
+    --old-name "John Developer" \
+    --new-name "John Developer"
+
+❌ Error: old-name and new-name are identical
+```
+
+### Best Practices
+
+1. **Use dry-run first**: Always test with `--dry-run` to preview changes
+2. **Update cache selectively**: Only use `--update-cache` when you need immediate effect in reports
+3. **Coordinate with team**: If using shared aliases, communicate name changes to avoid conflicts
+4. **Document reasons**: Add a comment in your config explaining significant name changes
+
 ## Multiple Configs Sharing Aliases
 
 ### Recommended Directory Structure

@@ -135,6 +135,61 @@ gitflow-analytics cache status
 gitflow-analytics cache optimize
 ```
 
+### alias-rename
+Rename a developer's canonical display name in manual mappings.
+
+```bash
+gitflow-analytics alias-rename -c config.yaml \
+  --old-name "Current Name" \
+  --new-name "New Name" \
+  [OPTIONS]
+```
+
+**Required Options**:
+- `--old-name TEXT` - Current canonical name to rename (must exist in manual_mappings)
+- `--new-name TEXT` - New canonical display name to use in reports
+
+**Optional Flags**:
+- `--update-cache` - Update cached database records with the new name
+- `--dry-run` - Show what would be changed without applying changes
+
+**Examples**:
+```bash
+# Preview changes with dry-run
+gitflow-analytics alias-rename -c config.yaml \
+  --old-name "bianco-zaelot" \
+  --new-name "Emiliozzo Bianco" \
+  --dry-run
+
+# Apply rename to config file only
+gitflow-analytics alias-rename -c config.yaml \
+  --old-name "bianco-zaelot" \
+  --new-name "Emiliozzo Bianco"
+
+# Update both config and database cache
+gitflow-analytics alias-rename -c config.yaml \
+  --old-name "bianco-zaelot" \
+  --new-name "Emiliozzo Bianco" \
+  --update-cache
+```
+
+**What It Does**:
+1. Searches `analysis.identity.manual_mappings` for the old name
+2. Updates the `name` field to the new name
+3. Preserves all other fields (primary_email, aliases)
+4. Optionally updates `developer_identities` and `developer_aliases` tables
+
+**Use Cases**:
+- Fix typos in developer names
+- Use preferred names or nicknames
+- Update names after marriage or legal name changes
+- Standardize name formatting across team
+
+**Notes**:
+- Without `--update-cache`, old name persists in cached data until next analysis
+- Always test with `--dry-run` first to preview changes
+- See [Managing Aliases Guide](../guides/managing-aliases.md#renaming-developers) for detailed usage
+
 ## 📊 Output Formats
 
 ### CSV Format (`--format csv`)

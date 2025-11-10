@@ -1938,12 +1938,14 @@ class NarrativeReportGenerator:
                     }
                 )
 
-            # Contributor analysis
+            # Contributor analysis - use canonical_id as key for accurate lookup
+            # Store display name separately so we can show the correct name in reports
+            canonical_id = commit.get("canonical_id", "unknown")
             author = commit.get("author", "Unknown")
-            if author not in contributors:
-                contributors[author] = {"count": 0, "categories": set()}
-            contributors[author]["count"] += 1
-            contributors[author]["categories"].add(category)
+            if canonical_id not in contributors:
+                contributors[canonical_id] = {"count": 0, "categories": set(), "name": author}
+            contributors[canonical_id]["count"] += 1
+            contributors[canonical_id]["categories"].add(category)
 
             # Project analysis
             project = commit.get("project_key", "UNKNOWN")
@@ -1998,12 +2000,14 @@ class NarrativeReportGenerator:
                 contributors.items(), key=lambda x: x[1]["count"], reverse=True
             )
 
-            for author, data in sorted_contributors[:5]:  # Show top 5
+            for canonical_id, data in sorted_contributors[:5]:  # Show top 5
                 untracked_count = data["count"]
                 pct_of_untracked = (untracked_count / total_untracked) * 100
+                # Get the display name from the stored data
+                author_name = data.get("name", "Unknown")
 
-                # Find developer's total commits to calculate percentage of their work that's untracked
-                dev_data = dev_lookup.get(author)
+                # Find developer's total commits using canonical_id
+                dev_data = dev_lookup.get(canonical_id)
                 if dev_data:
                     total_dev_commits = dev_data["total_commits"]
                     pct_of_dev_work = (
@@ -2018,7 +2022,7 @@ class NarrativeReportGenerator:
                 if len(categories_list) > 3:
                     categories_str += f" (+{len(categories_list) - 3} more)"
 
-                report.write(f"- **{author}**: {untracked_count} commits ")
+                report.write(f"- **{author_name}**: {untracked_count} commits ")
                 report.write(f"({pct_of_untracked:.1f}% of untracked{dev_context}) - ")
                 report.write(f"*{categories_str}*\n")
             report.write("\n")

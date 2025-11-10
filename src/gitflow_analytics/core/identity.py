@@ -621,6 +621,8 @@ class DeveloperIdentityResolver:
             canonical_id = self.resolve_developer(commit["author_name"], commit["author_email"])
             # Update the commit with the resolved canonical_id for later use in reports
             commit["canonical_id"] = canonical_id
+            # Also add the canonical display name so reports show the correct name
+            commit["canonical_name"] = self.get_canonical_name(canonical_id)
 
             stats_by_dev[canonical_id]["commits"] += 1
             stats_by_dev[canonical_id]["story_points"] += commit.get("story_points", 0) or 0
