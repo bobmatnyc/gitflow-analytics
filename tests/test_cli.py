@@ -195,7 +195,16 @@ class TestAliasRename:
         """Test alias-rename with empty old-name."""
         runner = CliRunner()
         with runner.isolated_filesystem():
-            Path("test-config.yaml").write_text("version: '1.0'\n")
+            config_content = """
+version: '1.0'
+analysis:
+  identity:
+    manual_mappings:
+      - name: "Test Developer"
+        primary_email: "test@example.com"
+        aliases: []
+"""
+            Path("test-config.yaml").write_text(config_content)
             result = runner.invoke(
                 alias_rename,
                 ["--config", "test-config.yaml", "--old-name", "", "--new-name", "New Name"]
@@ -208,7 +217,16 @@ class TestAliasRename:
         """Test alias-rename with empty new-name."""
         runner = CliRunner()
         with runner.isolated_filesystem():
-            Path("test-config.yaml").write_text("version: '1.0'\n")
+            config_content = """
+version: '1.0'
+analysis:
+  identity:
+    manual_mappings:
+      - name: "Old Name"
+        primary_email: "old@example.com"
+        aliases: []
+"""
+            Path("test-config.yaml").write_text(config_content)
             result = runner.invoke(
                 alias_rename,
                 ["--config", "test-config.yaml", "--old-name", "Old Name", "--new-name", ""]
@@ -221,7 +239,16 @@ class TestAliasRename:
         """Test alias-rename with identical old and new names."""
         runner = CliRunner()
         with runner.isolated_filesystem():
-            Path("test-config.yaml").write_text("version: '1.0'\n")
+            config_content = """
+version: '1.0'
+analysis:
+  identity:
+    manual_mappings:
+      - name: "Same Name"
+        primary_email: "same@example.com"
+        aliases: []
+"""
+            Path("test-config.yaml").write_text(config_content)
             result = runner.invoke(
                 alias_rename,
                 ["--config", "test-config.yaml", "--old-name", "Same Name", "--new-name", "Same Name"]

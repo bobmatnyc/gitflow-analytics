@@ -578,27 +578,95 @@ def rename_developer_alias(config_path: Path) -> bool:
     click.echo("Update a developer's canonical display name in reports.")
     click.echo("This updates the configuration file and optionally the cache.\n")
 
-    # Prompt for old name
-    old_name = click.prompt("Current name (as shown in reports)", type=str)
+    try:
+        # Load config to get manual_mappings
+        with open(config_path) as f:
+            config_data = yaml.safe_load(f)
 
-    # Prompt for new name
-    new_name = click.prompt("New canonical name", type=str)
+        # Navigate to manual_mappings
+        manual_mappings = (
+            config_data.get("analysis", {})
+            .get("identity", {})
+            .get("manual_mappings", [])
+        )
 
-    # Ask about cache update
-    update_cache = click.confirm("\nAlso update database cache?", default=True)
+        if not manual_mappings:
+            click.echo(
+                click.style(
+                    "❌ No manual_mappings found in config. Please add developers first.",
+                    fg="red"
+                ),
+                err=True
+            )
+            return False
 
-    # Show what will be done
-    click.echo("\n" + "=" * 60)
-    click.echo(click.style("Summary", fg="yellow", bold=True))
-    click.echo("=" * 60)
-    click.echo(f"  Old name: {old_name}")
-    click.echo(f"  New name: {new_name}")
-    click.echo(f"  Update cache: {'Yes' if update_cache else 'No'}")
-    click.echo()
+        # Display numbered list of developers
+        click.echo(click.style("Current Developers:", fg="cyan", bold=True))
+        click.echo()
 
-    # Confirm
-    if not click.confirm("Proceed with rename?", default=True):
-        click.echo(click.style("\n❌ Cancelled", fg="yellow"))
+        developer_names = []
+        for idx, mapping in enumerate(manual_mappings, 1):
+            name = mapping.get("name", "Unknown")
+            email = mapping.get("primary_email", "N/A")
+            alias_count = len(mapping.get("aliases", []))
+
+            developer_names.append(name)
+            click.echo(f"  {idx}. {click.style(name, fg='green')}")
+            click.echo(f"     Email: {email}")
+            click.echo(f"     Aliases: {alias_count} email(s)")
+            click.echo()
+
+        # Prompt for selection
+        try:
+            selection = click.prompt(
+                "Select developer number to rename (or 0 to cancel)",
+                type=click.IntRange(0, len(developer_names))
+            )
+        except click.Abort:
+            click.echo(click.style("\n❌ Cancelled", fg="yellow"))
+            return False
+
+        if selection == 0:
+            click.echo(click.style("\n❌ Cancelled", fg="yellow"))
+            return False
+
+        # Get selected developer name
+        old_name = developer_names[selection - 1]
+        click.echo(f"\n📝 Selected: {click.style(old_name, fg='green')}")
+
+        # Prompt for new name
+        new_name = click.prompt("Enter new canonical name", type=str)
+
+        # Validate new name
+        new_name = new_name.strip()
+        if not new_name:
+            click.echo(click.style("❌ New name cannot be empty", fg="red"), err=True)
+            return False
+
+        if new_name == old_name:
+            click.echo(click.style("❌ New name is identical to current name", fg="yellow"))
+            return False
+
+        # Ask about cache update
+        update_cache = click.confirm("\nAlso update database cache?", default=True)
+
+        # Show what will be done
+        click.echo("\n" + "=" * 60)
+        click.echo(click.style("Summary", fg="yellow", bold=True))
+        click.echo("=" * 60)
+        click.echo(f"  Old name: {old_name}")
+        click.echo(f"  New name: {new_name}")
+        click.echo(f"  Update cache: {'Yes' if update_cache else 'No'}")
+        click.echo()
+
+        # Confirm
+        if not click.confirm("Proceed with rename?", default=True):
+            click.echo(click.style("\n❌ Cancelled", fg="yellow"))
+            return False
+
+    except Exception as e:
+        click.echo(click.style(f"❌ Error reading config: {e}", fg="red"), err=True)
+        logger.error(f"Config read error: {type(e).__name__}: {e}")
         return False
 
     try:

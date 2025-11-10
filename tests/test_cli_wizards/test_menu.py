@@ -377,7 +377,19 @@ class TestRenameDeveloperAlias:
     def test_renames_with_cache_update(self, tmp_path):
         """Test renaming developer alias with cache update."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("test: config")
+        config_content = """
+analysis:
+  identity:
+    manual_mappings:
+      - name: "Old Name"
+        primary_email: "old@example.com"
+        aliases:
+          - "old.name@example.com"
+      - name: "Other Developer"
+        primary_email: "other@example.com"
+        aliases: []
+"""
+        config_file.write_text(config_content)
 
         with (
             patch("click.prompt") as mock_prompt,
@@ -385,7 +397,9 @@ class TestRenameDeveloperAlias:
             patch("subprocess.run") as mock_run,
         ):
             # Set up mock responses
-            mock_prompt.side_effect = ["Old Name", "New Name"]
+            # First prompt: select developer number (1 for "Old Name")
+            # Second prompt: enter new name
+            mock_prompt.side_effect = [1, "New Name"]
             mock_confirm.side_effect = [True, True]  # update_cache=True, confirm=True
             mock_run.return_value = Mock(returncode=0)
 
@@ -405,7 +419,16 @@ class TestRenameDeveloperAlias:
     def test_renames_without_cache_update(self, tmp_path):
         """Test renaming developer alias without cache update."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("test: config")
+        config_content = """
+analysis:
+  identity:
+    manual_mappings:
+      - name: "Old Name"
+        primary_email: "old@example.com"
+        aliases:
+          - "old.name@example.com"
+"""
+        config_file.write_text(config_content)
 
         with (
             patch("click.prompt") as mock_prompt,
@@ -413,7 +436,9 @@ class TestRenameDeveloperAlias:
             patch("subprocess.run") as mock_run,
         ):
             # Set up mock responses
-            mock_prompt.side_effect = ["Old Name", "New Name"]
+            # First prompt: select developer number (1 for "Old Name")
+            # Second prompt: enter new name
+            mock_prompt.side_effect = [1, "New Name"]
             mock_confirm.side_effect = [False, True]  # update_cache=False, confirm=True
             mock_run.return_value = Mock(returncode=0)
 
@@ -427,14 +452,24 @@ class TestRenameDeveloperAlias:
     def test_cancels_rename(self, tmp_path):
         """Test cancelling rename operation."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("test: config")
+        config_content = """
+analysis:
+  identity:
+    manual_mappings:
+      - name: "Old Name"
+        primary_email: "old@example.com"
+        aliases: []
+"""
+        config_file.write_text(config_content)
 
         with (
             patch("click.prompt") as mock_prompt,
             patch("click.confirm") as mock_confirm,
         ):
             # Set up mock responses
-            mock_prompt.side_effect = ["Old Name", "New Name"]
+            # First prompt: select developer number (1 for "Old Name")
+            # Second prompt: enter new name
+            mock_prompt.side_effect = [1, "New Name"]
             mock_confirm.side_effect = [True, False]  # update_cache=True, confirm=False
 
             result = rename_developer_alias(config_file)
@@ -444,7 +479,15 @@ class TestRenameDeveloperAlias:
     def test_handles_subprocess_failure(self, tmp_path):
         """Test handling of subprocess failure."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("test: config")
+        config_content = """
+analysis:
+  identity:
+    manual_mappings:
+      - name: "Old Name"
+        primary_email: "old@example.com"
+        aliases: []
+"""
+        config_file.write_text(config_content)
 
         with (
             patch("click.prompt") as mock_prompt,
@@ -452,7 +495,7 @@ class TestRenameDeveloperAlias:
             patch("subprocess.run") as mock_run,
         ):
             # Set up mock responses
-            mock_prompt.side_effect = ["Old Name", "New Name"]
+            mock_prompt.side_effect = [1, "New Name"]
             mock_confirm.side_effect = [True, True]
             mock_run.return_value = Mock(returncode=1)  # Failure
 
@@ -463,7 +506,15 @@ class TestRenameDeveloperAlias:
     def test_handles_subprocess_error(self, tmp_path):
         """Test handling of subprocess exception."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("test: config")
+        config_content = """
+analysis:
+  identity:
+    manual_mappings:
+      - name: "Old Name"
+        primary_email: "old@example.com"
+        aliases: []
+"""
+        config_file.write_text(config_content)
 
         with (
             patch("click.prompt") as mock_prompt,
@@ -471,7 +522,7 @@ class TestRenameDeveloperAlias:
             patch("subprocess.run", side_effect=Exception("Test error")),
         ):
             # Set up mock responses
-            mock_prompt.side_effect = ["Old Name", "New Name"]
+            mock_prompt.side_effect = [1, "New Name"]
             mock_confirm.side_effect = [True, True]
 
             result = rename_developer_alias(config_file)

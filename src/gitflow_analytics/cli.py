@@ -5941,12 +5941,10 @@ def create_alias_interactive(config: Path, output: Optional[Path]) -> None:
 )
 @click.option(
     "--old-name",
-    required=True,
     help="Current canonical name to rename (must match a name in manual_mappings)",
 )
 @click.option(
     "--new-name",
-    required=True,
     help="New canonical display name to use in reports",
 )
 @click.option(
@@ -5959,12 +5957,19 @@ def create_alias_interactive(config: Path, output: Optional[Path]) -> None:
     is_flag=True,
     help="Show what would be changed without applying changes",
 )
+@click.option(
+    "--interactive",
+    "-i",
+    is_flag=True,
+    help="Interactive mode: select developer from numbered list",
+)
 def alias_rename(
     config: Path,
     old_name: str,
     new_name: str,
     update_cache: bool,
     dry_run: bool,
+    interactive: bool,
 ) -> None:
     """Rename a developer's canonical display name.
 
@@ -5975,6 +5980,9 @@ def alias_rename(
 
     \b
     EXAMPLES:
+      # Interactive mode: select from numbered list
+      gitflow-analytics alias-rename -c config.yaml --interactive
+
       # Rename with dry-run to see changes
       gitflow-analytics alias-rename -c config.yaml \\
         --old-name "bianco-zaelot" \\
@@ -6000,22 +6008,6 @@ def alias_rename(
     """
     try:
         from .core.identity import DeveloperIdentityResolver
-
-        # Validate inputs
-        if not old_name.strip():
-            click.echo("❌ Error: --old-name cannot be empty", err=True)
-            sys.exit(1)
-
-        if not new_name.strip():
-            click.echo("❌ Error: --new-name cannot be empty", err=True)
-            sys.exit(1)
-
-        old_name = old_name.strip()
-        new_name = new_name.strip()
-
-        if old_name == new_name:
-            click.echo("❌ Error: old-name and new-name are identical", err=True)
-            sys.exit(1)
 
         # Load the YAML config file
         click.echo(f"\n📋 Loading configuration from {config}...")
@@ -6044,6 +6036,62 @@ def alias_rename(
 
         if not manual_mappings:
             click.echo("❌ Error: manual_mappings is empty", err=True)
+            sys.exit(1)
+
+        # Interactive mode: display numbered list and prompt for selection
+        if interactive or not old_name or not new_name:
+            click.echo("\n" + "=" * 60)
+            click.echo(click.style("Current Developers:", fg="cyan", bold=True))
+            click.echo("=" * 60 + "\n")
+
+            developer_names = []
+            for idx, mapping in enumerate(manual_mappings, 1):
+                name = mapping.get("name", "Unknown")
+                email = mapping.get("primary_email", "N/A")
+                alias_count = len(mapping.get("aliases", []))
+
+                developer_names.append(name)
+                click.echo(f"  {idx}. {click.style(name, fg='green')}")
+                click.echo(f"     Email: {email}")
+                click.echo(f"     Aliases: {alias_count} email(s)")
+                click.echo()
+
+            # Prompt for selection
+            try:
+                selection = click.prompt(
+                    "Select developer number to rename (or 0 to cancel)",
+                    type=click.IntRange(0, len(developer_names))
+                )
+            except click.Abort:
+                click.echo("\n👋 Cancelled by user.")
+                sys.exit(0)
+
+            if selection == 0:
+                click.echo("\n👋 Cancelled.")
+                sys.exit(0)
+
+            # Get selected developer name
+            old_name = developer_names[selection - 1]
+            click.echo(f"\n📝 Selected: {click.style(old_name, fg='green')}")
+
+            # Prompt for new name if not provided
+            if not new_name:
+                new_name = click.prompt("Enter new canonical name", type=str)
+
+        # Validate inputs
+        if not old_name or not old_name.strip():
+            click.echo("❌ Error: --old-name cannot be empty", err=True)
+            sys.exit(1)
+
+        if not new_name or not new_name.strip():
+            click.echo("❌ Error: --new-name cannot be empty", err=True)
+            sys.exit(1)
+
+        old_name = old_name.strip()
+        new_name = new_name.strip()
+
+        if old_name == new_name:
+            click.echo("❌ Error: old-name and new-name are identical", err=True)
             sys.exit(1)
 
         # Find the matching entry
