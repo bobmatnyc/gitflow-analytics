@@ -12,6 +12,7 @@ from gitflow_analytics.cli_wizards.menu import (
     find_or_prompt_config,
     fix_aliases,
     get_current_weeks,
+    rename_developer_alias,
     repull_data,
     run_full_analysis,
     set_weeks,
@@ -368,3 +369,111 @@ class TestShowMainMenu:
             from gitflow_analytics.cli_wizards.menu import show_main_menu
 
             show_main_menu()
+
+
+class TestRenameDeveloperAlias:
+    """Tests for rename_developer_alias function."""
+
+    def test_renames_with_cache_update(self, tmp_path):
+        """Test renaming developer alias with cache update."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("test: config")
+
+        with (
+            patch("click.prompt") as mock_prompt,
+            patch("click.confirm") as mock_confirm,
+            patch("subprocess.run") as mock_run,
+        ):
+            # Set up mock responses
+            mock_prompt.side_effect = ["Old Name", "New Name"]
+            mock_confirm.side_effect = [True, True]  # update_cache=True, confirm=True
+            mock_run.return_value = Mock(returncode=0)
+
+            result = rename_developer_alias(config_file)
+
+            assert result is True
+            # Verify command was called correctly
+            mock_run.assert_called_once()
+            cmd_args = mock_run.call_args[0][0]
+            assert "alias-rename" in cmd_args
+            assert "--old-name" in cmd_args
+            assert "Old Name" in cmd_args
+            assert "--new-name" in cmd_args
+            assert "New Name" in cmd_args
+            assert "--update-cache" in cmd_args
+
+    def test_renames_without_cache_update(self, tmp_path):
+        """Test renaming developer alias without cache update."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("test: config")
+
+        with (
+            patch("click.prompt") as mock_prompt,
+            patch("click.confirm") as mock_confirm,
+            patch("subprocess.run") as mock_run,
+        ):
+            # Set up mock responses
+            mock_prompt.side_effect = ["Old Name", "New Name"]
+            mock_confirm.side_effect = [False, True]  # update_cache=False, confirm=True
+            mock_run.return_value = Mock(returncode=0)
+
+            result = rename_developer_alias(config_file)
+
+            assert result is True
+            # Verify command was called without --update-cache
+            cmd_args = mock_run.call_args[0][0]
+            assert "--update-cache" not in cmd_args
+
+    def test_cancels_rename(self, tmp_path):
+        """Test cancelling rename operation."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("test: config")
+
+        with (
+            patch("click.prompt") as mock_prompt,
+            patch("click.confirm") as mock_confirm,
+        ):
+            # Set up mock responses
+            mock_prompt.side_effect = ["Old Name", "New Name"]
+            mock_confirm.side_effect = [True, False]  # update_cache=True, confirm=False
+
+            result = rename_developer_alias(config_file)
+
+            assert result is False
+
+    def test_handles_subprocess_failure(self, tmp_path):
+        """Test handling of subprocess failure."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("test: config")
+
+        with (
+            patch("click.prompt") as mock_prompt,
+            patch("click.confirm") as mock_confirm,
+            patch("subprocess.run") as mock_run,
+        ):
+            # Set up mock responses
+            mock_prompt.side_effect = ["Old Name", "New Name"]
+            mock_confirm.side_effect = [True, True]
+            mock_run.return_value = Mock(returncode=1)  # Failure
+
+            result = rename_developer_alias(config_file)
+
+            assert result is False
+
+    def test_handles_subprocess_error(self, tmp_path):
+        """Test handling of subprocess exception."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("test: config")
+
+        with (
+            patch("click.prompt") as mock_prompt,
+            patch("click.confirm") as mock_confirm,
+            patch("subprocess.run", side_effect=Exception("Test error")),
+        ):
+            # Set up mock responses
+            mock_prompt.side_effect = ["Old Name", "New Name"]
+            mock_confirm.side_effect = [True, True]
+
+            result = rename_developer_alias(config_file)
+
+            assert result is False

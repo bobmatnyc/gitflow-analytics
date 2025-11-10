@@ -562,6 +562,80 @@ def run_full_analysis(config_path: Path) -> bool:
     return success
 
 
+def rename_developer_alias(config_path: Path) -> bool:
+    """Interactive interface for renaming developer aliases.
+
+    Args:
+        config_path: Path to config.yaml file
+
+    Returns:
+        True if rename succeeded, False otherwise.
+    """
+    click.echo("\n" + "=" * 60)
+    click.echo(click.style("Rename Developer Alias", fg="cyan", bold=True))
+    click.echo("=" * 60 + "\n")
+
+    click.echo("Update a developer's canonical display name in reports.")
+    click.echo("This updates the configuration file and optionally the cache.\n")
+
+    # Prompt for old name
+    old_name = click.prompt("Current name (as shown in reports)", type=str)
+
+    # Prompt for new name
+    new_name = click.prompt("New canonical name", type=str)
+
+    # Ask about cache update
+    update_cache = click.confirm("\nAlso update database cache?", default=True)
+
+    # Show what will be done
+    click.echo("\n" + "=" * 60)
+    click.echo(click.style("Summary", fg="yellow", bold=True))
+    click.echo("=" * 60)
+    click.echo(f"  Old name: {old_name}")
+    click.echo(f"  New name: {new_name}")
+    click.echo(f"  Update cache: {'Yes' if update_cache else 'No'}")
+    click.echo()
+
+    # Confirm
+    if not click.confirm("Proceed with rename?", default=True):
+        click.echo(click.style("\n❌ Cancelled", fg="yellow"))
+        return False
+
+    try:
+        # Validate config path
+        _validate_subprocess_path(config_path)
+    except ValueError as e:
+        click.echo(click.style(f"❌ Invalid config path: {e}", fg="red"), err=True)
+        logger.error(f"Config path validation failed: {e}")
+        return False
+
+    # Build command
+    cmd = [
+        sys.executable,
+        "-m",
+        "gitflow_analytics.cli",
+        "alias-rename",
+        "-c",
+        str(config_path),
+        "--old-name",
+        old_name,
+        "--new-name",
+        new_name,
+    ]
+
+    if update_cache:
+        cmd.append("--update-cache")
+
+    # Run with timeout
+    success = _run_subprocess_safely(cmd, operation_name="Alias Rename", timeout=60)
+
+    if success:
+        click.echo(click.style("\n✅ Rename completed successfully!", fg="green"))
+        click.echo(f"Future reports will show '{new_name}' instead of '{old_name}'")
+
+    return success
+
+
 def show_main_menu(config_path: Optional[Path] = None) -> None:
     """Display main interactive menu.
 
@@ -597,13 +671,14 @@ def show_main_menu(config_path: Optional[Path] = None) -> None:
             click.echo("  3. Re-pull Data (Re-run Analysis)")
             click.echo("  4. Set Number of Weeks")
             click.echo("  5. Run Full Analysis")
+            click.echo("  6. Rename Developer Alias")
             click.echo("  0. Exit")
 
             # Get user choice
             click.echo()
             choice = click.prompt(
                 click.style("Enter your choice", fg="yellow"),
-                type=click.Choice(["0", "1", "2", "3", "4", "5"], case_sensitive=False),
+                type=click.Choice(["0", "1", "2", "3", "4", "5", "6"], case_sensitive=False),
                 show_choices=False,
             )
 
@@ -623,6 +698,8 @@ def show_main_menu(config_path: Optional[Path] = None) -> None:
                 success = set_weeks(config_path)
             elif choice == "5":
                 success = run_full_analysis(config_path)
+            elif choice == "6":
+                success = rename_developer_alias(config_path)
 
             # Show warning if operation failed
             if not success and choice != "0":
