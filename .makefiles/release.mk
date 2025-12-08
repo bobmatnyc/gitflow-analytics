@@ -30,21 +30,21 @@ version: ## Show current version
 patch: ## Bump patch version (X.Y.Z → X.Y.Z+1)
 	@echo "$(YELLOW)🔧 Bumping patch version...$(NC)"
 	@CURRENT=$$($(PYTHON) $(VERSION_SCRIPT) get); \
-	$(PYTHON) $(VERSION_SCRIPT) patch; \
+	$(PYTHON) $(VERSION_SCRIPT) bump --type patch; \
 	NEW=$$($(PYTHON) $(VERSION_SCRIPT) get); \
 	echo "$(GREEN)✓ Version bumped: $$CURRENT → $$NEW$(NC)"
 
 minor: ## Bump minor version (X.Y.Z → X.Y+1.0)
 	@echo "$(YELLOW)✨ Bumping minor version...$(NC)"
 	@CURRENT=$$($(PYTHON) $(VERSION_SCRIPT) get); \
-	$(PYTHON) $(VERSION_SCRIPT) minor; \
+	$(PYTHON) $(VERSION_SCRIPT) bump --type minor; \
 	NEW=$$($(PYTHON) $(VERSION_SCRIPT) get); \
 	echo "$(GREEN)✓ Version bumped: $$CURRENT → $$NEW$(NC)"
 
 major: ## Bump major version (X.Y.Z → X+1.0.0)
 	@echo "$(YELLOW)💥 Bumping major version...$(NC)"
 	@CURRENT=$$($(PYTHON) $(VERSION_SCRIPT) get); \
-	$(PYTHON) $(VERSION_SCRIPT) major; \
+	$(PYTHON) $(VERSION_SCRIPT) bump --type major; \
 	NEW=$$($(PYTHON) $(VERSION_SCRIPT) get); \
 	echo "$(GREEN)✓ Version bumped: $$CURRENT → $$NEW$(NC)"
 
