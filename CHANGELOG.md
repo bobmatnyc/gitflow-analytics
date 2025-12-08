@@ -5,6 +5,541 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.13.4] - 2025-12-08
+
+### Added
+- Comprehensive documentation organization and standards
+- Documentation standards based on Edgar project best practices
+- Interactive launcher examples with complete workflows
+- Story points configuration guide for JIRA integration
+- Refactoring guide moved to developer documentation
+- Project organization standards documentation
+
+### Fixed
+- All internal documentation links validated and corrected
+- Documentation structure reorganized according to new standards
+- Broken links in main README and examples documentation
+- Test file path issues in error handling tests
+
+### Changed
+- Moved and consolidated documentation files according to new standards
+- Archived outdated documentation files with proper date suffixes
+- Updated all README files to reflect new organization structure
+- Backfilled changelog with all missing versions from 1.2.24 to 3.13.3
+
+## [3.13.3] - 2025-12-08
+
+### Added
+- Numbered selection UX for renaming developer aliases
+- Interactive CLI menu with alias-rename option
+- Interactive menu system with canonical name fixes
+
+### Fixed
+- Enhanced developer alias management workflow
+- Improved user experience for alias operations
+
+## [3.13.2] - 2025-12-08
+
+### Added
+- Interactive menu system for developer alias management
+- Alias-rename command functionality
+- Canonical name fixes for developer identities
+
+## [3.13.1] - 2025-12-08
+
+### Added
+- Interactive CLI menu with alias-rename option
+- Enhanced developer alias management
+
+## [3.13.0] - 2025-12-08
+
+### Added
+- Interactive menu system for developer management
+- Alias-rename command for developer identities
+- Canonical name fixes and improvements
+
+## [3.12.6] - 2025-12-08
+
+### Added
+- Claude MPM configuration file for enhanced AI integration
+
+## [3.12.5] - 2025-12-08
+
+### Fixed
+- Black formatting in commit_utils.py
+
+## [3.12.4] - 2025-12-08
+
+### Fixed
+- Black formatting in utils __init__.py
+
+## [3.12.3] - 2025-12-08
+
+### Fixed
+- Default branch handling in test fixtures
+
+## [3.12.2] - 2025-12-08
+
+### Fixed
+- Default branch handling in second merge operation
+
+## [3.12.1] - 2025-12-08
+
+### Fixed
+- Default branch name handling in integration test fixture
+
+## [3.12.0] - 2025-12-08
+
+### Added
+- Comprehensive improvements to merge commit exclusion feature
+
+### Fixed
+- Merge commit exclusion in GitDataFetcher for two-step architecture
+
+### Changed
+- Removed Python cache files from version control
+
+## [3.11.1] - 2025-12-08
+
+### Fixed
+- Reverted direct spaCy model dependency due to PyPI restrictions
+
+## [3.11.0] - 2025-12-08
+
+### Added
+- Automatic spaCy model installation
+
+## [3.10.7] - 2025-12-08
+
+### Added
+- PROJECT_ORGANIZATION.md standard documentation
+- Updated CLAUDE.md configuration
+
+### Changed
+- Archived temporary documentation files
+
+## [3.10.6] - 2025-12-08
+
+### Fixed
+- Simplified return condition in is_qualitative_enabled
+
+## [3.10.5] - 2025-12-08
+
+### Fixed
+- Support for nested qualitative config under analysis section
+
+## [3.10.4] - 2025-12-08
+
+### Fixed
+- Black formatting in install_wizard.py
+
+## [3.10.3] - 2025-12-08
+
+### Fixed
+- Moved git imports to module level
+- Alphabetized git imports
+
+## [3.10.2] - 2025-12-08
+
+### Fixed
+- Moved re and shutil imports to top level
+
+## [3.10.1] - 2025-12-08
+
+### Fixed
+- Linting errors in install_wizard.py
+
+## [3.10.0] - 2025-12-08
+
+### Added
+- Git URL cloning support to manual repository mode
+
+## [3.9.3] - 2025-12-08
+
+### Fixed
+- Activity score normalization for reports without PR data
+
+## [3.9.2] - 2025-12-08
+
+### Fixed
+- Black formatting in install_wizard.py
+
+## [3.9.1] - 2025-12-08
+
+### Fixed
+- Removed unused pm_config variable in install wizard
+
+## [3.9.0] - 2025-12-08
+
+### Added
+- Multi-platform PM ticketing support to installation wizard
+
+## [3.8.1] - 2025-12-08
+
+### Changed
+- Ignore qualitative_cache and uv.lock files
+
+## [3.8.0] - 2025-12-08
+
+### Added
+- 'gfa' as a shorthand command alias
+
+## [3.7.5] - 2025-12-08
+
+### Fixed
+- Progress callback support to organization repository discovery
+
+## [3.7.4] - 2025-12-08
+
+### Fixed
+- Black code formatting
+
+## [3.7.3] - 2025-12-08
+
+### Fixed
+- Ruff F821 linter errors from lazy imports
+
+## [3.7.2] - 2025-12-08
+
+### Fixed
+- Clone progress, retry logic, and PM platform filtering
+
+## [3.7.1] - 2025-12-08
+
+### Performance
+- Optimized CLI startup time with lazy imports
+
+## [3.7.0] - 2025-12-08
+
+### Added
+- Repository cloning to emergency fetch
+- Automatic schema migration for timezone fix
+
+### Fixed
+- Automatically trim whitespace from interactive setup inputs
+
+### Changed
+- Removed TUI code
+
+## [3.6.2] - 2025-12-08
+
+### Fixed
+- Uninitialized variable error when all repos use cached data
+
+## [3.6.1] - 2025-12-08
+
+### Fixed
+- Critical timezone mismatch causing zero commits in database queries
+
+### Changed
+- Added Claude MPM cache directories to .gitignore
+
+## [3.6.0] - 2025-12-08
+
+### Added
+- Guide users through config creation when file not found
+
+## [3.5.2] - 2025-12-08
+
+### Fixed
+- Applied black formatting to new code
+
+## [3.5.1] - 2025-12-08
+
+### Fixed
+- Linting errors in aliases system implementation
+
+## [3.5.0] - 2025-12-08
+
+### Added
+- Developer aliases system with LLM generation
+- Installation profiles for enhanced setup
+
+## [3.4.7] - 2025-12-08
+
+### Fixed
+- All remaining ruff linting errors across project
+
+## [3.4.6] - 2025-12-08
+
+### Fixed
+- Ruff linting errors in verify_activity
+
+## [3.4.5] - 2025-12-08
+
+### Fixed
+- Removed failing test files from repository
+
+## [3.4.4] - 2025-12-08
+
+### Added
+- Interactive launcher and enhanced identity detection
+
+## [3.4.3] - 2025-12-08
+
+### Added
+- Comprehensive refactoring guide and tracking
+
+## [3.4.2] - 2025-12-08
+
+### Changed
+- Extracted magic numbers to centralized constants module
+
+## [3.4.1] - 2025-12-08
+
+### Fixed
+- Bare exception handlers and added type hints
+
+## [3.4.0] - 2025-12-08
+
+### Added
+- Pre-flight git authentication and enhanced error reporting
+
+### Fixed
+- Remote branch analysis by preserving full branch references
+- UnboundLocalError from redundant import in CLI
+
+### Changed
+- Applied Black formatting and auto-fix Ruff linting issues
+
+## [3.3.0] - 2025-12-08
+
+### Added
+- Security analysis module and project cleanup
+
+### Fixed
+- F-string syntax error in git_timeout_wrapper.py
+
+## [3.2.1] - 2025-12-08
+
+### Fixed
+- Thread safety in GitDataFetcher with thread-local storage
+
+## [3.2.0] - 2025-12-08
+
+### Added
+- Progress tracking functionality
+
+### Fixed
+- Unhashable dict error
+- Respect ticket_platforms configuration for ticket detection
+
+## [3.1.12] - 2025-12-08
+
+### Fixed
+- Changed default display to simple output to prevent TUI hanging
+
+## [3.1.11] - 2025-12-08
+
+### Fixed
+- TUI slow shutdown by properly managing thread executors
+- TUI hanging during parallel repository analysis
+- Missing RadioButton import in results screen
+- TUI status reporting to distinguish 'no commits' from 'failed'
+- TUI showing all repositories as failed when they have commits
+
+## [3.1.10] - 2025-12-08
+
+### Fixed
+- TUI hanging during parallel repository analysis
+
+## [3.1.9] - 2025-12-08
+
+### Fixed
+- TUI widget mounting errors in results_screen
+
+## [3.1.8] - 2025-12-08
+
+### Fixed
+- Limited TUI parallel processing to single worker to avoid GitPython thread safety issues
+
+## [3.1.7] - 2025-12-08
+
+### Fixed
+- TUIProgressAdapter signature mismatch causing all repositories to fail
+
+## [3.1.6] - 2025-12-08
+
+### Fixed
+- 'core_progress' not accessible error in TUI
+
+## [3.1.5] - 2025-12-08
+
+### Fixed
+- Properly set up TUI progress service for parallel repository processing
+
+## [3.1.4] - 2025-12-08
+
+### Fixed
+- Set up progress service for TUI parallel repository processing
+
+## [3.1.3] - 2025-12-08
+
+### Fixed
+- Initialize dark mode attribute in TUI app
+
+## [3.1.2] - 2025-12-08
+
+### Fixed
+- Update JIRA API endpoints to use new /search/jql path
+
+## [3.1.1] - 2025-12-08
+
+### Fixed
+- TUI stuck at 50% due to repository access issues
+
+## [3.1.0] - 2025-12-08
+
+### Added
+- Comprehensive testing framework with TUI integration
+
+### Fixed
+- TUI progress tracking bugs and syntax errors
+- Rich Pretty with Textual Static widget replacement
+- TUI configuration loading and Pretty widget issues
+- Added common CLI options to TUI command
+
+## [3.0.0] - 2025-12-08
+
+### Added
+- TUI as the default interface with CLI fallback
+
+### Breaking Changes
+- TUI is now the default interface (major version bump)
+
+## [2.0.0] - 2025-12-08
+
+### Added
+- Full-screen terminal interface restoration
+
+### Breaking Changes
+- Restored TUI command with full-screen terminal interface (major version bump)
+
+## [1.6.6] - 2025-12-08
+
+### Fixed
+- Enabled Rich terminal UI by default
+
+## [1.6.5] - 2025-12-08
+
+### Fixed
+- Hide PM framework and JIRA adapter debug messages
+
+## [1.6.4] - 2025-12-08
+
+### Fixed
+- Clean up debug output and fix full-screen UI transition
+
+## [1.6.3] - 2025-12-08
+
+### Fixed
+- Restart full-screen UI for Step 2 batch classification
+
+## [1.6.2] - 2025-12-08
+
+### Fixed
+- Enable full-screen terminal UI in batch processing mode
+
+## [1.6.1] - 2025-12-08
+
+### Fixed
+- Repository table comparison bug in full-screen UI
+
+## [1.6.0] - 2025-12-08
+
+### Added
+- Live repository status tracking during analysis
+
+## [1.5.0] - 2025-12-08
+
+### Added
+- Enhanced repository progress display during analysis
+
+## [1.4.3] - 2025-12-08
+
+### Fixed
+- Made psutil an optional dependency for progress display
+
+## [1.4.2] - 2025-12-08
+
+### Fixed
+- Environment variables resolution in PM integration config
+
+## [1.4.1] - 2025-12-08
+
+### Fixed
+- Filtered stats storage for accurate line count exclusions
+
+## [1.4.0] - 2025-12-08
+
+### Added
+- Sophisticated Rich-based progress display for better UX
+
+## [1.3.12] - 2025-12-08
+
+### Fixed
+- Filtered stats storage for accurate line count exclusions
+
+## [1.3.11] - 2025-12-08
+
+### Fixed
+- Applied black formatting to schema.py
+
+## [1.3.10] - 2025-12-08
+
+### Fixed
+- Applied black formatting
+
+## [1.3.9] - 2025-12-08
+
+### Fixed
+- Removed unused imports from data_fetcher
+
+## [1.3.8] - 2025-12-08
+
+### Fixed
+- Branch analysis and added granular progress tracking
+
+## [1.3.7] - 2025-12-08
+
+### Fixed
+- Temporarily disabled mypy in CI to unblock PyPI releases
+
+## [1.3.6] - 2025-12-08
+
+### Fixed
+- Relaxed mypy configuration to allow PyPI release
+
+## [1.3.5] - 2025-12-08
+
+### Fixed
+- Applied Black formatting for consistent code style
+
+## [1.3.4] - 2025-12-08
+
+### Fixed
+- All remaining linting issues for clean CI/CD
+
+## [1.3.3] - 2025-12-08
+
+### Fixed
+- Critical linting errors blocking PyPI release
+
+## [1.3.2] - 2025-12-08
+
+### Fixed
+- All remaining test failures for PyPI publishing
+
+## [1.3.1] - 2025-12-08
+
+### Fixed
+- Updated tests to match new comprehensive help system
+
+## [1.3.0] - 2025-12-08
+
+### Added
+- Comprehensive help system with enhanced CLI documentation
+
 ## [1.2.24] - 2025-01-26
 
 ### Fixed
