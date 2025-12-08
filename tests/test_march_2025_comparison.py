@@ -58,7 +58,7 @@ class March2025Tester:
         print("🔄 Running GitFlow Analytics for March 2025...")
 
         # Create a temporary config for March 2025 analysis
-        temp_config = {
+        {
             "repositories": [
                 {
                     "name": self.test_repo_path.name,

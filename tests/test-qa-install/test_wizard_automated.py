@@ -99,7 +99,7 @@ def test_file_permissions():
         output_dir.mkdir()
 
         # Create minimal test files
-        config_path = output_dir / "config.yaml"
+        output_dir / "config.yaml"
         env_path = output_dir / ".env"
 
         # Simulate wizard file creation with umask
@@ -238,11 +238,6 @@ def test_exception_sanitization():
         source_code = wizard_source.read_text()
 
         # Test 8.1a: Check for credential exposure prevention in exception handlers
-        dangerous_patterns = [
-            "except.*:\n.*print.*str(e)",
-            "except.*:\n.*click.echo.*{e}",
-            "except.*:\n.*f.*{e}.*",
-        ]
 
         safe_patterns = [
             "type(e).__name__",

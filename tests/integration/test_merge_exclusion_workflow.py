@@ -271,7 +271,7 @@ class TestMergeExclusionWorkflow:
                 session_2.query(CachedCommit)
                 .filter(
                     CachedCommit.repo_path == str(repo_info["repo_path"]),
-                    CachedCommit.is_merge == True,
+                    CachedCommit.is_merge,
                 )
                 .all()
             )
@@ -364,7 +364,7 @@ class TestMergeExclusionWorkflow:
                 session.query(CachedCommit)
                 .filter(
                     CachedCommit.repo_path == str(repo_info["repo_path"]),
-                    CachedCommit.is_merge == True,
+                    CachedCommit.is_merge,
                 )
                 .all()
             )
@@ -562,7 +562,7 @@ class TestMergeExclusionEdgeCases:
                 session.query(CachedCommit)
                 .filter(
                     CachedCommit.repo_path == str(repo_path),
-                    CachedCommit.is_merge == True,
+                    CachedCommit.is_merge,
                 )
                 .count()
             )
@@ -653,7 +653,7 @@ class TestMergeExclusionEdgeCases:
                 session.query(CachedCommit)
                 .filter(
                     CachedCommit.repo_path == str(repo_path),
-                    CachedCommit.is_merge == True,
+                    CachedCommit.is_merge,
                 )
                 .all()
             )

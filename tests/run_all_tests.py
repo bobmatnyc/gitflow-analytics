@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 
 class TestRunner:
@@ -25,10 +25,10 @@ class TestRunner:
     def __init__(self, verbose: bool = False, coverage: bool = False):
         self.verbose = verbose
         self.coverage = coverage
-        self.failed_tests: List[str] = []
-        self.passed_tests: List[str] = []
+        self.failed_tests: list[str] = []
+        self.passed_tests: list[str] = []
 
-    def run_command(self, cmd: List[str], description: str) -> bool:
+    def run_command(self, cmd: list[str], description: str) -> bool:
         """Run a command and return success status."""
         print(f"\n🧪 {description}")
         print(f"   Command: {' '.join(cmd)}")
@@ -71,7 +71,7 @@ class TestRunner:
             return False
 
     def run_pytest_suite(
-        self, test_paths: List[str], description: str, markers: Optional[str] = None
+        self, test_paths: list[str], description: str, markers: Optional[str] = None
     ) -> bool:
         """Run a pytest test suite."""
         cmd = ["python", "-m", "pytest"]
@@ -92,7 +92,7 @@ class TestRunner:
 
         return self.run_command(cmd, description)
 
-    def run_all_tests(self, test_categories: Optional[List[str]] = None) -> bool:
+    def run_all_tests(self, test_categories: Optional[list[str]] = None) -> bool:
         """Run all test categories."""
         print("🚀 GitFlow Analytics - Comprehensive Test Suite")
         print("=" * 60)

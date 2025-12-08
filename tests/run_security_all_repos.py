@@ -134,7 +134,7 @@ def analyze_repository(repo_path: Path, output_dir: Path):
     repo_output_dir.mkdir(parents=True, exist_ok=True)
 
     report_gen = SecurityReportGenerator(output_dir=repo_output_dir)
-    reports = report_gen.generate_reports(analyses, summary)
+    report_gen.generate_reports(analyses, summary)
 
     # Generate qualitative report
     report_id = hashlib.sha256(f"{repo_name}_{datetime.now().isoformat()}".encode()).hexdigest()[:8]

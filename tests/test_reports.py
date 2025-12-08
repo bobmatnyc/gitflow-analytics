@@ -259,7 +259,6 @@ class TestNarrativeReportGenerator:
 
         pr_metrics = {"avg_pr_size": 150, "total_prs": 10}
 
-        dora_metrics = {"deployment_frequency": {"daily_average": 0.5}, "lead_time_hours": 48.0}
 
         result_path = generator.generate_narrative_report(
             commits,
@@ -291,7 +290,7 @@ class TestReportingIntegration:
         """Test generating multiple report types together."""
         csv_gen = CSVReportGenerator()
         analytics_gen = AnalyticsReportGenerator()
-        narrative_gen = NarrativeReportGenerator()
+        NarrativeReportGenerator()
 
         # Sample data
         commits = [

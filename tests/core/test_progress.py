@@ -90,7 +90,7 @@ class TestProgressService:
         service = ProgressService()
 
         # Service might be auto-disabled in test environment
-        initial_state = service.is_enabled()
+        service.is_enabled()
 
         service.disable()
         assert not service.is_enabled()
@@ -209,7 +209,7 @@ class TestProgressIntegration:
 
         with TemporaryDirectory() as tmpdir:
             cache = GitAnalysisCache(tmpdir)
-            analyzer = GitAnalyzer(cache=cache)
+            GitAnalyzer(cache=cache)
 
             # Ensure progress is disabled for test
             service = get_progress_service()
@@ -219,7 +219,7 @@ class TestProgressIntegration:
             # The analyzer should still work with progress disabled
             # (actual repository analysis would happen here in a real test)
 
-            events = service.stop_event_capture()
+            service.stop_event_capture()
             # Events would be captured if analyzer was actually processing commits
 
     def test_data_fetcher_integration(self):

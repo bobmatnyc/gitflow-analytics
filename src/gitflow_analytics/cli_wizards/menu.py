@@ -5,6 +5,7 @@ is run without arguments, offering options for configuration, alias management,
 analysis execution, and more.
 """
 
+import contextlib
 import logging
 import os
 import subprocess
@@ -98,10 +99,8 @@ def _atomic_yaml_write(config_path: Path, config_data: dict) -> None:
     except Exception as e:
         # Cleanup temp file on error
         if temp_fd is not None:
-            try:
+            with contextlib.suppress(Exception):
                 os.close(temp_fd)
-            except Exception:
-                pass
 
         if temp_path and temp_path.exists():
             temp_path.unlink(missing_ok=True)

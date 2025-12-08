@@ -132,7 +132,7 @@ class TestCacheInvalidation:
         )
 
         # Config with exclude_merge_commits = False (explicit)
-        hash_false = cache.generate_config_hash(
+        cache.generate_config_hash(
             branch_mapping_rules={},
             ticket_platforms=["github"],
             exclude_paths=[],

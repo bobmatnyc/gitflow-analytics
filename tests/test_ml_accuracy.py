@@ -204,7 +204,7 @@ def main():
     print("=" * 60)
 
     try:
-        results = test_accuracy()
+        test_accuracy()
         test_performance()
         test_confidence_distribution()
 

@@ -133,7 +133,7 @@ def test_jira_integration_setup():
         cache_dir.mkdir(exist_ok=True)
         cache = GitAnalysisCache(cache_dir)
 
-        jira_integration = JIRAIntegration(
+        JIRAIntegration(
             base_url=config.jira.base_url,
             username=jira_user,
             api_token=jira_token,

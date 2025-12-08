@@ -26,7 +26,7 @@ class TestGitAnalysisCache:
         cache_dir = temp_dir / "new_cache_dir"
         assert not cache_dir.exists()
 
-        cache = GitAnalysisCache(cache_dir)
+        GitAnalysisCache(cache_dir)
 
         # Directory should exist after initialization
         assert cache_dir.exists()

@@ -51,7 +51,7 @@ output:
 
             try:
                 # This will fail on missing token, but we can check the merge logic
-                config = ConfigLoader.load(extended_path)
+                ConfigLoader.load(extended_path)
             except Exception as e:
                 # Expected to fail on missing token/repos
                 # But we can check that the extends was processed
@@ -144,7 +144,7 @@ repositories:
 
             try:
                 # Attempt to load - should find the base config via relative path
-                config = ConfigLoader.load(extended_path)
+                ConfigLoader.load(extended_path)
             except Exception as e:
                 # Expected to fail on missing token/repos
                 if "GITHUB_TOKEN" not in str(e) and "Repository path" not in str(e):
@@ -181,7 +181,7 @@ repositories:
 
             try:
                 # Attempt to load
-                config = ConfigLoader.load(extended_path)
+                ConfigLoader.load(extended_path)
             except Exception as e:
                 # Expected to fail on missing token/repos
                 if "GITHUB_TOKEN" not in str(e) and "Repository path" not in str(e):

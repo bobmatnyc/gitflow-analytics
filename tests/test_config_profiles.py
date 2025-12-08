@@ -133,7 +133,7 @@ repositories:
 
         try:
             # Load config (will fail on missing token but profile should be applied)
-            config = ConfigLoader.load(temp_path)
+            ConfigLoader.load(temp_path)
         except Exception:
             # We expect environment variable errors, but profile should still be applied
             pass
