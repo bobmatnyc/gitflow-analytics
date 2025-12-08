@@ -101,7 +101,7 @@ class GitHubIntegration:
 
         if cache_hits > 0 or cache_misses > 0:
             print(
-                f"   📊 GitHub PR cache: {cache_hits} hits, {cache_misses} misses ({cache_hits/(cache_hits+cache_misses)*100:.1f}% hit rate)"
+                f"   📊 GitHub PR cache: {cache_hits} hits, {cache_misses} misses ({cache_hits / (cache_hits + cache_misses) * 100:.1f}% hit rate)"
                 if (cache_hits + cache_misses) > 0
                 else ""
             )

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Test JIRA connection."""
 
+import base64
 import os
 from pathlib import Path
-from dotenv import load_dotenv
+
 import requests
-import base64
+from dotenv import load_dotenv
 
 # Load environment variables
 env_path = Path.home() / "Clients/EWTN/gfa/.env"

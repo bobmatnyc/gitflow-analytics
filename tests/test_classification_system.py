@@ -7,12 +7,12 @@ repository as test data. This allows us to validate the classification pipeline
 without needing access to external repositories.
 """
 
-import sys
 import json
 import logging
-from pathlib import Path
-from datetime import datetime, timezone, timedelta
+import sys
 from collections import Counter
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 # Add the src directory to Python path for local development
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -230,21 +230,21 @@ def test_classification_system():
                 dev_stats[dev]["classifications"][commit["predicted_class"]] += 1
 
         # Print summary
-        print(f"\n📊 ANALYSIS RESULTS")
-        print(f"=" * 50)
+        print("\n📊 ANALYSIS RESULTS")
+        print("=" * 50)
         print(f"Total Commits: {len(classified_commits)}")
         print(f"Unique Developers: {len(unique_developers)}")
         print(f"Average Confidence: {avg_confidence:.3f}")
         print(
-            f"High Confidence (≥0.8): {high_confidence_count}/{len(confidence_scores)} ({high_confidence_count/len(confidence_scores)*100:.1f}%)"
+            f"High Confidence (≥0.8): {high_confidence_count}/{len(confidence_scores)} ({high_confidence_count / len(confidence_scores) * 100:.1f}%)"
         )
 
-        print(f"\n🏷️ CLASSIFICATION DISTRIBUTION:")
+        print("\n🏷️ CLASSIFICATION DISTRIBUTION:")
         for class_type, count in classification_dist.most_common():
             percentage = (count / len(classified_commits)) * 100
             print(f"  {class_type}: {count} ({percentage:.1f}%)")
 
-        print(f"\n👥 TOP DEVELOPERS:")
+        print("\n👥 TOP DEVELOPERS:")
         for dev, stats in sorted(dev_stats.items(), key=lambda x: x[1]["commits"], reverse=True)[
             :5
         ]:
@@ -256,7 +256,7 @@ def test_classification_system():
             print(f"  {dev}: {stats['commits']} commits (primary: {primary_class})")
 
         # Step 6: Generate professional reports
-        print(f"\n📋 Generating professional reports...")
+        print("\n📋 Generating professional reports...")
 
         reports_dir.mkdir(exist_ok=True)
 
@@ -315,7 +315,7 @@ def test_classification_system():
 
         print(f"💾 Test results saved to: {results_file}")
 
-        print(f"\n🎉 Classification system test completed successfully!")
+        print("\n🎉 Classification system test completed successfully!")
         print(f"📁 All outputs available in: {reports_dir}")
 
         return True

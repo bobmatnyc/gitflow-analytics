@@ -4,20 +4,19 @@ This test suite validates the LLM commit classification implementation
 including filtering, caching, error handling, and integration.
 """
 
-import os
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 
+from src.gitflow_analytics.extractors.ml_tickets import MLTicketExtractor
 from src.gitflow_analytics.extractors.tickets import filter_git_artifacts
 from src.gitflow_analytics.qualitative.classifiers.llm_commit_classifier import (
     LLMCommitClassifier,
     LLMConfig,
     LLMPredictionCache,
 )
-from src.gitflow_analytics.extractors.ml_tickets import MLTicketExtractor
 
 
 class TestGitArtifactFiltering(unittest.TestCase):

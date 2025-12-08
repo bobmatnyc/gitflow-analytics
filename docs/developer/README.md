@@ -27,12 +27,26 @@ Comprehensive testing procedures and standards:
 
 ## 📐 Code Standards & Architecture
 
+### [Refactoring Guide](refactoring-guide.md)
+Code quality improvement tracking and procedures:
+- Ongoing refactoring phases and progress
+- Code quality metrics and targets
+- Refactoring principles and best practices
+- Testing strategies for safe refactoring
+
 ### [Coding Standards](coding-standards.md)
 Code quality guidelines and conventions:
 - Python style guide (Black, Ruff, mypy)
 - Documentation standards and docstring format
 - Error handling and logging patterns
 - Performance and security best practices
+
+### [Project Organization](project-organization.md)
+Official project structure and organization standards:
+- Directory structure and file placement rules
+- Naming conventions and patterns
+- Framework-specific organization
+- Temporary files and cleanup policies
 
 ### [Release Process](release-process.md)
 Automated release and deployment procedures:

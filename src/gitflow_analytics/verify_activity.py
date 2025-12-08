@@ -636,7 +636,7 @@ class ActivityVerifier:
             # Group consecutive days
             lines.append(f"Found {len(zero_activity_days)} days with no activity:")
             for i in range(0, len(zero_activity_days), 7):
-                lines.append(f"  {', '.join(zero_activity_days[i:i+7])}")
+                lines.append(f"  {', '.join(zero_activity_days[i : i + 7])}")
         else:
             lines.append("No days with zero activity found!")
 

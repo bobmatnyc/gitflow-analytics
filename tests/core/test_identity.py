@@ -5,12 +5,7 @@ These tests verify developer identity consolidation, email mapping,
 and fuzzy matching functionality.
 """
 
-from unittest.mock import Mock, patch
-
-from sqlalchemy.orm import Session
-
 from gitflow_analytics.core.identity import DeveloperIdentityResolver
-from gitflow_analytics.models.database import Database, DeveloperIdentity, DeveloperAlias
 
 
 class TestDeveloperIdentityResolver:

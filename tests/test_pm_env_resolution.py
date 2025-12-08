@@ -3,7 +3,6 @@
 import os
 import tempfile
 from pathlib import Path
-import pytest
 
 from gitflow_analytics.config.loader import ConfigLoader
 
@@ -70,34 +69,34 @@ pm_integration:
         jira_cfg = jira_config.config
 
         # Check base_url resolution
-        assert (
-            jira_cfg.get("base_url") == "https://test.atlassian.net"
-        ), f"base_url not resolved correctly: {jira_cfg.get('base_url')}"
+        assert jira_cfg.get("base_url") == "https://test.atlassian.net", (
+            f"base_url not resolved correctly: {jira_cfg.get('base_url')}"
+        )
 
         # Check username resolution
-        assert (
-            jira_cfg.get("username") == "test.user@example.com"
-        ), f"username not resolved correctly: {jira_cfg.get('username')}"
+        assert jira_cfg.get("username") == "test.user@example.com", (
+            f"username not resolved correctly: {jira_cfg.get('username')}"
+        )
 
         # Check api_token resolution
-        assert (
-            jira_cfg.get("api_token") == "test-api-token-12345"
-        ), f"api_token not resolved correctly: {jira_cfg.get('api_token')}"
+        assert jira_cfg.get("api_token") == "test-api-token-12345", (
+            f"api_token not resolved correctly: {jira_cfg.get('api_token')}"
+        )
 
         # Check list with environment variable resolution
         story_point_fields = jira_cfg.get("story_point_fields", [])
-        assert (
-            "customfield_99999" in story_point_fields
-        ), f"Custom field not resolved in list: {story_point_fields}"
+        assert "customfield_99999" in story_point_fields, (
+            f"Custom field not resolved in list: {story_point_fields}"
+        )
 
         # Check nested dictionary resolution
         nested = jira_cfg.get("nested_config", {})
-        assert (
-            nested.get("some_user") == "test.user@example.com"
-        ), f"Nested user not resolved: {nested.get('some_user')}"
-        assert (
-            nested.get("some_token") == "test-api-token-12345"
-        ), f"Nested token not resolved: {nested.get('some_token')}"
+        assert nested.get("some_user") == "test.user@example.com", (
+            f"Nested user not resolved: {nested.get('some_user')}"
+        )
+        assert nested.get("some_token") == "test-api-token-12345", (
+            f"Nested token not resolved: {nested.get('some_token')}"
+        )
 
     finally:
         # Clean up
@@ -148,14 +147,14 @@ pm_integration:
         jira_cfg = jira_config.config
 
         # Missing environment variable should resolve to None
-        assert (
-            jira_cfg.get("username") is None
-        ), f"Missing env var should resolve to None, got: {jira_cfg.get('username')}"
+        assert jira_cfg.get("username") is None, (
+            f"Missing env var should resolve to None, got: {jira_cfg.get('username')}"
+        )
 
         # Valid token should still be there
-        assert (
-            jira_cfg.get("api_token") == "valid-token"
-        ), f"Valid token should be preserved: {jira_cfg.get('api_token')}"
+        assert jira_cfg.get("api_token") == "valid-token", (
+            f"Valid token should be preserved: {jira_cfg.get('api_token')}"
+        )
 
     finally:
         # Clean up
@@ -209,12 +208,12 @@ pm:
         assert jira.base_url == "https://old.atlassian.net", "Base URL should be preserved"
 
         # Check environment variable resolution in old structure
-        assert (
-            jira.username == "old.user@example.com"
-        ), f"Username not resolved in old structure: {jira.username}"
-        assert (
-            jira.api_token == "old-api-token-54321"
-        ), f"API token not resolved in old structure: {jira.api_token}"
+        assert jira.username == "old.user@example.com", (
+            f"Username not resolved in old structure: {jira.username}"
+        )
+        assert jira.api_token == "old-api-token-54321", (
+            f"API token not resolved in old structure: {jira.api_token}"
+        )
 
     finally:
         # Clean up

@@ -1125,6 +1125,42 @@ gitflow-analytics analyze -c config.yaml --debug
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+### Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/bobmatnyc/gitflow-analytics.git
+cd gitflow-analytics
+
+# Install development dependencies
+make install-dev
+
+# Run tests
+make test
+
+# Format code
+make format
+
+# Run all quality checks
+make quality-gate
+```
+
+### Release Workflow
+
+This project uses a Makefile-based release workflow for simplicity and transparency. See [RELEASE.md](RELEASE.md) for detailed documentation.
+
+**Quick Reference:**
+```bash
+make release-patch   # Bug fixes (3.13.1 → 3.13.2)
+make release-minor   # New features (3.13.1 → 3.14.0)
+make release-major   # Breaking changes (3.13.1 → 4.0.0)
+```
+
+For more details, see:
+- [RELEASE.md](RELEASE.md) - Comprehensive release guide
+- [RELEASE_QUICKREF.md](RELEASE_QUICKREF.md) - Quick reference card
+- `make help` - All available commands
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.

@@ -9,11 +9,9 @@ This script tests whether the caching system is properly atomic by day:
 """
 
 import logging
-import shutil
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Any, List
 
 # Configure logging for debugging
 logging.basicConfig(
@@ -24,9 +22,10 @@ logger = logging.getLogger(__name__)
 
 def test_commit_caching_atomic_behavior():
     """Test that commit caching is atomic by day."""
+    from sqlalchemy import func
+
     from src.gitflow_analytics.core.cache import GitAnalysisCache
     from src.gitflow_analytics.models.database import CachedCommit
-    from sqlalchemy import func
 
     print("🧪 Testing Commit Caching Atomic Behavior")
     print("=" * 50)
@@ -48,7 +47,7 @@ def test_commit_caching_atomic_behavior():
                 "hash": f"commit{day:02d}",
                 "author_name": "Test Author",
                 "author_email": "test@example.com",
-                "message": f"Day {day+1} commit",
+                "message": f"Day {day + 1} commit",
                 "timestamp": commit_date,
                 "branch": "main",
                 "is_merge": False,
@@ -92,7 +91,7 @@ def test_commit_caching_atomic_behavior():
         cache_misses = len(week2_hashes) - cache_hits
 
         print(f"   ✅ Week 2 cache analysis: {cache_hits} hits, {cache_misses} misses")
-        print(f"   ✅ Expected: 7 hits (week 1), 7 misses (week 2)")
+        print("   ✅ Expected: 7 hits (week 1), 7 misses (week 2)")
 
         # Cache the missing commits (days 8-14)
         week2_only_commits = all_commits[7:]  # Days 8-14
@@ -135,7 +134,7 @@ def test_commit_caching_atomic_behavior():
         partial_misses = len(partial_hashes) - partial_hits
 
         print(f"   ✅ Partial overlap: {partial_hits} hits, {partial_misses} misses")
-        print(f"   ✅ Expected: 8 hits (all days 5-12 should be cached)")
+        print("   ✅ Expected: 8 hits (all days 5-12 should be cached)")
 
         # Results Analysis
         print("\n📈 Caching Behavior Analysis")
@@ -290,8 +289,9 @@ def test_jira_ticket_caching_atomic_behavior():
 
 def test_daily_metrics_atomic_behavior():
     """Test that daily metrics are stored atomically by day."""
-    from src.gitflow_analytics.core.metrics_storage import DailyMetricsStorage
     from datetime import date
+
+    from src.gitflow_analytics.core.metrics_storage import DailyMetricsStorage
 
     print("\n📊 Testing Daily Metrics Atomic Behavior")
     print("=" * 50)
@@ -345,7 +345,7 @@ def test_daily_metrics_atomic_behavior():
             records_stored = metrics_storage.store_daily_metrics(
                 target_date, day_commits, developer_identities
             )
-            print(f"   ✅ Day {day+1} ({target_date}): {records_stored} records stored")
+            print(f"   ✅ Day {day + 1} ({target_date}): {records_stored} records stored")
 
         # Scenario 2: Retrieve metrics for date ranges
         print("\n🔍 Scenario 2: Date Range Retrieval")
@@ -376,7 +376,7 @@ def test_daily_metrics_atomic_behavior():
             if day_metrics:
                 metric = day_metrics[0]
                 print(
-                    f"   ✅ Day {day+1}: {metric['total_commits']} commits, {metric['feature_commits']} features, {metric['bug_fix_commits']} bugs"
+                    f"   ✅ Day {day + 1}: {metric['total_commits']} commits, {metric['feature_commits']} features, {metric['bug_fix_commits']} bugs"
                 )
 
         # Results Analysis

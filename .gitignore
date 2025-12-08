@@ -71,6 +71,8 @@ Thumbs.db
 
 # Project specific
 .gitflow-cache/
+.claude-mpm/
+.qualitative_cache/
 gitflow_cache.db
 *.db
 config-*.yaml
@@ -260,3 +262,5 @@ yarn-error.log*
 .claude-mpm/mcp_auto_config_preference.json
 .qualitative_cache/
 uv.lock
+# Local environment variables (never commit!)
+.env.local

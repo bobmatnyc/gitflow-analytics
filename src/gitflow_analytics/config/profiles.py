@@ -234,8 +234,7 @@ class ProfileManager:
         if not profile_class:
             available = ", ".join(cls._profiles.keys())
             raise ValueError(
-                f"Unknown configuration profile: {profile_name}. "
-                f"Available profiles: {available}"
+                f"Unknown configuration profile: {profile_name}. Available profiles: {available}"
             )
 
         profile_settings = profile_class.get_settings()

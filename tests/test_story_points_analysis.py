@@ -9,13 +9,13 @@ This script will:
 4. Validate the story points extraction process
 """
 
-import os
-import sys
-import sqlite3
 import json
+import os
+import sqlite3
+import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any
+
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -23,10 +23,10 @@ from requests.auth import HTTPBasicAuth
 sys.path.insert(0, "/Users/masa/Projects/managed/gitflow-analytics/src")
 
 try:
-    from gitflow_analytics.integrations.jira_integration import JIRAIntegration
+    from gitflow_analytics.config import Config
     from gitflow_analytics.extractors.story_points import StoryPointExtractor
     from gitflow_analytics.extractors.tickets import TicketExtractor
-    from gitflow_analytics.config import Config
+    from gitflow_analytics.integrations.jira_integration import JIRAIntegration
 except ImportError as e:
     print(f"❌ Import error: {e}")
     sys.exit(1)

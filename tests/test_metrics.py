@@ -4,8 +4,7 @@ Tests for the metrics module.
 These tests verify DORA metrics calculation and other performance indicators.
 """
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock
+from datetime import datetime, timezone
 
 from gitflow_analytics.metrics.dora import DORAMetricsCalculator
 

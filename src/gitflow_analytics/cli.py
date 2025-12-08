@@ -429,8 +429,7 @@ def cli(ctx: click.Context) -> None:
     "--use-batch-classification/--use-legacy-classification",
     default=True,
     help=(
-        "Use batch LLM classification on pre-fetched data (Step 2 of 2) - "
-        "now the default behavior"
+        "Use batch LLM classification on pre-fetched data (Step 2 of 2) - now the default behavior"
     ),
 )
 @click.option(
@@ -1213,8 +1212,7 @@ def analyze(
                 display.update_progress_task(
                     "main",
                     description=(
-                        f"🔍 Discovering repositories from organization: "
-                        f"{cfg.github.organization}"
+                        f"🔍 Discovering repositories from organization: {cfg.github.organization}"
                     ),
                     completed=15,
                 )
@@ -1457,8 +1455,7 @@ def analyze(
                     display.update_progress_task(
                         "repos",
                         description=(
-                            f"Step 1: Fetching data for "
-                            f"{len(repos_needing_analysis)} repositories"
+                            f"Step 1: Fetching data for {len(repos_needing_analysis)} repositories"
                         ),
                         completed=0,
                     )
@@ -1532,7 +1529,6 @@ def analyze(
                     description="Processing repositories",
                     unit="repos",
                 ) as repos_progress_ctx:
-
                     for idx, repo_config in enumerate(repos_needing_analysis, 1):
                         try:
                             repo_path = Path(repo_config.path)
@@ -2285,11 +2281,9 @@ def analyze(
                         f"   🗃️ Database state: {pre_classification_commits} commits, "
                         f"{pre_classification_batches} batches"
                     )
-                    click.echo(
-                        "   💡 Commits exist but no daily batches - " "batch creation failed"
-                    )
+                    click.echo("   💡 Commits exist but no daily batches - batch creation failed")
                     raise click.ClickException(
-                        "No batches available for classification - " "batch creation process failed"
+                        "No batches available for classification - batch creation process failed"
                     )
 
             if display:
@@ -2717,7 +2711,9 @@ def analyze(
                         )
                         commit["canonical_id"] = canonical_id
                         # Also add canonical display name for reports
-                        commit["canonical_name"] = identity_resolver.get_canonical_name(canonical_id)
+                        commit["canonical_name"] = identity_resolver.get_canonical_name(
+                            canonical_id
+                        )
 
                     all_commits.extend(commits)
                     if display:
@@ -2934,9 +2930,9 @@ def analyze(
                                     ):
                                         existing_mappings.append(new_mapping)
 
-                                config_data["analysis"]["identity"][
-                                    "manual_mappings"
-                                ] = existing_mappings
+                                config_data["analysis"]["identity"]["manual_mappings"] = (
+                                    existing_mappings
+                                )
 
                                 # Apply bot exclusions
                                 if suggested_config.get("exclude", {}).get("authors"):
@@ -3382,7 +3378,7 @@ def analyze(
         # Weekly metrics report (only if CSV generation is enabled)
         if generate_csv:
             weekly_report = (
-                output / f'weekly_metrics_{datetime.now(timezone.utc).strftime("%Y%m%d")}.csv'
+                output / f"weekly_metrics_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
             )
             try:
                 logger.debug("Starting weekly metrics report generation")
@@ -3402,7 +3398,7 @@ def analyze(
         if generate_csv:
             activity_summary_report = (
                 output
-                / f'developer_activity_summary_{datetime.now(timezone.utc).strftime("%Y%m%d")}.csv'
+                / f"developer_activity_summary_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
             )
             try:
                 logger.debug("Starting developer activity summary report generation")
@@ -3429,7 +3425,7 @@ def analyze(
 
         # Summary report (only if CSV generation is enabled)
         if generate_csv:
-            summary_report = output / f'summary_{datetime.now().strftime("%Y%m%d")}.csv'
+            summary_report = output / f"summary_{datetime.now().strftime('%Y%m%d')}.csv"
             try:
                 report_gen.generate_summary_report(
                     all_commits,
@@ -3453,7 +3449,7 @@ def analyze(
 
         # Developer report (only if CSV generation is enabled)
         if generate_csv:
-            developer_report = output / f'developers_{datetime.now().strftime("%Y%m%d")}.csv'
+            developer_report = output / f"developers_{datetime.now().strftime('%Y%m%d')}.csv"
             try:
                 report_gen.generate_developer_report(developer_stats, developer_report)
                 generated_reports.append(developer_report.name)
@@ -3471,7 +3467,7 @@ def analyze(
         # Untracked commits report (only if CSV generation is enabled)
         if generate_csv:
             untracked_commits_report = (
-                output / f'untracked_commits_{datetime.now().strftime("%Y%m%d")}.csv'
+                output / f"untracked_commits_{datetime.now().strftime('%Y%m%d')}.csv"
             )
             try:
                 report_gen.generate_untracked_commits_report(
@@ -3492,7 +3488,7 @@ def analyze(
         # Weekly Categorization report (only if CSV generation is enabled)
         if generate_csv:
             weekly_categorization_report = (
-                output / f'weekly_categorization_{datetime.now().strftime("%Y%m%d")}.csv'
+                output / f"weekly_categorization_{datetime.now().strftime('%Y%m%d')}.csv"
             )
             try:
                 logger.debug("Starting weekly categorization report generation")
@@ -3510,7 +3506,7 @@ def analyze(
         # PM Correlations report (if PM data is available and CSV generation is enabled)
         if aggregated_pm_data and generate_csv:
             pm_correlations_report = (
-                output / f'pm_correlations_{datetime.now().strftime("%Y%m%d")}.csv'
+                output / f"pm_correlations_{datetime.now().strftime('%Y%m%d')}.csv"
             )
             try:
                 report_gen.generate_pm_correlations_report(
@@ -3525,7 +3521,7 @@ def analyze(
         # Story Point Correlation report (only if CSV generation is enabled)
         if generate_csv:
             story_point_correlation_report = (
-                output / f'story_point_correlation_{datetime.now().strftime("%Y%m%d")}.csv'
+                output / f"story_point_correlation_{datetime.now().strftime('%Y%m%d')}.csv"
             )
             try:
                 logger.debug("Starting story point correlation report generation")
@@ -3541,7 +3537,7 @@ def analyze(
                 click.echo(f"   ⚠️ Warning: Story point correlation report failed: {e}")
 
         # Activity distribution report (always generate data, optionally write CSV)
-        activity_report = output / f'activity_distribution_{datetime.now().strftime("%Y%m%d")}.csv'
+        activity_report = output / f"activity_distribution_{datetime.now().strftime('%Y%m%d')}.csv"
         try:
             logger.debug("Starting activity distribution report generation")
             analytics_gen.generate_activity_distribution_report(
@@ -3565,7 +3561,7 @@ def analyze(
             raise
 
         # Developer focus report (always generate data, optionally write CSV)
-        focus_report = output / f'developer_focus_{datetime.now().strftime("%Y%m%d")}.csv'
+        focus_report = output / f"developer_focus_{datetime.now().strftime('%Y%m%d')}.csv"
         try:
             logger.debug("Starting developer focus report generation")
             analytics_gen.generate_developer_focus_report(
@@ -3589,7 +3585,7 @@ def analyze(
             raise
 
         # Qualitative insights report (always generate data, optionally write CSV)
-        insights_report = output / f'qualitative_insights_{datetime.now().strftime("%Y%m%d")}.csv'
+        insights_report = output / f"qualitative_insights_{datetime.now().strftime('%Y%m%d')}.csv"
         try:
             logger.debug("Starting qualitative insights report generation")
             analytics_gen.generate_qualitative_insights_report(
@@ -3609,7 +3605,7 @@ def analyze(
 
             branch_health_gen = BranchHealthReportGenerator()
 
-            branch_health_report = output / f'branch_health_{datetime.now().strftime("%Y%m%d")}.csv'
+            branch_health_report = output / f"branch_health_{datetime.now().strftime('%Y%m%d')}.csv"
             try:
                 logger.debug("Starting branch health report generation")
                 branch_health_gen.generate_csv_report(branch_health_metrics, branch_health_report)
@@ -3623,7 +3619,7 @@ def analyze(
 
             # Detailed branch report
             detailed_branch_report = (
-                output / f'branch_details_{datetime.now().strftime("%Y%m%d")}.csv'
+                output / f"branch_details_{datetime.now().strftime('%Y%m%d')}.csv"
             )
             try:
                 branch_health_gen.generate_detailed_branch_report(
@@ -3663,7 +3659,7 @@ def analyze(
 
         # Weekly trends report (includes developer and project trends) (only if CSV generation is enabled)
         if generate_csv:
-            trends_report = output / f'weekly_trends_{datetime.now().strftime("%Y%m%d")}.csv'
+            trends_report = output / f"weekly_trends_{datetime.now().strftime('%Y%m%d')}.csv"
             try:
                 logger.debug("Starting weekly trends report generation")
                 analytics_gen.generate_weekly_trends_report(
@@ -3739,7 +3735,7 @@ def analyze(
         # Weekly velocity report (only if CSV generation is enabled)
         if generate_csv:
             weekly_velocity_report = (
-                output / f'weekly_velocity_{datetime.now().strftime("%Y%m%d")}.csv'
+                output / f"weekly_velocity_{datetime.now().strftime('%Y%m%d')}.csv"
             )
             try:
                 logger.debug("Starting weekly velocity report generation")
@@ -3765,7 +3761,7 @@ def analyze(
         # Weekly DORA metrics report (only if CSV generation is enabled)
         if generate_csv:
             weekly_dora_report = (
-                output / f'weekly_dora_metrics_{datetime.now().strftime("%Y%m%d")}.csv'
+                output / f"weekly_dora_metrics_{datetime.now().strftime('%Y%m%d')}.csv"
             )
             try:
                 logger.debug("Starting weekly DORA metrics report generation")
@@ -3983,7 +3979,7 @@ def analyze(
                 logger.debug("Starting comprehensive JSON export generation")
                 click.echo("   🔄 Generating comprehensive JSON export...")
                 json_report = (
-                    output / f'comprehensive_export_{datetime.now().strftime("%Y%m%d")}.json'
+                    output / f"comprehensive_export_{datetime.now().strftime('%Y%m%d')}.json"
                 )
 
                 # Initialize comprehensive JSON exporter
@@ -5178,7 +5174,7 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
 
         # Run analysis
         identity_report_path = (
-            cfg.cache.directory / f'identity_analysis_{datetime.now().strftime("%Y%m%d")}.yaml'
+            cfg.cache.directory / f"identity_analysis_{datetime.now().strftime('%Y%m%d')}.yaml"
         )
         identity_result = analysis_pass.run_analysis(
             all_commits, output_path=identity_report_path, apply_to_config=False
@@ -5525,7 +5521,9 @@ def aliases_command(
                     confidence_color = (
                         "green"
                         if alias.confidence >= 0.9
-                        else "yellow" if alias.confidence >= 0.8 else "red"
+                        else "yellow"
+                        if alias.confidence >= 0.8
+                        else "red"
                     )
                     click.echo("    Confidence: ", nl=False)
                     click.secho(f"{alias.confidence:.0%}", fg=confidence_color)
@@ -6013,7 +6011,7 @@ def alias_rename(
         click.echo(f"\n📋 Loading configuration from {config}...")
 
         try:
-            with open(config, "r", encoding="utf-8") as f:
+            with open(config, encoding="utf-8") as f:
                 config_data = yaml.safe_load(f)
         except Exception as e:
             click.echo(f"❌ Error loading config file: {e}", err=True)
@@ -6029,7 +6027,9 @@ def alias_rename(
             sys.exit(1)
 
         if "manual_mappings" not in config_data["analysis"]["identity"]:
-            click.echo("❌ Error: 'analysis.identity.manual_mappings' not found in config", err=True)
+            click.echo(
+                "❌ Error: 'analysis.identity.manual_mappings' not found in config", err=True
+            )
             sys.exit(1)
 
         manual_mappings = config_data["analysis"]["identity"]["manual_mappings"]
@@ -6060,7 +6060,7 @@ def alias_rename(
             try:
                 selection = click.prompt(
                     "Select developer number to rename (or 0 to cancel)",
-                    type=click.IntRange(0, len(developer_names))
+                    type=click.IntRange(0, len(developer_names)),
                 )
             except click.Abort:
                 click.echo("\n👋 Cancelled by user.")
@@ -6113,24 +6113,30 @@ def alias_rename(
             sys.exit(1)
 
         # Display what will be changed
-        click.echo(f"\n🔍 Found matching entry:")
+        click.echo("\n🔍 Found matching entry:")
         click.echo(f"   Current name: {old_name}")
         click.echo(f"   New name:     {new_name}")
         click.echo(f"   Email:        {matching_entry.get('primary_email', 'N/A')}")
         click.echo(f"   Aliases:      {len(matching_entry.get('aliases', []))} email(s)")
 
         if dry_run:
-            click.echo(f"\n🔎 DRY RUN - No changes will be made")
+            click.echo("\n🔎 DRY RUN - No changes will be made")
 
         # Update the config file
         if not dry_run:
-            click.echo(f"\n📝 Updating configuration file...")
+            click.echo("\n📝 Updating configuration file...")
             manual_mappings[matching_index]["name"] = new_name
 
             try:
                 with open(config, "w", encoding="utf-8") as f:
-                    yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-                click.echo(f"✅ Configuration file updated")
+                    yaml.dump(
+                        config_data,
+                        f,
+                        default_flow_style=False,
+                        allow_unicode=True,
+                        sort_keys=False,
+                    )
+                click.echo("✅ Configuration file updated")
             except Exception as e:
                 click.echo(f"❌ Error writing config file: {e}", err=True)
                 sys.exit(1)
@@ -6139,7 +6145,7 @@ def alias_rename(
 
         # Update database cache if requested
         if update_cache:
-            click.echo(f"\n💾 Checking database cache...")
+            click.echo("\n💾 Checking database cache...")
 
             # Load config to get cache directory
             cfg = ConfigLoader.load(config)
@@ -6147,7 +6153,7 @@ def alias_rename(
 
             if not identity_db_path.exists():
                 click.echo(f"⚠️  Warning: Identity database not found at {identity_db_path}")
-                click.echo(f"   Skipping cache update")
+                click.echo("   Skipping cache update")
             else:
                 # Initialize identity resolver to access database
                 identity_resolver = DeveloperIdentityResolver(
@@ -6161,15 +6167,17 @@ def alias_rename(
                 with identity_resolver.get_session() as session:
                     # Count developer_identities records
                     result = session.execute(
-                        text("SELECT COUNT(*) FROM developer_identities WHERE primary_name = :old_name"),
-                        {"old_name": old_name}
+                        text(
+                            "SELECT COUNT(*) FROM developer_identities WHERE primary_name = :old_name"
+                        ),
+                        {"old_name": old_name},
                     )
                     identity_count = result.scalar()
 
                     # Count developer_aliases records
                     result = session.execute(
                         text("SELECT COUNT(*) FROM developer_aliases WHERE name = :old_name"),
-                        {"old_name": old_name}
+                        {"old_name": old_name},
                     )
                     alias_count = result.scalar()
 
@@ -6177,28 +6185,34 @@ def alias_rename(
                 click.echo(f"   Found {alias_count} alias record(s)")
 
                 if identity_count == 0 and alias_count == 0:
-                    click.echo(f"   ℹ️  No database records to update")
+                    click.echo("   ℹ️  No database records to update")
                 elif not dry_run:
-                    click.echo(f"   Updating database records...")
+                    click.echo("   Updating database records...")
 
                     with identity_resolver.get_session() as session:
                         # Update developer_identities
                         if identity_count > 0:
                             session.execute(
-                                text("UPDATE developer_identities SET primary_name = :new_name WHERE primary_name = :old_name"),
-                                {"new_name": new_name, "old_name": old_name}
+                                text(
+                                    "UPDATE developer_identities SET primary_name = :new_name WHERE primary_name = :old_name"
+                                ),
+                                {"new_name": new_name, "old_name": old_name},
                             )
 
                         # Update developer_aliases
                         if alias_count > 0:
                             session.execute(
-                                text("UPDATE developer_aliases SET name = :new_name WHERE name = :old_name"),
-                                {"new_name": new_name, "old_name": old_name}
+                                text(
+                                    "UPDATE developer_aliases SET name = :new_name WHERE name = :old_name"
+                                ),
+                                {"new_name": new_name, "old_name": old_name},
                             )
 
-                    click.echo(f"   ✅ Database updated")
+                    click.echo("   ✅ Database updated")
                 else:
-                    click.echo(f"   [Would update {identity_count + alias_count} database record(s)]")
+                    click.echo(
+                        f"   [Would update {identity_count + alias_count} database record(s)]"
+                    )
 
         # Summary
         click.echo(f"\n{'🔎 DRY RUN SUMMARY' if dry_run else '✅ RENAME COMPLETE'}")
@@ -6208,14 +6222,14 @@ def alias_rename(
         if update_cache:
             click.echo(f"   Cache:    {'Would update' if dry_run else 'Updated'}")
         else:
-            click.echo(f"   Cache:    Skipped (use --update-cache to update)")
+            click.echo("   Cache:    Skipped (use --update-cache to update)")
 
         if dry_run:
-            click.echo(f"\n💡 Run without --dry-run to apply changes")
+            click.echo("\n💡 Run without --dry-run to apply changes")
         else:
-            click.echo(f"\n💡 Next steps:")
+            click.echo("\n💡 Next steps:")
             click.echo(f"   - Review the updated config file: {config}")
-            click.echo(f"   - Re-run analysis to see updated reports with new name")
+            click.echo("   - Re-run analysis to see updated reports with new name")
 
     except KeyboardInterrupt:
         click.echo("\n\n👋 Interrupted by user. Exiting.")
@@ -6223,6 +6237,7 @@ def alias_rename(
     except Exception as e:
         click.echo(f"❌ Unexpected error: {e}", err=True)
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
@@ -6798,7 +6813,10 @@ def training_statistics(config: Path) -> None:
 
         # Initialize trainer to access statistics
         trainer = CommitClassificationTrainer(
-            config=cfg, cache=cache, orchestrator=None, training_config={}  # Not needed for stats
+            config=cfg,
+            cache=cache,
+            orchestrator=None,
+            training_config={},  # Not needed for stats
         )
 
         stats = trainer.get_training_statistics()

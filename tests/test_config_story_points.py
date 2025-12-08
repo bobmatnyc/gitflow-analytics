@@ -18,9 +18,9 @@ sys.path.insert(0, "/Users/masa/Projects/managed/gitflow-analytics/src")
 
 try:
     from gitflow_analytics.config import ConfigLoader
+    from gitflow_analytics.core.cache import GitAnalysisCache
     from gitflow_analytics.extractors.story_points import StoryPointExtractor
     from gitflow_analytics.integrations.jira_integration import JIRAIntegration
-    from gitflow_analytics.core.cache import GitAnalysisCache
 except ImportError as e:
     print(f"❌ Import error: {e}")
     sys.exit(1)

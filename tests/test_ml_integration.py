@@ -6,10 +6,10 @@ from pathlib import Path
 
 # Test imports
 try:
-    from src.gitflow_analytics.extractors.ml_tickets import MLTicketExtractor
     from src.gitflow_analytics.config import MLCategorization
     from src.gitflow_analytics.core.analyzer import GitAnalyzer
     from src.gitflow_analytics.core.cache import GitAnalysisCache
+    from src.gitflow_analytics.extractors.ml_tickets import MLTicketExtractor
 
     print("✅ All imports successful")
 except ImportError as e:

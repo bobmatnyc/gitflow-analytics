@@ -5,26 +5,23 @@ to ensure they work correctly and maintain backward compatibility.
 """
 
 import json
-import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
 
 from gitflow_analytics.reports import (
     BaseReportGenerator,
     CompositeReportGenerator,
-    ReportData,
-    ReportOutput,
-    ReportMetadata,
-    ReportFactory,
-    ReportBuilder,
-    ReportFormat,
-    ReportType,
-    create_report,
-    create_multiple_reports,
-    CSVReportGenerator,
     ComprehensiveJSONExporter,
+    CSVReportGenerator,
+    ReportBuilder,
+    ReportData,
+    ReportFactory,
+    ReportFormat,
+    ReportMetadata,
+    ReportType,
+    create_multiple_reports,
+    create_report,
 )
 
 

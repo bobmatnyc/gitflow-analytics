@@ -12,18 +12,20 @@ Start here to get up and running quickly:
 
 ### 📖 User Guides
 Comprehensive guides for common tasks:
-- **[Configuration Guide](guides/configuration.md)** - Complete YAML configuration reference
+- **[LLM Classification Guide](guides/LLM_CLASSIFICATION_GUIDE.md)** - AI-powered commit categorization
 - **[ML Categorization](guides/ml-categorization.md)** - Machine learning features setup
-- **[Organization Setup](guides/organization-setup.md)** - Multi-repository analysis
-- **[Report Customization](guides/report-customization.md)** - Customize output formats
+- **[Interactive Launcher](guides/interactive-launcher.md)** - Streamlined analysis workflow
+- **[Identity Resolution](guides/identity-resolution-enhanced.md)** - Enhanced developer identity detection
+- **[Managing Aliases](guides/managing-aliases.md)** - Developer identity management
+- **[PM Platform Setup](guides/pm-platform-setup.md)** - Project management integration
+- **[ChatGPT Setup](guides/chatgpt-setup.md)** - AI-powered qualitative analysis
 - **[Troubleshooting](guides/troubleshooting.md)** - Common issues and solutions
 
 ### 💡 Examples & Use Cases
 Real-world scenarios and templates:
-- **[Basic Analysis](examples/basic-analysis.md)** - Single repository analysis
-- **[Enterprise Setup](examples/enterprise-setup.md)** - Large organization configuration
-- **[CI Integration](examples/ci-integration.md)** - Automated analysis workflows
-- **[Custom Workflows](examples/custom-workflows.md)** - Advanced usage patterns
+- **[Interactive Launcher Examples](examples/interactive-launcher-examples.md)** - Complete launcher workflows
+- **[Story Points Configuration](examples/story-points-configuration.md)** - JIRA integration setup
+- **[More Examples](examples/)** - Browse all available examples and use cases
 
 ### 📚 Reference Documentation
 Technical specifications and API details:
@@ -36,44 +38,45 @@ Technical specifications and API details:
 For contributors and developers:
 - **[Contributing Guide](developer/contributing.md)** - How to contribute to the project
 - **[Development Setup](developer/development-setup.md)** - Local development environment
-- **[Testing Guide](developer/testing-guide.md)** - Testing procedures and standards
-- **[Coding Standards](developer/coding-standards.md)** - Code quality guidelines
+- **[Refactoring Guide](developer/refactoring-guide.md)** - Code quality improvement tracking
+- **[Training Guide](developer/training-guide.md)** - ML training and development
+- **[Project Organization](developer/project-organization.md)** - Project structure standards
+- **[All Developer Docs](developer/)** - Complete developer documentation
 
 ### 🏗️ Architecture & Design
 System design and technical decisions:
-- **[System Overview](architecture/system-overview.md)** - High-level architecture
-- **[Data Flow](architecture/data-flow.md)** - Processing pipeline design
 - **[ML Pipeline](architecture/ml-pipeline.md)** - Machine learning architecture
+- **[Branch Analysis Optimization](architecture/branch-analysis-optimization.md)** - Performance optimization
+- **[Caching Strategy](architecture/caching-strategy.md)** - Incremental processing design
+- **[LLM Classifier Refactoring](architecture/llm-classifier-refactoring.md)** - AI integration architecture
 - **[Design Documents](design/)** - Detailed design decisions
 
 ### 🚀 Deployment & Operations
 Production deployment and scaling:
-- **[Production Installation](deployment/installation.md)** - Deploy in production
-- **[Monitoring & Metrics](deployment/monitoring.md)** - Performance monitoring
-- **[Security Guide](deployment/security.md)** - Security best practices
-- **[Scaling Guide](deployment/scaling.md)** - Large organization deployment
+- **[Deployment Guide](deployment/)** - Production deployment documentation
+- **[Security Policy](SECURITY.md)** - Security best practices and vulnerability reporting
 
 ## 🎯 Documentation by Use Case
 
 ### I want to...
 
 **Analyze a single repository**
-→ [Installation](getting-started/installation.md) → [Quick Start](getting-started/quickstart.md) → [Basic Analysis](examples/basic-analysis.md)
+→ [Installation](getting-started/installation.md) → [Quick Start](getting-started/quickstart.md) → [Interactive Launcher](examples/interactive-launcher-examples.md)
 
 **Set up organization-wide analysis**
-→ [Configuration Guide](guides/configuration.md) → [Organization Setup](guides/organization-setup.md) → [Enterprise Example](examples/enterprise-setup.md)
+→ [PM Platform Setup](guides/pm-platform-setup.md) → [Identity Resolution](guides/identity-resolution-enhanced.md) → [Managing Aliases](guides/managing-aliases.md)
 
 **Integrate with CI/CD pipelines**
-→ [CLI Reference](reference/cli-commands.md) → [CI Integration Examples](examples/ci-integration.md)
+→ [CLI Reference](reference/cli-commands.md) → [Interactive Launcher](guides/interactive-launcher.md)
 
 **Contribute to the project**
 → [Contributing Guide](developer/contributing.md) → [Development Setup](developer/development-setup.md)
 
 **Understand the architecture**
-→ [System Overview](architecture/system-overview.md) → [Design Documents](design/)
+→ [ML Pipeline](architecture/ml-pipeline.md) → [Design Documents](design/)
 
 **Deploy in production**
-→ [Production Installation](deployment/installation.md) → [Security Guide](deployment/security.md)
+→ [Deployment Guide](deployment/) → [Security Policy](SECURITY.md)
 
 ## 🔍 Search Tips
 
@@ -84,11 +87,12 @@ Production deployment and scaling:
 
 ## 📝 Documentation Standards
 
-This documentation follows our [Documentation Structure](STRUCTURE.md) guidelines:
+This documentation follows our [Documentation Standards](DOCUMENTATION-STANDARDS.md) and [Structure Guidelines](STRUCTURE.md):
 - **Progressive disclosure** - Start simple, dive deeper as needed
 - **Task-oriented** - Organized around what you want to accomplish
 - **Tested examples** - All code samples are validated and working
 - **Cross-referenced** - Related topics are linked together
+- **Audience-focused** - Clear paths for users, developers, and contributors
 
 ## 🤝 Help & Community
 

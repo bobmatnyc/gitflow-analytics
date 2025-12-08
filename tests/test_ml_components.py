@@ -135,7 +135,7 @@ def main():
     print(f"spaCy Available: {'✅' if spacy_available else '❌'}")
 
     # Analysis
-    print(f"\n🔍 ANALYSIS:")
+    print("\n🔍 ANALYSIS:")
     if not spacy_available:
         print("   • spaCy is not installed - ML system falls back to rule-based classification")
         print("   • ChangeTypeClassifier likely works with pattern matching instead of NLP")
@@ -149,7 +149,7 @@ def main():
         print("   • Graceful fallback to rule-based classification is working")
 
     # Recommendations
-    print(f"\n💡 RECOMMENDATIONS:")
+    print("\n💡 RECOMMENDATIONS:")
     if not spacy_available:
         print("   1. Install spaCy to enable true ML categorization:")
         print("      pip install spacy")

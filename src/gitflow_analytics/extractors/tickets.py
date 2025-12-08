@@ -503,7 +503,9 @@ class TicketExtractor:
                             :100
                         ],  # Increased from 60 to 100
                         "full_message": commit.get("message", ""),
-                        "author": commit.get("canonical_name", commit.get("author_name", "Unknown")),
+                        "author": commit.get(
+                            "canonical_name", commit.get("author_name", "Unknown")
+                        ),
                         "author_email": commit.get("author_email", ""),
                         "canonical_id": commit.get("canonical_id", commit.get("author_email", "")),
                         "timestamp": commit.get("timestamp"),

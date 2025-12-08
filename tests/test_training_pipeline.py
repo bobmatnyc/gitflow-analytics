@@ -10,24 +10,24 @@ WHY: The training pipeline is a complex system that integrates multiple componen
 These tests ensure reliability and catch regressions in the training workflow.
 """
 
-import pytest
 import tempfile
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
+
+import pytest
 
 # Skip all tests if sklearn not available
 sklearn = pytest.importorskip("sklearn")
 
+from gitflow_analytics.core.cache import GitAnalysisCache
+from gitflow_analytics.training.model_loader import TrainingModelLoader
 from gitflow_analytics.training.pipeline import (
     CommitClassificationTrainer,
     TrainingData,
     TrainingSession,
 )
-from gitflow_analytics.training.model_loader import TrainingModelLoader
-from gitflow_analytics.core.cache import GitAnalysisCache
-from gitflow_analytics.models.database import Database
 
 
 class TestCommitClassificationTrainer:
@@ -366,9 +366,14 @@ class TestTrainingIntegration:
         """Test training database models creation."""
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
+
         from gitflow_analytics.training.pipeline import (
             TrainingBase,
+        )
+        from gitflow_analytics.training.pipeline import (
             TrainingData as PipelineTrainingData,
+        )
+        from gitflow_analytics.training.pipeline import (
             TrainingSession as PipelineTrainingSession,
         )
 
@@ -388,8 +393,11 @@ class TestTrainingIntegration:
         """Test storing and retrieving training data."""
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
+
         from gitflow_analytics.training.pipeline import (
             TrainingBase,
+        )
+        from gitflow_analytics.training.pipeline import (
             TrainingData as PipelineTrainingData,
         )
 
@@ -447,10 +455,10 @@ def create_sample_pm_data(ticket_count: int = 5):
     for i in range(ticket_count):
         tickets.append(
             {
-                "key": f"PROJ-{i+1}",
+                "key": f"PROJ-{i + 1}",
                 "type": "Bug" if i % 2 == 0 else "Story",
                 "status": "Done",
-                "title": f"Sample ticket {i+1}",
+                "title": f"Sample ticket {i + 1}",
             }
         )
 

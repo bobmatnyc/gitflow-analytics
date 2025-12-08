@@ -1,17 +1,20 @@
 """Basic integration tests for qualitative analysis system."""
 
-import pytest
-from unittest.mock import Mock, patch
 from datetime import datetime
+from unittest.mock import patch
 
+import pytest
+
+from gitflow_analytics.models.database import Database
+from gitflow_analytics.qualitative.core.processor import QualitativeProcessor
 from gitflow_analytics.qualitative.models.schemas import (
-    QualitativeConfig,
-    NLPConfig,
-    LLMConfig,
     CacheConfig as QualitativeCacheConfig,
 )
-from gitflow_analytics.qualitative.core.processor import QualitativeProcessor
-from gitflow_analytics.models.database import Database
+from gitflow_analytics.qualitative.models.schemas import (
+    LLMConfig,
+    NLPConfig,
+    QualitativeConfig,
+)
 
 
 class TestQualitativeIntegration:
@@ -145,9 +148,9 @@ class TestQualitativeIntegration:
         """Test that qualitative components can be imported."""
         # Test main package imports
         from gitflow_analytics.qualitative import (
-            QualitativeProcessor,
             QualitativeCommitData,
             QualitativeConfig,
+            QualitativeProcessor,
         )
 
         assert QualitativeProcessor is not None

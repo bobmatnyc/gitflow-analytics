@@ -9,23 +9,21 @@ This script will:
 4. Generate a detailed comparison report
 """
 
-import os
-import sys
-import sqlite3
-import subprocess
 import json
+import os
+import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Any
-import tempfile
 
 # Add the gitflow-analytics package to the path
 sys.path.insert(0, "/Users/masa/Projects/managed/gitflow-analytics/src")
 
+import git
+
+from gitflow_analytics.config import Config
 from gitflow_analytics.core.analyzer import GitAnalyzer
 from gitflow_analytics.core.cache import GitAnalysisCache
-from gitflow_analytics.config import Config
-import git
 
 
 class March2025Tester:
@@ -297,7 +295,7 @@ class March2025Tester:
                 )
 
             if db_commit["message"].strip() != git_commit["message"].strip():
-                differences.append(f"Message differs")
+                differences.append("Message differs")
 
             if db_commit["is_merge"] != git_commit["is_merge"]:
                 differences.append(
@@ -342,7 +340,7 @@ class March2025Tester:
 
         self.results["discrepancies"] = discrepancies
 
-        print(f"✅ Comparison complete:")
+        print("✅ Comparison complete:")
         print(f"   📊 DB commits: {len(db_commits)}")
         print(f"   📊 Git commits: {len(git_commits)}")
         print(f"   📊 Common: {len(common)}")
@@ -362,7 +360,7 @@ class March2025Tester:
             f.write("# March 2025 Commit Data Comparison Report\n\n")
             f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"**Repository**: {self.test_repo_path.name}\n")
-            f.write(f"**Period**: March 1-31, 2025\n\n")
+            f.write("**Period**: March 1-31, 2025\n\n")
 
             # Summary
             comp = self.results["comparison"]

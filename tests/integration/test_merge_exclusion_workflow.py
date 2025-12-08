@@ -9,14 +9,8 @@ Test Scenarios:
 3. Report Generation Consistency with Merge Exclusion
 """
 
-import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-import pytest
-from sqlalchemy import func
-
-from gitflow_analytics.core.analyzer import GitAnalyzer
 from gitflow_analytics.core.cache import GitAnalysisCache
 from gitflow_analytics.core.data_fetcher import GitDataFetcher
 from gitflow_analytics.models.database import CachedCommit, DailyCommitBatch
@@ -81,9 +75,11 @@ class TestMergeExclusionWorkflow:
 
         # Verify: All commits are stored in database
         session = integration_db_session
-        total_commits = session.query(CachedCommit).filter(
-            CachedCommit.repo_path == str(repo_info["repo_path"])
-        ).count()
+        total_commits = (
+            session.query(CachedCommit)
+            .filter(CachedCommit.repo_path == str(repo_info["repo_path"]))
+            .count()
+        )
 
         assert total_commits == repo_info["total_commits"], (
             f"Should store all {repo_info['total_commits']} commits "
@@ -109,13 +105,17 @@ class TestMergeExclusionWorkflow:
         regular_commits_with_lines = 0
         for regular_hash in repo_info["regular_commits"]:
             commit_data = verify_commit_in_database(session, regular_hash, repo_info["repo_path"])
-            assert not commit_data["is_merge"], f"Commit {regular_hash[:8]} should not be marked as merge"
+            assert not commit_data["is_merge"], (
+                f"Commit {regular_hash[:8]} should not be marked as merge"
+            )
 
             # Regular commits should have non-zero filtered stats
             if commit_data["filtered_insertions"] > 0 or commit_data["filtered_deletions"] > 0:
                 regular_commits_with_lines += 1
 
-        assert regular_commits_with_lines > 0, "At least some regular commits should have line changes"
+        assert regular_commits_with_lines > 0, (
+            "At least some regular commits should have line changes"
+        )
 
         # Verify: Calculate total filtered line counts (should exclude merge commits)
         filtered_stats = calculate_total_lines_from_commits(
@@ -157,9 +157,7 @@ class TestMergeExclusionWorkflow:
             f"({filtered_stats['total_lines']})"
         )
 
-    def test_cache_invalidation_on_config_change(
-        self, temp_workspace, test_repo_with_merges
-    ):
+    def test_cache_invalidation_on_config_change(self, temp_workspace, test_repo_with_merges):
         """Test that cache is properly invalidated when exclude_merge_commits changes.
 
         This test verifies that:
@@ -302,9 +300,7 @@ class TestMergeExclusionWorkflow:
         assert db_path_2.exists(), "Second cache database should exist"
         assert cache_dir_1 != cache_dir_2, "Cache directories should be different"
 
-    def test_report_consistency_with_merge_exclusion(
-        self, temp_workspace, test_repo_with_merges
-    ):
+    def test_report_consistency_with_merge_exclusion(self, temp_workspace, test_repo_with_merges):
         """Test that analysis results and database consistently reflect merge exclusion.
 
         This test verifies that:
@@ -574,7 +570,9 @@ class TestMergeExclusionEdgeCases:
             assert merge_count == 0, "Should have no merge commits"
 
             # Verify filtered and raw stats are identical
-            filtered_stats = calculate_total_lines_from_commits(session, repo_path, use_filtered=True)
+            filtered_stats = calculate_total_lines_from_commits(
+                session, repo_path, use_filtered=True
+            )
             raw_stats = calculate_total_lines_from_commits(session, repo_path, use_filtered=False)
 
             assert filtered_stats["total_lines"] == raw_stats["total_lines"], (
@@ -664,15 +662,17 @@ class TestMergeExclusionEdgeCases:
 
             for merge_commit in merge_commits:
                 assert merge_commit.filtered_insertions == 0, (
-                    f"Merge commit should have filtered_insertions=0"
+                    "Merge commit should have filtered_insertions=0"
                 )
                 # Raw stats should be non-zero
                 assert merge_commit.insertions > 0, (
-                    f"Merge commit should have non-zero raw insertions"
+                    "Merge commit should have non-zero raw insertions"
                 )
 
             # Verify total filtered stats are mostly from non-merge commits
-            filtered_stats = calculate_total_lines_from_commits(session, repo_path, use_filtered=True)
+            filtered_stats = calculate_total_lines_from_commits(
+                session, repo_path, use_filtered=True
+            )
             raw_stats = calculate_total_lines_from_commits(session, repo_path, use_filtered=False)
 
             assert filtered_stats["total_lines"] < raw_stats["total_lines"], (

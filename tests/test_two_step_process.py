@@ -6,10 +6,9 @@ This script demonstrates the new two-step architecture:
 2. Analyze: Use batch LLM classification on the cached data
 """
 
-import os
 import tempfile
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 # Test configuration
 TEST_CONFIG = """
@@ -66,8 +65,8 @@ def test_data_fetcher():
     """Test the data fetcher component."""
     print("🧪 Testing Data Fetcher...")
 
-    from src.gitflow_analytics.core.data_fetcher import GitDataFetcher
     from src.gitflow_analytics.core.cache import GitAnalysisCache
+    from src.gitflow_analytics.core.data_fetcher import GitDataFetcher
 
     # Create temporary cache directory
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -144,8 +143,7 @@ def test_database_models():
     """Test the database models for the two-step process."""
     print("🧪 Testing Database Models...")
 
-    from src.gitflow_analytics.models.database import Database, DailyCommitBatch, DetailedTicketData
-    from sqlalchemy import create_engine
+    from src.gitflow_analytics.models.database import DailyCommitBatch, Database
 
     # Create in-memory database for testing
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -236,8 +234,9 @@ def test_metrics_storage():
     """Test the daily metrics storage system."""
     print("🧪 Testing Metrics Storage...")
 
-    from src.gitflow_analytics.core.metrics_storage import DailyMetricsStorage
     from datetime import date
+
+    from src.gitflow_analytics.core.metrics_storage import DailyMetricsStorage
 
     # Create temporary database
     with tempfile.TemporaryDirectory() as temp_dir:

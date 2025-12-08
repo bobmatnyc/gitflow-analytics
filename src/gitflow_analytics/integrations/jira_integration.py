@@ -186,7 +186,7 @@ class JIRAIntegration:
 
         if cache_hits > 0 or cache_misses > 0:
             print(
-                f"   📊 JIRA cache: {cache_hits} hits, {cache_misses} misses ({cache_hits/(cache_hits+cache_misses)*100:.1f}% hit rate)"
+                f"   📊 JIRA cache: {cache_hits} hits, {cache_misses} misses ({cache_hits / (cache_hits + cache_misses) * 100:.1f}% hit rate)"
             )
 
         # Fetch missing tickets from JIRA

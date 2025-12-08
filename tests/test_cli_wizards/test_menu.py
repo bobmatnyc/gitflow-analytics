@@ -1,8 +1,6 @@
 """Tests for interactive CLI menu system."""
 
-import subprocess
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, mock_open, patch
+from unittest.mock import Mock, patch
 
 import pytest
 import yaml

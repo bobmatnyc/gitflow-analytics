@@ -41,9 +41,9 @@ class TestCacheInvalidation:
         )
 
         # Hashes must be different when exclude_merge_commits changes
-        assert (
-            hash_false != hash_true
-        ), "Config hash should change when exclude_merge_commits changes"
+        assert hash_false != hash_true, (
+            "Config hash should change when exclude_merge_commits changes"
+        )
 
     def test_cache_invalidated_when_exclude_merge_commits_changes(self, cache):
         """Cache should be invalidated when exclude_merge_commits setting changes."""

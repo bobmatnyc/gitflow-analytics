@@ -169,16 +169,16 @@ class ChatGPTQualitativeAnalyzer:
     def _create_executive_summary_prompt(self, summary_data: dict[str, Any]) -> str:
         """Create the prompt for ChatGPT."""
 
-        prompt = f"""Based on the following GitFlow Analytics data from the past {summary_data['period_weeks']} weeks, provide a comprehensive executive summary with qualitative insights:
+        prompt = f"""Based on the following GitFlow Analytics data from the past {summary_data["period_weeks"]} weeks, provide a comprehensive executive summary with qualitative insights:
 
 ## Key Metrics:
-- Total Commits: {summary_data['total_commits']:,}
-- Active Developers: {summary_data['total_developers']}
-- Lines Changed: {summary_data['lines_changed']:,}
-- Story Points Delivered: {summary_data['story_points']}
-- Ticket Coverage: {summary_data['ticket_coverage']:.1f}%
-- Team Health Score: {summary_data['team_health_score']:.1f}/100 ({summary_data['team_health_rating']})
-- Velocity Trend: {summary_data['velocity_trend']}
+- Total Commits: {summary_data["total_commits"]:,}
+- Active Developers: {summary_data["total_developers"]}
+- Lines Changed: {summary_data["lines_changed"]:,}
+- Story Points Delivered: {summary_data["story_points"]}
+- Ticket Coverage: {summary_data["ticket_coverage"]:.1f}%
+- Team Health Score: {summary_data["team_health_score"]:.1f}/100 ({summary_data["team_health_rating"]})
+- Velocity Trend: {summary_data["velocity_trend"]}
 
 ## Top Contributors:
 """
@@ -222,18 +222,18 @@ Report only statistical patterns, measurable trends, and process gaps. Use factu
 
         return f"""## Executive Summary
 
-Over the past {summary_data['period_weeks']} weeks, the development team generated {summary_data['total_commits']:,} commits across {summary_data['total_developers']} active developers.
+Over the past {summary_data["period_weeks"]} weeks, the development team generated {summary_data["total_commits"]:,} commits across {summary_data["total_developers"]} active developers.
 
-The team health score measured {summary_data['team_health_score']:.1f}/100 ({summary_data['team_health_rating']}). Ticket coverage reached {summary_data['ticket_coverage']:.1f}% of total commits with trackable references.
+The team health score measured {summary_data["team_health_score"]:.1f}/100 ({summary_data["team_health_rating"]}). Ticket coverage reached {summary_data["ticket_coverage"]:.1f}% of total commits with trackable references.
 
 ### Measured Outputs:
-- Code changes: {summary_data['lines_changed']:,} lines modified
-- Story points completed: {summary_data['story_points']}
-- Velocity trend: {summary_data['velocity_trend']}
+- Code changes: {summary_data["lines_changed"]:,} lines modified
+- Story points completed: {summary_data["story_points"]}
+- Velocity trend: {summary_data["velocity_trend"]}
 
 ### Process Recommendations:
-1. {'Maintain current output rate' if summary_data['velocity_trend'] == 'increasing' else 'Analyze velocity decline factors'}
-2. {'Sustain current tracking rate' if summary_data['ticket_coverage'] > 60 else 'Increase commit-ticket linking to reach 70% coverage target'}
+1. {"Maintain current output rate" if summary_data["velocity_trend"] == "increasing" else "Analyze velocity decline factors"}
+2. {"Sustain current tracking rate" if summary_data["ticket_coverage"] > 60 else "Increase commit-ticket linking to reach 70% coverage target"}
 3. Review projects with health scores below 60/100 for process gaps
 
 *Note: This is a fallback summary. For detailed analysis, configure ChatGPT integration.*

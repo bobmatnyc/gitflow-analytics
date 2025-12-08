@@ -242,7 +242,7 @@ def validate_config(config_path: Path) -> bool:
 
                     # Line before
                     if mark.line > 0:
-                        click.echo(f"   {mark.line}: {lines[mark.line-1].rstrip()}", err=True)
+                        click.echo(f"   {mark.line}: {lines[mark.line - 1].rstrip()}", err=True)
 
                     # Problematic line (highlighted)
                     click.echo(
@@ -256,7 +256,7 @@ def validate_config(config_path: Path) -> bool:
 
                     # Line after
                     if mark.line + 1 < len(lines):
-                        click.echo(f"   {mark.line + 2}: {lines[mark.line+1].rstrip()}", err=True)
+                        click.echo(f"   {mark.line + 2}: {lines[mark.line + 1].rstrip()}", err=True)
             except Exception:
                 # If we can't read file, just skip context
                 pass
@@ -585,18 +585,15 @@ def rename_developer_alias(config_path: Path) -> bool:
 
         # Navigate to manual_mappings
         manual_mappings = (
-            config_data.get("analysis", {})
-            .get("identity", {})
-            .get("manual_mappings", [])
+            config_data.get("analysis", {}).get("identity", {}).get("manual_mappings", [])
         )
 
         if not manual_mappings:
             click.echo(
                 click.style(
-                    "❌ No manual_mappings found in config. Please add developers first.",
-                    fg="red"
+                    "❌ No manual_mappings found in config. Please add developers first.", fg="red"
                 ),
-                err=True
+                err=True,
             )
             return False
 
@@ -620,7 +617,7 @@ def rename_developer_alias(config_path: Path) -> bool:
         try:
             selection = click.prompt(
                 "Select developer number to rename (or 0 to cancel)",
-                type=click.IntRange(0, len(developer_names))
+                type=click.IntRange(0, len(developer_names)),
             )
         except click.Abort:
             click.echo(click.style("\n❌ Cancelled", fg="yellow"))

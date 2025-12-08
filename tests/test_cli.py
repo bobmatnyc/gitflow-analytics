@@ -9,7 +9,8 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from gitflow_analytics.cli import analyze_subcommand as analyze, cli, create_alias_interactive, alias_rename
+from gitflow_analytics.cli import alias_rename, cli, create_alias_interactive
+from gitflow_analytics.cli import analyze_subcommand as analyze
 
 
 class TestCLI:
@@ -185,7 +186,14 @@ class TestAliasRename:
         runner = CliRunner()
         result = runner.invoke(
             alias_rename,
-            ["--config", "/nonexistent/config.yaml", "--old-name", "Old Name", "--new-name", "New Name"]
+            [
+                "--config",
+                "/nonexistent/config.yaml",
+                "--old-name",
+                "Old Name",
+                "--new-name",
+                "New Name",
+            ],
         )
 
         assert result.exit_code != 0
@@ -207,7 +215,7 @@ analysis:
             Path("test-config.yaml").write_text(config_content)
             result = runner.invoke(
                 alias_rename,
-                ["--config", "test-config.yaml", "--old-name", "", "--new-name", "New Name"]
+                ["--config", "test-config.yaml", "--old-name", "", "--new-name", "New Name"],
             )
 
             assert result.exit_code != 0
@@ -229,7 +237,7 @@ analysis:
             Path("test-config.yaml").write_text(config_content)
             result = runner.invoke(
                 alias_rename,
-                ["--config", "test-config.yaml", "--old-name", "Old Name", "--new-name", ""]
+                ["--config", "test-config.yaml", "--old-name", "Old Name", "--new-name", ""],
             )
 
             assert result.exit_code != 0
@@ -251,7 +259,14 @@ analysis:
             Path("test-config.yaml").write_text(config_content)
             result = runner.invoke(
                 alias_rename,
-                ["--config", "test-config.yaml", "--old-name", "Same Name", "--new-name", "Same Name"]
+                [
+                    "--config",
+                    "test-config.yaml",
+                    "--old-name",
+                    "Same Name",
+                    "--new-name",
+                    "Same Name",
+                ],
             )
 
             assert result.exit_code != 0
@@ -276,7 +291,14 @@ analysis:
             Path("test-config.yaml").write_text(config_content)
             result = runner.invoke(
                 alias_rename,
-                ["--config", "test-config.yaml", "--old-name", "Old Name", "--new-name", "New Name"]
+                [
+                    "--config",
+                    "test-config.yaml",
+                    "--old-name",
+                    "Old Name",
+                    "--new-name",
+                    "New Name",
+                ],
             )
 
             assert result.exit_code != 0
@@ -306,11 +328,14 @@ analysis:
             result = runner.invoke(
                 alias_rename,
                 [
-                    "--config", "test-config.yaml",
-                    "--old-name", "John Developer",
-                    "--new-name", "John D. Developer",
-                    "--dry-run"
-                ]
+                    "--config",
+                    "test-config.yaml",
+                    "--old-name",
+                    "John Developer",
+                    "--new-name",
+                    "John D. Developer",
+                    "--dry-run",
+                ],
             )
 
             assert result.exit_code == 0
@@ -349,22 +374,34 @@ analysis:
             result = runner.invoke(
                 alias_rename,
                 [
-                    "--config", "test-config.yaml",
-                    "--old-name", "John Developer",
-                    "--new-name", "John D. Developer"
-                ]
+                    "--config",
+                    "test-config.yaml",
+                    "--old-name",
+                    "John Developer",
+                    "--new-name",
+                    "John D. Developer",
+                ],
             )
 
             assert result.exit_code == 0
-            assert "RENAME COMPLETE" in result.output or "Configuration file updated" in result.output
+            assert (
+                "RENAME COMPLETE" in result.output or "Configuration file updated" in result.output
+            )
 
             # Verify config file was modified
             import yaml
-            with open("test-config.yaml", "r") as f:
+
+            with open("test-config.yaml") as f:
                 config_data = yaml.safe_load(f)
 
-            assert config_data["analysis"]["identity"]["manual_mappings"][0]["name"] == "John D. Developer"
-            assert config_data["analysis"]["identity"]["manual_mappings"][0]["primary_email"] == "john@example.com"
+            assert (
+                config_data["analysis"]["identity"]["manual_mappings"][0]["name"]
+                == "John D. Developer"
+            )
+            assert (
+                config_data["analysis"]["identity"]["manual_mappings"][0]["primary_email"]
+                == "john@example.com"
+            )
 
     def test_alias_rename_name_not_found(self):
         """Test alias-rename when old-name doesn't exist in manual_mappings."""
@@ -390,10 +427,13 @@ analysis:
             result = runner.invoke(
                 alias_rename,
                 [
-                    "--config", "test-config.yaml",
-                    "--old-name", "Nonexistent Name",
-                    "--new-name", "New Name"
-                ]
+                    "--config",
+                    "test-config.yaml",
+                    "--old-name",
+                    "Nonexistent Name",
+                    "--new-name",
+                    "New Name",
+                ],
             )
 
             assert result.exit_code != 0

@@ -7,15 +7,11 @@ progress reporting across the application.
 import os
 import sys
 import threading
-import time
 from unittest.mock import patch
 
-import pytest
-
 from gitflow_analytics.core.progress import (
-    ProgressService,
     ProgressContext,
-    ProgressEvent,
+    ProgressService,
     get_progress_service,
     reset_progress_service,
 )
@@ -206,9 +202,10 @@ class TestProgressIntegration:
 
     def test_analyzer_integration(self):
         """Test that analyzer properly uses progress service."""
+        from tempfile import TemporaryDirectory
+
         from gitflow_analytics.core.analyzer import GitAnalyzer
         from gitflow_analytics.core.cache import GitAnalysisCache
-        from tempfile import TemporaryDirectory
 
         with TemporaryDirectory() as tmpdir:
             cache = GitAnalysisCache(tmpdir)
@@ -229,7 +226,6 @@ class TestProgressIntegration:
         """Test that data fetcher properly uses progress service."""
         # This would test actual data fetcher integration
         # For now, just verify the module imports correctly
-        import gitflow_analytics.core.data_fetcher
 
         service = get_progress_service()
         service.disable()
@@ -241,7 +237,6 @@ class TestProgressIntegration:
         """Test that batch classifier properly uses progress service."""
         # This would test actual batch classifier integration
         # For now, just verify the module imports correctly
-        from gitflow_analytics.classification.batch_classifier import BatchCommitClassifier
 
         service = get_progress_service()
         service.disable()

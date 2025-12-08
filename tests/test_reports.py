@@ -6,9 +6,7 @@ narrative reports, and analytics output.
 """
 
 import csv
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from unittest.mock import Mock, mock_open, patch
+from datetime import datetime, timedelta, timezone
 
 from gitflow_analytics.reports.analytics_writer import AnalyticsReportGenerator
 from gitflow_analytics.reports.csv_writer import CSVReportGenerator

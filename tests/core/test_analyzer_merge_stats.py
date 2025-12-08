@@ -291,9 +291,9 @@ class TestAnalyzerMergeStats:
         assert "files" in stats
         assert "insertions" in stats
         assert "deletions" in stats
-        assert (
-            "raw_insertions" not in stats
-        ), "GitAnalyzer should NOT include raw_insertions in filtered stats"
-        assert (
-            "raw_deletions" not in stats
-        ), "GitAnalyzer should NOT include raw_deletions in filtered stats"
+        assert "raw_insertions" not in stats, (
+            "GitAnalyzer should NOT include raw_insertions in filtered stats"
+        )
+        assert "raw_deletions" not in stats, (
+            "GitAnalyzer should NOT include raw_deletions in filtered stats"
+        )

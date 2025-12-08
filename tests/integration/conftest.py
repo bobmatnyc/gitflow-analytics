@@ -6,18 +6,13 @@ configurations, and helper functions for verifying end-to-end workflows.
 
 import shutil
 import tempfile
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
 from git import Actor, Repo
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from gitflow_analytics.config import Config
 from gitflow_analytics.core.cache import GitAnalysisCache
-from gitflow_analytics.models.database import Base
 
 
 @pytest.fixture
@@ -136,7 +131,9 @@ def test_repo_with_merges(temp_workspace, test_author):
         content = f"Feature2 content {i}\n" * 10  # 10 lines per commit
         file_path.write_text(content)
         repo.index.add(["test.txt"])
-        commit = repo.index.commit(f"Feature2 commit {i}", author=test_author, committer=test_author)
+        commit = repo.index.commit(
+            f"Feature2 commit {i}", author=test_author, committer=test_author
+        )
         regular_commits.append(commit.hexsha)
         expected_lines_regular += 10
         expected_lines_with_merges += 10
@@ -284,7 +281,9 @@ def verify_commit_in_database(session, commit_hash: str, repo_path: Path) -> dic
     }
 
 
-def calculate_total_lines_from_commits(session, repo_path: Path, use_filtered: bool = True) -> dict[str, int]:
+def calculate_total_lines_from_commits(
+    session, repo_path: Path, use_filtered: bool = True
+) -> dict[str, int]:
     """Calculate total line counts from commits in the database.
 
     Args:
@@ -300,6 +299,7 @@ def calculate_total_lines_from_commits(session, repo_path: Path, use_filtered: b
             - commit_count: Number of commits
     """
     from sqlalchemy import func
+
     from gitflow_analytics.models.database import CachedCommit
 
     if use_filtered:

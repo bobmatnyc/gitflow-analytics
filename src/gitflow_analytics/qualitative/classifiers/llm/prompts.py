@@ -353,7 +353,7 @@ Response (format: CATEGORY confidence reasoning):""",
         """
         formatted = []
         for i, example in enumerate(examples, 1):
-            formatted.append(f"{i}. Message: \"{example['message']}\"")
+            formatted.append(f'{i}. Message: "{example["message"]}"')
             formatted.append(f"   Response: {example['response']}")
         return "\n".join(formatted)
 

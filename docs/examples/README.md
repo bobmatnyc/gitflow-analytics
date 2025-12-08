@@ -4,29 +4,40 @@ Real-world configuration examples and usage scenarios for GitFlow Analytics.
 
 ## 🎯 Example Categories
 
-### [Basic Analysis](basic-analysis.md)
-Simple single-repository analysis perfect for:
-- Individual developers analyzing their work
-- Small teams with one main repository  
-- Quick health checks and productivity insights
-- Learning GitFlow Analytics fundamentals
+### [Interactive Launcher Examples](interactive-launcher-examples.md)
+Complete workflows using the interactive launcher:
+- First-time setup and configuration
+- Repository selection and preferences
+- Identity detection and management
+- Troubleshooting common issues
 
-### [Enterprise Setup](enterprise-setup.md)  
-Large-scale organization analysis featuring:
+### [Story Points Configuration](story-points-configuration.md)
+JIRA integration and story points tracking:
+- Complete JIRA setup with authentication
+- Story point extraction patterns
+- Text-based and API-based tracking
+- Configuration validation and testing
+
+### Additional Examples (Coming Soon)
+More examples are being developed to cover:
+
+**Basic Analysis**
+- Single repository analysis workflows
+- Individual developer productivity insights
+- Quick health checks and team metrics
+
+**Enterprise Setup**
 - Multi-repository organization discovery
 - Advanced identity resolution strategies
-- Performance optimization for 100+ repositories
-- Enterprise reporting and data export
+- Performance optimization for large organizations
 
-### [CI Integration](ci-integration.md)
-Continuous integration workflows including:
+**CI Integration**
 - GitHub Actions automated analysis
-- GitLab CI pipeline integration  
+- GitLab CI pipeline integration
 - Jenkins job configuration
-- Automated report generation and distribution
+- Automated report generation
 
-### [Custom Workflows](custom-workflows.md)
-Advanced usage patterns for specialized needs:
+**Custom Workflows**
 - Custom commit categorization rules
 - Specialized report formats
 - Integration with external tools
@@ -87,44 +98,44 @@ All examples include complete, working configuration files located in `/examples
 ### By Team Size
 
 **Individual Developer (1 person)**
-→ [Basic Analysis](basic-analysis.md) - Perfect for personal productivity insights
+→ [Interactive Launcher Examples](interactive-launcher-examples.md) - Perfect for personal productivity insights
 
-**Small Team (2-10 people)**  
-→ [Basic Analysis](basic-analysis.md) with multiple repositories
+**Small Team (2-10 people)**
+→ [Interactive Launcher Examples](interactive-launcher-examples.md) with multiple repositories
 
 **Medium Team (10-50 people)**
-→ [Enterprise Setup](enterprise-setup.md) with organization discovery
+→ [Story Points Configuration](story-points-configuration.md) with organization discovery
 
 **Large Organization (50+ people)**
-→ [Enterprise Setup](enterprise-setup.md) with performance optimization
+→ [Story Points Configuration](story-points-configuration.md) with performance optimization
 
 ### By Use Case
 
 **First-time setup**
-→ [Basic Analysis](basic-analysis.md) - Start simple and expand
+→ [Interactive Launcher Examples](interactive-launcher-examples.md) - Start simple and expand
 
 **Regular team health checks**
-→ [CI Integration](ci-integration.md) - Automated recurring analysis  
+→ [Interactive Launcher Examples](interactive-launcher-examples.md) - Automated recurring analysis
 
 **Quarterly planning and reviews**
-→ [Enterprise Setup](enterprise-setup.md) - Comprehensive insights
+→ [Story Points Configuration](story-points-configuration.md) - Comprehensive insights
 
 **Custom reporting needs**
-→ [Custom Workflows](custom-workflows.md) - Specialized configurations
+→ [Story Points Configuration](story-points-configuration.md) - Specialized configurations
 
 ### By Technical Needs
 
 **Simple CSV reports**
-→ [Basic Analysis](basic-analysis.md) - Standard output formats
+→ [Interactive Launcher Examples](interactive-launcher-examples.md) - Standard output formats
 
-**JSON data export**  
-→ [Custom Workflows](custom-workflows.md) - API integration patterns
+**JSON data export**
+→ [Story Points Configuration](story-points-configuration.md) - API integration patterns
 
 **ML commit categorization**
-→ [Enterprise Setup](enterprise-setup.md) - Advanced analysis features
+→ [Story Points Configuration](story-points-configuration.md) - Advanced analysis features
 
 **Automated workflows**
-→ [CI Integration](ci-integration.md) - Pipeline integration
+→ [Interactive Launcher Examples](interactive-launcher-examples.md) - Pipeline integration
 
 ## 💡 Example Usage Patterns
 

@@ -3,6 +3,7 @@
 
 import time
 from collections import defaultdict
+
 from src.gitflow_analytics.extractors.ml_tickets import MLTicketExtractor
 from src.gitflow_analytics.extractors.tickets import TicketExtractor
 
@@ -97,16 +98,16 @@ def test_accuracy():
         )
 
     # Print results
-    print(f"\n📊 Overall Accuracy:")
+    print("\n📊 Overall Accuracy:")
     print(
-        f"   Rule-based: {rule_correct}/{len(TEST_COMMITS)} ({rule_correct/len(TEST_COMMITS)*100:.1f}%)"
+        f"   Rule-based: {rule_correct}/{len(TEST_COMMITS)} ({rule_correct / len(TEST_COMMITS) * 100:.1f}%)"
     )
     print(
-        f"   ML-based:   {ml_correct}/{len(TEST_COMMITS)} ({ml_correct/len(TEST_COMMITS)*100:.1f}%)"
+        f"   ML-based:   {ml_correct}/{len(TEST_COMMITS)} ({ml_correct / len(TEST_COMMITS) * 100:.1f}%)"
     )
 
     # Show improvements
-    print(f"\n🚀 Improvements:")
+    print("\n🚀 Improvements:")
     improvements = [r for r in results if not r["rule_correct"] and r["ml_correct"]]
     for imp in improvements[:5]:  # Show first 5 improvements
         print(f"   ✅ '{imp['message'][:40]}...'")
@@ -117,7 +118,7 @@ def test_accuracy():
     # Show regressions
     regressions = [r for r in results if r["rule_correct"] and not r["ml_correct"]]
     if regressions:
-        print(f"\n⚠️  Regressions:")
+        print("\n⚠️  Regressions:")
         for reg in regressions[:3]:
             print(f"   ❌ '{reg['message'][:40]}...'")
             print(
@@ -159,11 +160,11 @@ def test_performance():
     print(f"   Rule-based: {rule_per_commit:.2f}ms per commit")
     print(f"   ML-based:   {ml_per_commit:.2f}ms per commit (with caching)")
     print(
-        f"   Overhead:   {ml_per_commit - rule_per_commit:.2f}ms ({(ml_per_commit/rule_per_commit - 1)*100:.0f}% slower)"
+        f"   Overhead:   {ml_per_commit - rule_per_commit:.2f}ms ({(ml_per_commit / rule_per_commit - 1) * 100:.0f}% slower)"
     )
 
     # Note: Cache clearing would require access to internal cache implementation
-    print(f"   \n   Note: ML categorization uses intelligent caching for performance")
+    print("   \n   Note: ML categorization uses intelligent caching for performance")
 
 
 def test_confidence_distribution():

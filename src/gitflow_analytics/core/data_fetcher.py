@@ -192,7 +192,6 @@ class GitDataFetcher:
             description=f"📊 Processing repository: {project_key}",
             unit="steps",
         ) as repo_progress_ctx:
-
             # Step 1: Fetch commits
             progress.set_description(repo_progress_ctx, f"🔍 {project_key}: Fetching commits")
             daily_commits = self._fetch_commits_by_day(
@@ -538,7 +537,6 @@ class GitDataFetcher:
             unit="days",
             nested=True,
         ) as day_progress_ctx:
-
             for day_date in days_to_process:
                 # Update description to show current repository and day clearly
                 day_str = day_date.strftime("%Y-%m-%d")

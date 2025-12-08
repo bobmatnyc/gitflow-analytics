@@ -184,7 +184,9 @@ class TestDataFetcherMergeStats:
 
         # Create empty merge commit (no changes)
         mock_commit = create_mock_commit_for_stats(
-            hexsha="empty_merge", parent_count=2, diff_output=""  # Empty diff
+            hexsha="empty_merge",
+            parent_count=2,
+            diff_output="",  # Empty diff
         )
 
         stats = data_fetcher._calculate_commit_stats(mock_commit)

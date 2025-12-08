@@ -11,19 +11,18 @@ This script performs extensive testing including:
 """
 
 import json
+import statistics
 import tempfile
 import time
 from pathlib import Path
-from typing import Dict, List, Any
-import statistics
 
 # Test imports
 try:
-    from src.gitflow_analytics.extractors.ml_tickets import MLTicketExtractor, MLPredictionCache
-    from src.gitflow_analytics.extractors.tickets import TicketExtractor
     from src.gitflow_analytics.config import MLCategorization
     from src.gitflow_analytics.core.analyzer import GitAnalyzer
     from src.gitflow_analytics.core.cache import GitAnalysisCache
+    from src.gitflow_analytics.extractors.ml_tickets import MLPredictionCache, MLTicketExtractor
+    from src.gitflow_analytics.extractors.tickets import TicketExtractor
 
     print("✅ All imports successful")
 except ImportError as e:
@@ -198,11 +197,11 @@ def test_performance_benchmarks():
             _ = ml_extractor.categorize_commit_with_confidence(message)
     ml_cached_time = (time.time() - start_time) / (5 * len(test_messages))
 
-    print(f"   Rule-based avg time: {rule_time*1000:.2f} ms per commit")
-    print(f"   ML first run avg time: {ml_first_run_time*1000:.2f} ms per commit")
-    print(f"   ML cached avg time: {ml_cached_time*1000:.2f} ms per commit")
-    print(f"   ML overhead (first run): {(ml_first_run_time/rule_time - 1)*100:+.1f}%")
-    print(f"   ML speedup (cached): {(rule_time/ml_cached_time - 1)*100:+.1f}%")
+    print(f"   Rule-based avg time: {rule_time * 1000:.2f} ms per commit")
+    print(f"   ML first run avg time: {ml_first_run_time * 1000:.2f} ms per commit")
+    print(f"   ML cached avg time: {ml_cached_time * 1000:.2f} ms per commit")
+    print(f"   ML overhead (first run): {(ml_first_run_time / rule_time - 1) * 100:+.1f}%")
+    print(f"   ML speedup (cached): {(rule_time / ml_cached_time - 1) * 100:+.1f}%")
 
     return {
         "rule_time_ms": rule_time * 1000,
@@ -392,7 +391,7 @@ def test_graceful_fallback():
             ["src/auth/oauth.py", "tests/auth/test_oauth.py", "docs/oauth-guide.md"],
         )
         error_handling = True
-        print(f"   Complex input handling: ✅")
+        print("   Complex input handling: ✅")
         print(f"   Complex result: {complex_result['category']} ({complex_result['method']})")
     except Exception as e:
         error_handling = False
@@ -481,7 +480,7 @@ def main():
 
         # Accuracy Summary
         acc = all_results["accuracy"]
-        print(f"🎯 ACCURACY METRICS:")
+        print("🎯 ACCURACY METRICS:")
         print(f"   ML System Accuracy: {acc['ml_accuracy']:.1%}")
         print(f"   Rule-based Accuracy: {acc['rule_accuracy']:.1%}")
         print(f"   Improvement: {acc['ml_accuracy'] - acc['rule_accuracy']:+.1%}")
@@ -489,7 +488,7 @@ def main():
 
         # Performance Summary
         perf = all_results["performance"]
-        print(f"\n⚡ PERFORMANCE METRICS:")
+        print("\n⚡ PERFORMANCE METRICS:")
         print(f"   Rule-based: {perf['rule_time_ms']:.1f} ms/commit")
         print(f"   ML (first run): {perf['ml_first_run_time_ms']:.1f} ms/commit")
         print(f"   ML (cached): {perf['ml_cached_time_ms']:.1f} ms/commit")
@@ -497,14 +496,14 @@ def main():
 
         # Compatibility Summary
         compat = all_results["backward_compatibility"]
-        print(f"\n🔄 COMPATIBILITY STATUS:")
+        print("\n🔄 COMPATIBILITY STATUS:")
         print(f"   Basic Compatibility: {'✅' if compat['basic_compatible'] else '❌'}")
         print(f"   Interface Compatibility: {'✅' if compat['interface_compatible'] else '❌'}")
         print(f"   Analyzer Integration: {'✅' if compat['analyzer_compatible'] else '❌'}")
 
         # Fallback Summary
         fallback = all_results["graceful_fallback"]
-        print(f"\n🛡️  FALLBACK STATUS:")
+        print("\n🛡️  FALLBACK STATUS:")
         print(f"   spaCy Available: {'✅' if fallback['spacy_available'] else '❌'}")
         print(f"   Graceful Fallback: {'✅' if fallback['fallback_works'] else '❌'}")
         print(f"   Error Handling: {'✅' if fallback['error_handling'] else '❌'}")
@@ -512,11 +511,11 @@ def main():
 
         # Edge Cases Summary
         edges = all_results["edge_cases"]
-        print(f"\n🔍 EDGE CASE HANDLING:")
+        print("\n🔍 EDGE CASE HANDLING:")
         print(f"   Success Rate: {edges['success_rate']:.1%}")
 
         # Overall Assessment
-        print(f"\n🏆 OVERALL ASSESSMENT:")
+        print("\n🏆 OVERALL ASSESSMENT:")
         overall_score = (
             acc["ml_accuracy"] * 0.3  # 30% weight on accuracy
             + (1 - perf["ml_overhead_percent"] / 100 * 0.1) * 0.2  # 20% weight on performance

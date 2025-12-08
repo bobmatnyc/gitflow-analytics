@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gitflow-analytics analyze:*)",
+      "Bash(awk:*)",
+      "Bash(grep:*)"
+    ],
+    "deny": []
+  }
+}

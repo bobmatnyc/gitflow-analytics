@@ -5,9 +5,7 @@ These tests verify caching functionality including commit caching,
 database operations, and cache invalidation.
 """
 
-import os
 from datetime import datetime, timezone
-from unittest.mock import Mock, patch
 
 from gitflow_analytics.core.cache import GitAnalysisCache
 

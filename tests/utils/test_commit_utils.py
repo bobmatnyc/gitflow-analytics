@@ -1,11 +1,11 @@
 """Tests for commit utility functions."""
 
-import pytest
 from unittest.mock import Mock
+
 from gitflow_analytics.utils.commit_utils import (
-    is_merge_commit,
     get_parent_count,
-    is_initial_commit
+    is_initial_commit,
+    is_merge_commit,
 )
 
 

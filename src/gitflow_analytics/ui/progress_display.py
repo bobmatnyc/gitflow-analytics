@@ -457,12 +457,16 @@ class RichProgressDisplay:
             mem_icon = (
                 "🟢"
                 if self.statistics.memory_usage < 500
-                else "🟡" if self.statistics.memory_usage < 1000 else "🔴"
+                else "🟡"
+                if self.statistics.memory_usage < 1000
+                else "🔴"
             )
             cpu_icon = (
                 "🟢"
                 if self.statistics.cpu_percent < 50
-                else "🟡" if self.statistics.cpu_percent < 80 else "🔴"
+                else "🟡"
+                if self.statistics.cpu_percent < 80
+                else "🔴"
             )
             system_stats.append(f"{mem_icon} Memory: {self.statistics.memory_usage:.0f} MB")
             system_stats.append(f"{cpu_icon} CPU: {self.statistics.cpu_percent:.1f}%")
@@ -471,7 +475,9 @@ class RichProgressDisplay:
             speed_icon = (
                 "🚀"
                 if self.statistics.processing_speed > 100
-                else "⚡" if self.statistics.processing_speed > 50 else "🐢"
+                else "⚡"
+                if self.statistics.processing_speed > 50
+                else "🐢"
             )
             system_stats.append(
                 f"{speed_icon} Speed: {self.statistics.processing_speed:.1f} commits/s"
@@ -484,7 +490,9 @@ class RichProgressDisplay:
         phase_indicator = (
             "⚙️"
             if "Processing" in self.statistics.current_phase
-            else "🔍" if "Analyzing" in self.statistics.current_phase else "✨"
+            else "🔍"
+            if "Analyzing" in self.statistics.current_phase
+            else "✨"
         )
         phase_text = f"{phase_indicator} [bold green]{self.statistics.current_phase}[/bold green]"
         elapsed_text = f"⏱️ [bold blue]{self.statistics.get_elapsed_time()}[/bold blue]"
@@ -1250,9 +1258,9 @@ class SimpleProgressDisplay:
     # Compatibility methods for CLI interface
     def show_header(self):
         """Display header - compatibility method for CLI."""
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"GitFlow Analytics v{self.version}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
     def start_live_display(self):
         """Start live display - compatibility wrapper for start()."""

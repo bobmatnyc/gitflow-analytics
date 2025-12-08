@@ -164,6 +164,72 @@
       "batch_size": 5,
       "success": true,
       "error_message": null
+    },
+    {
+      "timestamp": "2025-11-10T16:54:14.536495",
+      "model": "test-model",
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "processing_time_ms": 1500.0,
+      "estimated_cost": 0.00025,
+      "batch_size": 5,
+      "success": true,
+      "error_message": null
+    },
+    {
+      "timestamp": "2025-11-10T19:02:45.728049",
+      "model": "test-model",
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "processing_time_ms": 1500.0,
+      "estimated_cost": 0.00025,
+      "batch_size": 5,
+      "success": true,
+      "error_message": null
+    },
+    {
+      "timestamp": "2025-11-10T19:04:32.404596",
+      "model": "test-model",
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "processing_time_ms": 1500.0,
+      "estimated_cost": 0.00025,
+      "batch_size": 5,
+      "success": true,
+      "error_message": null
+    },
+    {
+      "timestamp": "2025-12-08T18:45:37.058309",
+      "model": "test-model",
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "processing_time_ms": 1500.0,
+      "estimated_cost": 0.00025,
+      "batch_size": 5,
+      "success": true,
+      "error_message": null
+    },
+    {
+      "timestamp": "2025-12-08T20:25:18.240590",
+      "model": "test-model",
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "processing_time_ms": 1500.0,
+      "estimated_cost": 0.00025,
+      "batch_size": 5,
+      "success": true,
+      "error_message": null
+    },
+    {
+      "timestamp": "2025-12-08T20:32:40.144766",
+      "model": "test-model",
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "processing_time_ms": 1500.0,
+      "estimated_cost": 0.00025,
+      "batch_size": 5,
+      "success": true,
+      "error_message": null
     }
   ]
 }

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Standalone security analysis for EWTN repositories."""
 
-import sys
-from pathlib import Path
-from datetime import datetime, timedelta, timezone
-import subprocess
 import hashlib
+import subprocess
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -21,16 +21,17 @@ def get_commits_from_repo(repo_path: Path, weeks: int = 4):
 
     # Get commit data using git log
     cmd = [
-        "git", "log",
+        "git",
+        "log",
         "--pretty=format:%H|%h|%an|%ae|%at|%s",
         "--name-only",
         f"--since={start_date.isoformat()}",
-        "--all"
+        "--all",
     ]
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=repo_path, check=True)
-        lines = result.stdout.strip().split('\n')
+        lines = result.stdout.strip().split("\n")
 
         commits = []
         current_commit = None
@@ -39,9 +40,9 @@ def get_commits_from_repo(repo_path: Path, weeks: int = 4):
             if not line:
                 continue
 
-            if '|' in line:
+            if "|" in line:
                 # Parse commit info
-                parts = line.split('|')
+                parts = line.split("|")
                 if len(parts) >= 6:
                     current_commit = {
                         "commit_hash": parts[0],
@@ -49,8 +50,8 @@ def get_commits_from_repo(repo_path: Path, weeks: int = 4):
                         "author_name": parts[2],
                         "author_email": parts[3],
                         "timestamp": datetime.fromtimestamp(int(parts[4]), tz=timezone.utc),
-                        "message": '|'.join(parts[5:]),  # Handle messages with pipes
-                        "files_changed": []
+                        "message": "|".join(parts[5:]),  # Handle messages with pipes
+                        "files_changed": [],
                     }
                     commits.append(current_commit)
             elif current_commit:
@@ -77,30 +78,33 @@ def main():
     print(f"📂 Analyzing repository: {repo_path}")
 
     # Get commits - use last 20 commits instead of date range
-    print(f"📥 Fetching last 20 commits...")
+    print("📥 Fetching last 20 commits...")
 
     # Use git log with count instead of date
     import subprocess
+
     cmd = [
-        "git", "log",
+        "git",
+        "log",
         "--pretty=format:%H|%h|%an|%ae|%at|%s",
         "--name-only",
-        "-n", "20",  # Last 20 commits
-        "--all"
+        "-n",
+        "20",  # Last 20 commits
+        "--all",
     ]
 
     commits = []
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=repo_path, check=True)
-        lines = result.stdout.strip().split('\n')
+        lines = result.stdout.strip().split("\n")
 
         current_commit = None
         for line in lines:
             if not line:
                 continue
 
-            if '|' in line:
-                parts = line.split('|')
+            if "|" in line:
+                parts = line.split("|")
                 if len(parts) >= 6:
                     current_commit = {
                         "commit_hash": parts[0],
@@ -108,8 +112,8 @@ def main():
                         "author_name": parts[2],
                         "author_email": parts[3],
                         "timestamp": datetime.fromtimestamp(int(parts[4]), tz=timezone.utc),
-                        "message": '|'.join(parts[5:]),
-                        "files_changed": []
+                        "message": "|".join(parts[5:]),
+                        "files_changed": [],
                     }
                     commits.append(current_commit)
             elif current_commit:
@@ -124,11 +128,7 @@ def main():
         return 1
 
     # Configure security analysis
-    config = SecurityConfig(
-        enabled=True,
-        fail_on_critical=False,
-        generate_sarif=False
-    )
+    config = SecurityConfig(enabled=True, fail_on_critical=False, generate_sarif=False)
 
     # Enable basic scanners (no external tools required)
     config.secret_scanning.enabled = True
@@ -166,19 +166,19 @@ def main():
     print("SECURITY ANALYSIS SUMMARY")
     print("=" * 60)
     print(f"Repository: {repo_path.name}")
-    print(f"Period: Last 4 weeks")
+    print("Period: Last 4 weeks")
     print(f"Total Commits: {summary['total_commits']}")
     print(f"Commits with Issues: {summary['commits_with_issues']}")
     print(f"Total Findings: {summary['total_findings']}")
     print(f"Risk Level: {summary['risk_level']} (Score: {summary['average_risk_score']:.1f})")
 
-    if summary['severity_distribution']['critical'] > 0:
+    if summary["severity_distribution"]["critical"] > 0:
         print(f"\n🔴 Critical: {summary['severity_distribution']['critical']}")
-    if summary['severity_distribution']['high'] > 0:
+    if summary["severity_distribution"]["high"] > 0:
         print(f"🟠 High: {summary['severity_distribution']['high']}")
-    if summary['severity_distribution']['medium'] > 0:
+    if summary["severity_distribution"]["medium"] > 0:
         print(f"🟡 Medium: {summary['severity_distribution']['medium']}")
-    if summary['severity_distribution']['low'] > 0:
+    if summary["severity_distribution"]["low"] > 0:
         print(f"🟢 Low: {summary['severity_distribution']['low']}")
 
     # Generate detailed report
@@ -196,22 +196,28 @@ def main():
     report_id = hashlib.sha256(f"{datetime.now().isoformat()}".encode()).hexdigest()[:8]
     qualitative_report_path = report_dir / f"security_qualitative_report_{report_id}.md"
 
-    with open(qualitative_report_path, 'w') as f:
-        f.write(f"# 🔒 Security Qualitative Analysis Report\n\n")
+    with open(qualitative_report_path, "w") as f:
+        f.write("# 🔒 Security Qualitative Analysis Report\n\n")
         f.write(f"**Report ID**: {report_id}\n")
         f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"**Repository**: {repo_path.name}\n")
-        f.write(f"**Analysis Period**: Last 4 weeks\n\n")
+        f.write("**Analysis Period**: Last 4 weeks\n\n")
 
         f.write("## Executive Summary\n\n")
-        f.write(f"The security analysis of the {repo_path.name} repository reveals a **{summary['risk_level']}** ")
-        f.write(f"risk profile with an average score of {summary['average_risk_score']:.1f}/100.\n\n")
+        f.write(
+            f"The security analysis of the {repo_path.name} repository reveals a **{summary['risk_level']}** "
+        )
+        f.write(
+            f"risk profile with an average score of {summary['average_risk_score']:.1f}/100.\n\n"
+        )
 
-        if summary['total_findings'] > 0:
-            f.write(f"A total of **{summary['total_findings']} security issues** were identified across ")
+        if summary["total_findings"] > 0:
+            f.write(
+                f"A total of **{summary['total_findings']} security issues** were identified across "
+            )
             f.write(f"{summary['commits_with_issues']} commits. ")
 
-            if summary['severity_distribution']['critical'] > 0:
+            if summary["severity_distribution"]["critical"] > 0:
                 f.write(f"Notably, {summary['severity_distribution']['critical']} critical issues ")
                 f.write("require immediate attention.\n\n")
             else:
@@ -222,8 +228,8 @@ def main():
 
         f.write("## Key Findings\n\n")
 
-        if summary['top_issues']:
-            for i, issue in enumerate(summary['top_issues'][:5], 1):
+        if summary["top_issues"]:
+            for i, issue in enumerate(summary["top_issues"][:5], 1):
                 f.write(f"{i}. **{issue['type'].replace('_', ' ').title()}** ")
                 f.write(f"({issue['severity'].upper()}): {issue['occurrences']} occurrences ")
                 f.write(f"in {issue['affected_files']} files\n")
@@ -232,18 +238,26 @@ def main():
             f.write("- Code follows secure development practices\n")
 
         f.write("\n## Recommendations\n\n")
-        for rec in summary['recommendations']:
+        for rec in summary["recommendations"]:
             f.write(f"- {rec}\n")
 
         f.write("\n## Risk Assessment Matrix\n\n")
         f.write("| Risk Factor | Assessment | Score |\n")
         f.write("|-------------|------------|-------|\n")
-        f.write(f"| Overall Risk | {summary['risk_level']} | {summary['average_risk_score']:.1f}/100 |\n")
-        f.write(f"| Secret Exposure | {'High' if summary['findings_by_type'].get('secrets', 0) > 0 else 'Low'} | ")
+        f.write(
+            f"| Overall Risk | {summary['risk_level']} | {summary['average_risk_score']:.1f}/100 |\n"
+        )
+        f.write(
+            f"| Secret Exposure | {'High' if summary['findings_by_type'].get('secrets', 0) > 0 else 'Low'} | "
+        )
         f.write(f"{summary['findings_by_type'].get('secrets', 0)} findings |\n")
-        f.write(f"| Code Vulnerabilities | {'High' if summary['findings_by_type'].get('vulnerabilities', 0) > 0 else 'Low'} | ")
+        f.write(
+            f"| Code Vulnerabilities | {'High' if summary['findings_by_type'].get('vulnerabilities', 0) > 0 else 'Low'} | "
+        )
         f.write(f"{summary['findings_by_type'].get('vulnerabilities', 0)} findings |\n")
-        f.write(f"| Dependency Issues | {'High' if summary['findings_by_type'].get('dependency_issues', 0) > 0 else 'Low'} | ")
+        f.write(
+            f"| Dependency Issues | {'High' if summary['findings_by_type'].get('dependency_issues', 0) > 0 else 'Low'} | "
+        )
         f.write(f"{summary['findings_by_type'].get('dependency_issues', 0)} findings |\n")
 
         f.write("\n## Next Steps\n\n")
@@ -254,15 +268,19 @@ def main():
         f.write("5. Consider enabling advanced security tools (SAST, dependency scanning)\n")
 
         f.write("\n---\n")
-        f.write(f"*This qualitative security report provides strategic insights based on automated analysis ")
-        f.write("of commit history and code changes. For detailed technical findings, refer to the ")
+        f.write(
+            "*This qualitative security report provides strategic insights based on automated analysis "
+        )
+        f.write(
+            "of commit history and code changes. For detailed technical findings, refer to the "
+        )
         f.write("accompanying technical reports.*\n")
 
     print(f"\n✨ Qualitative Security Report: {qualitative_report_path.name}")
 
     # Show recommendations
     print("\n💡 Top Recommendations:")
-    for i, rec in enumerate(summary['recommendations'][:3], 1):
+    for i, rec in enumerate(summary["recommendations"][:3], 1):
         print(f"  {i}. {rec}")
 
     print("\n✅ Security analysis completed successfully!")

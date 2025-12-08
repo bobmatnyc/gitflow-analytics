@@ -577,8 +577,7 @@ class QualitativeProcessor:
         llm_pct = (llm_processed / total_commits) * 100 if total_commits > 0 else 0
 
         self.logger.info(
-            f"Processing breakdown: {cache_pct:.1f}% cached, "
-            f"{nlp_pct:.1f}% NLP, {llm_pct:.1f}% LLM"
+            f"Processing breakdown: {cache_pct:.1f}% cached, {nlp_pct:.1f}% NLP, {llm_pct:.1f}% LLM"
         )
 
     def _should_optimize_cache(self) -> bool:

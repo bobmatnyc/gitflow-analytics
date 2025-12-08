@@ -906,7 +906,9 @@ class EnhancedQualitativeAnalyzer:
                 "status": (
                     "excellent"
                     if activity_score >= 80
-                    else "good" if activity_score >= 60 else "needs_improvement"
+                    else "good"
+                    if activity_score >= 60
+                    else "needs_improvement"
                 ),
             },
             "contributor_diversity": {
@@ -915,7 +917,9 @@ class EnhancedQualitativeAnalyzer:
                 "status": (
                     "excellent"
                     if len(contributors) >= 4
-                    else "good" if len(contributors) >= 2 else "concerning"
+                    else "good"
+                    if len(contributors) >= 2
+                    else "concerning"
                 ),
             },
             "pr_velocity": {
@@ -929,7 +933,9 @@ class EnhancedQualitativeAnalyzer:
                 "status": (
                     "excellent"
                     if ticket_coverage >= 80
-                    else "good" if ticket_coverage >= 60 else "needs_improvement"
+                    else "good"
+                    if ticket_coverage >= 60
+                    else "needs_improvement"
                 ),
             },
         }
@@ -948,7 +954,9 @@ class EnhancedQualitativeAnalyzer:
             "status": (
                 "excellent"
                 if overall_score >= 80
-                else "good" if overall_score >= 60 else "needs_improvement"
+                else "good"
+                if overall_score >= 60
+                else "needs_improvement"
             ),
         }
 
@@ -1918,7 +1926,9 @@ class EnhancedQualitativeAnalyzer:
                 "status": (
                     "excellent"
                     if ticket_coverage >= 80
-                    else "good" if ticket_coverage >= 60 else "needs_improvement"
+                    else "good"
+                    if ticket_coverage >= 60
+                    else "needs_improvement"
                 ),
             },
             "message_quality": {
@@ -1926,7 +1936,9 @@ class EnhancedQualitativeAnalyzer:
                 "status": (
                     "excellent"
                     if message_quality >= 80
-                    else "good" if message_quality >= 60 else "needs_improvement"
+                    else "good"
+                    if message_quality >= 60
+                    else "needs_improvement"
                 ),
             },
             "commit_size_compliance": {
@@ -1934,7 +1946,9 @@ class EnhancedQualitativeAnalyzer:
                 "status": (
                     "excellent"
                     if size_compliance >= 80
-                    else "good" if size_compliance >= 60 else "needs_improvement"
+                    else "good"
+                    if size_compliance >= 60
+                    else "needs_improvement"
                 ),
             },
             "pr_approval_rate": {"score": pr_approval_rate, "status": "good"},  # Placeholder
@@ -1986,7 +2000,9 @@ class EnhancedQualitativeAnalyzer:
             "collaboration_level": (
                 "high"
                 if collaboration_score >= 70
-                else "medium" if collaboration_score >= 40 else "low"
+                else "medium"
+                if collaboration_score >= 40
+                else "low"
             ),
             "patterns": {
                 "multi_project_engagement": cross_collaboration_rate >= 50,
