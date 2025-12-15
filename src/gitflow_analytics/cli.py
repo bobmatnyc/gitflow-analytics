@@ -1590,6 +1590,68 @@ def analyze(
                             total_commits += result["stats"]["total_commits"]
                             total_tickets += result["stats"]["unique_tickets"]
 
+                            # Fetch and enrich with GitHub PRs after data collection
+                            if repo_config.github_repo:
+                                try:
+                                    if display:
+                                        display.print_status(
+                                            f"   📥 Fetching pull requests from GitHub...",
+                                            "info",
+                                        )
+
+                                    # Load commits that were just fetched from cache
+                                    with cache.get_session() as session:
+                                        from gitflow_analytics.models.database import CachedCommit
+
+                                        cached_commits = (
+                                            session.query(CachedCommit)
+                                            .filter(
+                                                CachedCommit.repo_path == str(repo_path),
+                                                CachedCommit.timestamp >= start_date,
+                                                CachedCommit.timestamp <= end_date,
+                                            )
+                                            .all()
+                                        )
+
+                                        # Convert to dict format for enrichment
+                                        commits_for_enrichment = []
+                                        for cached_commit in cached_commits:
+                                            commit_dict = {
+                                                "hash": cached_commit.commit_hash,
+                                                "author_name": cached_commit.author_name,
+                                                "author_email": cached_commit.author_email,
+                                                "date": cached_commit.timestamp,
+                                                "message": cached_commit.message,
+                                            }
+                                            commits_for_enrichment.append(commit_dict)
+
+                                    # Enrich with GitHub PR data
+                                    enrichment = orchestrator.enrich_repository_data(
+                                        repo_config, commits_for_enrichment, start_date
+                                    )
+
+                                    if enrichment["prs"]:
+                                        pr_count = len(enrichment["prs"])
+                                        if display:
+                                            display.print_status(
+                                                f"   ✅ Found {pr_count} pull requests",
+                                                "success",
+                                            )
+                                        else:
+                                            click.echo(f"   ✅ Found {pr_count} pull requests")
+
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Failed to fetch PRs for {repo_config.github_repo}: {e}"
+                                    )
+                                    if display:
+                                        display.print_status(
+                                            f"   ⚠️  Could not fetch PRs: {e}",
+                                            "warning",
+                                        )
+                                    else:
+                                        click.echo(f"   ⚠️  Could not fetch PRs: {e}")
+
                             # Collect unique developers if available
                             if "developers" in result["stats"]:
                                 total_developers.update(result["stats"]["developers"])
@@ -2087,6 +2149,68 @@ def analyze(
 
                             total_commits += result["stats"]["total_commits"]
                             total_tickets += result["stats"]["unique_tickets"]
+
+                            # Fetch and enrich with GitHub PRs after data collection
+                            if repo_config.github_repo:
+                                try:
+                                    if display:
+                                        display.print_status(
+                                            f"   📥 Fetching pull requests from GitHub...",
+                                            "info",
+                                        )
+
+                                    # Load commits that were just fetched from cache
+                                    with cache.get_session() as session:
+                                        from gitflow_analytics.models.database import CachedCommit
+
+                                        cached_commits = (
+                                            session.query(CachedCommit)
+                                            .filter(
+                                                CachedCommit.repo_path == str(repo_path),
+                                                CachedCommit.timestamp >= start_date,
+                                                CachedCommit.timestamp <= end_date,
+                                            )
+                                            .all()
+                                        )
+
+                                        # Convert to dict format for enrichment
+                                        commits_for_enrichment = []
+                                        for cached_commit in cached_commits:
+                                            commit_dict = {
+                                                "hash": cached_commit.commit_hash,
+                                                "author_name": cached_commit.author_name,
+                                                "author_email": cached_commit.author_email,
+                                                "date": cached_commit.timestamp,
+                                                "message": cached_commit.message,
+                                            }
+                                            commits_for_enrichment.append(commit_dict)
+
+                                    # Enrich with GitHub PR data
+                                    enrichment = orchestrator.enrich_repository_data(
+                                        repo_config, commits_for_enrichment, start_date
+                                    )
+
+                                    if enrichment["prs"]:
+                                        pr_count = len(enrichment["prs"])
+                                        if display:
+                                            display.print_status(
+                                                f"   ✅ Found {pr_count} pull requests",
+                                                "success",
+                                            )
+                                        else:
+                                            click.echo(f"   ✅ Found {pr_count} pull requests")
+
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Failed to fetch PRs for {repo_config.github_repo}: {e}"
+                                    )
+                                    if display:
+                                        display.print_status(
+                                            f"   ⚠️  Could not fetch PRs: {e}",
+                                            "warning",
+                                        )
+                                    else:
+                                        click.echo(f"   ⚠️  Could not fetch PRs: {e}")
 
                             # Collect unique developers if available
                             if "developers" in result["stats"]:

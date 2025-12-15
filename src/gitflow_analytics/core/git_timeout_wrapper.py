@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable, Optional, TypeVar
 
 from ..constants import Timeouts
+from .git_auth import ensure_remote_url_has_token
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +209,13 @@ class GitTimeoutWrapper:
             True if fetch succeeded, False otherwise
         """
         try:
+            # Embed GitHub token in remote URL if available
+            # This is necessary because git operations run with GIT_CREDENTIAL_HELPER=""
+            # and GIT_ASKPASS="/bin/echo", which disable credential helpers
+            token = os.environ.get("GITHUB_TOKEN")
+            if token:
+                ensure_remote_url_has_token(repo_path, token)
+
             self.run_git_command(
                 ["git", "fetch", "--all"], cwd=repo_path, timeout=timeout, check=True
             )

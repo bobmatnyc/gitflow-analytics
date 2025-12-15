@@ -264,3 +264,7 @@ yarn-error.log*
 uv.lock
 # Local environment variables (never commit!)
 .env.local
+
+# Added by Claude MPM /mpm-init
+.claude.json
+.mcp.json

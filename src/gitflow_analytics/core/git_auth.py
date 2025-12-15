@@ -112,6 +112,82 @@ def setup_git_credentials(token: str, username: str = "git") -> bool:
         return False
 
 
+def ensure_remote_url_has_token(repo_path: Path, token: str) -> bool:
+    """Embed GitHub token in remote URL for HTTPS authentication.
+
+    This is needed because subprocess git operations may not have access
+    to the credential helper store due to environment variable restrictions
+    (GIT_CREDENTIAL_HELPER="" and GIT_ASKPASS="/bin/echo" in git_timeout_wrapper).
+
+    Args:
+        repo_path: Path to the git repository
+        token: GitHub personal access token
+
+    Returns:
+        True if URL was updated with token, False if already has token,
+        not applicable (SSH URL), or operation failed
+    """
+    if not token:
+        logger.debug("No token provided, skipping remote URL update")
+        return False
+
+    try:
+        # Get current origin remote URL
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        current_url = result.stdout.strip()
+
+        if not current_url:
+            logger.debug(f"No origin remote found for {repo_path}")
+            return False
+
+        # Check if it's an HTTPS GitHub URL without embedded token
+        if current_url.startswith("https://github.com/"):
+            # URL format: https://github.com/org/repo.git
+            # New format: https://git:TOKEN@github.com/org/repo.git
+            new_url = current_url.replace(
+                "https://github.com/", f"https://git:{token}@github.com/"
+            )
+
+            # Update the remote URL
+            subprocess.run(
+                ["git", "remote", "set-url", "origin", new_url],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            logger.debug(f"Updated remote URL with embedded token for {repo_path.name}")
+            return True
+
+        elif "@github.com" in current_url:
+            # Already has authentication embedded (either token or SSH)
+            logger.debug(f"Remote URL already has authentication for {repo_path.name}")
+            return False
+
+        elif current_url.startswith("git@github.com:"):
+            # SSH URL, no need to modify
+            logger.debug(f"Using SSH authentication for {repo_path.name}")
+            return False
+
+        else:
+            # Unknown URL format
+            logger.debug(f"Unknown URL format for {repo_path.name}: {current_url}")
+            return False
+
+    except subprocess.CalledProcessError as e:
+        logger.warning(f"Could not update remote URL for {repo_path.name}: {e.stderr}")
+        return False
+    except Exception as e:
+        logger.warning(f"Unexpected error updating remote URL for {repo_path.name}: {e}")
+        return False
+
+
 def preflight_git_authentication(config: dict) -> bool:
     """Run pre-flight checks for git authentication and setup credentials.
 
