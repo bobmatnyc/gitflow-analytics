@@ -150,9 +150,7 @@ def ensure_remote_url_has_token(repo_path: Path, token: str) -> bool:
         if current_url.startswith("https://github.com/"):
             # URL format: https://github.com/org/repo.git
             # New format: https://git:TOKEN@github.com/org/repo.git
-            new_url = current_url.replace(
-                "https://github.com/", f"https://git:{token}@github.com/"
-            )
+            new_url = current_url.replace("https://github.com/", f"https://git:{token}@github.com/")
 
             # Update the remote URL
             subprocess.run(

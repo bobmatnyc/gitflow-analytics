@@ -259,7 +259,6 @@ class TestNarrativeReportGenerator:
 
         pr_metrics = {"avg_pr_size": 150, "total_prs": 10}
 
-
         result_path = generator.generate_narrative_report(
             commits,
             prs,
