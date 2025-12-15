@@ -1595,7 +1595,7 @@ def analyze(
                                 try:
                                     if display:
                                         display.print_status(
-                                            f"   📥 Fetching pull requests from GitHub...",
+                                            "   📥 Fetching pull requests from GitHub...",
                                             "info",
                                         )
 
@@ -2155,7 +2155,7 @@ def analyze(
                                 try:
                                     if display:
                                         display.print_status(
-                                            f"   📥 Fetching pull requests from GitHub...",
+                                            "   📥 Fetching pull requests from GitHub...",
                                             "info",
                                         )
 
