@@ -3908,8 +3908,8 @@ def analyze(
                 traceback.print_exc()
                 raise
 
-        # Generate markdown reports if enabled
-        if "markdown" in cfg.output.formats:
+        # Generate markdown reports if enabled (requires CSV files)
+        if "markdown" in cfg.output.formats and generate_csv:
             # Calculate date range for consistent filename formatting across all markdown reports
             date_range = f"{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
 
@@ -4039,6 +4039,15 @@ def analyze(
 
                 traceback.print_exc()
                 raise
+        elif "markdown" in cfg.output.formats and not generate_csv:
+            # Narrative report requires CSV files, but CSV generation is disabled
+            logger.info(
+                "Skipping narrative report generation - CSV files required but CSV generation is disabled"
+            )
+            if not display:
+                click.echo(
+                    "   ℹ️  Narrative report skipped (requires CSV files - enable with --csv flag)"
+                )
 
         # Generate database-backed qualitative report
         if "markdown" in cfg.output.formats:
