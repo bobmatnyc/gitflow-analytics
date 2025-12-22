@@ -3908,11 +3908,12 @@ def analyze(
                 traceback.print_exc()
                 raise
 
+        # Calculate date range for consistent filename formatting across all markdown reports
+        # Define outside conditional blocks so it's available for all report types
+        date_range = f"{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
+
         # Generate markdown reports if enabled (requires CSV files)
         if "markdown" in cfg.output.formats and generate_csv:
-            # Calculate date range for consistent filename formatting across all markdown reports
-            date_range = f"{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
-
             try:
                 logger.debug("Starting narrative report generation")
                 narrative_gen = NarrativeReportGenerator()

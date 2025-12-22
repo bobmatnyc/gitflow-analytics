@@ -956,7 +956,8 @@ class AnalyticsReportGenerator:
         sorted_values = sorted(values)
         n = len(values)
         cumsum = np.cumsum(sorted_values)
-        return (2 * np.sum((i + 1) * sorted_values[i] for i in range(n))) / (n * cumsum[-1]) - (n + 1) / n
+        # Use builtin sum instead of np.sum for generator expression (numpy deprecation)
+        return (2 * sum((i + 1) * sorted_values[i] for i in range(n))) / (n * cumsum[-1]) - (n + 1) / n
     
     def _get_week_start(self, date: datetime) -> datetime:
         """Get Monday of the week for a given date."""
