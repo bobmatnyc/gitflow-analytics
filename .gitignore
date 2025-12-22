@@ -268,3 +268,9 @@ uv.lock
 # Added by Claude MPM /mpm-init
 .claude.json
 .mcp.json
+
+# Claude MPM research docs
+docs/research/
+
+# Kuzu memory backups
+.kuzu-memory-backups/
