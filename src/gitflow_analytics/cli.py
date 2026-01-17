@@ -5546,7 +5546,7 @@ def aliases_command(
 
                     # Fetch commits
                     repo_commits = analyzer.analyze_repository(
-                        repo_config.path, start_date=start_date, branch=repo_config.branch
+                        repo_config.path, since=start_date, branch=repo_config.branch
                     )
 
                     if repo_commits:
