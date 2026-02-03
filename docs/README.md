@@ -4,6 +4,15 @@ Welcome to the complete documentation for GitFlow Analytics - a powerful tool fo
 
 ## 🚀 Quick Navigation
 
+### 📊 For Engineering Managers
+Non-technical guides for understanding team insights:
+- **[Manager's Quick Start](managers/quickstart.md)** - Get insights in 5 minutes (no installation required)
+- **[Understanding Reports](managers/interpreting-reports.md)** - How to read GitFlow Analytics reports
+- **[Metrics Reference](managers/metrics-reference.md)** - Plain-language metric definitions
+- **[Dashboard Guide](managers/dashboard-guide.md)** - Create Excel/Google Sheets dashboards
+- **[Manager FAQ](managers/faq.md)** - Common questions answered
+- **[All Manager Docs](managers/)** - Complete manager documentation
+
 ### 👋 New to GitFlow Analytics?
 Start here to get up and running quickly:
 - **[Installation Guide](getting-started/installation.md)** - Set up GitFlow Analytics
@@ -59,6 +68,9 @@ Production deployment and scaling:
 ## 🎯 Documentation by Use Case
 
 ### I want to...
+
+**Understand team productivity (Manager)**
+→ [Manager Quick Start](managers/quickstart.md) → [Report Interpretation](managers/interpreting-reports.md) → [Dashboard Guide](managers/dashboard-guide.md)
 
 **Analyze a single repository**
 → [Installation](getting-started/installation.md) → [Quick Start](getting-started/quickstart.md) → [Interactive Launcher](examples/interactive-launcher-examples.md)
