@@ -86,8 +86,11 @@ class AliasesManager:
     def load(self) -> None:
         """Load aliases from file.
 
-        Loads developer aliases from the configured YAML file. If the file
-        doesn't exist or is empty, initializes with an empty alias list.
+        Loads developer aliases from the configured YAML file. Supports both:
+        1. developer_aliases format (legacy and recommended)
+        2. teams-based format with nested members structure
+
+        If the file doesn't exist or is empty, initializes with an empty alias list.
 
         Raises:
             yaml.YAMLError: If the YAML file is malformed
@@ -101,22 +104,61 @@ class AliasesManager:
                 data = yaml.safe_load(f) or {}
 
             self.aliases = []
-            for alias_data in data.get("developer_aliases", []):
-                # Support both 'primary_email' (new) and 'canonical_email' (old)
-                primary_email = alias_data.get("primary_email") or alias_data.get("canonical_email")
 
-                if not primary_email:
-                    logger.warning(f"Skipping alias entry without primary_email: {alias_data}")
-                    continue
-
-                self.aliases.append(
-                    DeveloperAlias(
-                        primary_email=primary_email,
-                        aliases=alias_data.get("aliases", []),
-                        name=alias_data.get("name"),
-                        confidence=alias_data.get("confidence", 1.0),
-                        reasoning=alias_data.get("reasoning", ""),
+            # Format 1: developer_aliases list (recommended)
+            if "developer_aliases" in data:
+                for alias_data in data.get("developer_aliases", []):
+                    # Support both 'primary_email' (new) and 'canonical_email' (old)
+                    primary_email = alias_data.get("primary_email") or alias_data.get(
+                        "canonical_email"
                     )
+
+                    if not primary_email:
+                        logger.warning(f"Skipping alias entry without primary_email: {alias_data}")
+                        continue
+
+                    self.aliases.append(
+                        DeveloperAlias(
+                            primary_email=primary_email,
+                            aliases=alias_data.get("aliases", []),
+                            name=alias_data.get("name"),
+                            confidence=alias_data.get("confidence", 1.0),
+                            reasoning=alias_data.get("reasoning", ""),
+                        )
+                    )
+
+            # Format 2: teams-based structure
+            elif "teams" in data:
+                teams = data.get("teams", {})
+                for team_name, team_data in teams.items():
+                    members = team_data.get("members", {})
+                    for member_name, member_data in members.items():
+                        # Extract emails (primary is first, rest are aliases)
+                        emails = member_data.get("emails", [])
+                        if not emails:
+                            logger.warning(
+                                f"Skipping team member '{member_name}' in team '{team_name}' - no emails provided"
+                            )
+                            continue
+
+                        primary_email = emails[0]
+                        alias_emails = emails[1:] if len(emails) > 1 else []
+
+                        self.aliases.append(
+                            DeveloperAlias(
+                                primary_email=primary_email,
+                                aliases=alias_emails,
+                                name=member_name,
+                                confidence=1.0,
+                                reasoning=f"From team: {team_name}",
+                            )
+                        )
+
+            else:
+                # Unknown format - log warning
+                logger.warning(
+                    f"Aliases file {self.aliases_path} has unrecognized structure. "
+                    f"Expected 'developer_aliases' or 'teams' key. Found keys: {list(data.keys())}"
                 )
 
             logger.info(f"Loaded {len(self.aliases)} developer aliases from {self.aliases_path}")
