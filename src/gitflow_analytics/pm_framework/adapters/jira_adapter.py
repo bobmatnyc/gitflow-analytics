@@ -109,25 +109,25 @@ class JiraTicketCache:
             # Indexes for efficient querying
             conn.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_project_key 
+                CREATE INDEX IF NOT EXISTS idx_project_key
                 ON jira_tickets(project_key)
             """
             )
             conn.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_expires_at 
+                CREATE INDEX IF NOT EXISTS idx_expires_at
                 ON jira_tickets(expires_at)
             """
             )
             conn.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_status 
+                CREATE INDEX IF NOT EXISTS idx_status
                 ON jira_tickets(status)
             """
             )
             conn.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_updated_at 
+                CREATE INDEX IF NOT EXISTS idx_updated_at
                 ON jira_tickets(updated_at)
             """
             )
@@ -161,7 +161,7 @@ class JiraTicketCache:
             cursor.execute(
                 """
                 SELECT ticket_data, expires_at, access_count
-                FROM jira_tickets 
+                FROM jira_tickets
                 WHERE ticket_key = ? AND expires_at > CURRENT_TIMESTAMP
             """,
                 (ticket_key,),
@@ -172,7 +172,7 @@ class JiraTicketCache:
                 # Update access statistics
                 cursor.execute(
                     """
-                    UPDATE jira_tickets 
+                    UPDATE jira_tickets
                     SET access_count = ?, last_accessed = CURRENT_TIMESTAMP
                     WHERE ticket_key = ?
                 """,
@@ -302,7 +302,7 @@ class JiraTicketCache:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                UPDATE jira_tickets 
+                UPDATE jira_tickets
                 SET expires_at = DATETIME('now', '-1 hour')
                 WHERE ticket_key = ?
             """,
@@ -366,7 +366,7 @@ class JiraTicketCache:
 
             cursor.execute(
                 """
-                SELECT COUNT(*) as fresh FROM jira_tickets 
+                SELECT COUNT(*) as fresh FROM jira_tickets
                 WHERE expires_at > CURRENT_TIMESTAMP
             """
             )
@@ -374,7 +374,7 @@ class JiraTicketCache:
 
             cursor.execute(
                 """
-                SELECT COUNT(*) as expired FROM jira_tickets 
+                SELECT COUNT(*) as expired FROM jira_tickets
                 WHERE expires_at <= CURRENT_TIMESTAMP
             """
             )
@@ -383,10 +383,10 @@ class JiraTicketCache:
             # Project distribution
             cursor.execute(
                 """
-                SELECT project_key, COUNT(*) as count 
-                FROM jira_tickets 
+                SELECT project_key, COUNT(*) as count
+                FROM jira_tickets
                 WHERE expires_at > CURRENT_TIMESTAMP
-                GROUP BY project_key 
+                GROUP BY project_key
                 ORDER BY count DESC
                 LIMIT 10
             """
@@ -396,10 +396,10 @@ class JiraTicketCache:
             # Access patterns
             cursor.execute(
                 """
-                SELECT AVG(access_count) as avg_access, 
+                SELECT AVG(access_count) as avg_access,
                        MAX(access_count) as max_access,
                        COUNT(*) as accessed_tickets
-                FROM jira_tickets 
+                FROM jira_tickets
                 WHERE access_count > 1 AND expires_at > CURRENT_TIMESTAMP
             """
             )
@@ -408,7 +408,7 @@ class JiraTicketCache:
             # Recent activity
             cursor.execute(
                 """
-                SELECT COUNT(*) as recent FROM jira_tickets 
+                SELECT COUNT(*) as recent FROM jira_tickets
                 WHERE cached_at > DATETIME('now', '-24 hours')
             """
             )
@@ -1405,17 +1405,41 @@ class JIRAAdapter(BasePlatformAdapter):
         Returns:
             Story points as integer, or None if not found.
         """
+        # Track which fields were tried for debugging
+        tried_fields = []
+        found_values = {}
+
         # Try configured story point fields first
         for field_id in self.story_point_fields:
+            tried_fields.append(field_id)
             if field_id in fields and fields[field_id] is not None:
                 value = fields[field_id]
+                found_values[field_id] = value
                 try:
                     if isinstance(value, (int, float)):
+                        logger.debug(f"Found story points in field '{field_id}': {value}")
                         return int(value)
                     elif isinstance(value, str) and value.strip():
-                        return int(float(value.strip()))
-                except (ValueError, TypeError):
+                        points = int(float(value.strip()))
+                        logger.debug(f"Found story points in field '{field_id}': {points}")
+                        return points
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"Field '{field_id}' has value {value} but failed to parse: {e}")
                     continue
+
+        # Log diagnostic information if no story points found
+        logger.debug(f"Story points not found. Tried fields: {tried_fields}")
+        if found_values:
+            logger.debug(f"Fields with non-null values (but unparseable): {found_values}")
+
+        # Log all available custom fields for debugging
+        custom_fields = {k: v for k, v in fields.items() if k.startswith("customfield_")}
+        if custom_fields:
+            logger.debug(f"Available custom fields in this issue: {list(custom_fields.keys())}")
+            logger.info(
+                "Story points not found. Use 'discover-storypoint-fields' command "
+                "to identify the correct custom field ID for your JIRA instance."
+            )
 
         # Use base class method as fallback
         return super()._extract_story_points(fields)
