@@ -55,6 +55,7 @@ class ReportData:
     pr_metrics: Dict[str, Any] = field(default_factory=dict)
     dora_metrics: Dict[str, Any] = field(default_factory=dict)
     branch_health_metrics: List[Dict[str, Any]] = field(default_factory=list)
+    cicd_metrics: Dict[str, Any] = field(default_factory=dict)
 
     # Project management data
     pm_data: Optional[Dict[str, Any]] = None

@@ -6,8 +6,8 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-from ..metrics.activity_scoring import ActivityScorer
 from ..core.progress import get_progress_service
+from ..metrics.activity_scoring import ActivityScorer
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
@@ -27,67 +27,73 @@ class NarrativeReportGenerator:
             "work_distribution": "Work distribution shows a {distribution} pattern with a Gini coefficient of {gini}",
         }
 
-    def _filter_excluded_authors(self, data_list: list[dict[str, Any]], exclude_authors: list[str]) -> list[dict[str, Any]]:
+    def _filter_excluded_authors(
+        self, data_list: list[dict[str, Any]], exclude_authors: list[str]
+    ) -> list[dict[str, Any]]:
         """
         Filter out excluded authors from any data list using canonical_id and enhanced bot detection.
-        
+
         WHY: Bot exclusion happens in Phase 2 (reporting) instead of Phase 1 (data collection)
-        to ensure manual identity mappings work correctly. This allows the system to see 
+        to ensure manual identity mappings work correctly. This allows the system to see
         consolidated bot identities via canonical_id instead of just original author_email/author_name.
-        
+
         ENHANCEMENT: Added enhanced bot pattern matching to catch bots that weren't properly
         consolidated via manual mappings, preventing bot leakage in reports.
-        
+
         Args:
             data_list: List of data dictionaries containing canonical_id field
             exclude_authors: List of author identifiers to exclude (checked against canonical_id)
-            
+
         Returns:
             Filtered list with excluded authors removed
         """
         if not exclude_authors:
             return data_list
-            
-        logger.debug(f"DEBUG EXCLUSION: Starting filter with {len(exclude_authors)} excluded authors: {exclude_authors}")
+
+        logger.debug(
+            f"DEBUG EXCLUSION: Starting filter with {len(exclude_authors)} excluded authors: {exclude_authors}"
+        )
         logger.debug(f"DEBUG EXCLUSION: Filtering {len(data_list)} items from data list")
-        
+
         excluded_lower = [author.lower() for author in exclude_authors]
         logger.debug(f"DEBUG EXCLUSION: Excluded authors (lowercase): {excluded_lower}")
-        
-        # Separate explicit excludes from bot patterns  
+
+        # Separate explicit excludes from bot patterns
         explicit_excludes = []
         bot_patterns = []
-        
+
         for exclude in excluded_lower:
-            if '[bot]' in exclude or 'bot' in exclude.split():
+            if "[bot]" in exclude or "bot" in exclude.split():
                 bot_patterns.append(exclude)
             else:
                 explicit_excludes.append(exclude)
-        
+
         logger.debug(f"DEBUG EXCLUSION: Explicit excludes: {explicit_excludes}")
         logger.debug(f"DEBUG EXCLUSION: Bot patterns: {bot_patterns}")
-        
+
         filtered_data = []
         excluded_count = 0
-        
+
         # Sample first 5 items to see data structure
         for i, item in enumerate(data_list[:5]):
-            logger.debug(f"DEBUG EXCLUSION: Sample item {i}: canonical_id='{item.get('canonical_id', '')}', "
-                        f"author_email='{item.get('author_email', '')}', author_name='{item.get('author_name', '')}', "
-                        f"author='{item.get('author', '')}', primary_name='{item.get('primary_name', '')}', "
-                        f"name='{item.get('name', '')}'")
-        
+            logger.debug(
+                f"DEBUG EXCLUSION: Sample item {i}: canonical_id='{item.get('canonical_id', '')}', "
+                f"author_email='{item.get('author_email', '')}', author_name='{item.get('author_name', '')}', "
+                f"author='{item.get('author', '')}', primary_name='{item.get('primary_name', '')}', "
+                f"name='{item.get('name', '')}'"
+            )
+
         for item in data_list:
             canonical_id = item.get("canonical_id", "")
             # Also check original author fields as fallback for data without canonical_id
             author_email = item.get("author_email", "")
             author_name = item.get("author_name", "")
-            
+
             # Check all possible author fields
             author = item.get("author", "")
             primary_name = item.get("primary_name", "")
             name = item.get("name", "")
-            
+
             # Collect all identity fields for checking
             identity_fields = [
                 canonical_id,
@@ -96,60 +102,77 @@ class NarrativeReportGenerator:
                 author_name,
                 author,
                 primary_name,
-                name
+                name,
             ]
-            
+
             should_exclude = False
             exclusion_reason = ""
-            
+
             # Check for exact matches with explicit excludes first
             for field in identity_fields:
                 if field and field.lower() in explicit_excludes:
                     should_exclude = True
                     exclusion_reason = f"exact match with '{field}' in explicit excludes"
                     break
-            
+
             # If not explicitly excluded, check for bot patterns
             if not should_exclude:
                 for field in identity_fields:
                     if not field:
                         continue
                     field_lower = field.lower()
-                    
+
                     # Enhanced bot detection: check if any field contains bot-like patterns
                     for bot_pattern in bot_patterns:
                         if bot_pattern in field_lower:
                             should_exclude = True
-                            exclusion_reason = f"bot pattern '{bot_pattern}' matches field '{field}'"
+                            exclusion_reason = (
+                                f"bot pattern '{bot_pattern}' matches field '{field}'"
+                            )
                             break
-                    
+
                     # Additional bot detection: check for common bot patterns not in explicit list
                     if not should_exclude:
-                        bot_indicators = ['[bot]', 'bot@', '-bot', 'automated', 'github-actions', 'dependabot', 'renovate']
+                        bot_indicators = [
+                            "[bot]",
+                            "bot@",
+                            "-bot",
+                            "automated",
+                            "github-actions",
+                            "dependabot",
+                            "renovate",
+                        ]
                         for indicator in bot_indicators:
                             if indicator in field_lower:
                                 # Only exclude if this bot-like pattern matches something in our exclude list
                                 for exclude in excluded_lower:
-                                    if indicator.replace('[', '').replace(']', '') in exclude or exclude in field_lower:
+                                    if (
+                                        indicator.replace("[", "").replace("]", "") in exclude
+                                        or exclude in field_lower
+                                    ):
                                         should_exclude = True
                                         exclusion_reason = f"bot indicator '{indicator}' in field '{field}' matches exclude pattern '{exclude}'"
                                         break
                                 if should_exclude:
                                     break
-                        
+
                     if should_exclude:
                         break
-            
+
             if should_exclude:
                 excluded_count += 1
                 logger.debug(f"DEBUG EXCLUSION: EXCLUDING item - {exclusion_reason}")
-                logger.debug(f"  canonical_id='{canonical_id}', primary_email='{item.get('primary_email', '')}', "
-                           f"author_email='{author_email}', author_name='{author_name}', author='{author}', "
-                           f"primary_name='{primary_name}', name='{name}'")
+                logger.debug(
+                    f"  canonical_id='{canonical_id}', primary_email='{item.get('primary_email', '')}', "
+                    f"author_email='{author_email}', author_name='{author_name}', author='{author}', "
+                    f"primary_name='{primary_name}', name='{name}'"
+                )
             else:
                 filtered_data.append(item)
-                
-        logger.debug(f"DEBUG EXCLUSION: Excluded {excluded_count} items, kept {len(filtered_data)} items")
+
+        logger.debug(
+            f"DEBUG EXCLUSION: Excluded {excluded_count} items, kept {len(filtered_data)} items"
+        )
         return filtered_data
 
     def generate_narrative_report(
@@ -170,47 +193,68 @@ class NarrativeReportGenerator:
         exclude_authors: list[str] = None,
         analysis_start_date: datetime = None,
         analysis_end_date: datetime = None,
+        cicd_data: dict[str, Any] = None,
     ) -> Path:
         """Generate comprehensive narrative report."""
         # Store analysis period for use in weekly trends calculation
         self._analysis_start_date = analysis_start_date
         self._analysis_end_date = analysis_end_date
 
-        logger.debug(f"DEBUG NARRATIVE: Starting report generation with exclude_authors: {exclude_authors}")
-        logger.debug(f"DEBUG NARRATIVE: Analysis period: {analysis_start_date} to {analysis_end_date}")
-        logger.debug(f"DEBUG NARRATIVE: Input data sizes - commits: {len(commits)}, developer_stats: {len(developer_stats)}, "
-                    f"activity_dist: {len(activity_dist)}, focus_data: {len(focus_data)}")
+        logger.debug(
+            f"DEBUG NARRATIVE: Starting report generation with exclude_authors: {exclude_authors}"
+        )
+        logger.debug(
+            f"DEBUG NARRATIVE: Analysis period: {analysis_start_date} to {analysis_end_date}"
+        )
+        logger.debug(
+            f"DEBUG NARRATIVE: Input data sizes - commits: {len(commits)}, developer_stats: {len(developer_stats)}, "
+            f"activity_dist: {len(activity_dist)}, focus_data: {len(focus_data)}"
+        )
 
         # Sample some developer_stats to see their structure
         if developer_stats:
             for i, dev in enumerate(developer_stats[:3]):
-                logger.debug(f"DEBUG NARRATIVE: Sample developer_stats[{i}]: canonical_id='{dev.get('canonical_id', '')}', "
-                           f"primary_name='{dev.get('primary_name', '')}', name='{dev.get('name', '')}', "
-                           f"primary_email='{dev.get('primary_email', '')}'")
+                logger.debug(
+                    f"DEBUG NARRATIVE: Sample developer_stats[{i}]: canonical_id='{dev.get('canonical_id', '')}', "
+                    f"primary_name='{dev.get('primary_name', '')}', name='{dev.get('name', '')}', "
+                    f"primary_email='{dev.get('primary_email', '')}'"
+                )
 
         # Filter out excluded authors in Phase 2 using canonical_id
         if exclude_authors:
-            logger.debug(f"DEBUG NARRATIVE: Applying exclusion filter with {len(exclude_authors)} excluded authors")
+            logger.debug(
+                f"DEBUG NARRATIVE: Applying exclusion filter with {len(exclude_authors)} excluded authors"
+            )
 
             original_commits = len(commits)
             commits = self._filter_excluded_authors(commits, exclude_authors)
             filtered_commits = original_commits - len(commits)
 
             # Filter other data structures too
-            logger.debug(f"DEBUG NARRATIVE: Filtering developer_stats (original: {len(developer_stats)})")
+            logger.debug(
+                f"DEBUG NARRATIVE: Filtering developer_stats (original: {len(developer_stats)})"
+            )
             developer_stats = self._filter_excluded_authors(developer_stats, exclude_authors)
-            logger.debug(f"DEBUG NARRATIVE: After filtering developer_stats: {len(developer_stats)}")
+            logger.debug(
+                f"DEBUG NARRATIVE: After filtering developer_stats: {len(developer_stats)}"
+            )
 
             activity_dist = self._filter_excluded_authors(activity_dist, exclude_authors)
             focus_data = self._filter_excluded_authors(focus_data, exclude_authors)
 
             if filtered_commits > 0:
-                logger.info(f"Filtered out {filtered_commits} commits from {len(exclude_authors)} excluded authors in narrative report")
+                logger.info(
+                    f"Filtered out {filtered_commits} commits from {len(exclude_authors)} excluded authors in narrative report"
+                )
 
             # Log remaining developers after filtering
             if developer_stats:
-                remaining_devs = [dev.get('primary_name', dev.get('name', 'Unknown')) for dev in developer_stats]
-                logger.debug(f"DEBUG NARRATIVE: Remaining developers after filtering: {remaining_devs}")
+                remaining_devs = [
+                    dev.get("primary_name", dev.get("name", "Unknown")) for dev in developer_stats
+                ]
+                logger.debug(
+                    f"DEBUG NARRATIVE: Remaining developers after filtering: {remaining_devs}"
+                )
         else:
             logger.debug("DEBUG NARRATIVE: No exclusion filter applied")
 
@@ -224,8 +268,15 @@ class NarrativeReportGenerator:
         sections.append(("Team Composition", True))
         sections.append(("Project Activity", True))
         sections.append(("Development Patterns", True))
-        sections.append(("Commit Classification Analysis", ticket_analysis.get("ml_analysis", {}).get("enabled", False)))
-        sections.append(("Pull Request Analysis", bool(pr_metrics and pr_metrics.get("total_prs", 0) > 0)))
+        sections.append(
+            (
+                "Commit Classification Analysis",
+                ticket_analysis.get("ml_analysis", {}).get("enabled", False),
+            )
+        )
+        sections.append(
+            ("Pull Request Analysis", bool(pr_metrics and pr_metrics.get("total_prs", 0) > 0))
+        )
         sections.append(("Issue Tracking", True))
         sections.append(("PM Platform Integration", bool(pm_data and "metrics" in pm_data)))
         sections.append(("Recommendations", True))
@@ -234,10 +285,14 @@ class NarrativeReportGenerator:
         active_sections = [name for name, include in sections if include]
         total_sections = len(active_sections)
 
-        logger.debug(f"Generating narrative report with {total_sections} sections: {', '.join(active_sections)}")
+        logger.debug(
+            f"Generating narrative report with {total_sections} sections: {', '.join(active_sections)}"
+        )
 
         # Create progress context for narrative report generation
-        with progress_service.progress(total_sections, "Generating narrative report sections", unit="sections") as progress_ctx:
+        with progress_service.progress(
+            total_sections, "Generating narrative report sections", unit="sections"
+        ) as progress_ctx:
             report = StringIO()
 
             # Header
@@ -257,7 +312,15 @@ class NarrativeReportGenerator:
             # Executive Summary
             progress_service.set_description(progress_ctx, "Generating Executive Summary")
             report.write("## Executive Summary\n\n")
-            self._write_executive_summary(report, commits, developer_stats, ticket_analysis, prs, branch_health_metrics, pm_data)
+            self._write_executive_summary(
+                report,
+                commits,
+                developer_stats,
+                ticket_analysis,
+                prs,
+                branch_health_metrics,
+                pm_data,
+            )
             progress_service.update(progress_ctx)
 
             # Add ChatGPT qualitative insights if available
@@ -271,13 +334,17 @@ class NarrativeReportGenerator:
             # Team Composition
             progress_service.set_description(progress_ctx, "Generating Team Composition")
             report.write("\n## Team Composition\n\n")
-            self._write_team_composition(report, developer_stats, focus_data, commits, prs, ticket_analysis, weeks)
+            self._write_team_composition(
+                report, developer_stats, focus_data, commits, prs, ticket_analysis, weeks
+            )
             progress_service.update(progress_ctx)
 
             # Project Activity
             progress_service.set_description(progress_ctx, "Generating Project Activity")
             report.write("\n## Project Activity\n\n")
-            self._write_project_activity(report, activity_dist, commits, branch_health_metrics, ticket_analysis, weeks)
+            self._write_project_activity(
+                report, activity_dist, commits, branch_health_metrics, ticket_analysis, weeks
+            )
             progress_service.update(progress_ctx)
 
             # Development Patterns
@@ -288,7 +355,9 @@ class NarrativeReportGenerator:
 
             # Commit Classification Analysis (if ML analysis is available)
             if ticket_analysis.get("ml_analysis", {}).get("enabled", False):
-                progress_service.set_description(progress_ctx, "Generating Commit Classification Analysis")
+                progress_service.set_description(
+                    progress_ctx, "Generating Commit Classification Analysis"
+                )
                 report.write("\n## Commit Classification Analysis\n\n")
                 self._write_commit_classification_analysis(report, ticket_analysis)
                 progress_service.update(progress_ctx)
@@ -311,6 +380,13 @@ class NarrativeReportGenerator:
                 progress_service.set_description(progress_ctx, "Generating PM Platform Integration")
                 report.write("\n## PM Platform Integration\n\n")
                 self._write_pm_insights(report, pm_data)
+                progress_service.update(progress_ctx)
+
+            # CI/CD Pipeline Health
+            if cicd_data and cicd_data.get("pipelines"):
+                progress_service.set_description(progress_ctx, "Generating CI/CD Pipeline Health")
+                report.write("\n## CI/CD Pipeline Health\n\n")
+                self._write_cicd_health(report, cicd_data)
                 progress_service.update(progress_ctx)
 
             # Recommendations
@@ -348,37 +424,43 @@ class NarrativeReportGenerator:
         report.write(f"- **Active Developers**: {total_developers}\n")
         report.write(f"- **Lines Changed**: {total_lines:,}\n")
         report.write(f"- **Ticket Coverage**: {ticket_analysis['commit_coverage_pct']:.1f}%\n")
-        
+
         # PM Platform Story Points (if available)
         if pm_data and "metrics" in pm_data:
             metrics = pm_data.get("metrics", {})
             story_analysis = metrics.get("story_point_analysis", {})
             pm_story_points = story_analysis.get("pm_total_story_points", 0)
             git_story_points = story_analysis.get("git_total_story_points", 0)
-            
+
             if pm_story_points > 0 or git_story_points > 0:
-                report.write(f"- **PM Story Points**: {pm_story_points:,} (platform) / {git_story_points:,} (commit-linked)\n")
-        
+                report.write(
+                    f"- **PM Story Points**: {pm_story_points:,} (platform) / {git_story_points:,} (commit-linked)\n"
+                )
+
         # Add repository branch health summary
         if branch_health_metrics:
             # Aggregate branch health across all repositories
             total_branches = 0
             total_stale = 0
             overall_health_scores = []
-            
+
             for _repo_name, metrics in branch_health_metrics.items():
                 summary = metrics.get("summary", {})
                 health_indicators = metrics.get("health_indicators", {})
-                
+
                 total_branches += summary.get("total_branches", 0)
                 total_stale += summary.get("stale_branches", 0)
-                
+
                 if health_indicators.get("overall_health_score") is not None:
                     overall_health_scores.append(health_indicators["overall_health_score"])
-            
+
             # Calculate average health score
-            avg_health_score = sum(overall_health_scores) / len(overall_health_scores) if overall_health_scores else 0
-            
+            avg_health_score = (
+                sum(overall_health_scores) / len(overall_health_scores)
+                if overall_health_scores
+                else 0
+            )
+
             # Determine health status
             if avg_health_score >= 80:
                 health_status = "Excellent"
@@ -388,9 +470,11 @@ class NarrativeReportGenerator:
                 health_status = "Fair"
             else:
                 health_status = "Needs Attention"
-            
-            report.write(f"- **Branch Health**: {health_status} ({avg_health_score:.0f}/100) - "
-                        f"{total_branches} branches, {total_stale} stale\n")
+
+            report.write(
+                f"- **Branch Health**: {health_status} ({avg_health_score:.0f}/100) - "
+                f"{total_branches} branches, {total_stale} stale\n"
+            )
 
         # Projects worked on - show full list instead of just count
         projects = set(c.get("project_key", "UNKNOWN") for c in commits)
@@ -404,19 +488,19 @@ class NarrativeReportGenerator:
             for commit in commits:
                 canonical_id = commit.get("canonical_id", "")
                 period_commit_counts[canonical_id] = period_commit_counts.get(canonical_id, 0) + 1
-            
+
             # Find the developer with most commits in this period
             if period_commit_counts:
                 top_canonical_id = max(period_commit_counts, key=period_commit_counts.get)
                 top_period_commits = period_commit_counts[top_canonical_id]
-                
+
                 # Find the developer stats entry for this canonical_id
                 top_dev = None
                 for dev in developer_stats:
                     if dev.get("canonical_id") == top_canonical_id:
                         top_dev = dev
                         break
-                
+
                 if top_dev:
                     # Handle both 'primary_name' (production) and 'name' (tests) for backward compatibility
                     dev_name = top_dev.get("primary_name", top_dev.get("name", "Unknown Developer"))
@@ -427,9 +511,7 @@ class NarrativeReportGenerator:
                 # Fallback: use first developer but with 0 commits (shouldn't happen with proper filtering)
                 top_dev = developer_stats[0]
                 dev_name = top_dev.get("primary_name", top_dev.get("name", "Unknown Developer"))
-                report.write(
-                    f"- **Top Contributor**: {dev_name} with 0 commits\n"
-                )
+                report.write(f"- **Top Contributor**: {dev_name} with 0 commits\n")
 
             # Calculate team average activity
             if commits:
@@ -443,7 +525,9 @@ class NarrativeReportGenerator:
 
                 # BUGFIX: Basic team activity assessment using only active developers in period
                 active_devs_in_period = len(period_commit_counts) if period_commit_counts else 0
-                avg_commits_per_dev = len(commits) / active_devs_in_period if active_devs_in_period > 0 else 0
+                avg_commits_per_dev = (
+                    len(commits) / active_devs_in_period if active_devs_in_period > 0 else 0
+                )
                 if avg_commits_per_dev >= 10:
                     activity_assessment = "high activity"
                 elif avg_commits_per_dev >= 5:
@@ -456,32 +540,32 @@ class NarrativeReportGenerator:
                 )
 
     def _aggregate_commit_classifications(
-        self, 
-        ticket_analysis: dict[str, Any], 
+        self,
+        ticket_analysis: dict[str, Any],
         commits: list[dict[str, Any]] = None,
-        developer_stats: list[dict[str, Any]] = None
+        developer_stats: list[dict[str, Any]] = None,
     ) -> dict[str, dict[str, int]]:
         """Aggregate commit classifications per developer.
-        
+
         WHY: This method provides detailed breakdown of commit types per developer,
         replacing simple commit counts with actionable insights into what types of
         work each developer is doing. This helps identify patterns and training needs.
-        
+
         DESIGN DECISION: Classify ALL commits (tracked and untracked) into proper
         categories (feature, bug_fix, refactor, etc.) rather than using 'tracked_work'
         as a category. For tracked commits, use ticket information to enhance accuracy.
-        
+
         Args:
             ticket_analysis: Ticket analysis data containing classification info
             commits: Optional list of all commits for complete categorization
             developer_stats: Developer statistics for mapping canonical IDs
-            
+
         Returns:
             Dictionary mapping developer canonical_id to category counts:
             {
                 'dev_canonical_id': {
                     'feature': 15,
-                    'bug_fix': 8, 
+                    'bug_fix': 8,
                     'maintenance': 5,
                     ...
                 }
@@ -490,35 +574,38 @@ class NarrativeReportGenerator:
         # Defensive type checking
         if not isinstance(ticket_analysis, dict):
             return {}
-        
+
         if commits is not None and not isinstance(commits, list):
             # Log the error and continue without commits data
             import logging
+
             logger = logging.getLogger(__name__)
             logger.warning(f"Expected commits to be list or None, got {type(commits)}: {commits}")
             commits = None
-        
+
         if developer_stats is not None and not isinstance(developer_stats, list):
             developer_stats = None
-            
+
         classifications = {}
-        
+
         # If we have full commits data, classify ALL commits properly
         if commits and isinstance(commits, list):
             # Import the ticket extractor for classification
             try:
                 from ..extractors.ml_tickets import MLTicketExtractor
+
                 extractor = MLTicketExtractor(enable_ml=True)
             except Exception:
                 # Fallback to basic ticket extractor
                 from ..extractors.tickets import TicketExtractor
+
                 extractor = TicketExtractor()
-            
+
             # Classify all commits
             for commit in commits:
                 canonical_id = commit.get("canonical_id", "Unknown")
                 message = commit.get("message", "")
-                
+
                 # Get files_changed in proper format for classification
                 files_changed = commit.get("files_changed", [])
                 if isinstance(files_changed, int):
@@ -526,138 +613,147 @@ class NarrativeReportGenerator:
                     files_changed = []
                 elif not isinstance(files_changed, list):
                     files_changed = []
-                
+
                 # Use ticket information to enhance classification for tracked commits
                 ticket_refs = commit.get("ticket_references", [])
-                
-                if ticket_refs and hasattr(extractor, 'categorize_commit_with_confidence'):
+
+                if ticket_refs and hasattr(extractor, "categorize_commit_with_confidence"):
                     # Use ML categorization with confidence for tracked commits
                     try:
                         result = extractor.categorize_commit_with_confidence(message, files_changed)
-                        category = result['category']
+                        category = result["category"]
                         # For tracked commits with ticket info, try to infer better category from ticket type
-                        category = self._enhance_category_with_ticket_info(category, ticket_refs, message)
+                        category = self._enhance_category_with_ticket_info(
+                            category, ticket_refs, message
+                        )
                     except Exception:
                         # Fallback to basic categorization
                         category = extractor.categorize_commit(message)
                 else:
                     # Use basic categorization for untracked commits
                     category = extractor.categorize_commit(message)
-                
+
                 # Initialize developer classification if not exists
                 if canonical_id not in classifications:
                     classifications[canonical_id] = {}
-                
+
                 # Initialize category count if not exists
                 if category not in classifications[canonical_id]:
                     classifications[canonical_id][category] = 0
-                
+
                 # Increment category count
                 classifications[canonical_id][category] += 1
-        
+
         else:
             # Fallback: Only process untracked commits (legacy behavior)
             untracked_commits = ticket_analysis.get("untracked_commits", [])
-            
+
             # Process untracked commits (these have category information)
             for commit in untracked_commits:
                 author = commit.get("author", "Unknown")
                 category = commit.get("category", "other")
-                
+
                 # Map author to canonical_id if developer_stats is available
                 canonical_id = author  # fallback
                 if developer_stats:
                     for dev in developer_stats:
                         # Check multiple possible name mappings
-                        if (dev.get("primary_name") == author or 
-                            dev.get("primary_email") == author or
-                            dev.get("canonical_id") == author):
+                        if (
+                            dev.get("primary_name") == author
+                            or dev.get("primary_email") == author
+                            or dev.get("canonical_id") == author
+                        ):
                             canonical_id = dev.get("canonical_id", author)
                             break
-                
+
                 if canonical_id not in classifications:
                     classifications[canonical_id] = {}
-                
+
                 if category not in classifications[canonical_id]:
                     classifications[canonical_id][category] = 0
-                
+
                 classifications[canonical_id][category] += 1
-        
+
         return classifications
-    
-    def _enhance_category_with_ticket_info(self, category: str, ticket_refs: list, message: str) -> str:
+
+    def _enhance_category_with_ticket_info(
+        self, category: str, ticket_refs: list, message: str
+    ) -> str:
         """Enhance commit categorization using ticket reference information.
-        
+
         WHY: For tracked commits, we can often infer better categories by examining
         the ticket references and message content. This improves classification accuracy
         for tracked work versus relying purely on message patterns.
-        
+
         Args:
             category: Base category from ML/rule-based classification
             ticket_refs: List of ticket references for this commit
             message: Commit message
-            
+
         Returns:
             Enhanced category, potentially refined based on ticket information
         """
         if not ticket_refs:
             return category
-        
+
         # Try to extract insights from ticket references and message
         message_lower = message.lower()
-        
+
         # Look for ticket type patterns in the message or ticket IDs
         # These patterns suggest specific categories regardless of base classification
-        if any(pattern in message_lower for pattern in ['hotfix', 'critical', 'urgent', 'prod', 'production']):
-            return 'bug_fix'  # Production/critical issues are typically bug fixes
-        
-        if any(pattern in message_lower for pattern in ['feature', 'epic', 'story', 'user story']):
-            return 'feature'  # Explicitly mentioned features
-        
+        if any(
+            pattern in message_lower
+            for pattern in ["hotfix", "critical", "urgent", "prod", "production"]
+        ):
+            return "bug_fix"  # Production/critical issues are typically bug fixes
+
+        if any(pattern in message_lower for pattern in ["feature", "epic", "story", "user story"]):
+            return "feature"  # Explicitly mentioned features
+
         # Look for JIRA/GitHub issue patterns that might indicate bug fixes
         for ticket_ref in ticket_refs:
             if isinstance(ticket_ref, dict):
-                ticket_id = ticket_ref.get('id', '').lower()
+                ticket_id = ticket_ref.get("id", "").lower()
             else:
                 ticket_id = str(ticket_ref).lower()
-            
+
             # Common bug fix patterns in ticket IDs
-            if any(pattern in ticket_id for pattern in ['bug', 'fix', 'issue', 'defect']):
-                return 'bug_fix'
-            
+            if any(pattern in ticket_id for pattern in ["bug", "fix", "issue", "defect"]):
+                return "bug_fix"
+
             # Feature patterns in ticket IDs
-            if any(pattern in ticket_id for pattern in ['feat', 'feature', 'epic', 'story']):
-                return 'feature'
-        
+            if any(pattern in ticket_id for pattern in ["feat", "feature", "epic", "story"]):
+                return "feature"
+
         # If no specific enhancement found, return original category
         return category
-    
+
     def _get_project_classifications(
         self, project: str, commits: list[dict[str, Any]], ticket_analysis: dict[str, Any]
     ) -> dict[str, int]:
         """Get commit classification breakdown for a specific project.
-        
+
         WHY: This method filters classification data to show only commits belonging
         to a specific project, enabling project-specific classification insights
         in the project activity section.
-        
+
         DESIGN DECISION: Classify ALL commits (tracked and untracked) for this project
         into proper categories rather than lumping tracked commits as 'tracked_work'.
-        
+
         Args:
             project: Project key to filter by
             commits: List of all commits for mapping
             ticket_analysis: Ticket analysis data containing classifications
-            
+
         Returns:
             Dictionary mapping category names to commit counts for this project:
             {'feature': 15, 'bug_fix': 8, 'refactor': 5, ...}
         """
         if not isinstance(ticket_analysis, dict):
             return {}
-        
+
         project_classifications = {}
-        
+
         # First, try to use already classified untracked commits
         untracked_commits = ticket_analysis.get("untracked_commits", [])
         for commit in untracked_commits:
@@ -667,28 +763,30 @@ class NarrativeReportGenerator:
                 if category not in project_classifications:
                     project_classifications[category] = 0
                 project_classifications[category] += 1
-        
+
         # If we have classifications from untracked commits, use those
         if project_classifications:
             return project_classifications
-        
+
         # Fallback: If no untracked commits data, classify all commits for this project
         if isinstance(commits, list):
             # Import the ticket extractor for classification
             try:
                 from ..extractors.ml_tickets import MLTicketExtractor
+
                 extractor = MLTicketExtractor(enable_ml=True)
             except Exception:
                 # Fallback to basic ticket extractor
                 from ..extractors.tickets import TicketExtractor
+
                 extractor = TicketExtractor()
-            
+
             # Classify all commits for this project
             for commit in commits:
                 commit_project = commit.get("project_key", "UNKNOWN")
                 if commit_project == project:
                     message = commit.get("message", "")
-                    
+
                     # Get files_changed in proper format for classification
                     files_changed = commit.get("files_changed", [])
                     if isinstance(files_changed, int):
@@ -696,55 +794,59 @@ class NarrativeReportGenerator:
                         files_changed = []
                     elif not isinstance(files_changed, list):
                         files_changed = []
-                    
+
                     # Use ticket information to enhance classification for tracked commits
                     ticket_refs = commit.get("ticket_references", [])
-                    
-                    if ticket_refs and hasattr(extractor, 'categorize_commit_with_confidence'):
+
+                    if ticket_refs and hasattr(extractor, "categorize_commit_with_confidence"):
                         # Use ML categorization with confidence for tracked commits
                         try:
-                            result = extractor.categorize_commit_with_confidence(message, files_changed)
-                            category = result['category']
+                            result = extractor.categorize_commit_with_confidence(
+                                message, files_changed
+                            )
+                            category = result["category"]
                             # For tracked commits with ticket info, try to infer better category from ticket type
-                            category = self._enhance_category_with_ticket_info(category, ticket_refs, message)
+                            category = self._enhance_category_with_ticket_info(
+                                category, ticket_refs, message
+                            )
                         except Exception:
                             # Fallback to basic categorization
                             category = extractor.categorize_commit(message)
                     else:
                         # Use basic categorization for untracked commits
                         category = extractor.categorize_commit(message)
-                    
+
                     # Initialize category count if not exists
                     if category not in project_classifications:
                         project_classifications[category] = 0
-                    
+
                     # Increment category count
                     project_classifications[category] += 1
-        
+
         return project_classifications
-    
+
     def _format_category_name(self, category: str) -> str:
         """Convert internal category names to user-friendly display names.
-        
+
         Args:
             category: Internal category name (e.g., 'bug_fix', 'feature', 'refactor')
-            
+
         Returns:
             User-friendly display name (e.g., 'Bug Fixes', 'Features', 'Refactoring')
         """
         category_mapping = {
-            'bug_fix': 'Bug Fixes',
-            'feature': 'Features', 
-            'refactor': 'Refactoring',
-            'documentation': 'Documentation',
-            'maintenance': 'Maintenance',
-            'test': 'Testing',
-            'style': 'Code Style',
-            'build': 'Build/CI',
-            'other': 'Other'
+            "bug_fix": "Bug Fixes",
+            "feature": "Features",
+            "refactor": "Refactoring",
+            "documentation": "Documentation",
+            "maintenance": "Maintenance",
+            "test": "Testing",
+            "style": "Code Style",
+            "build": "Build/CI",
+            "other": "Other",
         }
-        return category_mapping.get(category, category.replace('_', ' ').title())
-    
+        return category_mapping.get(category, category.replace("_", " ").title())
+
     def _calculate_weekly_classification_percentages(
         self,
         commits: list[dict[str, Any]],
@@ -752,18 +854,18 @@ class NarrativeReportGenerator:
         project_key: str = None,
         weeks: int = 4,
         analysis_start_date: datetime = None,
-        analysis_end_date: datetime = None
+        analysis_end_date: datetime = None,
     ) -> list[dict[str, Any]]:
         """Calculate weekly classification percentages for trend lines.
-        
+
         WHY: This method creates detailed week-by-week breakdown of commit classifications
         showing how work type distribution changes over time, providing granular insights
         into development patterns and workload shifts.
-        
+
         DESIGN DECISION: Only show weeks that contain actual commit activity within the
         analysis period. This prevents phantom "No activity" weeks for periods outside
         the actual data collection range, providing more accurate and meaningful reports.
-        
+
         Args:
             commits: List of all commits with timestamps and classifications
             developer_id: Optional canonical developer ID to filter by
@@ -771,7 +873,7 @@ class NarrativeReportGenerator:
             weeks: Total analysis period in weeks
             analysis_start_date: Analysis period start (from CLI)
             analysis_end_date: Analysis period end (from CLI)
-            
+
         Returns:
             List of weekly data dictionaries:
             [
@@ -787,20 +889,20 @@ class NarrativeReportGenerator:
         """
         if not commits or weeks < 1:
             return []
-        
+
         # Filter commits by developer or project if specified
         filtered_commits = []
         for commit in commits:
-            if developer_id and commit.get('canonical_id') != developer_id:
+            if developer_id and commit.get("canonical_id") != developer_id:
                 continue
-            if project_key and commit.get('project_key') != project_key:
+            if project_key and commit.get("project_key") != project_key:
                 continue
             filtered_commits.append(commit)
-        
+
         # If no commits match the filter, return empty
         if not filtered_commits:
             return []
-        
+
         # Determine the analysis period bounds
         if analysis_start_date and analysis_end_date:
             # Use the exact analysis period from the CLI
@@ -811,29 +913,29 @@ class NarrativeReportGenerator:
             # This ensures we only show weeks that have potential for activity
             filtered_timestamps = []
             for commit in filtered_commits:
-                timestamp = commit.get('timestamp')
+                timestamp = commit.get("timestamp")
                 if timestamp:
                     # Ensure timezone consistency
-                    if hasattr(timestamp, 'tzinfo'):
+                    if hasattr(timestamp, "tzinfo"):
                         if timestamp.tzinfo is None:
                             timestamp = timestamp.replace(tzinfo=timezone.utc)
                         elif timestamp.tzinfo != timezone.utc:
                             timestamp = timestamp.astimezone(timezone.utc)
                     filtered_timestamps.append(timestamp)
-            
+
             if not filtered_timestamps:
                 return []
-            
+
             # Use the actual range of commits for this developer/project
             analysis_start = min(filtered_timestamps)
             analysis_end = max(filtered_timestamps)
-        
+
         # Generate ALL weeks in the analysis period (not just weeks with commits)
         # This ensures complete week coverage from start to end
         # FIX: Only include complete weeks (Monday-Sunday) within the analysis period
         analysis_weeks = []
         current_week_start = self._get_week_start(analysis_start)
-        
+
         # Only include weeks where the entire week (including Sunday) is within the analysis period
         while current_week_start <= analysis_end:
             week_end = current_week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
@@ -841,79 +943,89 @@ class NarrativeReportGenerator:
             if week_end <= analysis_end:
                 analysis_weeks.append(current_week_start)
             current_week_start += timedelta(weeks=1)
-        
+
         # Group commits by week
         weekly_commits = {}
         for week_start in analysis_weeks:
             weekly_commits[week_start] = []
-        
+
         for commit in filtered_commits:
-            timestamp = commit.get('timestamp')
+            timestamp = commit.get("timestamp")
             if not timestamp:
                 continue
-            
+
             # Ensure timezone consistency
-            if hasattr(timestamp, 'tzinfo'):
+            if hasattr(timestamp, "tzinfo"):
                 if timestamp.tzinfo is None:
                     timestamp = timestamp.replace(tzinfo=timezone.utc)
                 elif timestamp.tzinfo != timezone.utc:
                     timestamp = timestamp.astimezone(timezone.utc)
-            
+
             # Only include commits within the analysis period bounds
-            if analysis_start_date and analysis_end_date and not (analysis_start <= timestamp <= analysis_end):
+            if (
+                analysis_start_date
+                and analysis_end_date
+                and not (analysis_start <= timestamp <= analysis_end)
+            ):
                 continue
-            
+
             # Get week start (Monday) for this commit
             commit_week_start = self._get_week_start(timestamp)
-            
+
             # Only include commits in weeks we're tracking
             if commit_week_start in weekly_commits:
                 weekly_commits[commit_week_start].append(commit)
-        
+
         # Import classifiers
         try:
             from ..extractors.ml_tickets import MLTicketExtractor
+
             extractor = MLTicketExtractor(enable_ml=True)
         except Exception:
             from ..extractors.tickets import TicketExtractor
+
             extractor = TicketExtractor()
-        
+
         # Calculate classifications for each week in the analysis period
         # This includes both weeks with activity and weeks with no commits
         weekly_data = []
         previous_percentages = {}
-        
+
         for week_start in analysis_weeks:
             week_commits = weekly_commits[week_start]
             has_activity = len(week_commits) > 0
-            
+
             # Classify commits for this week
             week_classifications = {}
             week_percentages = {}
-            
+
             if has_activity:
                 for commit in week_commits:
-                    message = commit.get('message', '')
-                    files_changed = commit.get('files_changed', [])
+                    message = commit.get("message", "")
+                    files_changed = commit.get("files_changed", [])
                     if isinstance(files_changed, int) or not isinstance(files_changed, list):
                         files_changed = []
-                    
-                    ticket_refs = commit.get('ticket_references', [])
-                    
-                    if ticket_refs and hasattr(extractor, 'categorize_commit_with_confidence'):
+
+                    ticket_refs = commit.get("ticket_references", [])
+
+                    if ticket_refs and hasattr(extractor, "categorize_commit_with_confidence"):
                         try:
-                            result = extractor.categorize_commit_with_confidence(message, files_changed)
-                            category = result['category']
-                            category = self._enhance_category_with_ticket_info(category, ticket_refs, message)
+                            result = extractor.categorize_commit_with_confidence(
+                                message, files_changed
+                            )
+                            category = result["category"]
+                            category = self._enhance_category_with_ticket_info(
+                                category, ticket_refs, message
+                            )
                         except Exception:
                             category = extractor.categorize_commit(message)
                     else:
                         category = extractor.categorize_commit(message)
-                    
+
                     if category not in week_classifications:
                         week_classifications[category] = 0
                     week_classifications[category] += 1
-                
+
                 # Calculate percentages for weeks with activity
                 total_commits = sum(week_classifications.values())
                 if total_commits > 0:
@@ -922,7 +1034,7 @@ class NarrativeReportGenerator:
                         if percentage >= 5.0:  # Only include significant categories
                             display_name = self._format_category_name(category)
                             week_percentages[display_name] = percentage
-            
+
             # Calculate changes from previous week
             changes = {}
             if previous_percentages and week_percentages:
@@ -932,77 +1044,85 @@ class NarrativeReportGenerator:
                     change = current_pct - prev_pct
                     if abs(change) >= 1.0:  # Only show changes >= 1%
                         changes[category] = change
-            
+
             # Format week display
             week_end = week_start + timedelta(days=6)
             week_display = f"{week_start.strftime('%b %d')}-{week_end.strftime('%d')}"
-            
+
             # Calculate ticket coverage stats for this week
             total_commits_week = len(week_commits)
-            commits_with_tickets = sum(1 for commit in week_commits if commit.get('ticket_references'))
-            ticket_coverage_pct = (commits_with_tickets / total_commits_week * 100) if total_commits_week > 0 else 0
-            
+            commits_with_tickets = sum(
+                1 for commit in week_commits if commit.get("ticket_references")
+            )
+            ticket_coverage_pct = (
+                (commits_with_tickets / total_commits_week * 100) if total_commits_week > 0 else 0
+            )
+
             # Calculate activity score for this week
             week_activity_score = 0.0
             if total_commits_week > 0:
                 # Aggregate weekly metrics for activity score
-                total_lines_added = sum(commit.get('lines_added', 0) for commit in week_commits)
-                total_lines_deleted = sum(commit.get('lines_deleted', 0) for commit in week_commits)
-                total_files_changed = sum(commit.get('files_changed_count', 0) for commit in week_commits)
-                
+                total_lines_added = sum(commit.get("lines_added", 0) for commit in week_commits)
+                total_lines_deleted = sum(commit.get("lines_deleted", 0) for commit in week_commits)
+                total_files_changed = sum(
+                    commit.get("files_changed_count", 0) for commit in week_commits
+                )
+
                 week_metrics = {
-                    'commits': total_commits_week,
-                    'prs_involved': 0,  # PR data not available in commit data
-                    'lines_added': total_lines_added,
-                    'lines_removed': total_lines_deleted,
-                    'files_changed_count': total_files_changed,
-                    'complexity_delta': 0  # Complexity data not available
+                    "commits": total_commits_week,
+                    "prs_involved": 0,  # PR data not available in commit data
+                    "lines_added": total_lines_added,
+                    "lines_removed": total_lines_deleted,
+                    "files_changed_count": total_files_changed,
+                    "complexity_delta": 0,  # Complexity data not available
                 }
-                
+
                 activity_result = self.activity_scorer.calculate_activity_score(week_metrics)
-                week_activity_score = activity_result.get('normalized_score', 0.0)
-            
-            weekly_data.append({
-                'week_start': week_start,
-                'week_display': week_display,
-                'classifications': week_percentages,
-                'classification_counts': week_classifications,  # Absolute counts
-                'changes': changes,
-                'has_activity': has_activity,
-                'total_commits': total_commits_week,
-                'commits_with_tickets': commits_with_tickets,
-                'ticket_coverage': ticket_coverage_pct,
-                'activity_score': week_activity_score
-            })
-            
+                week_activity_score = activity_result.get("normalized_score", 0.0)
+
+            weekly_data.append(
+                {
+                    "week_start": week_start,
+                    "week_display": week_display,
+                    "classifications": week_percentages,
+                    "classification_counts": week_classifications,  # Absolute counts
+                    "changes": changes,
+                    "has_activity": has_activity,
+                    "total_commits": total_commits_week,
+                    "commits_with_tickets": commits_with_tickets,
+                    "ticket_coverage": ticket_coverage_pct,
+                    "activity_score": week_activity_score,
+                }
+            )
+
             # Update previous percentages only if there was activity
             if has_activity and week_percentages:
                 previous_percentages = week_percentages.copy()
-        
+
         return weekly_data
-    
+
     def _calculate_classification_trends(
-        self, 
-        commits: list[dict[str, Any]], 
-        developer_id: str = None, 
+        self,
+        commits: list[dict[str, Any]],
+        developer_id: str = None,
         project_key: str = None,
-        weeks: int = 4
+        weeks: int = 4,
     ) -> dict[str, float]:
         """Calculate week-over-week changes in classification percentages.
-        
+
         WHY: This method provides trend analysis showing how development patterns
         change over time, helping identify shifts in work type distribution.
-        
+
         DESIGN DECISION: Compare the most recent half of the analysis period
         with the earlier half to show meaningful trends. For shorter periods,
         compare week-to-week. Use percentage point changes for clarity.
-        
+
         Args:
             commits: List of all commits with timestamps and classifications
             developer_id: Optional canonical developer ID to filter by
             project_key: Optional project key to filter by
             weeks: Total analysis period in weeks
-            
+
         Returns:
             Dictionary mapping category names to percentage point changes:
             {'Features': 15.2, 'Bug Fixes': -8.1, 'Refactoring': 3.4}
@@ -1010,35 +1130,35 @@ class NarrativeReportGenerator:
         """
         if not commits or len(commits) < 2:
             return {}
-        
+
         # Filter commits by developer or project if specified
         filtered_commits = []
         for commit in commits:
-            if developer_id and commit.get('canonical_id') != developer_id:
+            if developer_id and commit.get("canonical_id") != developer_id:
                 continue
-            if project_key and commit.get('project_key') != project_key:
+            if project_key and commit.get("project_key") != project_key:
                 continue
             filtered_commits.append(commit)
-        
+
         if len(filtered_commits) < 2:
             return {}
-        
+
         # Sort commits by timestamp
         def safe_timestamp_key(commit):
-            ts = commit.get('timestamp')
+            ts = commit.get("timestamp")
             if ts is None:
                 return datetime.min.replace(tzinfo=timezone.utc)
-            if hasattr(ts, 'tzinfo'):
+            if hasattr(ts, "tzinfo"):
                 if ts.tzinfo is None:
                     ts = ts.replace(tzinfo=timezone.utc)
                 return ts
             return ts
-        
+
         sorted_commits = sorted(filtered_commits, key=safe_timestamp_key)
-        
+
         if len(sorted_commits) < 4:  # Need at least 4 commits for meaningful trend
             return {}
-        
+
         # Determine time split strategy based on analysis period
         if weeks <= 2:
             # For short periods (1-2 weeks), compare last 3 days vs previous 3+ days
@@ -1049,104 +1169,108 @@ class NarrativeReportGenerator:
         else:
             # For longer periods, compare recent half vs older half
             cutoff_days = (weeks * 7) // 2
-        
+
         # Calculate cutoff timestamp
         latest_timestamp = safe_timestamp_key(sorted_commits[-1])
         cutoff_timestamp = latest_timestamp - timedelta(days=cutoff_days)
-        
+
         # Split commits into recent and previous periods
         recent_commits = [c for c in sorted_commits if safe_timestamp_key(c) >= cutoff_timestamp]
         previous_commits = [c for c in sorted_commits if safe_timestamp_key(c) < cutoff_timestamp]
-        
+
         if not recent_commits or not previous_commits:
             return {}
-        
+
         # Classify commits for both periods
         def get_period_classifications(period_commits):
             period_classifications = {}
-            
+
             # Import classifiers
             try:
                 from ..extractors.ml_tickets import MLTicketExtractor
+
                 extractor = MLTicketExtractor(enable_ml=True)
             except Exception:
                 from ..extractors.tickets import TicketExtractor
+
                 extractor = TicketExtractor()
-            
+
             for commit in period_commits:
-                message = commit.get('message', '')
-                files_changed = commit.get('files_changed', [])
+                message = commit.get("message", "")
+                files_changed = commit.get("files_changed", [])
                 if isinstance(files_changed, int) or not isinstance(files_changed, list):
                     files_changed = []
-                
+
                 # Get ticket info for enhancement
-                ticket_refs = commit.get('ticket_references', [])
-                
-                if ticket_refs and hasattr(extractor, 'categorize_commit_with_confidence'):
+                ticket_refs = commit.get("ticket_references", [])
+
+                if ticket_refs and hasattr(extractor, "categorize_commit_with_confidence"):
                     try:
                         result = extractor.categorize_commit_with_confidence(message, files_changed)
-                        category = result['category']
-                        category = self._enhance_category_with_ticket_info(category, ticket_refs, message)
+                        category = result["category"]
+                        category = self._enhance_category_with_ticket_info(
+                            category, ticket_refs, message
+                        )
                     except Exception:
                         category = extractor.categorize_commit(message)
                 else:
                     category = extractor.categorize_commit(message)
-                
+
                 if category not in period_classifications:
                     period_classifications[category] = 0
                 period_classifications[category] += 1
-            
+
             return period_classifications
-        
+
         recent_classifications = get_period_classifications(recent_commits)
         previous_classifications = get_period_classifications(previous_commits)
-        
+
         # Calculate percentage changes
         trends = {}
         all_categories = set(recent_classifications.keys()) | set(previous_classifications.keys())
-        
+
         total_recent = sum(recent_classifications.values())
         total_previous = sum(previous_classifications.values())
-        
+
         if total_recent == 0 or total_previous == 0:
             return {}
-        
+
         for category in all_categories:
             recent_count = recent_classifications.get(category, 0)
             previous_count = previous_classifications.get(category, 0)
-            
+
             recent_pct = (recent_count / total_recent) * 100
             previous_pct = (previous_count / total_previous) * 100
-            
+
             change = recent_pct - previous_pct
-            
+
             # Only include significant changes (>= 5% absolute change)
             if abs(change) >= 5.0:
                 display_name = self._format_category_name(category)
                 trends[display_name] = change
-        
+
         return trends
-    
+
     def _format_trend_line(self, trends: dict[str, float], prefix: str = "📈 Trends") -> str:
         """Format trend data into a readable line with appropriate icons.
-        
+
         WHY: This method provides consistent formatting for trend display across
         different sections of the report, using visual indicators to highlight
         increases, decreases, and overall patterns.
-        
+
         Args:
             trends: Dictionary of category name to percentage change
             prefix: Text prefix for the trend line
-            
+
         Returns:
             Formatted trend line string, or empty string if no significant trends
         """
         if not trends:
             return ""
-        
+
         # Sort by absolute change magnitude (largest first)
         sorted_trends = sorted(trends.items(), key=lambda x: abs(x[1]), reverse=True)
-        
+
         trend_parts = []
         for category, change in sorted_trends[:4]:  # Show top 4 trends
             if change > 0:
@@ -1155,27 +1279,24 @@ class NarrativeReportGenerator:
             else:
                 icon = "⬇️"
                 sign = ""
-            
+
             trend_parts.append(f"{category} {icon}{sign}{change:.0f}%")
-        
+
         if trend_parts:
             return f"{prefix}: {', '.join(trend_parts)}"
-        
+
         return ""
-    
+
     def _write_weekly_trend_lines(
-        self,
-        report: StringIO,
-        weekly_trends: list[dict[str, Any]],
-        prefix: str = ""
+        self, report: StringIO, weekly_trends: list[dict[str, Any]], prefix: str = ""
     ) -> None:
         """Write weekly trend lines showing week-by-week classification changes.
-        
+
         WHY: This method provides detailed weekly breakdown of work patterns,
         showing how development focus shifts over time with specific percentages
         and change indicators from previous weeks. Shows ALL weeks in the analysis
         period, including weeks with no activity for complete timeline coverage.
-        
+
         Args:
             report: StringIO buffer to write to
             weekly_trends: List of weekly classification data (all weeks in period)
@@ -1183,22 +1304,22 @@ class NarrativeReportGenerator:
         """
         if not weekly_trends:
             return
-        
+
         report.write(f"- {prefix}Weekly Trends:\n")
-        
+
         for i, week_data in enumerate(weekly_trends):
-            week_display = week_data['week_display']
-            classifications = week_data['classifications']
-            changes = week_data['changes']
-            has_activity = week_data.get('has_activity', True)
-            
+            week_display = week_data["week_display"]
+            classifications = week_data["classifications"]
+            changes = week_data["changes"]
+            has_activity = week_data.get("has_activity", True)
+
             # Get additional data from week_data
-            classification_counts = week_data.get('classification_counts', {})
-            total_commits = week_data.get('total_commits', 0)
-            commits_with_tickets = week_data.get('commits_with_tickets', 0)
-            ticket_coverage = week_data.get('ticket_coverage', 0)
-            activity_score = week_data.get('activity_score', 0.0)
-            
+            classification_counts = week_data.get("classification_counts", {})
+            total_commits = week_data.get("total_commits", 0)
+            commits_with_tickets = week_data.get("commits_with_tickets", 0)
+            ticket_coverage = week_data.get("ticket_coverage", 0)
+            activity_score = week_data.get("activity_score", 0.0)
+
             # Handle weeks with no activity
             if not classifications and not has_activity:
                 report.write(f"  - Week {i+1} ({week_display}): No activity\n")
@@ -1206,45 +1327,53 @@ class NarrativeReportGenerator:
             elif not classifications:
                 # Should not happen, but handle gracefully
                 continue
-            
+
             # Format classifications with absolute numbers and percentages
             classification_parts = []
             for category in sorted(classifications.keys()):
                 percentage = classifications[category]
-                
+
                 # Find the count for this formatted category name by reverse mapping
                 count = 0
                 for raw_category, raw_count in classification_counts.items():
                     if self._format_category_name(raw_category) == category:
                         count = raw_count
                         break
-                
+
                 change = changes.get(category, 0.0)
-                
+
                 if i == 0 or abs(change) < 1.0:
                     # First week or no significant change - show count and percentage
                     classification_parts.append(f"{category} {count} ({percentage:.0f}%)")
                 else:
                     # Show change from previous week
                     change_indicator = f"(+{change:.0f}%)" if change > 0 else f"({change:.0f}%)"
-                    classification_parts.append(f"{category} {count} ({percentage:.0f}% {change_indicator})")
-            
+                    classification_parts.append(
+                        f"{category} {count} ({percentage:.0f}% {change_indicator})"
+                    )
+
             if classification_parts:
                 classifications_text = ", ".join(classification_parts)
                 # Add total commits, ticket coverage, and activity score to the week summary
                 if total_commits > 0:
-                    ticket_info = f" | {commits_with_tickets}/{total_commits} tickets ({ticket_coverage:.0f}%)" if commits_with_tickets > 0 else f" | 0/{total_commits} tickets (0%)"
+                    ticket_info = (
+                        f" | {commits_with_tickets}/{total_commits} tickets ({ticket_coverage:.0f}%)"
+                        if commits_with_tickets > 0
+                        else f" | 0/{total_commits} tickets (0%)"
+                    )
                     activity_info = f" | Activity: {activity_score:.1f}/100"
-                    report.write(f"  - Week {i+1} ({week_display}): {classifications_text}{ticket_info}{activity_info}\n")
+                    report.write(
+                        f"  - Week {i+1} ({week_display}): {classifications_text}{ticket_info}{activity_info}\n"
+                    )
                 else:
                     report.write(f"  - Week {i+1} ({week_display}): {classifications_text}\n")
             else:
                 # Fallback in case classifications exist but are empty
                 report.write(f"  - Week {i+1} ({week_display}): No significant activity\n")
-        
+
         # Add a blank line after trend lines for spacing
         # (Note: Don't add extra newline here as the caller will handle spacing)
-    
+
     def _write_team_composition(
         self,
         report: StringIO,
@@ -1256,7 +1385,7 @@ class NarrativeReportGenerator:
         weeks: int = 4,
     ) -> None:
         """Write team composition analysis with activity scores and commit classifications.
-        
+
         WHY: Enhanced team composition shows not just how much each developer commits,
         but what types of work they're doing. This provides actionable insights into
         developer specializations, training needs, and work distribution patterns.
@@ -1269,7 +1398,7 @@ class NarrativeReportGenerator:
         # Calculate activity scores for all developers
         activity_scores = {}
         dev_metrics = {}  # Initialize outside if block to ensure it's always defined
-        
+
         if commits:
             # Aggregate metrics by developer
             for commit in commits:
@@ -1286,12 +1415,12 @@ class NarrativeReportGenerator:
 
                 metrics = dev_metrics[canonical_id]
                 metrics["commits"] += 1
-                metrics["lines_added"] += commit.get(
-                    "filtered_insertions", commit.get("insertions", 0)
-                ) or 0
-                metrics["lines_removed"] += commit.get(
-                    "filtered_deletions", commit.get("deletions", 0)
-                ) or 0
+                metrics["lines_added"] += (
+                    commit.get("filtered_insertions", commit.get("insertions", 0)) or 0
+                )
+                metrics["lines_removed"] += (
+                    commit.get("filtered_deletions", commit.get("deletions", 0)) or 0
+                )
                 metrics["complexity_delta"] += commit.get("complexity_delta", 0) or 0
 
                 # Track unique files
@@ -1336,10 +1465,10 @@ class NarrativeReportGenerator:
                 score_result = self.activity_scorer.calculate_activity_score(metrics)
                 activity_scores[canonical_id] = score_result
                 raw_scores_for_curve[canonical_id] = score_result["raw_score"]
-            
+
             # Apply curve normalization
             curve_normalized = self.activity_scorer.normalize_scores_on_curve(raw_scores_for_curve)
-            
+
             # Update activity scores with curve data
             for canonical_id, curve_data in curve_normalized.items():
                 if canonical_id in activity_scores:
@@ -1358,7 +1487,7 @@ class NarrativeReportGenerator:
         # BUGFIX: Only include developers who have commits in the analysis period
         # Filter using dev_metrics (period-specific) instead of developer_stats (all-time)
         active_devs = {}
-        
+
         # Only process developers if we have commit data for the period
         for canonical_id, dev in consolidated_devs.items():
             # Only include developers who have commits in the current analysis period
@@ -1370,7 +1499,7 @@ class NarrativeReportGenerator:
         for canonical_id, dev in active_devs.items():  # Only developers with commits in period
             # Handle both 'primary_name' (production) and 'name' (tests) for backward compatibility
             name = dev.get("primary_name", dev.get("name", "Unknown Developer"))
-            
+
             # BUGFIX: Use period-specific commit count instead of all-time total
             # Safety check: dev_metrics should exist if we got here, but be defensive
             if canonical_id in dev_metrics:
@@ -1381,22 +1510,20 @@ class NarrativeReportGenerator:
                 total_commits = 0
 
             report.write(f"**{name}**\n")
-            
+
             # Try to get commit classification breakdown if available
             if ticket_analysis:
                 classifications = self._aggregate_commit_classifications(
                     ticket_analysis, commits, developer_stats
                 )
                 dev_classifications = classifications.get(canonical_id, {})
-                
+
                 if dev_classifications:
-                    # Sort categories by count (descending) 
+                    # Sort categories by count (descending)
                     sorted_categories = sorted(
-                        dev_classifications.items(), 
-                        key=lambda x: x[1], 
-                        reverse=True
+                        dev_classifications.items(), key=lambda x: x[1], reverse=True
                     )
-                    
+
                     # Format as "Features: 15 (45%), Bug Fixes: 8 (24%), etc."
                     total_classified = sum(dev_classifications.values())
                     if total_classified > 0:
@@ -1405,7 +1532,7 @@ class NarrativeReportGenerator:
                             pct = (count / total_classified) * 100
                             display_name = self._format_category_name(category)
                             category_parts.append(f"{display_name}: {count} ({pct:.0f}%)")
-                        
+
                         # Show top categories (limit to avoid excessive length)
                         max_categories = 5
                         if len(category_parts) > max_categories:
@@ -1415,18 +1542,20 @@ class NarrativeReportGenerator:
                             category_display = ", ".join(shown_parts)
                         else:
                             category_display = ", ".join(category_parts)
-                        
+
                         # Calculate ticket coverage for this developer
                         ticket_coverage_pct = dev.get("ticket_coverage_pct", 0)
                         report.write(f"- Commits: {category_display}\n")
                         report.write(f"- Ticket Coverage: {ticket_coverage_pct:.1f}%\n")
-                        
+
                         # Add weekly trend lines if available
                         if commits:
                             weekly_trends = self._calculate_weekly_classification_percentages(
-                                commits, developer_id=canonical_id, weeks=weeks,
+                                commits,
+                                developer_id=canonical_id,
+                                weeks=weeks,
                                 analysis_start_date=self._analysis_start_date,
-                                analysis_end_date=self._analysis_end_date
+                                analysis_end_date=self._analysis_end_date,
                             )
                             if weekly_trends:
                                 self._write_weekly_trend_lines(report, weekly_trends)
@@ -1443,13 +1572,15 @@ class NarrativeReportGenerator:
                         ticket_coverage_pct = dev.get("ticket_coverage_pct", 0)
                         report.write(f"- Commits: {total_commits}\n")
                         report.write(f"- Ticket Coverage: {ticket_coverage_pct:.1f}%\n")
-                        
+
                         # Still try to add weekly trend lines for simple commits
                         if commits:
                             weekly_trends = self._calculate_weekly_classification_percentages(
-                                commits, developer_id=canonical_id, weeks=weeks,
+                                commits,
+                                developer_id=canonical_id,
+                                weeks=weeks,
                                 analysis_start_date=self._analysis_start_date,
-                                analysis_end_date=self._analysis_end_date
+                                analysis_end_date=self._analysis_end_date,
                             )
                             if weekly_trends:
                                 self._write_weekly_trend_lines(report, weekly_trends)
@@ -1466,13 +1597,15 @@ class NarrativeReportGenerator:
                     ticket_coverage_pct = dev.get("ticket_coverage_pct", 0)
                     report.write(f"- Commits: {total_commits}\n")
                     report.write(f"- Ticket Coverage: {ticket_coverage_pct:.1f}%\n")
-                    
+
                     # Still try to add weekly trend lines
                     if commits:
                         weekly_trends = self._calculate_weekly_classification_percentages(
-                            commits, developer_id=canonical_id, weeks=weeks,
+                            commits,
+                            developer_id=canonical_id,
+                            weeks=weeks,
                             analysis_start_date=self._analysis_start_date,
-                            analysis_end_date=self._analysis_end_date
+                            analysis_end_date=self._analysis_end_date,
                         )
                         if weekly_trends:
                             self._write_weekly_trend_lines(report, weekly_trends)
@@ -1488,13 +1621,15 @@ class NarrativeReportGenerator:
                 # Fallback to simple count if no ticket analysis available
                 report.write(f"- Commits: {total_commits}\n")
                 # No ticket coverage info available in this case
-                
+
                 # Still try to add weekly trend lines if commits available
                 if commits:
                     weekly_trends = self._calculate_weekly_classification_percentages(
-                        commits, developer_id=canonical_id, weeks=weeks,
+                        commits,
+                        developer_id=canonical_id,
+                        weeks=weeks,
                         analysis_start_date=self._analysis_start_date,
-                        analysis_end_date=self._analysis_end_date
+                        analysis_end_date=self._analysis_end_date,
                     )
                     if weekly_trends:
                         self._write_weekly_trend_lines(report, weekly_trends)
@@ -1510,7 +1645,7 @@ class NarrativeReportGenerator:
             # Add activity score if available
             if canonical_id and canonical_id in activity_scores:
                 score_data = activity_scores[canonical_id]
-                
+
                 # Use curve data if available, otherwise fall back to relative scoring
                 if "curve_data" in score_data:
                     curve_data = score_data["curve_data"]
@@ -1576,13 +1711,16 @@ class NarrativeReportGenerator:
             report.write("\n")
 
     def _write_project_activity(
-        self, report: StringIO, activity_dist: list[dict[str, Any]], commits: list[dict[str, Any]],
+        self,
+        report: StringIO,
+        activity_dist: list[dict[str, Any]],
+        commits: list[dict[str, Any]],
         branch_health_metrics: dict[str, dict[str, Any]] = None,
         ticket_analysis: dict[str, Any] = None,
-        weeks: int = 4
+        weeks: int = 4,
     ) -> None:
         """Write project activity breakdown with commit classifications.
-        
+
         WHY: Enhanced project activity section now includes commit classification
         breakdown per project, providing insights into what types of work are
         happening in each project (features, bug fixes, refactoring, etc.).
@@ -1643,18 +1781,18 @@ class NarrativeReportGenerator:
 
             contributors_str = ", ".join(contributors)
             report.write(f"- Contributors: {contributors_str}\n")
-            
+
             # Add commit classification breakdown for this project
             if ticket_analysis:
-                project_classifications = self._get_project_classifications(project, commits, ticket_analysis)
+                project_classifications = self._get_project_classifications(
+                    project, commits, ticket_analysis
+                )
                 if project_classifications:
                     # Sort categories by count (descending)
                     sorted_categories = sorted(
-                        project_classifications.items(),
-                        key=lambda x: x[1],
-                        reverse=True
+                        project_classifications.items(), key=lambda x: x[1], reverse=True
                     )
-                    
+
                     # Calculate total for percentages
                     total_classified = sum(project_classifications.values())
                     if total_classified > 0:
@@ -1663,7 +1801,7 @@ class NarrativeReportGenerator:
                             pct = (count / total_classified) * 100
                             display_name = self._format_category_name(category)
                             category_parts.append(f"{display_name}: {count} ({pct:.0f}%)")
-                        
+
                         # Show top categories to avoid excessive length
                         max_categories = 4
                         if len(category_parts) > max_categories:
@@ -1673,18 +1811,24 @@ class NarrativeReportGenerator:
                             category_display = ", ".join(shown_parts)
                         else:
                             category_display = ", ".join(category_parts)
-                        
+
                         report.write(f"- Classifications: {category_display}\n")
-                        
+
                         # Add project-level weekly trend lines
                         if commits:
-                            project_weekly_trends = self._calculate_weekly_classification_percentages(
-                                commits, project_key=project, weeks=weeks,
-                                analysis_start_date=self._analysis_start_date,
-                                analysis_end_date=self._analysis_end_date
+                            project_weekly_trends = (
+                                self._calculate_weekly_classification_percentages(
+                                    commits,
+                                    project_key=project,
+                                    weeks=weeks,
+                                    analysis_start_date=self._analysis_start_date,
+                                    analysis_end_date=self._analysis_end_date,
+                                )
                             )
                             if project_weekly_trends:
-                                self._write_weekly_trend_lines(report, project_weekly_trends, "Project ")
+                                self._write_weekly_trend_lines(
+                                    report, project_weekly_trends, "Project "
+                                )
                             else:
                                 # Fallback to simple project trend analysis
                                 project_trends = self._calculate_classification_trends(
@@ -1695,20 +1839,20 @@ class NarrativeReportGenerator:
                                 )
                                 if project_trend_line:
                                     report.write(f"- {project_trend_line}\n")
-            
+
             # Add branch health for this project/repository if available
             if branch_health_metrics and project in branch_health_metrics:
                 repo_health = branch_health_metrics[project]
                 summary = repo_health.get("summary", {})
                 health_indicators = repo_health.get("health_indicators", {})
                 branches = repo_health.get("branches", [])
-                
+
                 health_score = health_indicators.get("overall_health_score", 0)
                 total_branches = summary.get("total_branches", 0)
                 stale_branches = summary.get("stale_branches", 0)
                 active_branches = summary.get("active_branches", 0)
                 long_lived_branches = summary.get("long_lived_branches", 0)
-                
+
                 # Determine health status
                 if health_score >= 80:
                     status_emoji = "🟢"
@@ -1722,20 +1866,26 @@ class NarrativeReportGenerator:
                 else:
                     status_emoji = "🔴"
                     status_text = "Needs Attention"
-                
+
                 report.write("\n**Branch Management**\n")
-                report.write(f"- Overall Health: {status_emoji} {status_text} ({health_score:.0f}/100)\n")
+                report.write(
+                    f"- Overall Health: {status_emoji} {status_text} ({health_score:.0f}/100)\n"
+                )
                 report.write(f"- Total Branches: {total_branches}\n")
                 report.write(f"  - Active: {active_branches} branches\n")
                 report.write(f"  - Long-lived: {long_lived_branches} branches (>30 days)\n")
                 report.write(f"  - Stale: {stale_branches} branches (>90 days)\n")
-                
+
                 # Show top problematic branches if any
                 if branches:
                     # Sort branches by health score (ascending) to get worst first
-                    problem_branches = [b for b in branches if b.get("health_score", 100) < 60 and not b.get("is_merged", False)]
+                    problem_branches = [
+                        b
+                        for b in branches
+                        if b.get("health_score", 100) < 60 and not b.get("is_merged", False)
+                    ]
                     problem_branches.sort(key=lambda x: x.get("health_score", 100))
-                    
+
                     if problem_branches:
                         report.write("\n**Branches Needing Attention**:\n")
                         for i, branch in enumerate(problem_branches[:3]):  # Show top 3
@@ -1744,21 +1894,21 @@ class NarrativeReportGenerator:
                             behind = branch.get("behind_main", 0)
                             ahead = branch.get("ahead_of_main", 0)
                             score = branch.get("health_score", 0)
-                            
+
                             report.write(f"  {i+1}. `{name}` (score: {score:.0f}/100)\n")
                             report.write(f"     - Age: {age} days\n")
                             if behind > 0:
                                 report.write(f"     - Behind main: {behind} commits\n")
                             if ahead > 0:
                                 report.write(f"     - Ahead of main: {ahead} commits\n")
-                
+
                 # Add recommendations
                 recommendations = repo_health.get("recommendations", [])
                 if recommendations:
                     report.write("\n**Recommended Actions**:\n")
                     for rec in recommendations[:3]:  # Show top 3 recommendations
                         report.write(f"- {rec}\n")
-            
+
             report.write("\n")
 
     def _get_week_start(self, date: datetime) -> datetime:
@@ -1874,9 +2024,13 @@ class NarrativeReportGenerator:
         coverage_pct = ticket_analysis.get("commit_coverage_pct", 0)
 
         # Debug logging for ticket coverage issues
-        logger.debug(f"Ticket coverage analysis - commits_with_tickets: {commits_with_tickets}, total_commits: {total_commits}, coverage_pct: {coverage_pct}")
+        logger.debug(
+            f"Ticket coverage analysis - commits_with_tickets: {commits_with_tickets}, total_commits: {total_commits}, coverage_pct: {coverage_pct}"
+        )
         if commits_with_tickets == 0 and total_commits > 0:
-            logger.warning(f"No commits found with ticket references out of {total_commits} total commits")
+            logger.warning(
+                f"No commits found with ticket references out of {total_commits} total commits"
+            )
             # Log sample of ticket_analysis structure for debugging
             if "ticket_summary" in ticket_analysis:
                 logger.debug(f"Ticket summary: {ticket_analysis['ticket_summary']}")
@@ -2044,7 +2198,7 @@ class NarrativeReportGenerator:
 
             # Show configurable number of recent commits (increased from 10 to 15)
             max_recent_commits = 15
-            
+
             # Safe timestamp sorting that handles mixed timezone types
             def safe_timestamp_key(commit):
                 ts = commit.get("timestamp")
@@ -2058,10 +2212,10 @@ class NarrativeReportGenerator:
                     return ts
                 # If it's a string or other type, try to parse or use as-is
                 return ts
-            
-            recent_commits = sorted(
-                untracked_commits, key=safe_timestamp_key, reverse=True
-            )[:max_recent_commits]
+
+            recent_commits = sorted(untracked_commits, key=safe_timestamp_key, reverse=True)[
+                :max_recent_commits
+            ]
 
             if len(untracked_commits) > max_recent_commits:
                 report.write(
@@ -2228,11 +2382,11 @@ class NarrativeReportGenerator:
         self, report: StringIO, ticket_analysis: dict[str, Any]
     ) -> None:
         """Write commit classification analysis section.
-        
+
         WHY: This section provides insights into automated commit categorization
         quality and distribution, helping teams understand their development patterns
         and the effectiveness of ML-based categorization.
-        
+
         Args:
             report: StringIO buffer to write to
             ticket_analysis: Ticket analysis data containing ML classification results
@@ -2240,86 +2394,105 @@ class NarrativeReportGenerator:
         ml_analysis = ticket_analysis.get("ml_analysis", {})
         if not ml_analysis.get("enabled", False):
             return
-        
-        report.write("The team's commit patterns reveal the following automated classification insights:\n\n")
-        
+
+        report.write(
+            "The team's commit patterns reveal the following automated classification insights:\n\n"
+        )
+
         # Overall classification statistics
         total_ml_predictions = ml_analysis.get("total_ml_predictions", 0)
         total_rule_predictions = ml_analysis.get("total_rule_predictions", 0)
         total_cached_predictions = ml_analysis.get("total_cached_predictions", 0)
         total_predictions = total_ml_predictions + total_rule_predictions + total_cached_predictions
-        
+
         if total_predictions > 0:
             report.write("### Classification Method Distribution\n\n")
-            
+
             # Calculate percentages
             ml_pct = (total_ml_predictions / total_predictions) * 100
             rules_pct = (total_rule_predictions / total_predictions) * 100
             cached_pct = (total_cached_predictions / total_predictions) * 100
-            
-            report.write(f"- **ML-based Classifications**: {total_ml_predictions} commits ({ml_pct:.1f}%)\n")
-            report.write(f"- **Rule-based Classifications**: {total_rule_predictions} commits ({rules_pct:.1f}%)\n")
-            report.write(f"- **Cached Results**: {total_cached_predictions} commits ({cached_pct:.1f}%)\n\n")
-            
+
+            report.write(
+                f"- **ML-based Classifications**: {total_ml_predictions} commits ({ml_pct:.1f}%)\n"
+            )
+            report.write(
+                f"- **Rule-based Classifications**: {total_rule_predictions} commits ({rules_pct:.1f}%)\n"
+            )
+            report.write(
+                f"- **Cached Results**: {total_cached_predictions} commits ({cached_pct:.1f}%)\n\n"
+            )
+
             # Classification confidence analysis
             avg_confidence = ml_analysis.get("avg_confidence", 0)
             confidence_dist = ml_analysis.get("confidence_distribution", {})
-            
+
             if confidence_dist:
                 report.write("### Classification Confidence\n\n")
-                report.write(f"- **Average Confidence**: {avg_confidence:.1%} across all classifications\n")
-                
+                report.write(
+                    f"- **Average Confidence**: {avg_confidence:.1%} across all classifications\n"
+                )
+
                 high_conf = confidence_dist.get("high", 0)
                 medium_conf = confidence_dist.get("medium", 0)
                 low_conf = confidence_dist.get("low", 0)
                 total_conf_items = high_conf + medium_conf + low_conf
-                
+
                 if total_conf_items > 0:
                     high_pct = (high_conf / total_conf_items) * 100
                     medium_pct = (medium_conf / total_conf_items) * 100
                     low_pct = (low_conf / total_conf_items) * 100
-                    
-                    report.write(f"- **High Confidence** (≥80%): {high_conf} commits ({high_pct:.1f}%)\n")
-                    report.write(f"- **Medium Confidence** (60-79%): {medium_conf} commits ({medium_pct:.1f}%)\n")
-                    report.write(f"- **Low Confidence** (<60%): {low_conf} commits ({low_pct:.1f}%)\n\n")
-            
+
+                    report.write(
+                        f"- **High Confidence** (≥80%): {high_conf} commits ({high_pct:.1f}%)\n"
+                    )
+                    report.write(
+                        f"- **Medium Confidence** (60-79%): {medium_conf} commits ({medium_pct:.1f}%)\n"
+                    )
+                    report.write(
+                        f"- **Low Confidence** (<60%): {low_conf} commits ({low_pct:.1f}%)\n\n"
+                    )
+
             # Category confidence breakdown
             category_confidence = ml_analysis.get("category_confidence", {})
             if category_confidence:
                 report.write("### Classification Categories\n\n")
-                
+
                 # Sort categories by count (descending)
                 sorted_categories = sorted(
-                    category_confidence.items(), 
-                    key=lambda x: x[1].get("count", 0), 
-                    reverse=True
+                    category_confidence.items(), key=lambda x: x[1].get("count", 0), reverse=True
                 )
-                
+
                 # Calculate total commits for percentages
-                total_categorized = sum(data.get("count", 0) for data in category_confidence.values())
-                
+                total_categorized = sum(
+                    data.get("count", 0) for data in category_confidence.values()
+                )
+
                 for category, data in sorted_categories:
                     count = data.get("count", 0)
                     avg_conf = data.get("avg", 0)
-                    
+
                     if count > 0:
                         category_pct = (count / total_categorized) * 100
                         category_display = category.replace("_", " ").title()
-                        report.write(f"- **{category_display}**: {count} commits ({category_pct:.1f}%, avg confidence: {avg_conf:.1%})\n")
-                
+                        report.write(
+                            f"- **{category_display}**: {count} commits ({category_pct:.1f}%, avg confidence: {avg_conf:.1%})\n"
+                        )
+
                 report.write("\n")
-            
+
             # Performance metrics
             processing_stats = ml_analysis.get("processing_time_stats", {})
             if processing_stats.get("total_ms", 0) > 0:
                 avg_ms = processing_stats.get("avg_ms", 0)
                 total_ms = processing_stats.get("total_ms", 0)
-                
+
                 report.write("### Processing Performance\n\n")
                 report.write(f"- **Average Processing Time**: {avg_ms:.1f}ms per commit\n")
-                report.write(f"- **Total Processing Time**: {total_ms:.0f}ms ({total_ms/1000:.1f} seconds)\n\n")
-            
-        
+                report.write(
+                    f"- **Total Processing Time**: {total_ms:.0f}ms ({total_ms/1000:.1f} seconds)\n\n"
+                )
+
         else:
             report.write("No classification data available for analysis.\n\n")
 
@@ -2441,6 +2614,128 @@ class NarrativeReportGenerator:
         if len(platform_coverage) > 1:
             report.write(
                 "📊 **Multi-platform integration** - Comprehensive work item tracking across tools\n"
+            )
+
+        report.write("\n")
+
+    def _write_cicd_health(self, report: StringIO, cicd_data: dict[str, Any]) -> None:
+        """Write CI/CD pipeline health analysis.
+
+        WHY: CI/CD pipeline metrics provide critical insights into build stability,
+        deployment velocity, and infrastructure health. This section helps teams
+        identify pipeline issues that may be blocking deployments or slowing velocity.
+
+        CORRELATION: CI/CD success rates correlate with deployment frequency (DORA)
+        and can explain variations in development velocity.
+        """
+        pipelines = cicd_data.get("pipelines", [])
+        platform_metrics = cicd_data.get("metrics", {})
+
+        if not pipelines:
+            report.write("No CI/CD pipeline data available.\n\n")
+            return
+
+        # Overall statistics
+        total_pipelines = len(pipelines)
+        successful = len([p for p in pipelines if p.get("status") == "success"])
+        failed = len([p for p in pipelines if p.get("status") in ["failure", "failed"]])
+        overall_success_rate = (successful / total_pipelines * 100) if total_pipelines > 0 else 0
+
+        # Duration statistics
+        durations = [
+            p.get("duration_seconds", 0) / 60.0 for p in pipelines if p.get("duration_seconds")
+        ]
+        avg_duration = sum(durations) / len(durations) if durations else 0
+
+        # Platform overview
+        platforms = list(platform_metrics.keys())
+        report.write(f"The team runs CI/CD pipelines across **{len(platforms)} platform(s)** ")
+        report.write(f"with **{total_pipelines:,} total pipeline runs** in this period.\n\n")
+
+        # Success rate analysis
+        report.write("### Pipeline Success Rate\n\n")
+        report.write(f"- **Total Pipelines**: {total_pipelines:,}\n")
+        report.write(f"- **Successful**: {successful:,} ({overall_success_rate:.1f}%)\n")
+        report.write(f"- **Failed**: {failed:,} ({(failed/total_pipelines*100):.1f}%)\n")
+        report.write(f"- **Average Build Time**: {avg_duration:.1f} minutes\n\n")
+
+        # Success rate assessment
+        if overall_success_rate >= 90:
+            report.write(
+                "✅ **Excellent pipeline health** - High success rate indicates stable builds\n\n"
+            )
+        elif overall_success_rate >= 75:
+            report.write(
+                "⚠️ **Moderate pipeline health** - Consider investigating frequent failure causes\n\n"
+            )
+        else:
+            report.write(
+                "❌ **Poor pipeline health** - High failure rate may be blocking deployments\n\n"
+            )
+
+        # Duration trends analysis
+        report.write("### Build Duration\n\n")
+        if avg_duration < 5:
+            report.write(
+                f"✅ **Fast builds** ({avg_duration:.1f} min average) enable quick feedback cycles\n"
+            )
+        elif avg_duration < 15:
+            report.write(
+                f"⚠️ **Moderate build times** ({avg_duration:.1f} min average) - Consider optimization\n"
+            )
+        else:
+            report.write(
+                f"❌ **Slow builds** ({avg_duration:.1f} min average) may impact development velocity\n"
+            )
+        report.write("\n")
+
+        # Platform-specific breakdown
+        if len(platform_metrics) > 1:
+            report.write("### Platform Breakdown\n\n")
+            for platform, metrics in platform_metrics.items():
+                platform_pipelines = metrics.get("total_pipelines", 0)
+                platform_success_rate = metrics.get("success_rate", 0)
+                platform_duration = metrics.get("avg_duration_minutes", 0)
+
+                report.write(f"**{platform}**:\n")
+                report.write(f"- Pipelines: {platform_pipelines:,}\n")
+                report.write(f"- Success Rate: {platform_success_rate:.1f}%\n")
+                report.write(f"- Avg Duration: {platform_duration:.1f} min\n\n")
+
+        # Correlation with DORA metrics
+        report.write("### Impact on Delivery Velocity\n\n")
+        if overall_success_rate >= 85:
+            report.write(
+                "High CI/CD success rates support frequent deployments and align with "
+                "DORA elite performer benchmarks. Stable pipelines enable continuous delivery.\n"
+            )
+        else:
+            report.write(
+                "Pipeline failures may be limiting deployment frequency and blocking releases. "
+                "Improving CI/CD stability should be a priority to increase delivery velocity.\n"
+            )
+        report.write("\n")
+
+        # Recommendations
+        report.write("### Recommendations\n\n")
+        if overall_success_rate < 85:
+            report.write(
+                "- **Investigate failure patterns**: Analyze failed pipelines to identify common causes\n"
+            )
+            report.write("- **Add retry logic**: Implement automatic retries for flaky tests\n")
+
+        if avg_duration > 10:
+            report.write(
+                "- **Optimize build times**: Consider parallelization and caching strategies\n"
+            )
+            report.write("- **Split test suites**: Run critical tests first for faster feedback\n")
+
+        if failed / total_pipelines > 0.15:
+            report.write(
+                "- **Improve test reliability**: High failure rate suggests flaky or brittle tests\n"
+            )
+            report.write(
+                "- **Monitor infrastructure**: Check if failures are due to resource constraints\n"
             )
 
         report.write("\n")
