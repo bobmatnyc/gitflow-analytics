@@ -442,6 +442,18 @@ def cli(ctx: click.Context) -> None:
     help="Progress display style: rich (beautiful terminal UI), simple (tqdm), auto (detect)",
 )
 @click.option(
+    "--cicd-metrics",
+    is_flag=True,
+    help="Enable CI/CD pipeline metrics collection (requires GitHub token)",
+)
+@click.option(
+    "--cicd-platforms",
+    multiple=True,
+    type=click.Choice(["github-actions"], case_sensitive=False),
+    default=["github-actions"],
+    help="CI/CD platforms to integrate (default: github-actions)",
+)
+@click.option(
     "--security-only",
     is_flag=True,
     help="Run only security analysis (skip productivity metrics)",
@@ -469,6 +481,8 @@ def analyze_subcommand(
     use_batch_classification: bool,
     force_fetch: bool,
     progress_style: str,
+    cicd_metrics: bool,
+    cicd_platforms: tuple[str, ...],
     security_only: bool,
 ) -> None:
     """Analyze Git repositories and generate comprehensive productivity reports.
@@ -539,6 +553,8 @@ def analyze_subcommand(
         use_batch_classification=use_batch_classification,
         force_fetch=force_fetch,
         progress_style=progress_style,
+        cicd_metrics=cicd_metrics,
+        cicd_platforms=cicd_platforms,
         security_only=security_only,
     )
 
@@ -566,6 +582,8 @@ def analyze(
     use_batch_classification: bool = True,
     force_fetch: bool = False,
     progress_style: str = "simple",
+    cicd_metrics: bool = False,
+    cicd_platforms: tuple[str, ...] = ("github-actions",),
     security_only: bool = False,
 ) -> None:
     """Analyze Git repositories using configuration file."""
@@ -719,6 +737,30 @@ def analyze(
                 )
             else:
                 click.echo(f"📋 PM integration limited to platforms: {', '.join(pm_platform)}")
+
+        # Apply CLI overrides for CI/CD integration
+        if cicd_metrics:
+            # Enable CI/CD integration via CLI flag
+            if not hasattr(cfg, "cicd"):
+                # Create a simple config object with cicd attributes
+                class CICDConfig:
+                    def __init__(self):
+                        self.enabled = True
+                        self.github_actions_enabled = "github-actions" in cicd_platforms
+
+                cfg.cicd = CICDConfig()
+            else:
+                cfg.cicd.enabled = True
+                # Enable requested platforms
+                if "github-actions" in cicd_platforms:
+                    cfg.cicd.github_actions_enabled = True
+
+            if display:
+                display.print_status(
+                    f"CI/CD metrics enabled for platforms: {', '.join(cicd_platforms)}", "info"
+                )
+            else:
+                click.echo(f"🔄 CI/CD metrics enabled for platforms: {', '.join(cicd_platforms)}")
 
         # Validate configuration
         warnings = ConfigLoader.validate_config(cfg)

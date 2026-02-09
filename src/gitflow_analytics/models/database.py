@@ -869,6 +869,71 @@ class WeeklyTrends(Base):
     )
 
 
+class CICDPipelineCache(Base):
+    """Cache for CI/CD pipeline run data.
+
+    This table stores build/pipeline execution data from various CI/CD platforms
+    (GitHub Actions, GitLab CI, Jenkins, etc.) to minimize API calls and improve
+    performance on subsequent analysis runs.
+
+    WHY: CI/CD API calls can be slow and rate-limited. Caching build data with
+    appropriate TTL allows for fast report generation while keeping data fresh.
+    """
+
+    __tablename__ = "cicd_pipelines"
+
+    # Primary key
+    id = Column(Integer, primary_key=True)
+
+    # Pipeline identification
+    platform = Column(String, nullable=False, index=True)  # "github_actions", "gitlab_ci", etc.
+    pipeline_id = Column(String, nullable=False, index=True)  # Platform-specific pipeline ID
+    workflow_name = Column(String)  # Workflow/pipeline name
+
+    # Repository information
+    repo_path = Column(String, nullable=False, index=True)  # "owner/repo"
+    branch = Column(String, index=True)
+    commit_sha = Column(String, index=True)
+
+    # Pipeline results
+    status = Column(String, index=True)  # "success", "failure", "cancelled", "pending"
+    duration_seconds = Column(Integer)
+    trigger_type = Column(String)  # "push", "pull_request", "schedule", "manual"
+    created_at = Column(DateTime(timezone=True), nullable=False, index=True)
+
+    # Additional metadata
+    author = Column(String)  # Who triggered the pipeline
+    url = Column(String)  # Link to pipeline in CI/CD platform
+
+    # Platform-specific data (stored as JSON)
+    platform_data = Column(JSON)  # Additional platform-specific fields
+
+    # Cache metadata
+    cached_at = Column(DateTime(timezone=True), default=utcnow_tz_aware, nullable=False)
+
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        # Most common: lookup by repo + date range
+        Index("idx_cicd_repo_date", "repo_path", "created_at"),
+        # Ensure uniqueness: platform + pipeline_id
+        Index("idx_cicd_platform_pipeline", "platform", "pipeline_id", unique=True),
+        # Lookup pipelines for specific commit
+        Index("idx_cicd_commit", "commit_sha"),
+        # Filter by status
+        Index("idx_cicd_status", "status"),
+        # Filter by branch
+        Index("idx_cicd_branch", "branch"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<CICDPipelineCache(platform='{self.platform}', "
+            f"pipeline_id='{self.pipeline_id}', "
+            f"status='{self.status}', "
+            f"repo='{self.repo_path}')>"
+        )
+
+
 class SchemaVersion(Base):
     """Track database schema versions for automatic migrations.
 

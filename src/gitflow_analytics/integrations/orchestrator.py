@@ -7,6 +7,7 @@ from typing import Any, Union
 
 from ..core.cache import GitAnalysisCache
 from ..pm_framework.orchestrator import PMFrameworkOrchestrator
+from .cicd.github_actions import GitHubActionsIntegration
 from .github_integration import GitHubIntegration
 from .jira_integration import JIRAIntegration
 
@@ -54,6 +55,31 @@ class IntegrationOrchestrator:
                         enable_proxy=getattr(jira_settings, "enable_proxy", False),
                         proxy_url=getattr(jira_settings, "proxy_url", None),
                     )
+
+        # Initialize CI/CD integrations
+        self.cicd_integrations: dict[str, Any] = {}
+        if hasattr(config, "cicd") and config.cicd and getattr(config.cicd, "enabled", False):
+            if self.debug_mode:
+                print("   🔍 CI/CD Integration detected - initializing platforms...")
+
+            # GitHub Actions integration (reuses GitHub token)
+            if (
+                config.github
+                and config.github.token
+                and getattr(config.cicd, "github_actions_enabled", True)
+            ):
+                try:
+                    self.cicd_integrations["github_actions"] = GitHubActionsIntegration(
+                        token=config.github.token,
+                        cache=cache,
+                        rate_limit_retries=getattr(config.github, "max_retries", 3),
+                        backoff_factor=getattr(config.github, "backoff_factor", 2),
+                    )
+                    if self.debug_mode:
+                        print("   ✅ GitHub Actions CI/CD integration initialized")
+                except Exception as e:
+                    if self.debug_mode:
+                        print(f"   ⚠️  Failed to initialize GitHub Actions: {e}")
 
         # Initialize PM framework orchestrator
         self.pm_orchestrator = None
@@ -145,7 +171,13 @@ class IntegrationOrchestrator:
         self, repo_config: Any, commits: list[dict[str, Any]], since: datetime
     ) -> dict[str, Any]:
         """Enrich repository data from all available integrations."""
-        enrichment: dict[str, Any] = {"prs": [], "issues": [], "pr_metrics": {}, "pm_data": {}}
+        enrichment: dict[str, Any] = {
+            "prs": [],
+            "issues": [],
+            "pr_metrics": {},
+            "pm_data": {},
+            "cicd_data": {"pipelines": [], "metrics": {}},
+        }
 
         # GitHub enrichment
         if "github" in self.integrations and repo_config.github_repo:
@@ -186,6 +218,54 @@ class IntegrationOrchestrator:
                 except Exception as e:
                     if self.debug_mode:
                         print(f"   ⚠️  JIRA enrichment failed: {e}")
+
+        # CI/CD enrichment
+        if self.cicd_integrations and repo_config.github_repo:
+            all_pipelines = []
+            for platform_name, cicd_integration in self.cicd_integrations.items():
+                try:
+                    if self.debug_mode:
+                        print(f"   🔄 Fetching {platform_name} pipelines...")
+
+                    # Fetch pipelines from platform
+                    pipelines = cicd_integration.fetch_pipelines(repo_config.github_repo, since)
+
+                    # Enrich commits with pipeline status
+                    if pipelines:
+                        cicd_integration.enrich_commits_with_pipelines(commits, pipelines)
+                        all_pipelines.extend(pipelines)
+
+                        if self.debug_mode:
+                            print(f"   ✅ Fetched {len(pipelines)} pipelines from {platform_name}")
+
+                except Exception as e:
+                    if self.debug_mode:
+                        print(f"   ⚠️  {platform_name} enrichment failed: {e}")
+
+            # Store pipelines and calculate aggregate metrics
+            if all_pipelines:
+                enrichment["cicd_data"]["pipelines"] = all_pipelines
+
+                # Calculate aggregate metrics across all platforms
+                all_metrics = {}
+                for platform_name, cicd_integration in self.cicd_integrations.items():
+                    platform_pipelines = [
+                        p for p in all_pipelines if p.get("platform") == platform_name
+                    ]
+                    if platform_pipelines:
+                        all_metrics[platform_name] = cicd_integration.calculate_metrics(
+                            platform_pipelines
+                        )
+
+                enrichment["cicd_data"]["metrics"] = all_metrics
+
+                if self.debug_mode:
+                    total_pipelines = len(all_pipelines)
+                    successful = len([p for p in all_pipelines if p.get("status") == "success"])
+                    success_rate = (successful / total_pipelines * 100) if total_pipelines else 0
+                    print(
+                        f"   📊 CI/CD summary: {total_pipelines} pipelines, {success_rate:.1f}% success rate"
+                    )
 
         # PM Framework enrichment
         if self.pm_orchestrator and self.pm_orchestrator.is_enabled():
