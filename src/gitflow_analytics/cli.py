@@ -442,9 +442,9 @@ def cli(ctx: click.Context) -> None:
     help="Progress display style: rich (beautiful terminal UI), simple (tqdm), auto (detect)",
 )
 @click.option(
-    "--cicd-metrics",
-    is_flag=True,
-    help="Enable CI/CD pipeline metrics collection (requires GitHub token)",
+    "--cicd-metrics/--no-cicd-metrics",
+    default=True,
+    help="Enable CI/CD pipeline metrics collection (enabled by default, use --no-cicd-metrics to disable)",
 )
 @click.option(
     "--cicd-platforms",

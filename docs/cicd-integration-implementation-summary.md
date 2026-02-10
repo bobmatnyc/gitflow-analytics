@@ -100,20 +100,23 @@ Added CLI flags to the `analyze` command:
 
 **New Flags**:
 ```bash
---cicd-metrics              # Enable CI/CD metrics collection
---cicd-platforms            # Specify platforms (default: github-actions)
+--cicd-metrics/--no-cicd-metrics  # CI/CD metrics collection (enabled by default)
+--cicd-platforms                  # Specify platforms (default: github-actions)
 ```
 
 **Usage Examples**:
 ```bash
-# Enable CI/CD metrics with default platform (GitHub Actions)
-gitflow-analytics analyze --weeks 4 --cicd-metrics
+# CI/CD metrics enabled by default
+gitflow-analytics analyze --weeks 4
+
+# Disable CI/CD metrics if needed
+gitflow-analytics analyze --weeks 4 --no-cicd-metrics
 
 # Specify platforms explicitly
-gitflow-analytics analyze --weeks 4 --cicd-metrics --cicd-platforms github-actions
+gitflow-analytics analyze --weeks 4 --cicd-platforms github-actions
 
 # Combine with other integrations
-gitflow-analytics analyze --weeks 4 --cicd-metrics --enable-pm
+gitflow-analytics analyze --weeks 4 --enable-pm
 ```
 
 **Configuration Injection**:
@@ -167,7 +170,7 @@ gitflow-analytics analyze --weeks 4 --cicd-metrics --enable-pm
 ### CLI Help
 ```
 ✅ CLI flags registered successfully:
-  --cicd-metrics                  Enable CI/CD pipeline metrics collection
+  --cicd-metrics/--no-cicd-metrics   Enable CI/CD pipeline metrics collection (enabled by default)
   --cicd-platforms [github-actions]  CI/CD platforms to integrate
 ```
 
@@ -286,9 +289,14 @@ cicd:
      token: "${GITHUB_TOKEN}"
    ```
 
-2. Run analysis with CI/CD flags:
+2. Run analysis (CI/CD metrics enabled by default):
    ```bash
-   gitflow-analytics analyze --weeks 4 --cicd-metrics
+   gitflow-analytics analyze --weeks 4
+   ```
+
+3. Disable CI/CD metrics if needed:
+   ```bash
+   gitflow-analytics analyze --weeks 4 --no-cicd-metrics
    ```
 
 3. Pipeline data will be cached in database at:
@@ -305,7 +313,7 @@ cicd:
 Enable debug logging to see CI/CD integration activity:
 ```bash
 export GITFLOW_DEBUG=1
-gitflow-analytics analyze --weeks 4 --cicd-metrics --log DEBUG
+gitflow-analytics analyze --weeks 4 --log DEBUG
 ```
 
 **Expected Output**:
@@ -348,8 +356,8 @@ gitflow-analytics analyze --weeks 4 --cicd-metrics --log DEBUG
 - Compatible with existing cache databases
 
 ### Backward Compatibility
-- Feature is opt-in via `--cicd-metrics` flag
-- No impact on existing workflows without flag
+- Feature is enabled by default (can opt-out with `--no-cicd-metrics`)
+- Users can disable if GitHub token not available or not needed
 - Cache hit rate improves on subsequent runs
 
 ## Related Documents
