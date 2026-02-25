@@ -819,15 +819,21 @@ class GitAnalyzer:
                 cached_commit_data = cached_commits[commit.hexsha]
                 # Filter cached commits by date range to ensure consistency with git filtering
                 cached_timestamp = cached_commit_data.get("timestamp")
-                if cached_timestamp and cached_timestamp >= since:
-                    results.append(cached_commit_data)
-                    cache_hits += 1
-                    continue
-                else:
-                    # Cached commit is outside date range, treat as cache miss and re-analyze
-                    logger.debug(
-                        f"Cached commit {commit.hexsha[:8]} outside date range ({cached_timestamp} < {since}), re-analyzing"
-                    )
+                if cached_timestamp:
+                    # Ensure both timestamps are timezone-aware for comparison
+                    if cached_timestamp.tzinfo is None:
+                        cached_timestamp = cached_timestamp.replace(tzinfo=timezone.utc)
+                    since_tz = since.replace(tzinfo=timezone.utc) if since.tzinfo is None else since
+
+                    if cached_timestamp >= since_tz:
+                        results.append(cached_commit_data)
+                        cache_hits += 1
+                        continue
+                    else:
+                        # Cached commit is outside date range, treat as cache miss and re-analyze
+                        logger.debug(
+                            f"Cached commit {commit.hexsha[:8]} outside date range ({cached_timestamp} < {since_tz}), re-analyzing"
+                        )
 
             # Analyze commit (for cache misses or date-filtered cached commits)
             commit_data = self._analyze_commit(repo, commit, repo_path)
