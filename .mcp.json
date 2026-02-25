@@ -16,11 +16,14 @@
       "command": "uv",
       "args": [
         "run",
+        "--directory",
+        "/Users/masa/Projects/gitflow-analytics",
         "mcp-vector-search",
         "mcp"
       ],
       "env": {
-        "MCP_ENABLE_FILE_WATCHING": "true"
+        "PROJECT_ROOT": "/Users/masa/Projects/gitflow-analytics",
+        "MCP_PROJECT_ROOT": "/Users/masa/Projects/gitflow-analytics"
       }
     }
   }

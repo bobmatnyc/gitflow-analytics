@@ -83,7 +83,7 @@ class ChatGPTQualitativeAnalyzer:
                     "temperature": 0.7,
                 }
 
-                response = requests.post(self.api_url, headers=headers, json=data)
+                response = requests.post(self.api_url, headers=headers, json=data, timeout=30)
                 response.raise_for_status()
                 result = response.json()
                 content = result["choices"][0]["message"]["content"]

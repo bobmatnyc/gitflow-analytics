@@ -256,9 +256,8 @@ def validate_config(config_path: Path) -> bool:
                     # Line after
                     if mark.line + 1 < len(lines):
                         click.echo(f"   {mark.line + 2}: {lines[mark.line + 1].rstrip()}", err=True)
-            except Exception:
-                # If we can't read file, just skip context
-                pass
+            except OSError as e:
+                logger.debug(f"Non-critical: could not read YAML file for error context: {e}")
 
         # Show problem description
         if hasattr(e, "problem"):

@@ -3,6 +3,7 @@
 import logging
 import math
 import re
+from fnmatch import fnmatch
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ class SecretDetector:
         self,
         patterns: dict[str, str],
         entropy_threshold: float = 4.5,
-        exclude_paths: list[str] = None,
+        exclude_paths: Optional[list[str]] = None,
     ):
         """Initialize secret detector.
 
@@ -81,7 +82,7 @@ class SecretDetector:
                 if not self._is_false_positive(string):
                     finding = {
                         "type": "secret",
-                        "secret_type": "high_entropy_string",
+                        "secret_type": "high_entropy_string",  # pragma: allowlist secret
                         "severity": "medium",
                         "file": file_path,
                         "line": line_num,
@@ -116,8 +117,6 @@ class SecretDetector:
 
     def _should_exclude(self, file_path: str) -> bool:
         """Check if file should be excluded from scanning."""
-        from fnmatch import fnmatch
-
         return any(fnmatch(file_path, pattern) for pattern in self.exclude_paths)
 
     def _is_false_positive(self, value: str) -> bool:

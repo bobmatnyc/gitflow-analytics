@@ -166,10 +166,10 @@ class StoryPointsTester:
             conn = sqlite3.connect(str(self.cache_dir / "gitflow_cache.db"))
             cursor = conn.execute(
                 """
-                SELECT DISTINCT ticket_references 
-                FROM cached_commits 
-                WHERE ticket_references IS NOT NULL 
-                AND ticket_references != '[]' 
+                SELECT DISTINCT ticket_references
+                FROM cached_commits
+                WHERE ticket_references IS NOT NULL
+                AND ticket_references != '[]'
                 LIMIT 20
             """
             )

@@ -66,10 +66,3 @@ class Thresholds:
 
     # Percentage calculations
     PERCENTAGE_MULTIPLIER = 100  # Standard percentage calculation multiplier
-
-
-class Estimations:
-    """Estimation constants for progress tracking and metrics."""
-
-    COMMITS_PER_WEEK = 50  # Estimated commits per week for progress bars
-    DEFAULT_ESTIMATE = 100  # Default estimate when actual count unavailable

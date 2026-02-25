@@ -393,7 +393,7 @@ Commits to classify:
 For each commit, provide:
 - change_type: feature|bugfix|refactor|docs|test|chore|security|hotfix|config
 - business_domain: frontend|backend|database|infrastructure|mobile|devops|unknown
-- risk_level: low|medium|high|critical  
+- risk_level: low|medium|high|critical
 - confidence: 0.0-1.0 (classification certainty)
 - urgency: routine|important|urgent|critical
 - complexity: simple|moderate|complex
@@ -534,8 +534,10 @@ Respond with JSON array only:
         if self.encoding:
             try:
                 return len(self.encoding.encode(text))
-            except Exception:
-                pass
+            except (ValueError, UnicodeEncodeError) as e:
+                self.logger.debug(
+                    f"Non-critical: token encoding failed, using character estimate: {e}"
+                )
 
         # Fallback estimation (roughly 4 characters per token)
         return len(text) // 4

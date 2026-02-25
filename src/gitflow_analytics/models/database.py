@@ -1329,9 +1329,11 @@ class Database:
                 try:
                     conn.execute(text("DELETE FROM qualitative_commits"))
                     conn.execute(text("DELETE FROM pattern_cache"))
-                except Exception:
-                    # These tables might not exist in all databases
-                    pass
+                except OperationalError as e:
+                    # These tables might not exist in all database schema versions
+                    logger.debug(
+                        f"Non-critical: optional cache tables not present during migration: {e}"
+                    )
 
                 conn.commit()
 

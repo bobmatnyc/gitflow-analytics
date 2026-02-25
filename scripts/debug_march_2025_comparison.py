@@ -124,7 +124,7 @@ class March2025Tester:
             conn.row_factory = sqlite3.Row
 
             query = """
-            SELECT 
+            SELECT
                 commit_hash,
                 author_name,
                 author_email,
@@ -139,8 +139,8 @@ class March2025Tester:
                 story_points,
                 ticket_references,
                 repo_path
-            FROM cached_commits 
-            WHERE repo_path = ? 
+            FROM cached_commits
+            WHERE repo_path = ?
             AND timestamp BETWEEN ? AND ?
             ORDER BY timestamp
             """

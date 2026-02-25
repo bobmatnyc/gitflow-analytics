@@ -20,8 +20,6 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..constants import BatchSizes, Timeouts
-from ..extractors.story_points import StoryPointExtractor
-from ..extractors.tickets import TicketExtractor
 from ..integrations.jira_integration import JIRAIntegration
 from ..models.database import (
     CachedCommit,
@@ -31,7 +29,14 @@ from ..models.database import (
 )
 from ..types import CommitStats
 from ..utils.commit_utils import is_merge_commit
-from .branch_mapper import BranchToProjectMapper
+from ..utils.glob_matcher import match_recursive_pattern as _match_recursive_pattern_fn
+from ..utils.glob_matcher import matches_glob_pattern as _matches_glob_pattern_fn
+from ..utils.glob_matcher import should_exclude_file as _should_exclude_file_fn
+from .analysis_components import (
+    build_branch_mapper,
+    build_story_point_extractor,
+    build_ticket_extractor,
+)
 from .cache import GitAnalysisCache
 from .git_timeout_wrapper import GitOperationTimeout, GitTimeoutWrapper, HeartbeatLogger
 from .identity import DeveloperIdentityResolver
@@ -81,9 +86,9 @@ class GitDataFetcher:
         self.repository_status = {}  # Track status of each repository
         # CRITICAL FIX: Use the same database instance as the cache to avoid session conflicts
         self.database = cache.db
-        self.story_point_extractor = StoryPointExtractor()
-        self.ticket_extractor = TicketExtractor(allowed_platforms=allowed_ticket_platforms)
-        self.branch_mapper = BranchToProjectMapper(branch_mapping_rules)
+        self.story_point_extractor = build_story_point_extractor()
+        self.ticket_extractor = build_ticket_extractor(allowed_platforms=allowed_ticket_platforms)
+        self.branch_mapper = build_branch_mapper(branch_mapping_rules)
         self.exclude_paths = exclude_paths or []
 
         # Log exclusion configuration
@@ -147,17 +152,17 @@ class GitDataFetcher:
         Returns:
             Dictionary containing fetch results and statistics
         """
-        logger.info("🔍 DEBUG: ===== FETCH METHOD CALLED =====")
+        logger.debug("🔍 DEBUG: ===== FETCH METHOD CALLED =====")
         logger.info(f"Starting data fetch for project {project_key} at {repo_path}")
-        logger.info(f"🔍 DEBUG: weeks_back={weeks_back}, repo_path={repo_path}")
+        logger.debug(f"🔍 DEBUG: weeks_back={weeks_back}, repo_path={repo_path}")
 
         # Calculate date range - use explicit dates if provided, otherwise calculate from weeks_back
         if start_date is not None and end_date is not None:
-            logger.info(f"🔍 DEBUG: Using explicit date range: {start_date} to {end_date}")
+            logger.debug(f"🔍 DEBUG: Using explicit date range: {start_date} to {end_date}")
         else:
             end_date = datetime.now(timezone.utc)
             start_date = end_date - timedelta(weeks=weeks_back)
-            logger.info(
+            logger.debug(
                 f"🔍 DEBUG: Calculated date range from weeks_back: {start_date} to {end_date}"
             )
 
@@ -183,7 +188,7 @@ class GitDataFetcher:
                 progress.start_repository(project_key, BatchSizes.DEFAULT_PROGRESS_ESTIMATE)
 
         # Step 1: Collect all commits organized by day with enhanced progress tracking
-        logger.info("🔍 DEBUG: About to fetch commits by day")
+        logger.debug("🔍 DEBUG: About to fetch commits by day")
         logger.info(f"Fetching commits organized by day for repository: {project_key}")
 
         # Create top-level progress for this repository
@@ -197,15 +202,15 @@ class GitDataFetcher:
             daily_commits = self._fetch_commits_by_day(
                 repo_path, project_key, start_date, end_date, branch_patterns, progress_callback
             )
-            logger.info(f"🔍 DEBUG: Fetched {len(daily_commits)} days of commits")
+            logger.debug(f"🔍 DEBUG: Fetched {len(daily_commits)} days of commits")
             progress.update(repo_progress_ctx)
 
             # Step 2: Extract and fetch all referenced tickets
             progress.set_description(repo_progress_ctx, f"🎫 {project_key}: Processing tickets")
-            logger.info("🔍 DEBUG: About to extract ticket references")
+            logger.debug("🔍 DEBUG: About to extract ticket references")
             logger.info(f"Extracting ticket references for {project_key}...")
             ticket_ids = self._extract_all_ticket_references(daily_commits)
-            logger.info(f"🔍 DEBUG: Extracted {len(ticket_ids)} ticket IDs")
+            logger.debug(f"🔍 DEBUG: Extracted {len(ticket_ids)} ticket IDs")
 
             if jira_integration and ticket_ids:
                 logger.info(
@@ -222,12 +227,12 @@ class GitDataFetcher:
 
             # Step 3: Store daily commit batches
             progress.set_description(repo_progress_ctx, f"💾 {project_key}: Storing data")
-            logger.info(
+            logger.debug(
                 f"🔍 DEBUG: About to store daily batches. Daily commits has {len(daily_commits)} days"
             )
             logger.info("Storing daily commit batches...")
             batches_created = self._store_daily_batches(daily_commits, repo_path, project_key)
-            logger.info(f"🔍 DEBUG: Storage complete. Batches created: {batches_created}")
+            logger.debug(f"🔍 DEBUG: Storage complete. Batches created: {batches_created}")
             progress.update(repo_progress_ctx)
 
         # CRITICAL FIX: Verify actual storage before reporting success
@@ -743,18 +748,16 @@ class GitDataFetcher:
             return None
 
     def _should_exclude_file(self, file_path: str) -> bool:
-        """Check if a file should be excluded based on exclude patterns."""
-        return any(self._matches_glob_pattern(file_path, pattern) for pattern in self.exclude_paths)
+        """Check if a file should be excluded based on exclude patterns.
+
+        Delegates to :func:`~gitflow_analytics.utils.glob_matcher.should_exclude_file`.
+        """
+        return _should_exclude_file_fn(file_path, self.exclude_paths)
 
     def _matches_glob_pattern(self, filepath: str, pattern: str) -> bool:
         """Check if a file path matches a glob pattern, handling ** recursion correctly.
 
-        This method properly handles different glob pattern types:
-        - **/vendor/** : matches files inside vendor directories at any level
-        - **/*.min.js : matches files with specific suffix anywhere in directory tree
-        - vendor/** : matches files inside vendor directory at root level only
-        - **pattern** : handles other complex patterns with pathlib.match()
-        - simple patterns : uses fnmatch for basic wildcards
+        Delegates to :func:`~gitflow_analytics.utils.glob_matcher.matches_glob_pattern`.
 
         Args:
             filepath: The file path to check
@@ -763,82 +766,12 @@ class GitDataFetcher:
         Returns:
             True if the file path matches the pattern, False otherwise
         """
-        import fnmatch
-        import re
-        from pathlib import PurePath
-
-        # Handle empty or invalid inputs
-        if not filepath or not pattern:
-            return False
-
-        path = PurePath(filepath)
-
-        # Check for multiple ** patterns first (most complex)
-        if "**" in pattern and pattern.count("**") > 1:
-            # Multiple ** patterns - use custom recursive matching for complex patterns
-            return self._match_recursive_pattern(filepath, pattern)
-
-        # Then handle simple ** patterns
-        elif pattern.startswith("**/") and pattern.endswith("/**"):
-            # Pattern like **/vendor/** - matches files inside vendor directories at any level
-            dir_name = pattern[3:-3]  # Extract 'vendor' from '**/vendor/**'
-            if not dir_name:  # Handle edge case of '**/**'
-                return True
-            return dir_name in path.parts
-
-        elif pattern.startswith("**/"):
-            # Pattern like **/*.min.js - matches files with specific suffix anywhere
-            suffix_pattern = pattern[3:]
-            if not suffix_pattern:  # Handle edge case of '**/'
-                return True
-            # Check against filename for file patterns, or any path part for directory patterns
-            if suffix_pattern.endswith("/"):
-                # Directory pattern like **/build/
-                dir_name = suffix_pattern[:-1]
-                return dir_name in path.parts
-            else:
-                # File pattern like *.min.js
-                return fnmatch.fnmatch(path.name, suffix_pattern)
-
-        elif pattern.endswith("/**"):
-            # Pattern like vendor/** or docs/build/** - matches files inside directory at root level
-            dir_name = pattern[:-3]
-            if not dir_name:  # Handle edge case of '/**'
-                return True
-
-            # Handle both single directory names and nested paths
-            expected_parts = PurePath(dir_name).parts
-            return (
-                len(path.parts) >= len(expected_parts)
-                and path.parts[: len(expected_parts)] == expected_parts
-            )
-
-        elif "**" in pattern:
-            # Single ** pattern - use pathlib matching with fallback
-            try:
-                return path.match(pattern)
-            except (ValueError, TypeError):
-                # Fall back to fnmatch if pathlib fails (e.g., invalid pattern)
-                try:
-                    return fnmatch.fnmatch(filepath, pattern)
-                except re.error:
-                    # Invalid regex pattern - return False to be safe
-                    return False
-        else:
-            # Simple pattern - use fnmatch for basic wildcards
-            try:
-                # Try matching the full path first
-                if fnmatch.fnmatch(filepath, pattern):
-                    return True
-                # Also try matching just the filename for simple patterns
-                # This allows "package-lock.json" to match "src/package-lock.json"
-                return fnmatch.fnmatch(path.name, pattern)
-            except re.error:
-                # Invalid regex pattern - return False to be safe
-                return False
+        return _matches_glob_pattern_fn(filepath, pattern)
 
     def _match_recursive_pattern(self, filepath: str, pattern: str) -> bool:
         """Handle complex patterns with multiple ** wildcards.
+
+        Delegates to :func:`~gitflow_analytics.utils.glob_matcher.match_recursive_pattern`.
 
         Args:
             filepath: The file path to check
@@ -847,63 +780,7 @@ class GitDataFetcher:
         Returns:
             True if the path matches the pattern, False otherwise
         """
-        import fnmatch
-        from pathlib import PurePath
-
-        # Split pattern by ** to handle each segment
-        parts = pattern.split("**")
-
-        # Validate that we have actual segments
-        if not parts:
-            return False
-
-        # Convert filepath to parts for easier matching
-        path_parts = list(PurePath(filepath).parts)
-
-        # Start matching from the beginning
-        path_index = 0
-
-        for i, part in enumerate(parts):
-            if not part:
-                # Empty part (e.g., from leading or trailing **)
-                if i == 0 or i == len(parts) - 1:
-                    # Leading or trailing ** - continue
-                    continue
-                # Middle empty part (consecutive **) - match any number of path components
-                continue
-
-            # Clean the part (remove leading/trailing slashes)
-            part = part.strip("/")
-
-            if not part:
-                continue
-
-            # Find where this part matches in the remaining path
-            found = False
-            for j in range(path_index, len(path_parts)):
-                # Check if the current path part matches the pattern part
-                if "/" in part:
-                    # Part contains multiple path components
-                    sub_parts = part.split("/")
-                    if j + len(sub_parts) <= len(path_parts) and all(
-                        fnmatch.fnmatch(path_parts[j + k], sub_parts[k])
-                        for k in range(len(sub_parts))
-                    ):
-                        path_index = j + len(sub_parts)
-                        found = True
-                        break
-                else:
-                    # Single component part
-                    if fnmatch.fnmatch(path_parts[j], part):
-                        path_index = j + 1
-                        found = True
-                        break
-
-            if not found and part:
-                # Required part not found in path
-                return False
-
-        return True
+        return _match_recursive_pattern_fn(filepath, pattern)
 
     def _get_branches_to_analyze(
         self, repo: Any, branch_patterns: Optional[list[str]]
@@ -1443,8 +1320,10 @@ class GitDataFetcher:
 
         try:
             total_commits = sum(len(commits) for commits in daily_commits.values())
-            logger.info(f"🔍 DEBUG: Storing {total_commits} commits from {len(daily_commits)} days")
-            logger.info(
+            logger.debug(
+                f"🔍 DEBUG: Storing {total_commits} commits from {len(daily_commits)} days"
+            )
+            logger.debug(
                 f"🔍 DEBUG: Daily commits keys: {list(daily_commits.keys())[:5]}"
             )  # First 5 dates
 
@@ -1452,7 +1331,7 @@ class GitDataFetcher:
             dates_to_process = [
                 datetime.strptime(date_str, "%Y-%m-%d").date() for date_str in daily_commits
             ]
-            logger.info(f"🔍 DEBUG: Processing {len(dates_to_process)} dates for daily batches")
+            logger.debug(f"🔍 DEBUG: Processing {len(dates_to_process)} dates for daily batches")
 
             # Pre-load existing batches to avoid constraint violations during processing
             existing_batches_map = {}
@@ -1470,11 +1349,11 @@ class GitDataFetcher:
                 )
                 if existing_batch:
                     existing_batches_map[date_str] = existing_batch
-                    logger.info(
+                    logger.debug(
                         f"🔍 DEBUG: Found existing batch for {date_str}: ID={existing_batch.id}"
                     )
                 else:
-                    logger.info(f"🔍 DEBUG: No existing batch found for {date_str}")
+                    logger.debug(f"🔍 DEBUG: No existing batch found for {date_str}")
 
             # Collect all commits for bulk operations
             all_commits_to_store = []
@@ -1494,7 +1373,7 @@ class GitDataFetcher:
                     if not commits:
                         continue
 
-                    logger.info(f"🔍 DEBUG: Processing {len(commits)} commits for {date_str}")
+                    logger.debug(f"🔍 DEBUG: Processing {len(commits)} commits for {date_str}")
 
                     # Prepare commits for bulk storage
                     commits_to_store_this_date = []
@@ -1536,7 +1415,7 @@ class GitDataFetcher:
                                 f"Commit {commit['commit_hash'][:7]} already exists in database"
                             )
 
-                    logger.info(
+                    logger.debug(
                         f"🔍 DEBUG: Prepared {len(commits_to_store_this_date)} new commits for {date_str}"
                     )
 
@@ -1576,7 +1455,7 @@ class GitDataFetcher:
                             existing_batch.context_summary = context_summary
                             existing_batch.fetched_at = datetime.utcnow()
                             existing_batch.classification_status = "pending"
-                            logger.info(f"🔍 DEBUG: Updated existing batch for {date_str}")
+                            logger.debug(f"🔍 DEBUG: Updated existing batch for {date_str}")
                         else:
                             # Create new batch
                             batch = DailyCommitBatch(
@@ -1595,7 +1474,7 @@ class GitDataFetcher:
                             )
                             session.add(batch)
                             batches_created += 1
-                            logger.info(f"🔍 DEBUG: Created new batch for {date_str}")
+                            logger.debug(f"🔍 DEBUG: Created new batch for {date_str}")
                     except Exception as batch_error:
                         # Don't let batch creation failure kill commit storage
                         logger.error(
@@ -1624,7 +1503,7 @@ class GitDataFetcher:
             session.commit()
 
             # CRITICAL FIX: Verify commits were actually stored
-            logger.info("🔍 DEBUG: Verifying commit storage...")
+            logger.debug("🔍 DEBUG: Verifying commit storage...")
             verification_result = self._verify_commit_storage(
                 session, daily_commits, repo_path, expected_commits
             )
@@ -1713,7 +1592,7 @@ class GitDataFetcher:
             actual_stored = expected_new_commits
 
             # Log detailed verification results
-            logger.info(
+            logger.debug(
                 f"🔍 DEBUG: Storage verification - Expected new: {expected_new_commits}, Total matching found: {total_found}"
             )
 

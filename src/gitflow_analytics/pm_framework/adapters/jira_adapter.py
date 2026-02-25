@@ -18,6 +18,7 @@ from requests.adapters import HTTPAdapter
 from requests.exceptions import ConnectionError, RequestException, Timeout
 from urllib3.util.retry import Retry
 
+from ...utils.debug import is_debug_mode
 from ..base import BasePlatformAdapter, PlatformCapabilities
 from ..models import (
     IssueStatus,
@@ -265,23 +266,30 @@ class JiraTicketCache:
         """
         import json
 
-        where_clause = "WHERE project_key = ?"
-        params = [project_key]
-
-        if not include_expired:
-            where_clause += " AND expires_at > CURRENT_TIMESTAMP"
-
         with sqlite3.connect(self.cache_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            cursor.execute(
-                f"""
-                SELECT ticket_data FROM jira_tickets {where_clause}
-                ORDER BY updated_at DESC
-            """,
-                params,
-            )
+            if include_expired:
+                # Fully parameterized — no dynamic SQL fragments
+                cursor.execute(
+                    """
+                    SELECT ticket_data FROM jira_tickets
+                    WHERE project_key = ?
+                    ORDER BY updated_at DESC
+                    """,
+                    (project_key,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT ticket_data FROM jira_tickets
+                    WHERE project_key = ?
+                      AND expires_at > CURRENT_TIMESTAMP
+                    ORDER BY updated_at DESC
+                    """,
+                    (project_key,),
+                )
 
             tickets = []
             for row in cursor.fetchall():
@@ -545,10 +553,8 @@ class JIRAAdapter(BasePlatformAdapter):
                 - cache_dir: Directory for ticket cache (optional, defaults to current directory)
                 - cache_ttl_hours: Cache TTL in hours (optional, default: 168 = 7 days)
         """
-        import os
-
         # Check debug mode
-        debug_mode = os.getenv("GITFLOW_DEBUG", "").lower() in ("1", "true", "yes")
+        debug_mode = is_debug_mode()
         if debug_mode:
             print(f"   🔍 JIRA adapter __init__ called with config keys: {list(config.keys())}")
 
@@ -557,15 +563,15 @@ class JIRAAdapter(BasePlatformAdapter):
         # Required configuration (use defaults for capability checking)
         self.base_url = config.get("base_url", "https://example.atlassian.net").rstrip("/")
         self.username = config.get("username", "user@example.com")
-        self.api_token = config.get("api_token", "dummy-token")
+        self.api_token = config.get("api_token", "dummy-token")  # nosec B105 - placeholder default
 
         # Debug output
         logger.info(
-            f"JIRA adapter init: base_url={self.base_url}, username={self.username}, has_token={bool(self.api_token and self.api_token != 'dummy-token')}"
+            f"JIRA adapter init: base_url={self.base_url}, username={self.username}, has_token={bool(self.api_token and self.api_token != 'dummy-token')}"  # nosec B105
         )
         if debug_mode:
             print(
-                f"   🔍 JIRA adapter received: username={self.username}, has_token={bool(self.api_token and self.api_token != 'dummy-token')}, base_url={self.base_url}"
+                f"   🔍 JIRA adapter received: username={self.username}, has_token={bool(self.api_token and self.api_token != 'dummy-token')}, base_url={self.base_url}"  # nosec B105
             )
 
         # Optional configuration with defaults
@@ -1474,8 +1480,8 @@ class JIRAAdapter(BasePlatformAdapter):
                     name_match = re.search(r"name=([^,\]]+)", sprint_data)
                     if id_match and name_match:
                         return id_match.group(1), name_match.group(1)
-                except Exception:
-                    pass
+                except (TypeError, AttributeError) as e:
+                    logger.debug(f"Non-critical: could not parse legacy JIRA sprint string: {e}")
 
         return None, None
 

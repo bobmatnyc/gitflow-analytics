@@ -4,9 +4,11 @@ import builtins
 import contextlib
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
+import traceback
 from datetime import datetime, timedelta, timezone
 from difflib import get_close_matches
 from pathlib import Path
@@ -150,7 +152,6 @@ def handle_timezone_error(
     ):
         logger.error(f"Timezone comparison error in {report_name}:")
         logger.error(f"  Error: {e}")
-        import traceback
 
         logger.error(f"  Full traceback:\n{traceback.format_exc()}")
 
@@ -183,8 +184,6 @@ class ImprovedErrorHandler:
         # Check for common errors and provide suggestions
         if "no such option" in error_msg.lower():
             # Extract the invalid option
-            import re
-
             match = re.search(r"no such option: (--?[\w-]+)", error_msg.lower())
             if match:
                 invalid_option = match.group(1)
@@ -207,8 +206,6 @@ class ImprovedErrorHandler:
 
         elif "no such command" in error_msg.lower():
             # Extract the invalid command
-            import re
-
             match = re.search(r"no such command[:'] (\w+)", error_msg.lower())
             if match:
                 invalid_cmd = match.group(1)
@@ -340,7 +337,7 @@ def cli(ctx: click.Context) -> None:
 
     \b
     For detailed command help: gitflow-analytics COMMAND --help
-    For documentation: https://github.com/yourusername/gitflow-analytics
+    For documentation: https://github.com/bobmatnyc/gitflow-analytics
     """
     # If no subcommand was invoked, show interactive menu or help
     if ctx.invoked_subcommand is None:
@@ -3584,7 +3581,6 @@ def analyze(
                 click.echo(f"   ❌ Error generating weekly metrics report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
-                import traceback
 
                 traceback.print_exc()
                 raise
@@ -3608,7 +3604,6 @@ def analyze(
                 click.echo(f"   ❌ Error generating summary report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
-                import traceback
 
                 traceback.print_exc()
                 raise
@@ -3625,7 +3620,6 @@ def analyze(
                 click.echo(f"   ❌ Error generating developer report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
-                import traceback
 
                 traceback.print_exc()
                 raise
@@ -3646,7 +3640,6 @@ def analyze(
                 click.echo(f"   ❌ Error generating untracked commits report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
-                import traceback
 
                 traceback.print_exc()
                 raise
@@ -3721,7 +3714,6 @@ def analyze(
             click.echo(f"   ❌ Error generating activity distribution report: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
-            import traceback
 
             traceback.print_exc()
             raise
@@ -3745,7 +3737,6 @@ def analyze(
             click.echo(f"   ❌ Error generating developer focus report: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
-            import traceback
 
             traceback.print_exc()
             raise
@@ -3871,7 +3862,6 @@ def analyze(
             click.echo(f"   ❌ Error calculating DORA metrics: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
-            import traceback
 
             traceback.print_exc()
             raise
@@ -3893,7 +3883,6 @@ def analyze(
             click.echo(f"   ❌ Error aggregating PR metrics: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
-            import traceback
 
             traceback.print_exc()
             raise
@@ -3919,7 +3908,6 @@ def analyze(
                 click.echo(f"   ❌ Error generating weekly velocity report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
-                import traceback
 
                 traceback.print_exc()
                 raise
@@ -3945,7 +3933,6 @@ def analyze(
                 click.echo(f"   ❌ Error generating weekly DORA metrics report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
-                import traceback
 
                 traceback.print_exc()
                 raise
@@ -4078,7 +4065,6 @@ def analyze(
                 click.echo(f"   ❌ Error generating narrative report: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
-                import traceback
 
                 traceback.print_exc()
                 raise
@@ -4255,7 +4241,6 @@ def analyze(
                 click.echo(f"   ❌ Error generating comprehensive JSON export: {e}")
                 click.echo(f"   🔍 Error type: {type(e).__name__}")
                 click.echo(f"   📍 Error details: {str(e)}")
-                import traceback
 
                 traceback.print_exc()
                 raise
@@ -4358,7 +4343,6 @@ def analyze(
             click.echo(f"   ❌ Error in final summary/display: {e}")
             click.echo(f"   🔍 Error type: {type(e).__name__}")
             click.echo(f"   📍 Error details: {str(e)}")
-            import traceback
 
             traceback.print_exc()
             raise
@@ -5758,7 +5742,6 @@ def aliases_command(
 
     except Exception as e:
         click.echo(f"\n❌ Error generating aliases: {e}", err=True)
-        import traceback
 
         if os.getenv("GITFLOW_DEBUG"):
             traceback.print_exc()
@@ -6099,7 +6082,6 @@ def create_alias_interactive(config: Path, output: Optional[Path]) -> None:
         sys.exit(0)
     except Exception as e:
         click.echo(click.style(f"\n❌ Error: {e}", fg="red"), err=True)
-        import traceback
 
         traceback.print_exc()
         sys.exit(1)
@@ -6412,7 +6394,6 @@ def alias_rename(
         sys.exit(0)
     except Exception as e:
         click.echo(f"❌ Unexpected error: {e}", err=True)
-        import traceback
 
         traceback.print_exc()
         sys.exit(1)
@@ -6738,16 +6719,12 @@ def train(
         except Exception as e:
             click.echo(f"\n❌ Training failed with error: {e}")
             if log.upper() == "DEBUG":
-                import traceback
-
                 traceback.print_exc()
             sys.exit(1)
 
     except Exception as e:
         click.echo(f"\n❌ Configuration or setup error: {e}")
         if log.upper() == "DEBUG":
-            import traceback
-
             traceback.print_exc()
         sys.exit(1)
 
@@ -6813,7 +6790,6 @@ def verify_activity(config: Path, weeks: int, output: Optional[Path]) -> None:
         sys.exit(1)
     except Exception as e:
         click.echo(f"❌ Error during activity verification: {e}")
-        import traceback
 
         traceback.print_exc()
         sys.exit(1)
@@ -6931,7 +6907,7 @@ def show_help() -> None:
 
 📖 DOCUMENTATION
 ───────────────
-  • README: https://github.com/yourusername/gitflow-analytics
+  • README: https://github.com/bobmatnyc/gitflow-analytics
   • Config Guide: docs/configuration.md
   • API Reference: docs/api.md
   • Contributing: docs/contributing.md

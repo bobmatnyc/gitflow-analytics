@@ -7,7 +7,6 @@ and performance monitoring.
 """
 
 import logging
-import pickle
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
@@ -307,13 +306,13 @@ class CommitClassificationModel:
             return
 
         model_file = self.model_path / "commit_classifier.joblib"
-        metadata_file = self.model_path / "model_metadata.pkl"
+        metadata_file = self.model_path / "model_metadata.joblib"
 
         try:
             # Save the scikit-learn model
             joblib.dump(self.model, model_file)
 
-            # Save metadata
+            # Save metadata using joblib (avoids pickle arbitrary-code-execution risk)
             metadata = {
                 "label_encoder": self.label_encoder,
                 "is_trained": self.is_trained,
@@ -324,8 +323,7 @@ class CommitClassificationModel:
                 "config": self.config,
             }
 
-            with open(metadata_file, "wb") as f:
-                pickle.dump(metadata, f)
+            joblib.dump(metadata, metadata_file)
 
             logger.info(f"Model saved to {model_file}")
 
@@ -342,7 +340,16 @@ class CommitClassificationModel:
             return False
 
         model_file = self.model_path / "commit_classifier.joblib"
-        metadata_file = self.model_path / "model_metadata.pkl"
+        metadata_file = self.model_path / "model_metadata.joblib"
+
+        # Support legacy .pkl metadata files during migration period
+        if not metadata_file.exists():
+            legacy_metadata_file = self.model_path / "model_metadata.pkl"
+            if legacy_metadata_file.exists():
+                metadata_file = legacy_metadata_file
+                logger.warning(
+                    "Loading legacy pickle metadata file. Re-train model to migrate to joblib format."
+                )
 
         if not (model_file.exists() and metadata_file.exists()):
             return False
@@ -351,9 +358,8 @@ class CommitClassificationModel:
             # Load the scikit-learn model
             self.model = joblib.load(model_file)
 
-            # Load metadata
-            with open(metadata_file, "rb") as f:
-                metadata = pickle.load(f)
+            # Load metadata using joblib (safe deserialization)
+            metadata = joblib.load(metadata_file)
 
             self.label_encoder = metadata["label_encoder"]
             self.is_trained = metadata["is_trained"]

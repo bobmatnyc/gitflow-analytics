@@ -5,6 +5,7 @@ This module provides a sophisticated progress meter using the Rich library
 for beautiful terminal output with live updates and statistics.
 """
 
+import logging
 import threading
 import time
 from contextlib import contextmanager
@@ -12,6 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 # Try to import psutil, but make it optional
 try:
@@ -662,8 +665,10 @@ class RichProgressDisplay:
             if self._live:
                 try:
                     self._live.stop()
-                except Exception:
-                    pass  # Ignore errors during cleanup
+                except Exception as e:
+                    logger.debug(
+                        f"Non-critical: error stopping Rich live display during cleanup: {e}"
+                    )
                 finally:
                     self._live = None
                     self._layout = None
@@ -1485,8 +1490,9 @@ def create_progress_display(
     if style == "rich" or (style == "auto" and RICH_AVAILABLE):
         try:
             return RichProgressDisplay(version, update_frequency)
-        except Exception:
-            # Fall back to simple if Rich fails
-            pass
+        except Exception as e:
+            logger.debug(
+                f"Non-critical: Rich progress display unavailable, falling back to simple: {e}"
+            )
 
     return SimpleProgressDisplay(version, update_frequency)

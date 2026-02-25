@@ -6,9 +6,11 @@ analytics.
 """
 
 import logging
+import traceback
 from datetime import datetime
 from typing import Any, Optional
 
+from ..utils.debug import is_debug_mode
 from .base import BasePlatformAdapter
 from .models import UnifiedIssue, UnifiedProject
 from .registry import PlatformRegistry
@@ -80,13 +82,10 @@ class PMFrameworkOrchestrator:
         self.temporal_window_hours = correlation_config.get("temporal_window_hours", 72)
         self.confidence_threshold = correlation_config.get("confidence_threshold", 0.8)
 
-        import os
-        import traceback
-
         logger.info("PM Framework Orchestrator initialized")
 
         # Only show debug messages when GITFLOW_DEBUG is set
-        debug_mode = os.getenv("GITFLOW_DEBUG", "").lower() in ("1", "true", "yes")
+        debug_mode = is_debug_mode()
         if debug_mode:
             print("   🔍 PM Framework init stack trace:")
             for line in traceback.format_stack()[-5:-1]:

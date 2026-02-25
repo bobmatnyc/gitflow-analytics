@@ -1,8 +1,6 @@
 """Git repository analyzer with batch processing support."""
 
-import fnmatch
 import logging
-import os
 import re
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
@@ -12,21 +10,19 @@ from typing import Any, Optional
 import git
 from git import Repo
 
-from ..extractors.story_points import StoryPointExtractor
-from ..extractors.tickets import TicketExtractor
 from ..types import FilteredCommitStats
 from ..utils.commit_utils import is_merge_commit
-from .branch_mapper import BranchToProjectMapper
+from ..utils.debug import is_debug_mode
+from ..utils.glob_matcher import match_recursive_pattern as _match_recursive_pattern_fn
+from ..utils.glob_matcher import matches_glob_pattern as _matches_glob_pattern_fn
+from ..utils.glob_matcher import should_exclude_file as _should_exclude_file_fn
+from .analysis_components import (
+    build_branch_mapper,
+    build_story_point_extractor,
+    build_ticket_extractor,
+)
 from .cache import GitAnalysisCache
 from .progress import get_progress_service
-
-# Import ML extractor with fallback
-try:
-    from ..extractors.ml_tickets import MLTicketExtractor
-
-    ML_EXTRACTOR_AVAILABLE = True
-except ImportError:
-    ML_EXTRACTOR_AVAILABLE = False
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
@@ -67,45 +63,14 @@ class GitAnalyzer:
         self.cache = cache
         self.batch_size = batch_size
         self.exclude_merge_commits = exclude_merge_commits
-        self.story_point_extractor = StoryPointExtractor(patterns=story_point_patterns)
-
-        # Initialize ticket extractor (ML or standard based on config and availability)
-        if (
-            ml_categorization_config
-            and ml_categorization_config.get("enabled", True)
-            and ML_EXTRACTOR_AVAILABLE
-        ):
-            logger.info("Initializing ML-enhanced ticket extractor")
-
-            # Check if LLM classification is enabled
-            enable_llm = llm_config and llm_config.get("enabled", False)
-            if enable_llm:
-                logger.info("LLM-based commit classification enabled")
-
-            self.ticket_extractor = MLTicketExtractor(
-                allowed_platforms=allowed_ticket_platforms,
-                ml_config=ml_categorization_config,
-                llm_config=llm_config,
-                cache_dir=cache.cache_dir / "ml_predictions",
-                enable_ml=True,
-                enable_llm=enable_llm,
-            )
-        else:
-            if ml_categorization_config and ml_categorization_config.get("enabled", True):
-                if not ML_EXTRACTOR_AVAILABLE:
-                    logger.warning(
-                        "ML categorization requested but dependencies not available, using standard extractor"
-                    )
-                else:
-                    logger.info(
-                        "ML categorization disabled in configuration, using standard extractor"
-                    )
-            else:
-                logger.debug("Using standard ticket extractor")
-
-            self.ticket_extractor = TicketExtractor(allowed_platforms=allowed_ticket_platforms)
-
-        self.branch_mapper = BranchToProjectMapper(branch_mapping_rules)
+        self.story_point_extractor = build_story_point_extractor(patterns=story_point_patterns)
+        self.ticket_extractor = build_ticket_extractor(
+            allowed_platforms=allowed_ticket_platforms,
+            ml_config=ml_categorization_config,
+            llm_config=llm_config,
+            cache_dir=cache.cache_dir / "ml_predictions",
+        )
+        self.branch_mapper = build_branch_mapper(branch_mapping_rules)
         self.exclude_paths = exclude_paths or []
 
         # Initialize branch analysis configuration
@@ -214,7 +179,7 @@ class GitAnalyzer:
                 progress_service.complete(progress_ctx)
 
                 # Debug logging for progress tracking issues
-                if os.getenv("GITFLOW_DEBUG", "").lower() in ("1", "true", "yes"):
+                if is_debug_mode():
                     logger.debug(
                         f"Final progress: Processed: {processed_commits}/{total_commits} commits"
                     )
@@ -1094,25 +1059,16 @@ class GitAnalyzer:
         return any(filepath.endswith(ext) for ext in code_extensions)
 
     def _should_exclude_file(self, filepath: str) -> bool:
-        """Check if file should be excluded from line counting."""
-        if not filepath:
-            return False
+        """Check if file should be excluded from line counting.
 
-        # Normalize path separators for consistent matching
-        filepath = filepath.replace("\\", "/")
-
-        # Check against exclude patterns with proper ** handling
-        return any(self._matches_glob_pattern(filepath, pattern) for pattern in self.exclude_paths)
+        Delegates to :func:`~gitflow_analytics.utils.glob_matcher.should_exclude_file`.
+        """
+        return _should_exclude_file_fn(filepath, self.exclude_paths)
 
     def _matches_glob_pattern(self, filepath: str, pattern: str) -> bool:
         """Check if a file path matches a glob pattern, handling ** recursion correctly.
 
-        This method properly handles different glob pattern types:
-        - **/vendor/** : matches files inside vendor directories at any level
-        - **/*.min.js : matches files with specific suffix anywhere in directory tree
-        - vendor/** : matches files inside vendor directory at root level only
-        - **pattern** : handles other complex patterns with pathlib.match()
-        - simple patterns : uses fnmatch for basic wildcards
+        Delegates to :func:`~gitflow_analytics.utils.glob_matcher.matches_glob_pattern`.
 
         Args:
             filepath: The file path to check
@@ -1121,79 +1077,12 @@ class GitAnalyzer:
         Returns:
             True if the file path matches the pattern, False otherwise
         """
-        from pathlib import PurePath
-
-        # Handle empty or invalid inputs
-        if not filepath or not pattern:
-            return False
-
-        path = PurePath(filepath)
-
-        # Check for multiple ** patterns first (most complex)
-        if "**" in pattern and pattern.count("**") > 1:
-            # Multiple ** patterns - use custom recursive matching for complex patterns
-            return self._match_recursive_pattern(filepath, pattern)
-
-        # Then handle simple ** patterns
-        elif pattern.startswith("**/") and pattern.endswith("/**"):
-            # Pattern like **/vendor/** - matches files inside vendor directories at any level
-            dir_name = pattern[3:-3]  # Extract 'vendor' from '**/vendor/**'
-            if not dir_name:  # Handle edge case of '**/**'
-                return True
-            return dir_name in path.parts
-
-        elif pattern.startswith("**/"):
-            # Pattern like **/*.min.js - matches files with specific suffix anywhere
-            suffix_pattern = pattern[3:]
-            if not suffix_pattern:  # Handle edge case of '**/'
-                return True
-            # Check against filename for file patterns, or any path part for directory patterns
-            if suffix_pattern.endswith("/"):
-                # Directory pattern like **/build/
-                dir_name = suffix_pattern[:-1]
-                return dir_name in path.parts
-            else:
-                # File pattern like *.min.js
-                # Check both filename AND full path to handle patterns like **/pnpm-lock.yaml
-                # matching root-level files (e.g., pnpm-lock.yaml)
-                return fnmatch.fnmatch(path.name, suffix_pattern) or fnmatch.fnmatch(
-                    filepath, suffix_pattern
-                )
-
-        elif pattern.endswith("/**"):
-            # Pattern like vendor/** or docs/build/** - matches files inside directory at root level
-            dir_name = pattern[:-3]
-            if not dir_name:  # Handle edge case of '/**'
-                return True
-
-            # Handle both single directory names and nested paths
-            expected_parts = PurePath(dir_name).parts
-            return (
-                len(path.parts) >= len(expected_parts)
-                and path.parts[: len(expected_parts)] == expected_parts
-            )
-
-        elif "**" in pattern:
-            # Single ** pattern - use pathlib matching with fallback
-            try:
-                return path.match(pattern)
-            except (ValueError, TypeError):
-                # Fall back to fnmatch if pathlib fails (e.g., invalid pattern)
-                try:
-                    return fnmatch.fnmatch(filepath, pattern)
-                except re.error:
-                    # Invalid regex pattern - return False to be safe
-                    return False
-        else:
-            # Simple pattern - use fnmatch for basic wildcards
-            try:
-                return fnmatch.fnmatch(filepath, pattern)
-            except re.error:
-                # Invalid regex pattern - return False to be safe
-                return False
+        return _matches_glob_pattern_fn(filepath, pattern)
 
     def _match_recursive_pattern(self, filepath: str, pattern: str) -> bool:
         """Handle complex patterns with multiple ** wildcards.
+
+        Delegates to :func:`~gitflow_analytics.utils.glob_matcher.match_recursive_pattern`.
 
         Args:
             filepath: The file path to check
@@ -1202,36 +1091,7 @@ class GitAnalyzer:
         Returns:
             True if the path matches the pattern, False otherwise
         """
-        from pathlib import PurePath
-
-        # Split pattern by ** to handle each segment
-        parts = pattern.split("**")
-        path = PurePath(filepath)
-        path_str = str(path)
-
-        # Handle patterns like 'src/**/components/**/*.tsx' or '**/test/**/*.spec.js'
-        if len(parts) >= 2:
-            # First part should match from the beginning (if not empty)
-            start_pattern = parts[0].rstrip("/")
-            if start_pattern and not path_str.startswith(start_pattern):
-                return False
-
-            # Last part should match the filename/end pattern
-            end_pattern = parts[-1].lstrip("/")
-            if end_pattern and not fnmatch.fnmatch(path.name, end_pattern):
-                # Check if filename matches the end pattern
-                return False
-
-            # Middle parts should exist somewhere in the path between start and end
-            for i in range(1, len(parts) - 1):
-                middle_pattern = parts[i].strip("/")
-                if middle_pattern and middle_pattern not in path.parts:
-                    # Check if this directory exists in the path
-                    return False
-
-            return True
-
-        return False
+        return _match_recursive_pattern_fn(filepath, pattern)
 
     def _calculate_filtered_stats(self, commit: git.Commit) -> FilteredCommitStats:
         """Calculate commit statistics excluding boilerplate/generated files using git diff --numstat.

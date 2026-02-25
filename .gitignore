@@ -81,7 +81,12 @@ config-*.yaml
 reports/
 output/
 
+# Local configs with machine-specific paths (never commit)
+configs/*.yaml
+!configs/README.md
+
 # Test files and results (prevent accidental commits)
+# Root-level test_*.py are gitignored; tests/ is always tracked
 test_*.py
 !tests/**
 *_test_results*
@@ -123,7 +128,7 @@ qualitative_insights_*.csv
 validation_results_*.json
 mock_*_validation_*.json
 
-# Test database files 
+# Test database files
 tests/**/*.db
 tests/**/gitflow_cache.db
 tests/**/identities.db
@@ -149,13 +154,16 @@ YAML_*.md
 !CONTRIBUTING.md
 !SECURITY.md
 
-# Debug and temporary files
+# Debug and temporary files (root-level only)
+# Exception: scripts/ directory .py files are always tracked (exception comes after this block)
 debug_*.py
 fix_*.py
 test_*.sh
 run_*.sh
 validate_*.sh
 analyze_*.py
+# Allow all Python files in scripts/ to be tracked (overrides the rules above for scripts/)
+!scripts/*.py
 mock_*.py
 *_validation.py
 *_VALIDATION_*.md
@@ -183,7 +191,7 @@ EWTN-test/
 # Tickets directory (if not intentional)
 tickets/
 
-# Build and cache directories  
+# Build and cache directories
 htmlcov/
 .mypy_cache/
 .ruff_cache/
@@ -274,3 +282,9 @@ docs/research/
 
 # Kuzu memory backups
 .kuzu-memory-backups/
+
+# MCP Ticketer
+.mcp-ticketer/
+
+# Gemini CLI
+.gemini/

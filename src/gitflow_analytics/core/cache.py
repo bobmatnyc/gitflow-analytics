@@ -3,7 +3,6 @@
 import hashlib
 import json
 import logging
-import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,6 +19,7 @@ from ..models.database import (
     PullRequestCache,
     RepositoryAnalysisStatus,
 )
+from ..utils.debug import is_debug_mode
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class GitAnalysisCache:
         self.total_bytes_cached = 0
 
         # Debug mode controlled by environment variable
-        self.debug_mode = os.getenv("GITFLOW_DEBUG", "").lower() in ("1", "true", "yes")
+        self.debug_mode = is_debug_mode()
 
     @contextmanager
     def get_session(self) -> Any:

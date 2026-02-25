@@ -16,11 +16,12 @@ DESIGN DECISIONS:
 """
 
 import logging
-import pickle
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+import joblib
 
 from ..models.database import ClassificationModel, Database
 
@@ -107,8 +108,9 @@ class TrainingModelLoader:
             raise FileNotFoundError(f"Model file not found: {model_path}")
 
         try:
-            with open(model_path, "rb") as f:
-                model = pickle.load(f)
+            # Use joblib instead of pickle to prevent arbitrary code execution
+            # during model deserialization (Bandit S301/pickle vulnerability)
+            model = joblib.load(model_path)
 
             # Cache loaded model
             self.loaded_models[cache_key] = model
@@ -213,8 +215,8 @@ class TrainingModelLoader:
             path = Path(model_path)
             if path.exists():
                 return path.stat().st_size / (1024 * 1024)
-        except Exception:
-            pass
+        except OSError as e:
+            logger.debug(f"Non-critical: could not read model file size for {model_path}: {e}")
         return 0.0
 
     def predict_commit_category(

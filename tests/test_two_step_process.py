@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
-"""Test script for the two-step fetch/analyze process.
+"""Tests for the two-step fetch/analyze process.
 
-This script demonstrates the new two-step architecture:
+Validates the two-step architecture:
 1. Fetch: Collect raw git commits and ticket data without classification
 2. Analyze: Use batch LLM classification on the cached data
 """
@@ -9,6 +8,8 @@ This script demonstrates the new two-step architecture:
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pytest
 
 # Test configuration
 TEST_CONFIG = """
@@ -23,17 +24,17 @@ repositories:
     project_key: "TEST"
 
 analysis:
-  # Standard analysis settings  
+  # Standard analysis settings
   exclude_authors: []
   exclude_paths: []
   branch_mapping_rules: {{}}
   auto_identity_analysis: false
   manual_identity_mappings: []
-  
+
   # LLM classification settings
   llm_classification:
     enabled: true
-    api_key: "test-key"  # Would be real key in production
+    api_key: "test-key"  # pragma: allowlist secret - not a real key
     model: "gpt-3.5-turbo"
     confidence_threshold: 0.7
     max_tokens: 4000
@@ -44,7 +45,7 @@ analysis:
     max_daily_requests: 1000
     domain_terms:
       - "frontend"
-      - "backend" 
+      - "backend"
       - "api"
       - "database"
 
@@ -61,12 +62,11 @@ reports:
 """
 
 
+@pytest.mark.integration
 def test_data_fetcher():
-    """Test the data fetcher component."""
-    print("🧪 Testing Data Fetcher...")
-
-    from src.gitflow_analytics.core.cache import GitAnalysisCache
-    from src.gitflow_analytics.core.data_fetcher import GitDataFetcher
+    """Test the data fetcher component initializes and reports empty status."""
+    from gitflow_analytics.core.cache import GitAnalysisCache
+    from gitflow_analytics.core.data_fetcher import GitDataFetcher
 
     # Create temporary cache directory
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -82,15 +82,12 @@ def test_data_fetcher():
 
         # Test fetch status (should be empty initially)
         status = data_fetcher.get_fetch_status("TEST", Path("."))
-        print(f"   📊 Initial status: {status}")
-
-        # Note: Full integration test would require actual git repo
-        print("   ✅ Data Fetcher component loads successfully")
+        assert status is not None
 
 
+@pytest.mark.integration
 def test_batch_classifier():
-    """Test the batch classifier component."""
-    print("🧪 Testing Batch Classifier...")
+    """Test the batch classifier component initializes and reports status."""
 
     # Create a mock config object for testing
     class MockLLMConfig:
@@ -105,45 +102,34 @@ def test_batch_classifier():
             self.timeout_seconds = 30
             self.api_base_url = "https://api.example.com"
             self.max_daily_requests = 1000
+            self.batch_size = 10
+            self.confidence_threshold = 0.7
 
     try:
-        from src.gitflow_analytics.classification.batch_classifier import BatchCommitClassifier
+        from gitflow_analytics.classification.batch_classifier import BatchCommitClassifier
+    except ImportError:
+        pytest.skip("BatchCommitClassifier not available (optional dependency missing)")
 
-        # Create temporary cache directory
-        with tempfile.TemporaryDirectory() as temp_dir:
-            cache_dir = Path(temp_dir)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cache_dir = Path(temp_dir)
+        batch_classifier = BatchCommitClassifier(
+            cache_dir=cache_dir,
+            llm_config=MockLLMConfig(),
+            batch_size=10,
+            confidence_threshold=0.7,
+            fallback_enabled=True,
+        )
 
-            # Initialize batch classifier with mock config
-            batch_classifier = BatchCommitClassifier(
-                cache_dir=cache_dir,
-                llm_config=MockLLMConfig(),
-                batch_size=10,
-                confidence_threshold=0.7,
-                fallback_enabled=True,
-            )
-
-            # Test classification status (should be empty initially)
-            start_date = datetime.now(timezone.utc) - timedelta(weeks=2)
-            end_date = datetime.now(timezone.utc)
-
-            status = batch_classifier.get_classification_status(start_date, end_date)
-            print(f"   📊 Classification status: {status}")
-
-            print("   ✅ Batch Classifier component loads successfully")
-
-    except ImportError as e:
-        print(f"   ⚠️  Batch Classifier test skipped: {e}")
-        print("   ℹ️  This is expected if optional dependencies are missing")
-    except Exception as e:
-        print(f"   ❌ Batch Classifier test failed: {e}")
-        # Don't raise - this is just a component test
+        start_date = datetime.now(timezone.utc) - timedelta(weeks=2)
+        end_date = datetime.now(timezone.utc)
+        status = batch_classifier.get_classification_status(start_date, end_date)
+        assert status is not None
 
 
+@pytest.mark.integration
 def test_database_models():
     """Test the database models for the two-step process."""
-    print("🧪 Testing Database Models...")
-
-    from src.gitflow_analytics.models.database import DailyCommitBatch, Database
+    from gitflow_analytics.models.database import DailyCommitBatch, Database
 
     # Create in-memory database for testing
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -182,61 +168,38 @@ def test_database_models():
             assert retrieved is not None
             assert retrieved.commit_count == 5
 
-            print("   ✅ Database models work correctly")
-            print(f"      - Created batch with {retrieved.commit_count} commits")
-            print(f"      - Project: {retrieved.project_key}")
-            print(f"      - Status: {retrieved.classification_status}")
-
         finally:
             session.close()
 
 
+@pytest.mark.cli
 def test_cli_commands():
     """Test that the CLI commands are properly registered."""
-    print("🧪 Testing CLI Commands...")
+    import click.testing
 
-    try:
-        from src.gitflow_analytics.cli import cli
+    from gitflow_analytics.cli import cli
 
-        # Get list of registered commands
-        commands = list(cli.commands.keys())
-        print(f"   📋 Available commands: {commands}")
+    commands = list(cli.commands.keys())
+    assert "fetch" in commands, "fetch command not found"
+    assert "analyze" in commands, "analyze command not found"
 
-        # Check that fetch command exists
-        assert "fetch" in commands, "fetch command not found"
-        assert "analyze" in commands, "analyze command not found"
+    runner = click.testing.CliRunner()
 
-        print("   ✅ Both 'fetch' and 'analyze' commands are registered")
+    result = runner.invoke(cli, ["fetch", "--help"])
+    assert result.exit_code == 0
+    assert "Fetch data from external platforms" in result.output
 
-        # Test command help (basic smoke test)
-        import click.testing
-
-        runner = click.testing.CliRunner()
-
-        # Test fetch command help
-        result = runner.invoke(cli, ["fetch", "--help"])
-        assert result.exit_code == 0
-        assert "Fetch data from external platforms" in result.output
-        print("   ✅ Fetch command help works")
-
-        # Test analyze command help
-        result = runner.invoke(cli, ["analyze", "--help"])
-        assert result.exit_code == 0
-        assert "use-batch-classification" in result.output
-        print("   ✅ Analyze command help works with new options")
-
-    except Exception as e:
-        print(f"   ❌ CLI test failed: {e}")
-        raise
+    result = runner.invoke(cli, ["analyze", "--help"])
+    assert result.exit_code == 0
+    assert "use-batch-classification" in result.output
 
 
+@pytest.mark.integration
 def test_metrics_storage():
-    """Test the daily metrics storage system."""
-    print("🧪 Testing Metrics Storage...")
-
+    """Test the daily metrics storage system stores and retrieves data correctly."""
     from datetime import date
 
-    from src.gitflow_analytics.core.metrics_storage import DailyMetricsStorage
+    from gitflow_analytics.core.metrics_storage import DailyMetricsStorage
 
     # Create temporary database
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -281,47 +244,3 @@ def test_metrics_storage():
         assert len(metrics) == 1
         assert metrics[0]["developer_name"] == "Developer One"
         assert metrics[0]["feature_commits"] == 1
-
-        print("   ✅ Metrics storage works correctly")
-
-
-def main():
-    """Run all tests for the two-step process."""
-    print("🚀 Testing Two-Step Fetch/Analyze Process")
-    print("=" * 50)
-
-    try:
-        # Test individual components
-        test_database_models()
-        test_data_fetcher()
-        test_batch_classifier()
-        test_metrics_storage()
-        test_cli_commands()
-
-        print("\n" + "=" * 50)
-        print("🎉 All tests passed! The two-step process is ready for use.")
-
-        print("\n📖 Usage Instructions:")
-        print("1. First, fetch raw data:")
-        print("   gitflow-analytics fetch -c config.yaml --weeks 4")
-
-        print("\n2. Then, analyze with batch classification:")
-        print("   gitflow-analytics analyze -c config.yaml --use-batch-classification")
-
-        print("\n🔧 Advanced Options:")
-        print("   --force-fetch         # Skip cached data, fetch fresh")
-        print("   --clear-cache         # Clear all caches before processing")
-        print("   --log DEBUG           # Enable detailed logging")
-
-    except Exception as e:
-        print(f"\n❌ Test failed: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return 1
-
-    return 0
-
-
-if __name__ == "__main__":
-    exit(main())

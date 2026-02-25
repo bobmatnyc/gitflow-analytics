@@ -1,12 +1,12 @@
 """Integration orchestrator for multiple platforms."""
 
 import json
-import os
 from datetime import datetime
 from typing import Any, Union
 
 from ..core.cache import GitAnalysisCache
 from ..pm_framework.orchestrator import PMFrameworkOrchestrator
+from ..utils.debug import is_debug_mode
 from .cicd.github_actions import GitHubActionsIntegration
 from .github_integration import GitHubIntegration
 from .jira_integration import JIRAIntegration
@@ -17,7 +17,7 @@ class IntegrationOrchestrator:
 
     def __init__(self, config: Any, cache: GitAnalysisCache):
         """Initialize integration orchestrator."""
-        self.debug_mode = os.getenv("GITFLOW_DEBUG", "").lower() in ("1", "true", "yes")
+        self.debug_mode = is_debug_mode()
         if self.debug_mode:
             print("   🔍 IntegrationOrchestrator.__init__ called")
         self.config = config

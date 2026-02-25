@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional, Union
 
+import click
 import yaml
 from dotenv import load_dotenv
 
@@ -287,7 +288,7 @@ class ConfigLoader:
         warnings = ConfigValidator.validate_config(config)
         if warnings:
             for warning in warnings:
-                print(f"⚠️  {warning}")
+                click.echo(f"Warning: {warning}", err=True)
 
         return config
 
@@ -302,7 +303,7 @@ class ConfigLoader:
         env_file = config_dir / ".env"
         if env_file.exists():
             load_dotenv(env_file, override=True)
-            print(f"📋 Loaded environment variables from {env_file}")
+            logger.debug(f"Loaded environment variables from {env_file}")
 
     @classmethod
     def _load_yaml(cls, config_path: Path) -> dict[str, Any]:
@@ -830,11 +831,11 @@ class ConfigLoader:
             )
 
         except ImportError as e:
-            print(f"⚠️  Qualitative analysis dependencies missing: {e}")
-            print("   Install with: pip install spacy scikit-learn openai tiktoken")
+            click.echo(f"Warning: Qualitative analysis dependencies missing: {e}", err=True)
+            click.echo("   Install with: pip install spacy scikit-learn openai tiktoken", err=True)
             return None
         except Exception as e:
-            print(f"⚠️  Error parsing qualitative configuration: {e}")
+            click.echo(f"Warning: Error parsing qualitative configuration: {e}", err=True)
             return None
 
     @classmethod

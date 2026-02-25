@@ -1,7 +1,35 @@
 agent_deployment:
   case_sensitive: false
   exclude_dependencies: false
-  excluded_agents: []
+  excluded_agents:
+  - dart-engineer
+  - golang-engineer
+  - java-engineer
+  - javascript-engineer
+  - nextjs-engineer
+  - phoenix-engineer
+  - php-engineer
+  - react-engineer
+  - ruby-engineer
+  - rust-engineer
+  - svelte-engineer
+  - tauri-engineer
+  - typescript-engineer
+  - web-ui
+  - clerk-ops
+  - digitalocean-ops
+  - gcp-ops
+  - vercel-ops
+  - ops
+  - api-qa
+  - web-qa
+  - imagemagick
+  - content-agent
+  - engineer
+  - product-owner
+  - project-organizer
+  - tmux-agent
+  - ticketing
   filter_non_mpm_agents: true
   mpm_author_patterns:
   - claude mpm
@@ -304,3 +332,4 @@ skills:
   - zod
   - zustand
   user_defined: []
+active_profile: gitflow-analytics
