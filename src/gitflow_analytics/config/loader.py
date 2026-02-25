@@ -330,14 +330,84 @@ class ConfigLoader:
     def _load_environment(cls, config_path: Path) -> None:
         """Load environment variables from .env file if present.
 
+        Searches for .env file in standard locations:
+        1. Same directory as config file
+        2. Current working directory
+        3. Project root (detected via .git)
+        4. User home directory (~/.gitflow-analytics.env)
+
         Args:
             config_path: Path to configuration file
         """
+        env_files_to_check = cls._find_env_files(config_path)
+
+        for env_file in env_files_to_check:
+            if env_file.exists():
+                load_dotenv(env_file, override=True)
+                logger.debug(f"Loaded environment variables from {env_file}")
+                return  # Stop at first found file
+
+        logger.debug("No .env file found in any of the standard locations")
+
+    @classmethod
+    def _find_env_files(cls, config_path: Path) -> list[Path]:
+        """Find potential .env file locations in priority order.
+
+        Args:
+            config_path: Path to configuration file
+
+        Returns:
+            List of potential .env file paths in priority order
+        """
+        search_paths = []
+
+        # 1. Same directory as config file
         config_dir = config_path.parent
-        env_file = config_dir / ".env"
-        if env_file.exists():
-            load_dotenv(env_file, override=True)
-            logger.debug(f"Loaded environment variables from {env_file}")
+        search_paths.append(config_dir / ".env")
+
+        # 2. Current working directory
+        cwd_env = Path.cwd() / ".env"
+        if cwd_env not in search_paths:  # Avoid duplicates
+            search_paths.append(cwd_env)
+
+        # 3. Project root (detected via .git)
+        git_root = cls._find_git_root(config_path)
+        if git_root:
+            git_root_env = git_root / ".env"
+            if git_root_env not in search_paths:  # Avoid duplicates
+                search_paths.append(git_root_env)
+
+        # 4. User home directory (~/.gitflow-analytics.env)
+        home_env = Path.home() / ".gitflow-analytics.env"
+        search_paths.append(home_env)
+
+        return search_paths
+
+    @classmethod
+    def _find_git_root(cls, start_path: Path) -> Path | None:
+        """Find Git root directory by looking for .git directory.
+
+        Args:
+            start_path: File or directory path to start searching from
+
+        Returns:
+            Path to Git root directory, or None if not found
+        """
+        # Start from the directory containing the file, or the directory itself
+        if start_path.is_file() or (not start_path.exists() and start_path.suffix):
+            # It's a file path (existing or not), use parent directory
+            current_path = start_path.parent
+        else:
+            # It's a directory path
+            current_path = start_path
+
+        while current_path != current_path.parent:  # Stop at filesystem root
+            git_dir = current_path / ".git"
+            if git_dir.exists():
+                return current_path
+            current_path = current_path.parent
+
+        return None
 
     @classmethod
     def _load_yaml(cls, config_path: Path) -> dict[str, Any]:
