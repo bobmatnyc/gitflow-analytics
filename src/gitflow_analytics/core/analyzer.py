@@ -152,7 +152,7 @@ class GitAnalyzer:
         try:
             for batch in self._batch_commits(commits, self.batch_size):
                 batch_results, batch_hits, batch_misses = self._process_batch(
-                    repo, repo_path, batch
+                    repo, repo_path, batch, since
                 )
                 analyzed_commits.extend(batch_results)
 
@@ -789,7 +789,7 @@ class GitAnalyzer:
             yield commits[i : i + batch_size]
 
     def _process_batch(
-        self, repo: Repo, repo_path: Path, commits: list[git.Commit]
+        self, repo: Repo, repo_path: Path, commits: list[git.Commit], since: datetime
     ) -> tuple[list[dict[str, Any]], int, int]:
         """Process a batch of commits with optimized cache lookups.
 
@@ -816,11 +816,20 @@ class GitAnalyzer:
         for commit in commits:
             # Check bulk cache results
             if commit.hexsha in cached_commits:
-                results.append(cached_commits[commit.hexsha])
-                cache_hits += 1
-                continue
+                cached_commit_data = cached_commits[commit.hexsha]
+                # Filter cached commits by date range to ensure consistency with git filtering
+                cached_timestamp = cached_commit_data.get("timestamp")
+                if cached_timestamp and cached_timestamp >= since:
+                    results.append(cached_commit_data)
+                    cache_hits += 1
+                    continue
+                else:
+                    # Cached commit is outside date range, treat as cache miss and re-analyze
+                    logger.debug(
+                        f"Cached commit {commit.hexsha[:8]} outside date range ({cached_timestamp} < {since}), re-analyzing"
+                    )
 
-            # Analyze commit
+            # Analyze commit (for cache misses or date-filtered cached commits)
             commit_data = self._analyze_commit(repo, commit, repo_path)
             results.append(commit_data)
             new_commits.append(commit_data)
