@@ -249,6 +249,40 @@ class ConfigLoader:
         # Validate version
         cls._validate_version(data)
 
+        # BACKWARD COMPATIBILITY: Convert legacy 'developer_aliases' to modern format
+        # Handle top-level developer_aliases and move to analysis.identity.manual_mappings
+        if "developer_aliases" in data:
+            logger.info(
+                "Found legacy 'developer_aliases' configuration, converting to modern format"
+            )
+
+            # Ensure analysis section exists
+            if "analysis" not in data:
+                data["analysis"] = {}
+            if "identity" not in data["analysis"]:
+                data["analysis"]["identity"] = {}
+            if "manual_mappings" not in data["analysis"]["identity"]:
+                data["analysis"]["identity"]["manual_mappings"] = []
+
+            # Convert legacy format to modern format
+            for canonical_name, emails in data["developer_aliases"].items():
+                if isinstance(emails, list) and emails:
+                    # Use first email as primary, all as aliases
+                    primary_email = emails[0]
+                    data["analysis"]["identity"]["manual_mappings"].append(
+                        {"name": canonical_name, "primary_email": primary_email, "aliases": emails}
+                    )
+                    logger.debug(
+                        f"Converted legacy alias: {canonical_name} with {len(emails)} email(s)"
+                    )
+
+            # Remove the old format and warn user
+            del data["developer_aliases"]
+            logger.warning(
+                "DEPRECATED: 'developer_aliases' is deprecated. Please use 'analysis.identity.manual_mappings' instead. "
+                "See documentation for the new format."
+            )
+
         # Process configuration sections
         github_config = cls._process_github_config(data.get("github", {}), config_path)
         repositories = cls._process_repositories(data, github_config, config_path)
