@@ -2,6 +2,7 @@
 
 import logging
 import time
+from collections import deque
 from datetime import datetime
 from typing import Any
 
@@ -75,7 +76,10 @@ class NLPEngine:
 
         # Performance tracking
         self.metrics = PerformanceMetrics()
-        self.processing_times = []
+        # BUG 8 FIX: Use a bounded deque so this list never grows beyond 1 000 entries.
+        # The old plain list would grow without bound for long-running analysis jobs,
+        # leaking O(commits) memory per NLPEngine instance.
+        self.processing_times: deque[float] = deque(maxlen=1000)
 
         self.logger.info(f"NLP engine initialized with model: {config.spacy_model}")
 

@@ -379,6 +379,11 @@ class GitAnalyzer:
         commits that exist only on remote branches. Uses no commit limits per branch
         to capture complete development history.
 
+        BUG-FIX (BUG 1 + BUG 2): Build the commit-to-branch mapping here during collection
+        instead of materialising full histories per commit in _get_commit_branch.  We also
+        deduplicate inline with a seen-set so we never hold the full multi-branch list in
+        memory simultaneously.
+
         Args:
             repo: Git repository object
             since: Date to get commits since
@@ -388,9 +393,19 @@ class GitAnalyzer:
         """
         logger.info("Analyzing all branches for complete commit coverage")
 
-        commits = []
+        # BUG 2 FIX: Deduplicate inline during collection to avoid the triple-copy
+        # pattern (branch list -> commits list -> unique_commits list).  A single
+        # seen-set keeps peak memory proportional to the number of UNIQUE commits.
+        seen: set[str] = set()
+        commits: list[git.Commit] = []
+
+        # BUG 1 FIX: Build commit->branch mapping while iterating so that
+        # _get_commit_branch never needs to re-traverse branch histories.
+        # First-writer-wins: earlier branches (e.g. main) take priority.
+        self._commit_branch_map: dict[str, str] = {}
+
         branch_count = 0
-        processed_refs = set()  # Track processed refs to avoid duplicates
+        processed_refs: set[str] = set()  # Track processed refs to avoid duplicates
 
         # Process all refs (local branches, remote branches, tags)
         for ref in repo.refs:
@@ -405,36 +420,44 @@ class GitAnalyzer:
             try:
                 # No commit limit - get ALL commits from this branch
                 if self.branch_commit_limit:
-                    branch_commits = list(
-                        repo.iter_commits(ref, since=since, max_count=self.branch_commit_limit)
-                    )
-                    logger.debug(
-                        f"Branch {ref_name}: found {len(branch_commits)} commits (limited to {self.branch_commit_limit})"
+                    ref_commits = repo.iter_commits(
+                        ref, since=since, max_count=self.branch_commit_limit
                     )
                 else:
-                    branch_commits = list(repo.iter_commits(ref, since=since))
-                    logger.debug(
-                        f"Branch {ref_name}: found {len(branch_commits)} commits (no limit)"
-                    )
+                    ref_commits = repo.iter_commits(ref, since=since)
 
-                commits.extend(branch_commits)
+                branch_commit_count = 0
+                for commit in ref_commits:
+                    hexsha = commit.hexsha
+                    # Map commit to the first branch we encounter it on
+                    if hexsha not in self._commit_branch_map:
+                        self._commit_branch_map[hexsha] = ref_name
+                    # Deduplicate across branches in-place
+                    if hexsha not in seen:
+                        seen.add(hexsha)
+                        commits.append(commit)
+                    branch_commit_count += 1
+
+                logger.debug(
+                    f"Branch {ref_name}: found {branch_commit_count} commits"
+                    + (
+                        f" (limited to {self.branch_commit_limit})"
+                        if self.branch_commit_limit
+                        else ""
+                    )
+                )
 
                 if self.enable_progress_logging and branch_count % 10 == 0:
                     logger.info(
-                        f"Processed {branch_count} branches, found {len(commits)} total commits so far"
+                        f"Processed {branch_count} branches, found {len(commits)} unique commits so far"
                     )
 
             except git.GitCommandError as e:
                 logger.debug(f"Skipping branch {ref_name} due to error: {e}")
                 continue
 
-        # Remove duplicates while preserving order
-        unique_commits = self._deduplicate_commits(commits)
-
-        logger.info(
-            f"Found {len(unique_commits)} unique commits across {branch_count} branches/refs"
-        )
-        return sorted(unique_commits, key=lambda c: c.committed_datetime)
+        logger.info(f"Found {len(commits)} unique commits across {branch_count} branches/refs")
+        return sorted(commits, key=lambda c: c.committed_datetime)
 
     def is_analysis_needed(
         self,
@@ -662,8 +685,12 @@ class GitAnalyzer:
             active_count = sum(1 for b in selected_branches if b["is_active"])
             logger.debug(f"Selected branches: {important_count} important, {active_count} active")
 
-        # Get commits from selected branches
-        commits = []
+        # BUG 2 FIX: Collect unique commits inline via a seen-set so we never hold
+        # per-branch lists AND the deduplicated list in memory at the same time.
+        # BUG 1 FIX: Build commit->branch mapping here so _get_commit_branch is O(1).
+        seen: set[str] = set()
+        commits: list[git.Commit] = []
+        self._commit_branch_map: dict[str, str] = {}
 
         # Use centralized progress service
         progress = get_progress_service()
@@ -679,18 +706,23 @@ class GitAnalyzer:
                 for branch_data in selected_branches:
                     try:
                         if self.branch_commit_limit:
-                            branch_commits = list(
-                                repo.iter_commits(
-                                    branch_data["ref"],
-                                    since=since,
-                                    max_count=self.branch_commit_limit,
-                                )
+                            ref_commits = repo.iter_commits(
+                                branch_data["ref"],
+                                since=since,
+                                max_count=self.branch_commit_limit,
                             )
                         else:
-                            branch_commits = list(
-                                repo.iter_commits(branch_data["ref"], since=since)
-                            )
-                        commits.extend(branch_commits)
+                            ref_commits = repo.iter_commits(branch_data["ref"], since=since)
+
+                        branch_commit_count = 0
+                        for commit in ref_commits:
+                            hexsha = commit.hexsha
+                            if hexsha not in self._commit_branch_map:
+                                self._commit_branch_map[hexsha] = branch_data["name"]
+                            if hexsha not in seen:
+                                seen.add(hexsha)
+                                commits.append(commit)
+                            branch_commit_count += 1
 
                         # Update progress description with branch info
                         branch_display = branch_data["name"][:15] + (
@@ -698,7 +730,7 @@ class GitAnalyzer:
                         )
                         progress.set_description(
                             ctx,
-                            f"Analyzing branches [{branch_display}: {len(branch_commits)} commits]",
+                            f"Analyzing branches [{branch_display}: {branch_commit_count} commits]",
                         )
 
                     except git.GitCommandError as e:
@@ -712,25 +744,27 @@ class GitAnalyzer:
             for branch_data in selected_branches:
                 try:
                     if self.branch_commit_limit:
-                        branch_commits = list(
-                            repo.iter_commits(
-                                branch_data["ref"], since=since, max_count=self.branch_commit_limit
-                            )
+                        ref_commits = repo.iter_commits(
+                            branch_data["ref"], since=since, max_count=self.branch_commit_limit
                         )
                     else:
-                        branch_commits = list(repo.iter_commits(branch_data["ref"], since=since))
-                    commits.extend(branch_commits)
+                        ref_commits = repo.iter_commits(branch_data["ref"], since=since)
+
+                    for commit in ref_commits:
+                        hexsha = commit.hexsha
+                        if hexsha not in self._commit_branch_map:
+                            self._commit_branch_map[hexsha] = branch_data["name"]
+                        if hexsha not in seen:
+                            seen.add(hexsha)
+                            commits.append(commit)
 
                 except git.GitCommandError as e:
                     logger.debug(f"Failed to get commits from branch {branch_data['name']}: {e}")
 
-        # Remove duplicates while preserving order
-        unique_commits = self._deduplicate_commits(commits)
-
         logger.info(
-            f"Smart analysis found {len(unique_commits)} unique commits from {len(selected_branches)} branches"
+            f"Smart analysis found {len(commits)} unique commits from {len(selected_branches)} branches"
         )
-        return sorted(unique_commits, key=lambda c: c.committed_datetime)
+        return sorted(commits, key=lambda c: c.committed_datetime)
 
     def _should_exclude_branch(self, branch_name: str) -> bool:
         """Check if a branch should be excluded from analysis.
@@ -940,12 +974,31 @@ class GitAnalyzer:
         return commit_data
 
     def _get_commit_branch(self, repo: Repo, commit: git.Commit) -> str:
-        """Get the branch name for a commit."""
-        # This is a simplified approach - getting the first branch that contains the commit
-        for branch in repo.branches:
-            if commit in repo.iter_commits(branch):
-                return branch.name
-        return "unknown"
+        """Get the branch name for a commit.
+
+        BUG 1 FIX: Previously this materialised the ENTIRE commit history for every
+        branch for every single commit lookup — O(commits * branches) memory.  Now we
+        return from the pre-built mapping populated in _get_all_branch_commits /
+        _get_smart_branch_commits so the lookup is O(1) with no extra allocation.
+        """
+        # Fast path: use the mapping built during commit collection
+        if hasattr(self, "_commit_branch_map"):
+            return self._commit_branch_map.get(commit.hexsha, "unknown")
+
+        # Fallback for callers that bypass the normal collection path.
+        # Use git name-rev which is a single cheap git command rather than a
+        # Python-level iteration over full branch histories.
+        try:
+            result = repo.git.name_rev(commit.hexsha, "--name-only", "--no-undefined")
+            # name-rev may return "branch~N" or "tags/..." — strip the suffix
+            name = result.split("~")[0].split("^")[0].strip()
+            # Remove remote prefix (e.g. "remotes/origin/main" -> "main")
+            for prefix in ("remotes/origin/", "remotes/"):
+                if name.startswith(prefix):
+                    name = name[len(prefix) :]
+            return name or "unknown"
+        except Exception:
+            return "unknown"
 
     def _get_changed_file_paths(self, commit: git.Commit) -> list[str]:
         """Extract list of changed file paths from a git commit.

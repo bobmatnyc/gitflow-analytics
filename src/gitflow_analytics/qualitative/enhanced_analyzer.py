@@ -1912,46 +1912,67 @@ class EnhancedQualitativeAnalyzer:
         )
         size_compliance = (appropriate_size_commits / total_commits) * 100 if total_commits else 0
 
-        # PR approval compliance (if PR data available - placeholder)
-        pr_approval_rate = 75  # Default assumption when PR data not available
+        # PR approval compliance — derive from real PR metrics when available.
+        # ``project_metrics`` may carry a ``pr_metrics`` sub-dict populated by
+        # ``GitHubIntegration.calculate_pr_metrics()``.  Fall back to a neutral
+        # default only when no PR data has been collected, and record whether the
+        # value is real or estimated so callers can surface that to users.
+        pr_metrics: dict[str, Any] = (
+            project_metrics.get("pr_metrics", {}) if project_metrics else {}
+        )
+        real_approval_rate: float | None = pr_metrics.get("approval_rate")
 
-        # Overall compliance score
-        compliance_factors = [ticket_coverage, message_quality, size_compliance, pr_approval_rate]
+        if real_approval_rate is not None and pr_metrics.get("total_prs", 0) > 0:
+            pr_approval_rate = real_approval_rate
+            pr_data_source = "measured"
+        else:
+            # No PR review data collected — exclude this factor from the mean
+            # rather than biasing it with an arbitrary constant.
+            pr_approval_rate = None
+            pr_data_source = "unavailable"
+
+        # Overall compliance score — only average over factors that have real data
+        compliance_factors: list[float] = [ticket_coverage, message_quality, size_compliance]
+        if pr_approval_rate is not None:
+            compliance_factors.append(pr_approval_rate)
         overall_compliance = statistics.mean(compliance_factors)
+
+        def _status(score: float) -> str:
+            if score >= 80:
+                return "excellent"
+            if score >= 60:
+                return "good"
+            return "needs_improvement"
+
+        pr_approval_entry: dict[str, Any]
+        if pr_approval_rate is not None:
+            pr_approval_entry = {
+                "score": round(pr_approval_rate, 1),
+                "status": _status(pr_approval_rate),
+                "source": pr_data_source,
+            }
+        else:
+            pr_approval_entry = {
+                "score": None,
+                "status": "no_data",
+                "source": pr_data_source,
+            }
 
         return {
             "overall_score": round(overall_compliance, 1),
             "ticket_coverage": {
                 "score": round(ticket_coverage, 1),
-                "status": (
-                    "excellent"
-                    if ticket_coverage >= 80
-                    else "good"
-                    if ticket_coverage >= 60
-                    else "needs_improvement"
-                ),
+                "status": _status(ticket_coverage),
             },
             "message_quality": {
                 "score": round(message_quality, 1),
-                "status": (
-                    "excellent"
-                    if message_quality >= 80
-                    else "good"
-                    if message_quality >= 60
-                    else "needs_improvement"
-                ),
+                "status": _status(message_quality),
             },
             "commit_size_compliance": {
                 "score": round(size_compliance, 1),
-                "status": (
-                    "excellent"
-                    if size_compliance >= 80
-                    else "good"
-                    if size_compliance >= 60
-                    else "needs_improvement"
-                ),
+                "status": _status(size_compliance),
             },
-            "pr_approval_rate": {"score": pr_approval_rate, "status": "good"},  # Placeholder
+            "pr_approval_rate": pr_approval_entry,
         }
 
     def _analyze_team_collaboration_patterns(

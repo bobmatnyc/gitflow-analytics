@@ -34,6 +34,10 @@ class GitHubConfig:
     base_url: str = "https://api.github.com"
     max_retries: int = 3
     backoff_factor: int = 2
+    # WHY: Fetching reviews requires extra API calls per PR (get_reviews +
+    # get_issue_comments).  This flag allows existing users to keep their
+    # current rate-limit budget unchanged while opting in to richer data.
+    fetch_pr_reviews: bool = False
 
     def get_repo_full_name(self, repo_name: str) -> str:
         """Get full repository name including owner."""

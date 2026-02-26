@@ -131,7 +131,13 @@ class DeveloperAlias(Base):
 
 
 class PullRequestCache(Base):
-    """Cached pull request data."""
+    """Cached pull request data.
+
+    Schema version history:
+    - v1.0: Initial schema (title, description, author, dates, story_points, labels, commit_hashes)
+    - v2.0: Timezone-aware timestamps
+    - v3.0: Enhanced PR tracking (review counts, approvals, file stats, revision tracking)
+    """
 
     __tablename__ = "pull_request_cache"
 
@@ -152,6 +158,39 @@ class PullRequestCache(Base):
 
     # Associated commits
     commit_hashes = Column(JSON)  # List of commit hashes
+
+    # --- Enhanced PR tracking fields (v3.0) ---
+
+    # Comment counts
+    # WHY: Separate review comments (inline code comments) from general PR comments
+    # to allow distinct analysis of code review depth vs. general discussion volume.
+    review_comments_count = Column(Integer, nullable=True, default=0)  # Inline review comments
+    pr_comments_count = Column(Integer, nullable=True, default=0)  # General issue/PR comments
+
+    # Approval tracking
+    # WHY: Storing counts and reviewer lists allows computing approval rate metrics
+    # and identifying which reviewers are most active without re-fetching the API.
+    approvals_count = Column(Integer, nullable=True, default=0)
+    change_requests_count = Column(Integer, nullable=True, default=0)
+    reviewers = Column(JSON, nullable=True)  # List[str] of all reviewer logins
+    approved_by = Column(JSON, nullable=True)  # List[str] of approving reviewer logins
+
+    # Time-to-review
+    # WHY: First-review latency is a key engineering health indicator. Storing it
+    # avoids expensive recalculation from raw event timestamps on every report run.
+    time_to_first_review_hours = Column(Float, nullable=True)
+
+    # Revision tracking
+    # WHY: Revision count (force-push / new commits after review) measures rework
+    # which correlates with PR quality and review effectiveness.
+    revision_count = Column(Integer, nullable=True, default=0)
+
+    # File change stats
+    # WHY: These are fetched from the API already (_extract_pr_data) but discarded
+    # after the run. Persisting them enables PR-size analysis from cache alone.
+    changed_files = Column(Integer, nullable=True, default=0)
+    additions = Column(Integer, nullable=True, default=0)
+    deletions = Column(Integer, nullable=True, default=0)
 
     # Cache metadata
     cached_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
@@ -395,8 +434,10 @@ class RepositoryAnalysisStatus(Base):
     project_key = Column(String, nullable=False)
 
     # Analysis period
-    analysis_start = Column(DateTime, nullable=False)  # Start of analysis period
-    analysis_end = Column(DateTime, nullable=False)  # End of analysis period
+    # Bug 2 fix: use DateTime(timezone=True) so SQLAlchemy stores/retrieves tz-aware
+    # datetimes correctly. Without timezone=True, naive and aware comparisons mismatch.
+    analysis_start = Column(DateTime(timezone=True), nullable=False)  # Start of analysis period
+    analysis_end = Column(DateTime(timezone=True), nullable=False)  # End of analysis period
     weeks_analyzed = Column(Integer, nullable=False)  # Number of weeks
 
     # Completion tracking
@@ -412,7 +453,14 @@ class RepositoryAnalysisStatus(Base):
     unique_developers = Column(Integer, default=0)
 
     # Analysis metadata
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=utcnow_tz_aware)
+    # Bug 2 fix: use DateTime(timezone=True) and a tz-aware default callable.
+    # The old default=datetime.utcnow produced naive datetimes that compare incorrectly
+    # against timezone-aware query filters.
+    last_updated = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=utcnow_tz_aware,
+    )
     analysis_version = Column(String, default="2.0")  # For tracking schema changes
 
     # Configuration hash to detect config changes
@@ -1463,8 +1511,79 @@ class Database:
                     except Exception as e:
                         logger.debug(f"Could not initialize filtered columns: {e}")
 
+                # --- Enhanced PR tracking columns (v3.0 migration) ---
+                # WHY: These columns are added incrementally to avoid destroying existing
+                # cached PR data. New columns default to NULL/0 for existing rows.
+                self._migrate_pull_request_cache_v3(conn)
+
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
             logger.debug(
                 f"Could not apply migrations (may be normal for new/memory databases): {e}"
+            )
+
+    def _migrate_pull_request_cache_v3(self, conn) -> None:
+        """Add enhanced PR tracking columns to pull_request_cache (v3.0 migration).
+
+        WHY: These columns are new in v3.0 of the PR schema. Existing databases will
+        not have them, so we use ALTER TABLE to add them without touching existing rows.
+        SQLite does not support adding multiple columns in one statement, so each column
+        is added individually inside its own try/except to be idempotent.
+
+        Columns added:
+            review_comments_count  - Inline review comment count
+            pr_comments_count      - General PR/issue comment count
+            approvals_count        - Number of approved reviews
+            change_requests_count  - Number of change-request reviews
+            reviewers              - JSON list of reviewer logins
+            approved_by            - JSON list of approving reviewer logins
+            time_to_first_review_hours - Hours from open to first review activity
+            revision_count         - Commit pushes after PR opened
+            changed_files          - Files changed (was discarded pre-v3.0)
+            additions              - Lines added (was discarded pre-v3.0)
+            deletions              - Lines removed (was discarded pre-v3.0)
+        """
+        try:
+            result = conn.execute(text("PRAGMA table_info(pull_request_cache)"))
+            existing_columns = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read pull_request_cache schema: {e}")
+            return
+
+        # Map of column_name -> DDL fragment (type + default).
+        # All nullable with sensible defaults so existing rows remain valid.
+        new_columns: list[tuple[str, str]] = [
+            ("review_comments_count", "INTEGER DEFAULT 0"),
+            ("pr_comments_count", "INTEGER DEFAULT 0"),
+            ("approvals_count", "INTEGER DEFAULT 0"),
+            ("change_requests_count", "INTEGER DEFAULT 0"),
+            ("reviewers", "TEXT"),  # JSON stored as TEXT in SQLite
+            ("approved_by", "TEXT"),  # JSON stored as TEXT in SQLite
+            ("time_to_first_review_hours", "REAL"),
+            ("revision_count", "INTEGER DEFAULT 0"),
+            ("changed_files", "INTEGER DEFAULT 0"),
+            ("additions", "INTEGER DEFAULT 0"),
+            ("deletions", "INTEGER DEFAULT 0"),
+        ]
+
+        added: list[str] = []
+        for col_name, col_type in new_columns:
+            if col_name not in existing_columns:
+                try:
+                    conn.execute(
+                        text(f"ALTER TABLE pull_request_cache ADD COLUMN {col_name} {col_type}")
+                    )
+                    conn.commit()
+                    added.append(col_name)
+                except Exception as e:
+                    # Column may already exist in a concurrent scenario or read-only DB.
+                    logger.debug(
+                        f"Could not add pull_request_cache.{col_name} "
+                        f"(may already exist or DB is readonly): {e}"
+                    )
+
+        if added:
+            logger.info(
+                "Applied pull_request_cache v3.0 migration: added columns %s",
+                ", ".join(added),
             )

@@ -48,7 +48,12 @@ class PerformanceMetrics:
 
         # Method usage tracking
         self.method_usage = defaultdict(int)
-        self.method_performance = defaultdict(list)
+        # BUG 8 FIX: Use a bounded deque per method instead of an unbounded list.
+        # The old defaultdict(list) grew indefinitely — every timed call appended a
+        # float and nothing ever pruned it, leaking O(total_calls) memory.
+        self.method_performance: defaultdict[str, deque[float]] = defaultdict(
+            lambda: deque(maxlen=5000)
+        )
 
         # Confidence tracking
         self.confidence_history = deque(maxlen=max_history)

@@ -5,7 +5,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -118,7 +118,7 @@ class CSVReportGenerator(BaseReportGenerator):
             self.logger.error(f"Error generating CSV report: {e}")
             return ReportOutput(success=False, errors=[str(e)])
 
-    def get_required_fields(self) -> List[str]:
+    def get_required_fields(self) -> list[str]:
         """Get the list of required data fields for CSV generation.
 
         Returns:
@@ -549,8 +549,25 @@ class CSVReportGenerator(BaseReportGenerator):
         ticket_analysis: dict[str, Any],
         output_path: Path,
         pm_data: Optional[dict[str, Any]] = None,
+        pr_metrics: Optional[dict[str, Any]] = None,
     ) -> Path:
-        """Generate summary statistics CSV."""
+        """Generate summary statistics CSV.
+
+        Args:
+            commits: List of commit data dictionaries.
+            prs: List of pull request data dictionaries.
+            developer_stats: Per-developer aggregated statistics.
+            ticket_analysis: Ticket/issue coverage analysis.
+            output_path: Path where the CSV file will be written.
+            pm_data: Optional PM platform integration data.
+            pr_metrics: Optional pre-calculated PR metrics dict from
+                ``GitHubIntegration.calculate_pr_metrics()``.  When provided,
+                enhanced review metrics (approval rate, time-to-review, etc.)
+                are included in the summary.
+
+        Returns:
+            Path to the written CSV file.
+        """
         # Apply exclusion filtering in Phase 2
         commits = self._filter_excluded_authors_list(commits)
         developer_stats = self._filter_excluded_authors_list(developer_stats)
@@ -629,6 +646,127 @@ class CSVReportGenerator(BaseReportGenerator):
                     "category": "Developers",
                 }
             )
+
+        # PR metrics (basic — always from PR list)
+        if prs:
+            total_prs = len(prs)
+            summary_data.append(
+                {"metric": "Total PRs", "value": total_prs, "category": "Pull Requests"}
+            )
+
+            total_inline = sum(pr.get("review_comments", 0) or 0 for pr in prs)
+            summary_data.append(
+                {
+                    "metric": "Total Inline Review Comments",
+                    "value": total_inline,
+                    "category": "Pull Requests",
+                }
+            )
+
+            avg_size = (
+                sum((pr.get("additions") or 0) + (pr.get("deletions") or 0) for pr in prs)
+                / total_prs
+            )
+            summary_data.append(
+                {
+                    "metric": "Avg PR Size (lines)",
+                    "value": round(avg_size, 1),
+                    "category": "Pull Requests",
+                }
+            )
+
+        # PR metrics (enhanced — only when review data was collected)
+        if pr_metrics:
+            _cat = "PR Review Metrics"
+
+            if pr_metrics.get("total_prs", 0) > 0:
+                summary_data.append(
+                    {
+                        "metric": "Story Point Coverage %",
+                        "value": round(pr_metrics.get("story_point_coverage", 0.0), 1),
+                        "category": _cat,
+                    }
+                )
+
+            approval_rate = pr_metrics.get("approval_rate")
+            if approval_rate is not None:
+                summary_data.append(
+                    {
+                        "metric": "PR Approval Rate %",
+                        "value": round(approval_rate, 1),
+                        "category": _cat,
+                    }
+                )
+
+            review_coverage = pr_metrics.get("review_coverage")
+            if review_coverage is not None:
+                summary_data.append(
+                    {
+                        "metric": "PR Review Coverage %",
+                        "value": round(review_coverage, 1),
+                        "category": _cat,
+                    }
+                )
+
+            avg_approvals = pr_metrics.get("avg_approvals_per_pr")
+            if avg_approvals is not None:
+                summary_data.append(
+                    {
+                        "metric": "Avg Approvals per PR",
+                        "value": round(avg_approvals, 2),
+                        "category": _cat,
+                    }
+                )
+
+            avg_cr = pr_metrics.get("avg_change_requests_per_pr")
+            if avg_cr is not None:
+                summary_data.append(
+                    {
+                        "metric": "Avg Change Requests per PR",
+                        "value": round(avg_cr, 2),
+                        "category": _cat,
+                    }
+                )
+
+            avg_ttfr = pr_metrics.get("avg_time_to_first_review_hours")
+            if avg_ttfr is not None:
+                summary_data.append(
+                    {
+                        "metric": "Avg Time to First Review (hours)",
+                        "value": round(avg_ttfr, 2),
+                        "category": _cat,
+                    }
+                )
+
+            median_ttfr = pr_metrics.get("median_time_to_first_review_hours")
+            if median_ttfr is not None:
+                summary_data.append(
+                    {
+                        "metric": "Median Time to First Review (hours)",
+                        "value": round(median_ttfr, 2),
+                        "category": _cat,
+                    }
+                )
+
+            total_pr_comments = pr_metrics.get("total_pr_comments", 0)
+            if total_pr_comments:
+                summary_data.append(
+                    {
+                        "metric": "Total PR Comments",
+                        "value": total_pr_comments,
+                        "category": _cat,
+                    }
+                )
+
+            avg_revisions = pr_metrics.get("avg_revision_count")
+            if avg_revisions is not None:
+                summary_data.append(
+                    {
+                        "metric": "Avg Revisions per PR",
+                        "value": round(avg_revisions, 2),
+                        "category": _cat,
+                    }
+                )
 
         # PM Platform statistics
         if pm_data and "metrics" in pm_data:
@@ -1036,11 +1174,36 @@ class CSVReportGenerator(BaseReportGenerator):
                 else:
                     metrics["unique_tickets"].add(str(ticket))
 
-        # Process PRs
+        # Process PRs — basic count plus per-author review aggregation
+        # Per-developer PR review stats (populated when fetch_pr_reviews=true)
+        dev_pr_review: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {
+                "prs_authored": 0,
+                "total_approvals": 0,
+                "total_change_requests": 0,
+                "total_review_comments": 0,
+                "total_pr_comments": 0,
+                "total_revisions": 0,
+                "ttfr_values": [],  # time-to-first-review samples
+            }
+        )
+
         for pr in prs:
             author_id = pr.get("canonical_id", pr.get("author", "unknown"))
             if author_id in developer_metrics:
                 developer_metrics[author_id]["prs_involved"] += 1
+
+            # Collect enhanced review stats keyed by author
+            rev = dev_pr_review[author_id]
+            rev["prs_authored"] += 1
+            rev["total_approvals"] += pr.get("approvals_count", 0) or 0
+            rev["total_change_requests"] += pr.get("change_requests_count", 0) or 0
+            rev["total_review_comments"] += pr.get("review_comments", 0) or 0
+            rev["total_pr_comments"] += pr.get("pr_comments_count", 0) or 0
+            rev["total_revisions"] += pr.get("revision_count", 0) or 0
+            ttfr = pr.get("time_to_first_review_hours")
+            if ttfr is not None:
+                rev["ttfr_values"].append(ttfr)
 
         # Calculate activity scores
         developer_scores = {}
@@ -1067,6 +1230,19 @@ class CSVReportGenerator(BaseReportGenerator):
             developer = dev_lookup.get(dev_id, {})
             activity_result = developer_results[dev_id]
             curve_data = curve_normalized.get(dev_id, {})
+            pr_rev = dev_pr_review.get(dev_id, {})
+
+            # Per-developer review aggregation
+            prs_authored = pr_rev.get("prs_authored", 0)
+            ttfr_vals = pr_rev.get("ttfr_values", [])
+            avg_ttfr = sum(ttfr_vals) / len(ttfr_vals) if ttfr_vals else None
+            avg_approvals = (
+                pr_rev.get("total_approvals", 0) / prs_authored if prs_authored else None
+            )
+            avg_cr = pr_rev.get("total_change_requests", 0) / prs_authored if prs_authored else None
+            avg_revisions = (
+                pr_rev.get("total_revisions", 0) / prs_authored if prs_authored else None
+            )
 
             row = {
                 "developer_id": self._anonymize_value(dev_id, "id"),
@@ -1083,6 +1259,21 @@ class CSVReportGenerator(BaseReportGenerator):
                 "lines_removed": metrics["lines_removed"],
                 "files_changed": metrics["files_changed"],
                 "unique_tickets": metrics["unique_tickets"],
+                # PR review stats (empty string when review data not collected)
+                "pr_review_comments": pr_rev.get("total_review_comments", "") or "",
+                "pr_general_comments": pr_rev.get("total_pr_comments", "") or "",
+                "pr_approvals_received": pr_rev.get("total_approvals", "") or "",
+                "pr_change_requests_received": pr_rev.get("total_change_requests", "") or "",
+                "avg_approvals_per_pr": (
+                    round(avg_approvals, 2) if avg_approvals is not None else ""
+                ),
+                "avg_change_requests_per_pr": (round(avg_cr, 2) if avg_cr is not None else ""),
+                "avg_revisions_per_pr": (
+                    round(avg_revisions, 2) if avg_revisions is not None else ""
+                ),
+                "avg_time_to_first_review_hours": (
+                    round(avg_ttfr, 2) if avg_ttfr is not None else ""
+                ),
                 # Raw activity scores
                 "raw_activity_score": round(activity_result["raw_score"], 1),
                 "normalized_activity_score": round(activity_result["normalized_score"], 1),
@@ -1105,38 +1296,45 @@ class CSVReportGenerator(BaseReportGenerator):
         rows.sort(key=lambda x: x["curved_score"], reverse=True)
 
         # Write CSV
+        _fieldnames = [
+            "developer_id",
+            "developer_name",
+            "commits",
+            "prs",
+            "story_points",
+            "lines_added",
+            "lines_removed",
+            "files_changed",
+            "unique_tickets",
+            "pr_review_comments",
+            "pr_general_comments",
+            "pr_approvals_received",
+            "pr_change_requests_received",
+            "avg_approvals_per_pr",
+            "avg_change_requests_per_pr",
+            "avg_revisions_per_pr",
+            "avg_time_to_first_review_hours",
+            "raw_activity_score",
+            "normalized_activity_score",
+            "activity_level",
+            "curved_score",
+            "percentile",
+            "quintile",
+            "curved_activity_level",
+            "level_description",
+            "commit_score",
+            "pr_score",
+            "code_impact_score",
+            "complexity_score",
+        ]
+
         if rows:
             df = pd.DataFrame(rows)
             df.to_csv(output_path, index=False)
         else:
             # Write empty CSV with headers
             with open(output_path, "w", newline="") as f:
-                writer = csv.DictWriter(
-                    f,
-                    fieldnames=[
-                        "developer_id",
-                        "developer_name",
-                        "commits",
-                        "prs",
-                        "story_points",
-                        "lines_added",
-                        "lines_removed",
-                        "files_changed",
-                        "unique_tickets",
-                        "raw_activity_score",
-                        "normalized_activity_score",
-                        "activity_level",
-                        "curved_score",
-                        "percentile",
-                        "quintile",
-                        "curved_activity_level",
-                        "level_description",
-                        "commit_score",
-                        "pr_score",
-                        "code_impact_score",
-                        "complexity_score",
-                    ],
-                )
+                writer = csv.DictWriter(f, fieldnames=_fieldnames)
                 writer.writeheader()
 
         return output_path
@@ -1168,6 +1366,131 @@ class CSVReportGenerator(BaseReportGenerator):
             self._anonymization_map[value] = anonymous
 
         return self._anonymization_map[value] + suffix
+
+    def generate_pr_metrics_report(
+        self,
+        prs: list[dict[str, Any]],
+        output_path: Path,
+    ) -> Path:
+        """Generate a PR-level detailed CSV report with all available review metrics.
+
+        Each row represents one pull request.  Columns for review-level fields
+        (approvals_count, change_requests_count, time_to_first_review_hours,
+        revision_count, pr_comments_count) are populated only when the GitHub
+        integration was run with ``fetch_pr_reviews=true``; otherwise they are
+        left empty so the report is still valid without review data.
+
+        Args:
+            prs: List of pull request data dictionaries as returned by
+                ``GitHubIntegration.calculate_pr_metrics()`` or from cache.
+            output_path: Destination CSV path.
+
+        Returns:
+            Path to the written CSV file.
+        """
+        rows = []
+        for pr in prs:
+            created_at = pr.get("created_at")
+            merged_at = pr.get("merged_at")
+
+            # Lifetime in hours — only when both timestamps are available
+            lifetime_hours: str | float = ""
+            if created_at and merged_at:
+                try:
+                    if hasattr(created_at, "total_seconds"):
+                        # already a timedelta
+                        lifetime_hours = round(created_at.total_seconds() / 3600, 2)
+                    else:
+                        delta = merged_at - created_at
+                        lifetime_hours = round(delta.total_seconds() / 3600, 2)
+                except Exception:
+                    lifetime_hours = ""
+
+            row: dict[str, Any] = {
+                "pr_number": pr.get("number", ""),
+                "title": pr.get("title", ""),
+                "author": self._anonymize_value(pr.get("author", ""), "name"),
+                "created_at": (
+                    self._safe_datetime_format(created_at, "%Y-%m-%d %H:%M:%S")
+                    if created_at
+                    else ""
+                ),
+                "merged_at": (
+                    self._safe_datetime_format(merged_at, "%Y-%m-%d %H:%M:%S") if merged_at else ""
+                ),
+                "lifetime_hours": lifetime_hours,
+                # Size
+                "additions": pr.get("additions", 0) or 0,
+                "deletions": pr.get("deletions", 0) or 0,
+                "changed_files": pr.get("changed_files", 0) or 0,
+                # Inline review comments (always present from GitHub base PR object)
+                "review_comments": pr.get("review_comments", 0) or 0,
+                # Story points
+                "story_points": pr.get("story_points", 0) or 0,
+                # Enhanced review fields (empty when fetch_pr_reviews was disabled)
+                "approvals_count": pr.get("approvals_count", "")
+                if pr.get("approvals_count") is not None
+                else "",
+                "change_requests_count": pr.get("change_requests_count", "")
+                if pr.get("change_requests_count") is not None
+                else "",
+                "pr_comments_count": pr.get("pr_comments_count", "")
+                if pr.get("pr_comments_count") is not None
+                else "",
+                "time_to_first_review_hours": (
+                    round(pr["time_to_first_review_hours"], 2)
+                    if pr.get("time_to_first_review_hours") is not None
+                    else ""
+                ),
+                "revision_count": pr.get("revision_count", "")
+                if pr.get("revision_count") is not None
+                else "",
+                "reviewers": ",".join(pr.get("reviewers") or []),
+                "approved_by": ",".join(pr.get("approved_by") or []),
+                # Labels
+                "labels": ",".join(pr.get("labels") or []),
+            }
+            rows.append(row)
+
+        # Sort by merged_at descending (most recent first), fallback to PR number
+        rows.sort(
+            key=lambda r: (r["merged_at"] or "", r["pr_number"] or 0),
+            reverse=True,
+        )
+
+        _fieldnames = [
+            "pr_number",
+            "title",
+            "author",
+            "created_at",
+            "merged_at",
+            "lifetime_hours",
+            "additions",
+            "deletions",
+            "changed_files",
+            "review_comments",
+            "story_points",
+            "approvals_count",
+            "change_requests_count",
+            "pr_comments_count",
+            "time_to_first_review_hours",
+            "revision_count",
+            "reviewers",
+            "approved_by",
+            "labels",
+        ]
+
+        if rows:
+            df = pd.DataFrame(rows)
+            # Ensure consistent column ordering
+            df = df.reindex(columns=_fieldnames)
+            df.to_csv(output_path, index=False)
+        else:
+            with open(output_path, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=_fieldnames)
+                writer.writeheader()
+
+        return output_path
 
     def generate_untracked_commits_report(
         self, ticket_analysis: dict[str, Any], output_path: Path
@@ -1907,7 +2230,7 @@ class CSVReportGenerator(BaseReportGenerator):
 
         # Extract pipelines and metrics
         pipelines = cicd_data.get("pipelines", [])
-        platform_metrics = cicd_data.get("metrics", {})
+        cicd_data.get("metrics", {})
 
         if not pipelines:
             # Generate empty report with headers

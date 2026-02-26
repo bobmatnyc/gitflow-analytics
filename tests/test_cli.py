@@ -439,3 +439,102 @@ analysis:
             assert result.exit_code != 0
             assert "No manual mapping found" in result.output
             assert "Available names" in result.output
+
+
+class TestGitHubAuthConditional:
+    """Test that GitHub authentication is conditional on GitHub features being configured."""
+
+    # Minimal config with NO GitHub features — local repos only, no github_repo, no org.
+    LOCAL_ONLY_CONFIG = """
+version: "1.0"
+repositories:
+  - name: "local-repo"
+    path: "/tmp/fake-local-repo"
+output:
+  directory: "output"
+"""
+
+    # Config with a github_repo specified — GitHub auth IS required.
+    GITHUB_REPO_CONFIG = """
+version: "1.0"
+github:
+  token: ""
+repositories:
+  - name: "my-repo"
+    path: "/tmp/fake-repo"
+    github_repo: "myorg/my-repo"
+output:
+  directory: "output"
+"""
+
+    # Config with GitHub organization — GitHub auth IS required.
+    GITHUB_ORG_CONFIG = """
+version: "1.0"
+github:
+  token: ""
+  organization: "myorg"
+repositories: []
+output:
+  directory: "output"
+"""
+
+    def test_local_only_config_skips_github_auth(self):
+        """Local-only config (no github_repo, no org) should bypass GitHub auth check."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            # Create a minimal local git repo so ConfigLoader does not complain
+            import subprocess
+
+            subprocess.run(["git", "init", "fake-local-repo"], cwd="/tmp", capture_output=True)
+
+            Path("config.yaml").write_text(self.LOCAL_ONLY_CONFIG)
+            result = runner.invoke(
+                analyze,
+                ["--config", "config.yaml", "--weeks", "4", "--validate-only", "--no-rich"],
+            )
+
+            # The auth skip message must appear; the GitHub auth failure must NOT appear.
+            combined = result.output
+            assert (
+                "local-only mode" in combined.lower()
+            ), f"Expected local-only mode message. Output:\n{combined}"
+            assert (
+                "github authentication failed" not in combined.lower()
+            ), f"GitHub auth should not be required. Output:\n{combined}"
+
+    def test_github_repo_config_triggers_auth_check(self):
+        """Config with github_repo should trigger the GitHub auth preflight."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            Path("config.yaml").write_text(self.GITHUB_REPO_CONFIG)
+            result = runner.invoke(
+                analyze,
+                ["--config", "config.yaml", "--weeks", "4", "--validate-only", "--no-rich"],
+            )
+
+            combined = result.output
+            # An empty token means auth will fail — we only check that auth was attempted.
+            assert "verifying github authentication" in combined.lower() or (
+                "github authentication failed" in combined.lower()
+            ), f"Expected GitHub auth to be attempted. Output:\n{combined}"
+            assert (
+                "local-only mode" not in combined.lower()
+            ), f"Should not show local-only message. Output:\n{combined}"
+
+    def test_github_org_config_triggers_auth_check(self):
+        """Config with github.organization should trigger the GitHub auth preflight."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            Path("config.yaml").write_text(self.GITHUB_ORG_CONFIG)
+            result = runner.invoke(
+                analyze,
+                ["--config", "config.yaml", "--weeks", "4", "--validate-only", "--no-rich"],
+            )
+
+            combined = result.output
+            assert "verifying github authentication" in combined.lower() or (
+                "github authentication failed" in combined.lower()
+            ), f"Expected GitHub auth to be attempted. Output:\n{combined}"
+            assert (
+                "local-only mode" not in combined.lower()
+            ), f"Should not show local-only message. Output:\n{combined}"

@@ -143,6 +143,31 @@ def get_week_end(date: datetime) -> datetime:
     return week_end
 
 
+def get_monday_aligned_start(weeks_back: int) -> datetime:
+    """Calculate the Monday-aligned start date for N complete weeks of analysis.
+
+    Bug 3 fix: Both the fetch sub-command and the main batch-mode path must use
+    identical Monday-anchored week boundaries.  Previously the fetch path used a
+    raw timedelta rollback (not aligned to Monday) while the batch-mode path
+    correctly anchored to the last complete Monday-to-Sunday week.
+
+    Logic matches the batch-mode calculation in the main `analyze` command:
+      - Find the Monday of the *current* week.
+      - Step back one week to get the last *complete* week's Monday.
+      - Step back (weeks_back - 1) more weeks for the start of the N-week window.
+
+    Args:
+        weeks_back: Number of complete Monday-to-Sunday weeks to include.
+
+    Returns:
+        Monday 00:00:00 UTC marking the start of the analysis window.
+    """
+    current_time = datetime.now(timezone.utc)
+    current_week_start = get_week_start(current_time)
+    last_complete_week_start = current_week_start - timedelta(weeks=1)
+    return last_complete_week_start - timedelta(weeks=weeks_back - 1)
+
+
 def handle_timezone_error(
     e: Exception, report_name: str, all_commits: list, logger: logging.Logger
 ) -> None:
@@ -770,28 +795,63 @@ def analyze(
                 for warning in warnings:
                     click.echo(f"   - {warning}")
 
-        # Run pre-flight git authentication check
-        # Convert config object to dict for preflight check
-        config_dict = {
-            "github": {
-                "token": cfg.github.token if cfg.github else None,
-                "organization": cfg.github.organization if cfg.github else None,
+        # Determine whether GitHub authentication is required for this analysis run.
+        #
+        # GitHub auth is only needed when the configuration actually exercises
+        # GitHub-specific features:
+        #
+        #   1. Any repository has a github_repo specified — enables PR/issue
+        #      enrichment and CI/CD data fetching via the GitHub API.
+        #   2. GitHub organization discovery is configured — requires a valid
+        #      token to enumerate org repositories.
+        #
+        # Note on CI/CD (github-actions): the orchestrator gates all GitHub
+        # Actions API calls on repo_config.github_repo being set, so enabling
+        # the github-actions platform alone (without any github_repo in the
+        # repos list) is a no-op and does NOT require authentication.
+        def _requires_github_auth() -> bool:
+            """Return True only when GitHub features are actively configured."""
+            # Any repository with a github_repo triggers GitHub API usage.
+            if cfg.repositories and any(
+                getattr(repo, "github_repo", None) for repo in cfg.repositories
+            ):
+                return True
+
+            # GitHub organisation discovery requires a valid token.
+            return bool(cfg.github and cfg.github.organization)
+
+        github_auth_needed = _requires_github_auth()
+
+        if github_auth_needed:
+            # Convert config object to dict for preflight check
+            config_dict = {
+                "github": {
+                    "token": cfg.github.token if cfg.github else None,
+                    "organization": cfg.github.organization if cfg.github else None,
+                }
             }
-        }
 
-        if display:
-            display.print_status("Verifying GitHub authentication...", "info")
+            if display:
+                display.print_status("Verifying GitHub authentication...", "info")
+            else:
+                click.echo("Verifying GitHub authentication...")
+
+            if not preflight_git_authentication(config_dict):
+                if display:
+                    display.print_status(
+                        "GitHub authentication failed. Cannot proceed with analysis.", "error"
+                    )
+                else:
+                    click.echo("GitHub authentication failed. Cannot proceed with analysis.")
+                sys.exit(1)
         else:
-            click.echo("🔐 Verifying GitHub authentication...")
-
-        if not preflight_git_authentication(config_dict):
+            # No GitHub features configured — local-only analysis mode.
             if display:
                 display.print_status(
-                    "GitHub authentication failed. Cannot proceed with analysis.", "error"
+                    "Running in local-only mode (no GitHub features configured).", "info"
                 )
             else:
-                click.echo("❌ GitHub authentication failed. Cannot proceed with analysis.")
-            sys.exit(1)
+                click.echo("Running in local-only mode (no GitHub features configured).")
 
         if validate_only:
             if not warnings:
@@ -1054,9 +1114,13 @@ def analyze(
                     click.echo(f"⚠️  Repository not found: {repo_path}")
                     continue
 
-                # Calculate date range
-                end_date = datetime.now(timezone.utc)
-                start_date = end_date - timedelta(weeks=weeks)
+                # Bug 3 fix: use Monday-aligned week boundaries so the fetch path
+                # produces the same date range as the main batch-mode analysis path.
+                # Previously this used a raw timedelta rollback that could span a
+                # partial week and misalign with the Monday-to-Sunday windows used
+                # everywhere else.
+                start_date = get_monday_aligned_start(weeks)
+                end_date = get_week_end(start_date + timedelta(weeks=weeks) - timedelta(days=1))
 
                 if display:
                     display.print_status(f"Fetching commits from {repo_config['name']}...", "info")
@@ -3596,6 +3660,7 @@ def analyze(
                     ticket_analysis,
                     summary_report,
                     aggregated_pm_data,
+                    pr_metrics=None,
                 )
                 generated_reports.append(summary_report.name)
                 if not display:
@@ -3623,6 +3688,20 @@ def analyze(
 
                 traceback.print_exc()
                 raise
+
+        # PR metrics detailed report (only if PRs are available and CSV is enabled)
+        if generate_csv and all_prs:
+            pr_metrics_report = output / f"pr_metrics_{datetime.now().strftime('%Y%m%d')}.csv"
+            try:
+                logger.debug("Starting PR metrics report generation")
+                report_gen.generate_pr_metrics_report(all_prs, pr_metrics_report)
+                logger.debug("PR metrics report completed successfully")
+                generated_reports.append(pr_metrics_report.name)
+                if not display:
+                    click.echo(f"   ✅ PR metrics: {pr_metrics_report}")
+            except Exception as e:
+                logger.error(f"Error generating PR metrics report: {e}")
+                click.echo(f"   ⚠️ Warning: PR metrics report failed: {e}")
 
         # Untracked commits report (only if CSV generation is enabled)
         if generate_csv:

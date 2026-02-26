@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import git
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from ..constants import BatchSizes, Timeouts
@@ -236,9 +236,13 @@ class GitDataFetcher:
             progress.update(repo_progress_ctx)
 
         # CRITICAL FIX: Verify actual storage before reporting success
+        # BUG 3 FIX: daily_commits values are now summary dicts; use "count" key.
         session = self.database.get_session()
         try:
-            expected_commits = sum(len(commits) for commits in daily_commits.values())
+            expected_commits = sum(
+                v["count"] if isinstance(v, dict) and "count" in v else len(v)
+                for v in daily_commits.values()
+            )
             verification_result = self._verify_commit_storage(
                 session, daily_commits, repo_path, expected_commits
             )
@@ -513,23 +517,26 @@ class GitDataFetcher:
         daily_commits = {}
         all_commit_hashes = set()  # Track all hashes for deduplication
 
-        # Count total commits first for Rich display
+        # BUG 4 FIX: Estimate total commit count using `git rev-list --count` instead of
+        # materialising a full branch history that is immediately discarded.  The old code
+        # called list(repo.iter_commits(...)) for every analysis run and never used the
+        # result — it was pure memory waste.
         try:
-            for branch_name in branches_to_analyze[:1]:  # Sample from first branch
-                sample_commits = list(
-                    repo.iter_commits(branch_name, since=start_date, until=end_date)
-                )
-                # Estimate based on first branch (multiply by number of branches for rough estimate)
-                len(sample_commits) * len(branches_to_analyze)
-                break
+            count_str = repo.git.rev_list(
+                branches_to_analyze[0],
+                "--count",
+                f"--after={start_date.isoformat()}",
+                f"--before={end_date.isoformat()}",
+            )
+            int(count_str.strip()) * len(branches_to_analyze)
         except GitOperationTimeout:
             logger.warning(
                 f"Timeout while sampling commits for {project_key}, using default estimate"
             )
-            len(days_to_process) * BatchSizes.COMMITS_PER_WEEK_ESTIMATE  # Default estimate
+            len(days_to_process) * BatchSizes.COMMITS_PER_WEEK_ESTIMATE
         except Exception as e:
             logger.debug(f"Could not sample commits for {project_key}: {e}, using default estimate")
-            len(days_to_process) * BatchSizes.COMMITS_PER_WEEK_ESTIMATE  # Default estimate
+            len(days_to_process) * BatchSizes.COMMITS_PER_WEEK_ESTIMATE
 
         # Update repository in Rich display with estimated commit count
         if hasattr(progress, "_use_rich") and progress._use_rich:
@@ -614,12 +621,51 @@ class GitDataFetcher:
                 if day_commits:
                     # Sort commits by timestamp
                     day_commits.sort(key=lambda c: c["timestamp"])
-                    daily_commits[day_str] = day_commits
 
-                    # Incremental caching - store commits for this day immediately
+                    # Incremental caching: persist full commit data to SQLite immediately.
                     self._store_day_commits_incremental(
                         repo_path, day_str, day_commits, project_key
                     )
+
+                    # BUG 3 FIX: After writing to SQLite we no longer need the full commit
+                    # dicts in memory.  Extract the lightweight summary information that
+                    # downstream callers actually need (ticket refs, commit hashes, batch
+                    # aggregates) and discard the rest.  Peak RAM is now proportional to a
+                    # single day's commits rather than the entire date-range.
+                    #
+                    # The summary dict held in daily_commits is consumed by:
+                    #   _extract_all_ticket_references  → "ticket_references"
+                    #   _build_commit_ticket_correlations → "commit_ticket_pairs"
+                    #   _verify_commit_storage           → "commit_hashes"
+                    #   _store_daily_batches             → all summary fields
+                    day_summary: dict[str, Any] = {
+                        "count": len(day_commits),
+                        # Flat set of all ticket refs referenced on this day
+                        "ticket_references": list(
+                            {ref for c in day_commits for ref in c.get("ticket_references", [])}
+                        ),
+                        # Pairs needed to build commit-ticket correlations
+                        "commit_ticket_pairs": [
+                            {
+                                "commit_hash": c["commit_hash"],
+                                "ticket_references": c.get("ticket_references", []),
+                                "project_key": c.get("project_key", project_key),
+                            }
+                            for c in day_commits
+                            if c.get("ticket_references")
+                        ],
+                        # Hashes needed by _verify_commit_storage
+                        "commit_hashes": [c["commit_hash"] for c in day_commits],
+                        # Aggregate stats needed by _store_daily_batches
+                        "total_files": sum(c.get("files_changed_count", 0) for c in day_commits),
+                        "total_additions": sum(c.get("lines_added", 0) for c in day_commits),
+                        "total_deletions": sum(c.get("lines_deleted", 0) for c in day_commits),
+                        "active_devs": list(
+                            {c.get("canonical_developer_id", "") for c in day_commits}
+                        ),
+                    }
+                    daily_commits[day_str] = day_summary
+                    del day_commits  # Full commit dicts can now be GC'd
 
                     logger.debug(f"Found {commits_found_today} commits on {day_str}")
 
@@ -642,7 +688,8 @@ class GitDataFetcher:
                     speed = total_processed / elapsed if elapsed > 0 else 0
                     progress.update_repository(project_key, total_processed, speed)
 
-        total_commits = sum(len(commits) for commits in daily_commits.values())
+        # BUG 3 FIX: daily_commits now holds summary dicts, not full commit lists.
+        total_commits = sum(info["count"] for info in daily_commits.values())
         logger.info(f"Collected {total_commits} unique commits across {len(daily_commits)} days")
 
         # Restore original environment variables
@@ -1111,16 +1158,23 @@ class GitDataFetcher:
 
         return summary
 
-    def _extract_all_ticket_references(
-        self, daily_commits: dict[str, list[dict[str, Any]]]
-    ) -> set[str]:
-        """Extract all unique ticket IDs from commits."""
-        ticket_ids = set()
+    def _extract_all_ticket_references(self, daily_commits: dict[str, Any]) -> set[str]:
+        """Extract all unique ticket IDs from the daily-commits summary dicts.
 
-        for day_commits in daily_commits.values():
-            for commit in day_commits:
-                ticket_refs = commit.get("ticket_references", [])
-                ticket_ids.update(ticket_refs)
+        BUG 3 FIX: daily_commits now maps date strings to lightweight summary dicts
+        (see _fetch_commits_by_day).  Each summary dict contains a pre-computed
+        "ticket_references" list so we never need to re-hydrate the full commit objects.
+        """
+        ticket_ids: set[str] = set()
+
+        for day_info in daily_commits.values():
+            # Support both the new summary-dict format and legacy list format for
+            # any callers that pass raw commit lists directly.
+            if isinstance(day_info, dict) and "ticket_references" in day_info:
+                ticket_ids.update(day_info["ticket_references"])
+            elif isinstance(day_info, list):
+                for commit in day_info:
+                    ticket_ids.update(commit.get("ticket_references", []))
 
         logger.info(f"Found {len(ticket_ids)} unique ticket references")
         return ticket_ids
@@ -1246,15 +1300,36 @@ class GitDataFetcher:
         )
 
     def _build_commit_ticket_correlations(
-        self, daily_commits: dict[str, list[dict[str, Any]]], repo_path: Path
+        self, daily_commits: dict[str, Any], repo_path: Path
     ) -> int:
-        """Build and store commit-ticket correlations."""
+        """Build and store commit-ticket correlations.
+
+        BUG 3 FIX: Accepts the lightweight summary-dict format returned by
+        _fetch_commits_by_day (each day entry has a "commit_ticket_pairs" list)
+        as well as the legacy full-list format for backward compatibility.
+        """
         session = self.database.get_session()
         correlations_created = 0
 
         try:
-            for day_commits in daily_commits.values():
-                for commit in day_commits:
+            for day_info in daily_commits.values():
+                # Resolve the iterable of (commit_hash, ticket_refs, project_key) triples
+                # from either the new summary-dict format or the legacy list format.
+                if isinstance(day_info, dict) and "commit_ticket_pairs" in day_info:
+                    pairs = day_info["commit_ticket_pairs"]
+                elif isinstance(day_info, list):
+                    pairs = [
+                        {
+                            "commit_hash": c["commit_hash"],
+                            "ticket_references": c.get("ticket_references", []),
+                            "project_key": c.get("project_key", ""),
+                        }
+                        for c in day_info
+                    ]
+                else:
+                    pairs = []
+
+                for commit in pairs:
                     commit_hash = commit["commit_hash"]
                     ticket_refs = commit.get("ticket_references", [])
 
@@ -1306,12 +1381,18 @@ class GitDataFetcher:
         return correlations_created
 
     def _store_daily_batches(
-        self, daily_commits: dict[str, list[dict[str, Any]]], repo_path: Path, project_key: str
+        self, daily_commits: dict[str, Any], repo_path: Path, project_key: str
     ) -> int:
         """Store daily commit batches for efficient retrieval using bulk operations.
 
         WHY: Enhanced to use bulk operations from the cache layer for significantly
         better performance when storing large numbers of commits.
+
+        BUG 3 FIX: Accepts the lightweight summary-dict format returned by
+        _fetch_commits_by_day.  Commits are already in the DB (written by
+        _store_day_commits_incremental); this method only creates/updates the
+        DailyCommitBatch metadata records using the pre-aggregated summary fields.
+        Legacy full-list format is also handled for backward compatibility.
         """
         session = self.database.get_session()
         batches_created = 0
@@ -1319,7 +1400,13 @@ class GitDataFetcher:
         expected_commits = 0
 
         try:
-            total_commits = sum(len(commits) for commits in daily_commits.values())
+            # Resolve total commit count regardless of format
+            def _day_count(day_info: Any) -> int:
+                if isinstance(day_info, dict):
+                    return day_info.get("count", 0)
+                return len(day_info) if isinstance(day_info, list) else 0
+
+            total_commits = sum(_day_count(v) for v in daily_commits.values())
             logger.debug(
                 f"🔍 DEBUG: Storing {total_commits} commits from {len(daily_commits)} days"
             )
@@ -1355,86 +1442,96 @@ class GitDataFetcher:
                 else:
                     logger.debug(f"🔍 DEBUG: No existing batch found for {date_str}")
 
-            # Collect all commits for bulk operations
-            all_commits_to_store = []
-            commit_hashes_to_check = []
+            # BUG 3 FIX: Commits are already written to the DB by _store_day_commits_incremental.
+            # We only need to create/update the DailyCommitBatch records using the pre-aggregated
+            # summary fields.  For legacy full-list format we still do the bulk-store pass.
+            all_commits_to_store: list[dict[str, Any]] = []
 
-            # First, collect all commit hashes to check existence in bulk
-            for _date_str, commits in daily_commits.items():
-                for commit in commits:
-                    commit_hashes_to_check.append(commit["commit_hash"])
-
-            # Use bulk_exists to check which commits already exist
-            existing_commits_map = self.cache.bulk_exists(str(repo_path), commit_hashes_to_check)
+            # For legacy list format: collect commit hashes to check existence in bulk
+            has_legacy_lists = any(isinstance(v, list) for v in daily_commits.values())
+            if has_legacy_lists:
+                commit_hashes_to_check = [
+                    commit["commit_hash"]
+                    for commits in daily_commits.values()
+                    if isinstance(commits, list)
+                    for commit in commits
+                ]
+                existing_commits_map = self.cache.bulk_exists(
+                    str(repo_path), commit_hashes_to_check
+                )
+            else:
+                existing_commits_map = {}
 
             # Disable autoflush to prevent premature batch creation during commit storage
             with session.no_autoflush:
-                for date_str, commits in daily_commits.items():
-                    if not commits:
+                for date_str, day_info in daily_commits.items():
+                    # --- Resolve summary fields from either format ---
+                    if isinstance(day_info, dict) and "count" in day_info:
+                        # New summary-dict format (BUG 3 FIX path)
+                        commit_count = day_info["count"]
+                        total_files = day_info.get("total_files", 0)
+                        total_additions = day_info.get("total_additions", 0)
+                        total_deletions = day_info.get("total_deletions", 0)
+                        active_devs = day_info.get("active_devs", [])
+                        unique_tickets = day_info.get("ticket_references", [])
+                        commits_to_store_this_date: list[dict[str, Any]] = []
+                    elif isinstance(day_info, list):
+                        # Legacy full-list format — kept for backward compatibility
+                        commits = day_info
+                        if not commits:
+                            continue
+                        commit_count = len(commits)
+                        commits_to_store_this_date = []
+                        for commit in commits:
+                            if not existing_commits_map.get(commit["commit_hash"], False):
+                                cache_format_commit = {
+                                    "hash": commit["commit_hash"],
+                                    "author_name": commit.get("author_name", ""),
+                                    "author_email": commit.get("author_email", ""),
+                                    "message": commit.get("message", ""),
+                                    "timestamp": commit["timestamp"],
+                                    "branch": commit.get("branch", "main"),
+                                    "is_merge": commit.get("is_merge", False),
+                                    "files_changed_count": commit.get("files_changed_count", 0),
+                                    "insertions": commit.get(
+                                        "raw_insertions", commit.get("lines_added", 0)
+                                    ),
+                                    "deletions": commit.get(
+                                        "raw_deletions", commit.get("lines_deleted", 0)
+                                    ),
+                                    "filtered_insertions": commit.get(
+                                        "filtered_insertions", commit.get("lines_added", 0)
+                                    ),
+                                    "filtered_deletions": commit.get(
+                                        "filtered_deletions", commit.get("lines_deleted", 0)
+                                    ),
+                                    "story_points": commit.get("story_points"),
+                                    "ticket_references": commit.get("ticket_references", []),
+                                }
+                                commits_to_store_this_date.append(cache_format_commit)
+                                all_commits_to_store.append(cache_format_commit)
+                                expected_commits += 1
+                            else:
+                                logger.debug(
+                                    f"Commit {commit['commit_hash'][:7]} already exists in database"
+                                )
+                        total_files = sum(c.get("files_changed_count", 0) for c in commits)
+                        total_additions = sum(c.get("lines_added", 0) for c in commits)
+                        total_deletions = sum(c.get("lines_deleted", 0) for c in commits)
+                        active_devs = list({c.get("canonical_developer_id", "") for c in commits})
+                        unique_tickets = list(
+                            {ref for c in commits for ref in c.get("ticket_references", [])}
+                        )
+                    else:
                         continue
 
-                    logger.debug(f"🔍 DEBUG: Processing {len(commits)} commits for {date_str}")
-
-                    # Prepare commits for bulk storage
-                    commits_to_store_this_date = []
-                    for commit in commits:
-                        # Check if commit already exists using bulk check results
-                        if not existing_commits_map.get(commit["commit_hash"], False):
-                            # Transform commit data to cache format
-                            cache_format_commit = {
-                                "hash": commit["commit_hash"],
-                                "author_name": commit.get("author_name", ""),
-                                "author_email": commit.get("author_email", ""),
-                                "message": commit.get("message", ""),
-                                "timestamp": commit["timestamp"],
-                                "branch": commit.get("branch", "main"),
-                                "is_merge": commit.get("is_merge", False),
-                                "files_changed_count": commit.get("files_changed_count", 0),
-                                # Store raw unfiltered values in insertions/deletions
-                                "insertions": commit.get(
-                                    "raw_insertions", commit.get("lines_added", 0)
-                                ),
-                                "deletions": commit.get(
-                                    "raw_deletions", commit.get("lines_deleted", 0)
-                                ),
-                                # Store filtered values separately
-                                "filtered_insertions": commit.get(
-                                    "filtered_insertions", commit.get("lines_added", 0)
-                                ),
-                                "filtered_deletions": commit.get(
-                                    "filtered_deletions", commit.get("lines_deleted", 0)
-                                ),
-                                "story_points": commit.get("story_points"),
-                                "ticket_references": commit.get("ticket_references", []),
-                            }
-                            commits_to_store_this_date.append(cache_format_commit)
-                            all_commits_to_store.append(cache_format_commit)
-                            expected_commits += 1
-                        else:
-                            logger.debug(
-                                f"Commit {commit['commit_hash'][:7]} already exists in database"
-                            )
-
+                    logger.debug(f"🔍 DEBUG: Processing {commit_count} commits for {date_str}")
                     logger.debug(
                         f"🔍 DEBUG: Prepared {len(commits_to_store_this_date)} new commits for {date_str}"
                     )
 
-                    # Calculate batch statistics
-                    total_files = sum(commit.get("files_changed_count", 0) for commit in commits)
-                    total_additions = sum(commit.get("lines_added", 0) for commit in commits)
-                    total_deletions = sum(commit.get("lines_deleted", 0) for commit in commits)
-
-                    # Get unique developers and tickets for this day
-                    active_devs = list(
-                        set(commit.get("canonical_developer_id", "") for commit in commits)
-                    )
-                    unique_tickets = []
-                    for commit in commits:
-                        unique_tickets.extend(commit.get("ticket_references", []))
-                    unique_tickets = list(set(unique_tickets))
-
                     # Create context summary
-                    context_summary = f"{len(commits)} commits by {len(active_devs)} developers"
+                    context_summary = f"{commit_count} commits by {len(active_devs)} developers"
                     if unique_tickets:
                         context_summary += f", {len(unique_tickets)} tickets referenced"
 
@@ -1446,7 +1543,7 @@ class GitDataFetcher:
 
                         if existing_batch:
                             # Update existing batch with new data
-                            existing_batch.commit_count = len(commits)
+                            existing_batch.commit_count = commit_count
                             existing_batch.total_files_changed = total_files
                             existing_batch.total_lines_added = total_additions
                             existing_batch.total_lines_deleted = total_deletions
@@ -1462,7 +1559,7 @@ class GitDataFetcher:
                                 date=date_obj,
                                 project_key=project_key,
                                 repo_path=str(repo_path),
-                                commit_count=len(commits),
+                                commit_count=commit_count,
                                 total_files_changed=total_files,
                                 total_lines_added=total_additions,
                                 total_lines_deleted=total_deletions,
@@ -1537,7 +1634,7 @@ class GitDataFetcher:
     def _verify_commit_storage(
         self,
         session: Session,
-        daily_commits: dict[str, list[dict[str, Any]]],
+        daily_commits: dict[str, Any],
         repo_path: Path,
         expected_new_commits: int,
     ) -> dict[str, int]:
@@ -1549,7 +1646,8 @@ class GitDataFetcher:
 
         Args:
             session: Database session to query
-            daily_commits: Original commit data to verify against
+            daily_commits: Day-keyed mapping — either the new summary-dict format
+                (each value has "commit_hashes") or the legacy full-list format.
             repo_path: Repository path for filtering
             expected_new_commits: Number of new commits we expected to store this session
 
@@ -1563,27 +1661,33 @@ class GitDataFetcher:
             RuntimeError: If verification fails due to database errors
         """
         try:
-            # Collect all commit hashes we tried to store
-            expected_hashes = set()
-            for day_commits in daily_commits.values():
-                for commit in day_commits:
-                    expected_hashes.add(commit["commit_hash"])
+            # Collect all commit hashes we tried to store.
+            # BUG 3 FIX: support both new summary-dict format and legacy list format.
+            expected_hashes: set[str] = set()
+            for day_info in daily_commits.values():
+                if isinstance(day_info, dict) and "commit_hashes" in day_info:
+                    expected_hashes.update(day_info["commit_hashes"])
+                elif isinstance(day_info, list):
+                    for commit in day_info:
+                        expected_hashes.add(commit["commit_hash"])
 
             if not expected_hashes:
                 logger.info("No commits to verify")
                 return {"actual_stored": 0, "total_found": 0, "expected_new": 0}
 
-            # Query database for actual stored commits
-            stored_commits = (
-                session.query(CachedCommit)
+            # BUG 6 FIX: Project only the commit_hash column instead of loading full
+            # ORM objects.  The old code hydrated every column of every CachedCommit row
+            # (message, stats, JSON blobs, …) just to build a set of hashes, which could
+            # allocate hundreds of MB for large repositories.
+            stored_hashes = set(
+                row[0]
+                for row in session.query(CachedCommit.commit_hash)
                 .filter(
                     CachedCommit.commit_hash.in_(expected_hashes),
                     CachedCommit.repo_path == str(repo_path),
                 )
                 .all()
             )
-
-            stored_hashes = {commit.commit_hash for commit in stored_commits}
             total_found = len(stored_hashes)
 
             # For this verification, we assume all matching commits were stored successfully
@@ -1618,28 +1722,48 @@ class GitDataFetcher:
             raise RuntimeError(f"Storage verification failed: {e}") from e
 
     def get_fetch_status(self, project_key: str, repo_path: Path) -> dict[str, Any]:
-        """Get status of data fetching for a project."""
+        """Get status of data fetching for a project.
+
+        BUG 7 FIX: Previously loaded every DailyCommitBatch row into Python objects and
+        aggregated them in a loop — O(n) memory for n batches.  Now uses a single SQL
+        aggregation query so only the scalar summary is transferred over the wire.
+        """
         session = self.database.get_session()
 
         try:
-            # Count daily batches
-            batches = (
-                session.query(DailyCommitBatch)
+            # BUG 7 FIX: Aggregate batch statistics in SQL instead of loading all rows.
+            # func.sum / func.count execute in the database engine; we receive three scalars.
+            batch_agg = (
+                session.query(
+                    func.count(DailyCommitBatch.id).label("total_batches"),
+                    func.coalesce(func.sum(DailyCommitBatch.commit_count), 0).label(
+                        "total_commits"
+                    ),
+                    func.count(
+                        case(
+                            (DailyCommitBatch.classification_status == "completed", 1),
+                        )
+                    ).label("classified_batches"),
+                )
                 .filter(
                     DailyCommitBatch.project_key == project_key,
                     DailyCommitBatch.repo_path == str(repo_path),
                 )
-                .all()
+                .first()
             )
 
-            # Count tickets
+            total_batches = batch_agg.total_batches if batch_agg else 0
+            total_commits = batch_agg.total_commits if batch_agg else 0
+            classified_batches = batch_agg.classified_batches if batch_agg else 0
+
+            # Count tickets (scalar — already efficient)
             tickets = (
                 session.query(DetailedTicketData)
                 .filter(DetailedTicketData.project_key == project_key)
                 .count()
             )
 
-            # Count correlations
+            # Count correlations (scalar — already efficient)
             correlations = (
                 session.query(CommitTicketCorrelation)
                 .filter(
@@ -1649,23 +1773,17 @@ class GitDataFetcher:
                 .count()
             )
 
-            # Calculate statistics
-            total_commits = sum(batch.commit_count for batch in batches)
-            classified_batches = sum(
-                1 for batch in batches if batch.classification_status == "completed"
-            )
-
             return {
                 "project_key": project_key,
                 "repo_path": str(repo_path),
-                "daily_batches": len(batches),
+                "daily_batches": total_batches,
                 "total_commits": total_commits,
                 "unique_tickets": tickets,
                 "commit_correlations": correlations,
                 "classification_status": {
                     "completed_batches": classified_batches,
-                    "pending_batches": len(batches) - classified_batches,
-                    "completion_rate": classified_batches / len(batches) if batches else 0.0,
+                    "pending_batches": total_batches - classified_batches,
+                    "completion_rate": classified_batches / total_batches if total_batches else 0.0,
                 },
             }
 

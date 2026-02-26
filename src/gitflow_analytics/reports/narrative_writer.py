@@ -936,11 +936,37 @@ class NarrativeReportGenerator:
         analysis_weeks = []
         current_week_start = self._get_week_start(analysis_start)
 
-        # Only include weeks where the entire week (including Sunday) is within the analysis period
+        # Bug 7 fix: the previous code computed week_end with microsecond=0 (via
+        # timedelta arithmetic on a datetime that already had microsecond=0 from
+        # _get_week_start), while analysis_end from get_week_end() has
+        # microsecond=999999.  The strict `<=` comparison therefore excluded the
+        # last week of every analysis period because:
+        #   week_end  = Sunday 23:59:59.000000
+        #   analysis_end = Sunday 23:59:59.999999
+        #   week_end <= analysis_end  → True  (ok for last week)
+        # Wait — actually the issue is the OPPOSITE: week_end has second=59 but
+        # no microseconds, so it IS less than analysis_end.  The real failure was
+        # that timedelta(days=6, hours=23, minutes=59, seconds=59) lands at
+        # 23:59:59.000000 on Sunday while analysis_end is 23:59:59.999999, so the
+        # comparison does include the last week... BUT when analysis_end is an
+        # exact Monday 00:00:00 (from the fallback path that uses commit timestamps)
+        # week_end (Sunday 23:59:59) < analysis_end (Monday 00:00:00) fails for
+        # the week that *contains* analysis_end.
+        #
+        # Fix: compare against the *start* of the next day instead.  A week is
+        # included if its Sunday falls before the start of the day after
+        # analysis_end.  This is unambiguous regardless of the microsecond value
+        # in analysis_end.
+        next_day_after_end = analysis_end.replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) + timedelta(days=1)
+
         while current_week_start <= analysis_end:
-            week_end = current_week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
-            # Only include this week if it ends before or on the analysis end date
-            if week_end <= analysis_end:
+            # Sunday of the current week (start of the next week, exclusive)
+            next_week_start = current_week_start + timedelta(weeks=1)
+            # Include this week if its entire span ends before next_day_after_end,
+            # i.e. the Sunday of this week is strictly before the day after analysis_end.
+            if next_week_start <= next_day_after_end:
                 analysis_weeks.append(current_week_start)
             current_week_start += timedelta(weeks=1)
 
@@ -1322,7 +1348,7 @@ class NarrativeReportGenerator:
 
             # Handle weeks with no activity
             if not classifications and not has_activity:
-                report.write(f"  - Week {i+1} ({week_display}): No activity\n")
+                report.write(f"  - Week {i + 1} ({week_display}): No activity\n")
                 continue
             elif not classifications:
                 # Should not happen, but handle gracefully
@@ -1363,13 +1389,13 @@ class NarrativeReportGenerator:
                     )
                     activity_info = f" | Activity: {activity_score:.1f}/100"
                     report.write(
-                        f"  - Week {i+1} ({week_display}): {classifications_text}{ticket_info}{activity_info}\n"
+                        f"  - Week {i + 1} ({week_display}): {classifications_text}{ticket_info}{activity_info}\n"
                     )
                 else:
-                    report.write(f"  - Week {i+1} ({week_display}): {classifications_text}\n")
+                    report.write(f"  - Week {i + 1} ({week_display}): {classifications_text}\n")
             else:
                 # Fallback in case classifications exist but are empty
-                report.write(f"  - Week {i+1} ({week_display}): No significant activity\n")
+                report.write(f"  - Week {i + 1} ({week_display}): No significant activity\n")
 
         # Add a blank line after trend lines for spacing
         # (Note: Don't add extra newline here as the caller will handle spacing)
@@ -1895,7 +1921,7 @@ class NarrativeReportGenerator:
                             ahead = branch.get("ahead_of_main", 0)
                             score = branch.get("health_score", 0)
 
-                            report.write(f"  {i+1}. `{name}` (score: {score:.0f}/100)\n")
+                            report.write(f"  {i + 1}. `{name}` (score: {score:.0f}/100)\n")
                             report.write(f"     - Age: {age} days\n")
                             if behind > 0:
                                 report.write(f"     - Behind main: {behind} commits\n")
@@ -1979,25 +2005,155 @@ class NarrativeReportGenerator:
     def _write_pr_analysis(
         self, report: StringIO, pr_metrics: dict[str, Any], prs: list[dict[str, Any]]
     ) -> None:
-        """Write pull request analysis."""
-        report.write(f"- **Total PRs Merged**: {pr_metrics.get('total_prs', 0)}\n")
+        """Write pull request analysis.
+
+        Sections emitted (always):
+          - Overview: total PRs, average size, lifetime, story-point coverage
+
+        Sections emitted only when review data is present (fetch_pr_reviews=true):
+          - Review Metrics: approval rate, review coverage, avg reviews per PR
+          - Comment Metrics: PR comments, inline review comments, averages
+          - Time Metrics: avg and median time to first review
+          - Revision Metrics: avg revisions per PR
+          - Change Request Metrics: change request rate, avg per PR
+        """
+        total_prs = pr_metrics.get("total_prs", 0)
+
+        # --- Overview ---
+        report.write("### Overview\n\n")
+        report.write(f"- **Total PRs Merged**: {total_prs}\n")
         report.write(f"- **Average PR Size**: {pr_metrics.get('avg_pr_size', 0):.0f} lines\n")
 
-        # Handle optional metrics gracefully
+        if "avg_files_per_pr" in pr_metrics:
+            report.write(f"- **Average Files per PR**: {pr_metrics['avg_files_per_pr']:.1f}\n")
+
         if "avg_pr_lifetime_hours" in pr_metrics:
-            report.write(
-                f"- **Average PR Lifetime**: {pr_metrics['avg_pr_lifetime_hours']:.1f} hours\n"
-            )
+            lifetime_h = pr_metrics["avg_pr_lifetime_hours"]
+            if lifetime_h >= 24:
+                lifetime_str = f"{lifetime_h / 24:.1f} days ({lifetime_h:.1f} hours)"
+            else:
+                lifetime_str = f"{lifetime_h:.1f} hours"
+            report.write(f"- **Average PR Lifetime**: {lifetime_str}\n")
 
         if "story_point_coverage" in pr_metrics:
-            report.write(f"- **Story Point Coverage**: {pr_metrics['story_point_coverage']:.1f}%\n")
+            prs_with_sp = pr_metrics.get("prs_with_story_points", 0)
+            report.write(
+                f"- **Story Point Coverage**: {pr_metrics['story_point_coverage']:.1f}%"
+                f" ({prs_with_sp} of {total_prs} PRs)\n"
+            )
 
-        total_comments = pr_metrics.get("total_review_comments", 0)
-        if total_comments > 0:
-            report.write(f"- **Total Review Comments**: {total_comments}\n")
-            total_prs = pr_metrics.get("total_prs", 1)
-            avg_comments = total_comments / total_prs if total_prs > 0 else 0
-            report.write(f"- **Average Comments per PR**: {avg_comments:.1f}\n")
+        # --- Review Metrics (only when review data was collected) ---
+        # Use the explicit ``review_data_collected`` flag set by
+        # ``GitHubIntegration.calculate_pr_metrics()`` when fetch_pr_reviews
+        # was enabled.  This avoids false-positive display when approval_rate
+        # happens to be 0.0 for a no-data run.
+        approval_rate = pr_metrics.get("approval_rate")
+        review_coverage = pr_metrics.get("review_coverage")
+        has_review_data = bool(pr_metrics.get("review_data_collected", False))
+
+        if has_review_data:
+            report.write("\n### Review Metrics\n\n")
+
+            if approval_rate is not None:
+                report.write(f"- **Approval Rate**: {approval_rate:.1f}%\n")
+
+            if review_coverage is not None:
+                report.write(f"- **Review Coverage**: {review_coverage:.1f}%\n")
+
+            avg_approvals = pr_metrics.get("avg_approvals_per_pr")
+            if avg_approvals is not None:
+                report.write(f"- **Average Approvals per PR**: {avg_approvals:.2f}\n")
+
+        # --- Comment Metrics ---
+        total_inline = pr_metrics.get("total_review_comments", 0)
+        total_pr_comments = pr_metrics.get("total_pr_comments", 0)
+        has_comment_data = total_inline > 0 or total_pr_comments > 0
+
+        if has_comment_data:
+            report.write("\n### Comment Metrics\n\n")
+
+            if total_inline > 0:
+                avg_inline = pr_metrics.get(
+                    "avg_review_comments_per_pr",
+                    total_inline / total_prs if total_prs > 0 else 0,
+                )
+                report.write(
+                    f"- **Total Inline Review Comments**: {total_inline}"
+                    f" ({avg_inline:.1f} avg per PR)\n"
+                )
+
+            if total_pr_comments > 0:
+                avg_pr_comments = pr_metrics.get("avg_pr_comments_per_pr", 0)
+                report.write(
+                    f"- **Total PR Comments**: {total_pr_comments}"
+                    f" ({avg_pr_comments:.1f} avg per PR)\n"
+                )
+
+            # Combined total for quick scanning
+            combined_total = total_inline + total_pr_comments
+            if total_inline > 0 and total_pr_comments > 0:
+                avg_combined = combined_total / total_prs if total_prs > 0 else 0
+                report.write(
+                    f"- **Combined Comments Total**: {combined_total}"
+                    f" ({avg_combined:.1f} avg per PR)\n"
+                )
+
+        # --- Time-to-Review Metrics ---
+        avg_ttfr = pr_metrics.get("avg_time_to_first_review_hours")
+        median_ttfr = pr_metrics.get("median_time_to_first_review_hours")
+
+        if avg_ttfr is not None:
+            report.write("\n### Time-to-Review Metrics\n\n")
+
+            def _fmt_hours(h: float) -> str:
+                if h >= 24:
+                    return f"{h / 24:.1f} days ({h:.1f} hours)"
+                return f"{h:.1f} hours"
+
+            report.write(f"- **Average Time to First Review**: {_fmt_hours(avg_ttfr)}\n")
+
+            if median_ttfr is not None:
+                report.write(f"- **Median Time to First Review**: {_fmt_hours(median_ttfr)}\n")
+
+            # Qualitative interpretation to aid readers
+            if avg_ttfr <= 4:
+                interpretation = "fast review turnaround (under 4 hours)"
+            elif avg_ttfr <= 24:
+                interpretation = "same-day review turnaround"
+            elif avg_ttfr <= 72:
+                interpretation = "review within a few days"
+            else:
+                interpretation = "slow review cycle — consider review SLAs"
+            report.write(f"- **Assessment**: {interpretation}\n")
+
+        # --- Revision Metrics ---
+        avg_revisions = pr_metrics.get("avg_revision_count")
+        if avg_revisions is not None and avg_revisions > 0:
+            report.write("\n### Revision Metrics\n\n")
+            report.write(f"- **Average Revisions per PR**: {avg_revisions:.2f}\n")
+
+            if avg_revisions < 1:
+                pass
+            elif avg_revisions < 2:
+                interpretation = "typical single-revision cycle"
+                report.write(f"- **Assessment**: {interpretation}\n")
+            else:
+                report.write(
+                    "- **Assessment**: multiple revision cycles — consider smaller PRs"
+                    " or clearer requirements\n"
+                )
+
+        # --- Change Request Metrics ---
+        avg_cr = pr_metrics.get("avg_change_requests_per_pr")
+        if avg_cr is not None and avg_cr > 0:
+            report.write("\n### Change Request Metrics\n\n")
+            report.write(f"- **Average Change Requests per PR**: {avg_cr:.2f}\n")
+
+            # Derive change-request rate from prs list when possible
+            if prs:
+                prs_with_cr = sum(1 for pr in prs if (pr.get("change_requests_count") or 0) > 0)
+                cr_rate = prs_with_cr / len(prs) * 100
+                report.write(f"- **Change Request Rate**: {cr_rate:.1f}% of PRs\n")
 
     def _write_ticket_tracking(
         self,
@@ -2490,7 +2646,7 @@ class NarrativeReportGenerator:
                 report.write("### Processing Performance\n\n")
                 report.write(f"- **Average Processing Time**: {avg_ms:.1f}ms per commit\n")
                 report.write(
-                    f"- **Total Processing Time**: {total_ms:.0f}ms ({total_ms/1000:.1f} seconds)\n\n"
+                    f"- **Total Processing Time**: {total_ms:.0f}ms ({total_ms / 1000:.1f} seconds)\n\n"
                 )
 
         else:
@@ -2656,7 +2812,7 @@ class NarrativeReportGenerator:
         report.write("### Pipeline Success Rate\n\n")
         report.write(f"- **Total Pipelines**: {total_pipelines:,}\n")
         report.write(f"- **Successful**: {successful:,} ({overall_success_rate:.1f}%)\n")
-        report.write(f"- **Failed**: {failed:,} ({(failed/total_pipelines*100):.1f}%)\n")
+        report.write(f"- **Failed**: {failed:,} ({(failed / total_pipelines * 100):.1f}%)\n")
         report.write(f"- **Average Build Time**: {avg_duration:.1f} minutes\n\n")
 
         # Success rate assessment

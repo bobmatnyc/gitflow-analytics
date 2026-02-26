@@ -168,7 +168,8 @@ class GitAnalysisCache:
                 for key, value in commit_data.items():
                     if hasattr(existing, key):
                         setattr(existing, key, value)
-                existing.cached_at = datetime.utcnow()
+                # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
+                existing.cached_at = datetime.now(timezone.utc)
             else:
                 # Create new
                 cached_commit = CachedCommit(
@@ -243,7 +244,8 @@ class GitAnalysisCache:
                     for key, value in commit_data.items():
                         if key != "hash" and hasattr(existing, key):
                             setattr(existing, key, value)
-                    existing.cached_at = datetime.utcnow()
+                    # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
+                    existing.cached_at = datetime.now(timezone.utc)
                 else:
                     # Create new
                     cached_commit = CachedCommit(
@@ -329,7 +331,32 @@ class GitAnalysisCache:
                 existing.story_points = pr_data.get("story_points")
                 existing.labels = pr_data.get("labels", [])
                 existing.commit_hashes = pr_data.get("commit_hashes", [])
-                existing.cached_at = datetime.utcnow()
+                # Enhanced PR tracking fields (v3.0) - only update when present in payload
+                # to avoid accidentally zeroing out data already stored from a richer fetch.
+                if "review_comments" in pr_data:
+                    existing.review_comments_count = pr_data.get("review_comments", 0)
+                if "pr_comments_count" in pr_data:
+                    existing.pr_comments_count = pr_data.get("pr_comments_count", 0)
+                if "approvals_count" in pr_data:
+                    existing.approvals_count = pr_data.get("approvals_count", 0)
+                if "change_requests_count" in pr_data:
+                    existing.change_requests_count = pr_data.get("change_requests_count", 0)
+                if "reviewers" in pr_data:
+                    existing.reviewers = pr_data.get("reviewers", [])
+                if "approved_by" in pr_data:
+                    existing.approved_by = pr_data.get("approved_by", [])
+                if "time_to_first_review_hours" in pr_data:
+                    existing.time_to_first_review_hours = pr_data.get("time_to_first_review_hours")
+                if "revision_count" in pr_data:
+                    existing.revision_count = pr_data.get("revision_count", 0)
+                if "changed_files" in pr_data:
+                    existing.changed_files = pr_data.get("changed_files", 0)
+                if "additions" in pr_data:
+                    existing.additions = pr_data.get("additions", 0)
+                if "deletions" in pr_data:
+                    existing.deletions = pr_data.get("deletions", 0)
+                # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
+                existing.cached_at = datetime.now(timezone.utc)
             else:
                 # Create new
                 cached_pr = PullRequestCache(
@@ -343,6 +370,18 @@ class GitAnalysisCache:
                     story_points=pr_data.get("story_points"),
                     labels=pr_data.get("labels", []),
                     commit_hashes=pr_data.get("commit_hashes", []),
+                    # Enhanced PR tracking fields (v3.0)
+                    review_comments_count=pr_data.get("review_comments", 0),
+                    pr_comments_count=pr_data.get("pr_comments_count", 0),
+                    approvals_count=pr_data.get("approvals_count", 0),
+                    change_requests_count=pr_data.get("change_requests_count", 0),
+                    reviewers=pr_data.get("reviewers", []),
+                    approved_by=pr_data.get("approved_by", []),
+                    time_to_first_review_hours=pr_data.get("time_to_first_review_hours"),
+                    revision_count=pr_data.get("revision_count", 0),
+                    changed_files=pr_data.get("changed_files", 0),
+                    additions=pr_data.get("additions", 0),
+                    deletions=pr_data.get("deletions", 0),
                 )
                 session.add(cached_pr)
 
@@ -374,7 +413,8 @@ class GitAnalysisCache:
                 existing.story_points = issue_data.get("story_points")
                 existing.labels = issue_data.get("labels", [])
                 existing.platform_data = issue_data.get("platform_data", {})
-                existing.cached_at = datetime.utcnow()
+                # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
+                existing.cached_at = datetime.now(timezone.utc)
             else:
                 # Create new
                 cached_issue = IssueCache(
@@ -413,7 +453,8 @@ class GitAnalysisCache:
 
     def clear_stale_cache(self) -> None:
         """Remove stale cache entries."""
-        cutoff_time = datetime.utcnow() - timedelta(hours=self.ttl_hours)
+        # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=self.ttl_hours)
 
         with self.get_session() as session:
             session.query(CachedCommit).filter(CachedCommit.cached_at < cutoff_time).delete()
@@ -474,7 +515,8 @@ class GitAnalysisCache:
             )
 
             # Stale entries
-            cutoff_time = datetime.utcnow() - timedelta(hours=self.ttl_hours)
+            # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=self.ttl_hours)
             stale_commits = (
                 session.query(CachedCommit).filter(CachedCommit.cached_at < cutoff_time).count()
             )
@@ -703,7 +745,8 @@ class GitAnalysisCache:
                     )
 
                 # Check for very old entries (older than 2 * TTL)
-                very_old_cutoff = datetime.utcnow() - timedelta(hours=self.ttl_hours * 2)
+                # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
+                very_old_cutoff = datetime.now(timezone.utc) - timedelta(hours=self.ttl_hours * 2)
                 very_old_count = (
                     session.query(CachedCommit)
                     .filter(CachedCommit.cached_at < very_old_cutoff)
@@ -775,8 +818,14 @@ class GitAnalysisCache:
             "duration_seconds": 0,
         }
 
-        start_time = datetime.now()
-        cutoff_date = datetime.now() - timedelta(weeks=weeks)
+        # Bug 5 fix: use timezone-aware UTC datetime so the cutoff is unambiguous.
+        # Previously datetime.now() produced a naive local-time datetime which:
+        #   1. Could differ from UTC by hours depending on the host timezone.
+        #   2. Was passed to git as a date-only string ("%Y-%m-%d"), discarding
+        #      the time component and potentially including/excluding an extra day
+        #      at the boundary.  Full ISO-8601 format with timezone is passed now.
+        start_time = datetime.now(timezone.utc)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(weeks=weeks)
 
         try:
             for repo_path in repo_paths:
@@ -786,10 +835,10 @@ class GitAnalysisCache:
                     repo_path_obj = Path(repo_path)
                     repo = git.Repo(repo_path)
 
-                    # Get commits from the specified time period
-                    commits = list(
-                        repo.iter_commits(all=True, since=cutoff_date.strftime("%Y-%m-%d"))
-                    )
+                    # Pass full ISO-8601 datetime string (includes timezone offset)
+                    # so git respects the exact cutoff moment rather than rounding
+                    # to the start of the day as it would with a date-only string.
+                    commits = list(repo.iter_commits(all=True, since=cutoff_date.isoformat()))
 
                     warming_results["total_commits_found"] += len(commits)
 
@@ -841,7 +890,10 @@ class GitAnalysisCache:
         except Exception as e:
             warming_results["errors"].append(f"General error during cache warming: {str(e)}")
 
-        warming_results["duration_seconds"] = (datetime.now() - start_time).total_seconds()
+        # Bug 5 fix: use timezone-aware datetime to match the start_time above
+        warming_results["duration_seconds"] = (
+            datetime.now(timezone.utc) - start_time
+        ).total_seconds()
         return warming_results
 
     def _analyze_commit_minimal(
@@ -852,13 +904,21 @@ class GitAnalysisCache:
         WHY: Cache warming doesn't need full analysis complexity,
         just enough data to populate the cache effectively.
         """
+        # Bug 6 fix: normalise commit timestamp to UTC before storing.
+        # commit.committed_datetime carries the author's local timezone offset
+        # (e.g. +09:00 for JST).  The main analyzer normalises to UTC before
+        # storage; skipping that here caused week-boundary mismatches when the
+        # cache-warming path stored raw offset-aware datetimes that compared
+        # differently against UTC-based query filters.
+        commit_utc = commit.committed_datetime.astimezone(timezone.utc)
+
         # Basic commit data
         commit_data = {
             "hash": commit.hexsha,
             "author_name": commit.author.name,
             "author_email": commit.author.email,
             "message": commit.message,
-            "timestamp": commit.committed_datetime,
+            "timestamp": commit_utc,
             "is_merge": len(commit.parents) > 1,
             "files_changed": self._get_files_changed_count(commit),
             "insertions": self._get_insertions_count(commit),
@@ -881,7 +941,13 @@ class GitAnalysisCache:
         """Check if cache entry is stale."""
         if self.ttl_hours == 0:  # No expiration
             return False
-        return cached_at < datetime.utcnow() - timedelta(hours=self.ttl_hours)
+        # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow().
+        # cached_at stored by DateTime(timezone=True) columns is already tz-aware.
+        now_utc = datetime.now(timezone.utc)
+        # Handle the case where cached_at may still be timezone-naive (legacy rows)
+        if cached_at.tzinfo is None:
+            cached_at = cached_at.replace(tzinfo=timezone.utc)
+        return cached_at < now_utc - timedelta(hours=self.ttl_hours)
 
     def _commit_to_dict(self, commit: CachedCommit) -> dict[str, Any]:
         """Convert CachedCommit to dictionary."""
@@ -904,7 +970,12 @@ class GitAnalysisCache:
         }
 
     def _pr_to_dict(self, pr: PullRequestCache) -> dict[str, Any]:
-        """Convert PullRequestCache to dictionary."""
+        """Convert PullRequestCache to dictionary.
+
+        WHY: Uses getattr with defaults for the v3.0 enhanced fields so that
+        this method works correctly against older database rows that pre-date the
+        migration (columns will be None after ALTER TABLE adds them).
+        """
         return {
             "number": pr.pr_number,
             "title": pr.title,
@@ -915,6 +986,18 @@ class GitAnalysisCache:
             "story_points": pr.story_points,
             "labels": pr.labels or [],
             "commit_hashes": pr.commit_hashes or [],
+            # Enhanced PR tracking fields (v3.0)
+            "review_comments": getattr(pr, "review_comments_count", None) or 0,
+            "pr_comments_count": getattr(pr, "pr_comments_count", None) or 0,
+            "approvals_count": getattr(pr, "approvals_count", None) or 0,
+            "change_requests_count": getattr(pr, "change_requests_count", None) or 0,
+            "reviewers": getattr(pr, "reviewers", None) or [],
+            "approved_by": getattr(pr, "approved_by", None) or [],
+            "time_to_first_review_hours": getattr(pr, "time_to_first_review_hours", None),
+            "revision_count": getattr(pr, "revision_count", None) or 0,
+            "changed_files": getattr(pr, "changed_files", None) or 0,
+            "additions": getattr(pr, "additions", None) or 0,
+            "deletions": getattr(pr, "deletions", None) or 0,
         }
 
     def _issue_to_dict(self, issue: IssueCache) -> dict[str, Any]:
@@ -1355,8 +1438,9 @@ class GitAnalysisCache:
                         CachedCommit.timestamp >= analysis_start,
                         CachedCommit.timestamp <= analysis_end,
                         # Only count non-stale commits
+                        # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
                         CachedCommit.cached_at
-                        >= datetime.utcnow() - timedelta(hours=self.ttl_hours),
+                        >= datetime.now(timezone.utc) - timedelta(hours=self.ttl_hours),
                     )
                 )
                 .count()
@@ -1475,7 +1559,8 @@ class GitAnalysisCache:
                 existing.config_hash = config_hash
                 existing.status = "completed"
                 existing.error_message = None
-                existing.last_updated = datetime.utcnow()
+                # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
+                existing.last_updated = datetime.now(timezone.utc)
             else:
                 # Create new record
                 status = RepositoryAnalysisStatus(
@@ -1538,7 +1623,8 @@ class GitAnalysisCache:
                 existing.status = "failed"
                 existing.error_message = error_message
                 existing.config_hash = config_hash
-                existing.last_updated = datetime.utcnow()
+                # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
+                existing.last_updated = datetime.now(timezone.utc)
             else:
                 # Create new failed record
                 status = RepositoryAnalysisStatus(
@@ -1576,7 +1662,8 @@ class GitAnalysisCache:
                 query = query.filter(RepositoryAnalysisStatus.repo_path == repo_path)
 
             if older_than_days:
-                cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+                # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
+                cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
                 query = query.filter(RepositoryAnalysisStatus.last_updated < cutoff)
 
             count = query.count()
@@ -1604,7 +1691,8 @@ class GitAnalysisCache:
             total_records = session.query(RepositoryAnalysisStatus).count()
 
             # Recent activity (last 7 days)
-            recent_cutoff = datetime.utcnow() - timedelta(days=7)
+            # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
+            recent_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
             recent_completed = (
                 session.query(RepositoryAnalysisStatus)
                 .filter(

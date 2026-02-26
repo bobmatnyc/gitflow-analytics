@@ -528,6 +528,7 @@ class ConfigLoader:
             base_url=github_data.get("base_url", "https://api.github.com"),
             max_retries=github_data.get("rate_limit", {}).get("max_retries", 3),
             backoff_factor=github_data.get("rate_limit", {}).get("backoff_factor", 2),
+            fetch_pr_reviews=bool(github_data.get("fetch_pr_reviews", False)),
         )
 
     @classmethod

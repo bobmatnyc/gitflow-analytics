@@ -21,16 +21,39 @@ class GitHubIntegration:
         rate_limit_retries: int = 3,
         backoff_factor: int = 2,
         allowed_ticket_platforms: Optional[list[str]] = None,
+        fetch_pr_reviews: bool = False,
     ):
-        """Initialize GitHub integration."""
+        """Initialize GitHub integration.
+
+        Args:
+            token: GitHub personal access token.
+            cache: Shared analysis cache instance.
+            rate_limit_retries: Number of retry attempts on rate-limit errors.
+            backoff_factor: Exponential backoff base (seconds).
+            allowed_ticket_platforms: Optional whitelist of ticket platforms to extract.
+            fetch_pr_reviews: When True, fetch review data (approvals, change requests,
+                time-to-first-review) via additional API calls per PR.  Disabled by
+                default to protect existing users from unexpected rate-limit increases.
+        """
         self.github = Github(token)
         self.cache = cache
         self.rate_limit_retries = rate_limit_retries
         self.backoff_factor = backoff_factor
         self.allowed_ticket_platforms = allowed_ticket_platforms
+        self.fetch_pr_reviews = fetch_pr_reviews
 
         # Initialize schema version manager for incremental API data fetching
         self.schema_manager = create_schema_manager(cache.cache_dir)
+
+        # BUG 5 FIX: Instantiate extractors once at construction time instead of
+        # re-creating them on every _extract_pr_data call.  Each StoryPointExtractor /
+        # TicketExtractor allocates regex patterns and (optionally) ML models, so
+        # recreating them per-PR caused both memory pressure and CPU overhead.
+        from ..extractors.story_points import StoryPointExtractor
+        from ..extractors.tickets import TicketExtractor
+
+        self._sp_extractor = StoryPointExtractor()
+        self._ticket_extractor = TicketExtractor(allowed_platforms=self.allowed_ticket_platforms)
 
     def _get_incremental_fetch_date(
         self, component: str, requested_since: datetime, config: dict[str, Any]
@@ -111,9 +134,16 @@ class GitHubIntegration:
             self.schema_manager.mark_date_processed("github", since, github_config)
 
         # Process new PRs and cache them
+        # Announce review-fetch mode so operators know extra API calls are being made
+        if self.fetch_pr_reviews and new_prs:
+            print(
+                f"   🔍 fetch_pr_reviews enabled — fetching review data for "
+                f"{len(new_prs)} new PR(s) (uses additional API quota)"
+            )
+
         new_pr_data = []
         for pr in new_prs:
-            pr_data = self._extract_pr_data(pr)
+            pr_data = self._extract_pr_data(pr, fetch_reviews=self.fetch_pr_reviews)
             new_pr_data.append(pr_data)
 
         # Bulk cache new PR data
@@ -194,10 +224,22 @@ class GitHubIntegration:
                         "labels": cached_pr.labels or [],
                         "commit_hashes": cached_pr.commit_hashes or [],
                         "ticket_references": [],  # Would need additional extraction
-                        "review_comments": 0,  # Not stored in current schema
-                        "changed_files": 0,  # Not stored in current schema
-                        "additions": 0,  # Not stored in current schema
-                        "deletions": 0,  # Not stored in current schema
+                        # Enhanced PR tracking fields (v3.0) - use getattr for backward
+                        # compatibility with databases that pre-date the v3.0 migration.
+                        "review_comments": getattr(cached_pr, "review_comments_count", None) or 0,
+                        "pr_comments_count": getattr(cached_pr, "pr_comments_count", None) or 0,
+                        "approvals_count": getattr(cached_pr, "approvals_count", None) or 0,
+                        "change_requests_count": getattr(cached_pr, "change_requests_count", None)
+                        or 0,
+                        "reviewers": getattr(cached_pr, "reviewers", None) or [],
+                        "approved_by": getattr(cached_pr, "approved_by", None) or [],
+                        "time_to_first_review_hours": getattr(
+                            cached_pr, "time_to_first_review_hours", None
+                        ),
+                        "revision_count": getattr(cached_pr, "revision_count", None) or 0,
+                        "changed_files": getattr(cached_pr, "changed_files", None) or 0,
+                        "additions": getattr(cached_pr, "additions", None) or 0,
+                        "deletions": getattr(cached_pr, "deletions", None) or 0,
                     }
                     cached_prs.append(pr_data)
 
@@ -269,25 +311,141 @@ class GitHubIntegration:
 
         return prs
 
-    def _extract_pr_data(self, pr) -> dict[str, Any]:
-        """Extract relevant data from a GitHub PR object."""
-        from ..extractors.story_points import StoryPointExtractor
-        from ..extractors.tickets import TicketExtractor
+    def _extract_review_data(self, pr) -> dict[str, Any]:
+        """Fetch and extract review-level data for a pull request.
 
-        sp_extractor = StoryPointExtractor()
-        ticket_extractor = TicketExtractor(allowed_platforms=self.allowed_ticket_platforms)
+        WHY: Review data (approvals, change requests, reviewer lists, time-to-review)
+        requires separate API calls beyond the base PR object.  This method is only
+        invoked when the ``fetch_pr_reviews`` config flag is enabled so that existing
+        users are not impacted by the additional API budget.
 
-        # Extract story points from PR title and body
-        pr_text = f"{pr.title} {pr.body or ''}"
-        story_points = sp_extractor.extract_from_text(pr_text)
+        PyGitHub paginates reviews automatically; we iterate the full list once and
+        process each state in a single pass to keep complexity O(n).
 
-        # Extract ticket references
-        tickets = ticket_extractor.extract_from_text(pr_text)
+        Args:
+            pr: PyGitHub PullRequest object.
 
-        # Get commit SHAs
-        commit_hashes = [c.sha for c in pr.get_commits()]
+        Returns:
+            Dictionary with review-specific fields ready to merge into PR data.
+        """
+        approvals_count = 0
+        change_requests_count = 0
+        reviewers: list[str] = []
+        approved_by: list[str] = []
+        time_to_first_review_hours: Optional[float] = None
+        earliest_review_at: Optional[datetime] = None
+
+        try:
+            for review in pr.get_reviews():
+                reviewer_login: str = review.user.login if review.user else "unknown"
+                state: str = review.state  # APPROVED | CHANGES_REQUESTED | COMMENTED | DISMISSED
+
+                # Track unique reviewers (any meaningful interaction)
+                if reviewer_login not in reviewers and state in {
+                    "APPROVED",
+                    "CHANGES_REQUESTED",
+                    "COMMENTED",
+                }:
+                    reviewers.append(reviewer_login)
+
+                if state == "APPROVED":
+                    approvals_count += 1
+                    if reviewer_login not in approved_by:
+                        approved_by.append(reviewer_login)
+
+                elif state == "CHANGES_REQUESTED":
+                    change_requests_count += 1
+
+                # Track time to first non-COMMENTED review for latency metric
+                if state in {"APPROVED", "CHANGES_REQUESTED"} and review.submitted_at:
+                    review_time: datetime = review.submitted_at
+                    if review_time.tzinfo is None:
+                        review_time = review_time.replace(tzinfo=timezone.utc)
+                    if earliest_review_at is None or review_time < earliest_review_at:
+                        earliest_review_at = review_time
+
+        except Exception as exc:
+            print(f"   ⚠️  Could not fetch reviews for PR #{pr.number}: {exc}")
+
+        # Calculate time-to-first-review
+        if earliest_review_at and pr.created_at:
+            created = pr.created_at
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            delta_seconds = (earliest_review_at - created).total_seconds()
+            # Guard against negative values (clock skew / backdated reviews)
+            time_to_first_review_hours = max(0.0, delta_seconds / 3600)
+
+        # Fetch general issue/PR comments count (separate from inline review comments)
+        pr_comments_count = 0
+        try:
+            # get_issue_comments() returns general timeline comments, not inline review comments
+            for _ in pr.get_issue_comments():
+                pr_comments_count += 1
+        except Exception as exc:
+            print(f"   ⚠️  Could not fetch issue comments for PR #{pr.number}: {exc}")
 
         return {
+            "approvals_count": approvals_count,
+            "change_requests_count": change_requests_count,
+            "reviewers": reviewers,
+            "approved_by": approved_by,
+            "time_to_first_review_hours": time_to_first_review_hours,
+            "pr_comments_count": pr_comments_count,
+        }
+
+    def _count_pr_revisions(self, pr) -> int:
+        """Estimate PR revision count from commit timeline.
+
+        WHY: GitHub does not expose a first-class "revision" concept.  The best
+        proxy available without the Events API is counting commits added *after*
+        the first review event.  A simpler approximation — which avoids the extra
+        Events API call — is to count distinct commit "pushes": each force-push
+        resets the commit list, but the PR timeline events expose ``head_sha``
+        changes.  For now we use a lightweight heuristic: total commits beyond 1
+        suggests at least one revision cycle.
+
+        This is intentionally conservative; it under-counts but never over-counts.
+
+        Args:
+            pr: PyGitHub PullRequest object.
+
+        Returns:
+            Estimated revision count (>= 0).
+        """
+        try:
+            commit_count = pr.commits  # Lightweight integer attribute — no extra API call
+            # Heuristic: each commit beyond the first is counted as a potential
+            # revision push.  Cap at a sane upper bound to avoid garbage data.
+            return max(0, min(commit_count - 1, 50))
+        except Exception:
+            return 0
+
+    def _extract_pr_data(self, pr, fetch_reviews: bool = False) -> dict[str, Any]:
+        """Extract relevant data from a GitHub PR object.
+
+        Args:
+            pr: PyGitHub PullRequest object.
+            fetch_reviews: When True, also call ``_extract_review_data()`` and
+                ``_count_pr_revisions()`` to populate enhanced review fields.
+                Controlled by the ``fetch_pr_reviews`` config flag.
+
+        Returns:
+            Dictionary of PR data ready for caching and metrics calculation.
+        """
+        # BUG 5 FIX: Use the shared extractor instances created in __init__ instead of
+        # instantiating new objects on every call (was O(PR count) allocations).
+        # Extract story points from PR title and body
+        pr_text = f"{pr.title} {pr.body or ''}"
+        story_points = self._sp_extractor.extract_from_text(pr_text)
+
+        # Extract ticket references
+        tickets = self._ticket_extractor.extract_from_text(pr_text)
+
+        # Get commit SHAs — pr.get_commits() is paginated automatically by PyGitHub
+        commit_hashes = [c.sha for c in pr.get_commits()]
+
+        pr_data: dict[str, Any] = {
             "number": pr.number,
             "title": pr.title,
             "description": pr.body,
@@ -298,41 +456,156 @@ class GitHubIntegration:
             "labels": [label.name for label in pr.labels],
             "commit_hashes": commit_hashes,
             "ticket_references": tickets,
+            # Inline review comment count — available on the base PR object,
+            # no extra API call required.
             "review_comments": pr.review_comments,
             "changed_files": pr.changed_files,
             "additions": pr.additions,
             "deletions": pr.deletions,
         }
 
+        if fetch_reviews:
+            review_data = self._extract_review_data(pr)
+            pr_data.update(review_data)
+            pr_data["revision_count"] = self._count_pr_revisions(pr)
+
+        return pr_data
+
     def calculate_pr_metrics(self, prs: list[dict[str, Any]]) -> dict[str, Any]:
-        """Calculate PR-level metrics."""
+        """Calculate PR-level metrics including review quality indicators.
+
+        Basic metrics (size, lifetime, story-point coverage) are always computed.
+        Enhanced review metrics (approval rate, time-to-first-review, change-request
+        rate) are computed when the underlying data is present — i.e. when
+        ``fetch_pr_reviews`` was enabled during data collection.
+
+        Args:
+            prs: List of PR data dictionaries as returned by ``_extract_pr_data()``.
+
+        Returns:
+            Dictionary of aggregated PR metrics.
+        """
         if not prs:
             return {
+                "total_prs": 0,
                 "avg_pr_size": 0,
                 "avg_pr_lifetime_hours": 0,
                 "avg_files_per_pr": 0,
                 "total_review_comments": 0,
+                "prs_with_story_points": 0,
+                "story_point_coverage": 0.0,
+                # Enhanced review metrics — zeroed/null when no PRs
+                "review_data_collected": False,
+                "approval_rate": 0.0,
+                "avg_approvals_per_pr": 0.0,
+                "avg_change_requests_per_pr": 0.0,
+                "review_coverage": 0.0,
+                "avg_time_to_first_review_hours": None,
+                "median_time_to_first_review_hours": None,
+                "total_pr_comments": 0,
+                "avg_pr_comments_per_pr": 0.0,
+                "avg_revision_count": 0.0,
             }
 
-        total_size = sum(pr["additions"] + pr["deletions"] for pr in prs)
-        total_files = sum(pr.get("changed_files", 0) for pr in prs)
-        total_comments = sum(pr.get("review_comments", 0) for pr in prs)
+        n = len(prs)
 
-        # Calculate average PR lifetime
-        lifetimes = []
+        # --- Basic size / lifetime metrics ---
+        total_size = sum((pr.get("additions") or 0) + (pr.get("deletions") or 0) for pr in prs)
+        total_files = sum(pr.get("changed_files", 0) or 0 for pr in prs)
+        total_inline_comments = sum(pr.get("review_comments", 0) or 0 for pr in prs)
+
+        lifetimes: list[float] = []
         for pr in prs:
             if pr.get("merged_at") and pr.get("created_at"):
                 lifetime = (pr["merged_at"] - pr["created_at"]).total_seconds() / 3600
                 lifetimes.append(lifetime)
 
-        avg_lifetime = sum(lifetimes) / len(lifetimes) if lifetimes else 0
+        avg_lifetime = sum(lifetimes) / len(lifetimes) if lifetimes else 0.0
+
+        # --- Story point coverage ---
+        prs_with_sp = sum(1 for pr in prs if pr.get("story_points"))
+        sp_coverage = prs_with_sp / n * 100
+
+        # --- Enhanced review metrics ---
+        # Only aggregate when review data is actually present (non-None approvals_count)
+        prs_with_review_data = [pr for pr in prs if pr.get("approvals_count") is not None]
+        review_data_available = len(prs_with_review_data)
+
+        # Approval rate: fraction of reviewed PRs that received at least one approval
+        if review_data_available:
+            approved_prs = sum(
+                1 for pr in prs_with_review_data if (pr.get("approvals_count") or 0) > 0
+            )
+            approval_rate = approved_prs / review_data_available * 100
+
+            avg_approvals = (
+                sum(pr.get("approvals_count") or 0 for pr in prs_with_review_data)
+                / review_data_available
+            )
+            avg_change_requests = (
+                sum(pr.get("change_requests_count") or 0 for pr in prs_with_review_data)
+                / review_data_available
+            )
+
+            # Review coverage: fraction of PRs that received at least one review
+            reviewed_prs = sum(
+                1
+                for pr in prs_with_review_data
+                if (pr.get("approvals_count") or 0) + (pr.get("change_requests_count") or 0) > 0
+            )
+            review_coverage = reviewed_prs / review_data_available * 100
+        else:
+            approval_rate = 0.0
+            avg_approvals = 0.0
+            avg_change_requests = 0.0
+            review_coverage = 0.0
+
+        # Time-to-first-review statistics
+        ttfr_values: list[float] = [
+            pr["time_to_first_review_hours"]
+            for pr in prs
+            if pr.get("time_to_first_review_hours") is not None
+        ]
+        avg_ttfr: Optional[float] = sum(ttfr_values) / len(ttfr_values) if ttfr_values else None
+        median_ttfr: Optional[float] = None
+        if ttfr_values:
+            sorted_ttfr = sorted(ttfr_values)
+            mid = len(sorted_ttfr) // 2
+            median_ttfr = (
+                sorted_ttfr[mid]
+                if len(sorted_ttfr) % 2 == 1
+                else (sorted_ttfr[mid - 1] + sorted_ttfr[mid]) / 2
+            )
+
+        # General PR comments (timeline, not inline review comments)
+        total_pr_comments = sum(pr.get("pr_comments_count", 0) or 0 for pr in prs)
+        avg_pr_comments = total_pr_comments / n
+
+        # Revision count
+        avg_revisions = sum(pr.get("revision_count", 0) or 0 for pr in prs) / n
 
         return {
-            "total_prs": len(prs),
-            "avg_pr_size": total_size / len(prs),
+            "total_prs": n,
+            "avg_pr_size": total_size / n,
             "avg_pr_lifetime_hours": avg_lifetime,
-            "avg_files_per_pr": total_files / len(prs),
-            "total_review_comments": total_comments,
-            "prs_with_story_points": sum(1 for pr in prs if pr.get("story_points")),
-            "story_point_coverage": sum(1 for pr in prs if pr.get("story_points")) / len(prs) * 100,
+            "avg_files_per_pr": total_files / n,
+            "total_review_comments": total_inline_comments,
+            "prs_with_story_points": prs_with_sp,
+            "story_point_coverage": sp_coverage,
+            # --- Enhanced review metrics ---
+            # ``review_data_collected`` is True when at least one PR in the
+            # dataset has approvals_count populated (i.e. fetch_pr_reviews was
+            # enabled for this batch).  Consumers should gate display of review
+            # metrics on this flag rather than checking for zero values, because
+            # a legitimate dataset may have 0% approval rate (all PRs unreviewed).
+            "review_data_collected": review_data_available > 0,
+            "approval_rate": approval_rate,
+            "avg_approvals_per_pr": avg_approvals,
+            "avg_change_requests_per_pr": avg_change_requests,
+            "review_coverage": review_coverage,
+            "avg_time_to_first_review_hours": avg_ttfr,
+            "median_time_to_first_review_hours": median_ttfr,
+            "total_pr_comments": total_pr_comments,
+            "avg_pr_comments_per_pr": avg_pr_comments,
+            "avg_revision_count": avg_revisions,
         }

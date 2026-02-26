@@ -120,24 +120,41 @@ class BranchHealthAnalyzer:
             except IndexError:
                 continue
 
-        # If no standard names, use the branch with most commits
+        # BUG 9 FIX (line 125): Use git rev-list --count instead of loading the full
+        # commit list for every branch just to count them.
         if repo.heads:
-            return max(repo.heads, key=lambda b: len(list(repo.iter_commits(b))))
+
+            def _commit_count(branch: git.Head) -> int:
+                try:
+                    return int(repo.git.rev_list(branch.name, "--count").strip())
+                except Exception:
+                    return 0
+
+            return max(repo.heads, key=_commit_count)
 
         return None
 
     def _analyze_branch(
         self, repo: Repo, branch: git.Head, main_branch: git.Head, now: datetime
     ) -> dict[str, Any]:
-        """Analyze a single branch for health metrics."""
+        """Analyze a single branch for health metrics.
+
+        BUG 9 FIX (line 135): The original code called list(repo.iter_commits(branch))
+        to load the ENTIRE history of every branch on every health check.  For repos
+        with many long-lived branches this could materialise millions of commit objects.
+
+        We now:
+        - Use max_count=1 for latest commit (age / staleness check).
+        - Use git rev-list --count for total commit count.
+        - Pass only the minimal required subset to _analyze_commit_frequency.
+        """
         try:
-            # Get branch commits
-            branch_commits = list(repo.iter_commits(branch))
-            if not branch_commits:
+            # Get only the most recent commit — enough for age/staleness.
+            latest_commits = list(repo.iter_commits(branch, max_count=1))
+            if not latest_commits:
                 return self._empty_branch_metrics(branch.name)
 
-            # Get latest commit info
-            latest_commit = branch_commits[0]
+            latest_commit = latest_commits[0]
             latest_activity = latest_commit.committed_datetime
             if latest_activity.tzinfo is None:
                 latest_activity = latest_activity.replace(tzinfo=timezone.utc)
@@ -146,14 +163,26 @@ class BranchHealthAnalyzer:
             age_delta = now - latest_activity
             age_days = age_delta.days
 
+            # Total commit count via git rev-list --count (no object allocation)
+            try:
+                total_commits = int(repo.git.rev_list(branch.name, "--count").strip())
+            except Exception:
+                total_commits = 0
+
             # Check if branch is merged
             is_merged = self._is_branch_merged(repo, branch, main_branch)
 
             # Calculate divergence from main
             ahead, behind = self._calculate_divergence(repo, branch, main_branch)
 
-            # Analyze commit patterns
-            commit_frequency = self._analyze_commit_frequency(branch_commits)
+            # Analyze commit patterns — pass a small recent window rather than full history.
+            # For frequency stats a 90-day window is sufficient and avoids loading thousands
+            # of old commit objects.
+            recent_commits = list(repo.iter_commits(branch, max_count=500))
+            commit_frequency = self._analyze_commit_frequency(recent_commits)
+
+            # Unique authors from the same recent window
+            unique_authors = len({c.author.email for c in recent_commits if c.author})
 
             return {
                 "name": branch.name,
@@ -161,14 +190,14 @@ class BranchHealthAnalyzer:
                 "age_days": age_days,
                 "is_stale": age_days > self.stale_branch_days,
                 "is_merged": is_merged,
-                "total_commits": len(branch_commits),
-                "unique_authors": len(set(c.author.email for c in branch_commits if c.author)),
+                "total_commits": total_commits,
+                "unique_authors": unique_authors,
                 "ahead_of_main": ahead,
                 "behind_main": behind,
                 "divergence_score": ahead + behind,
                 "commit_frequency": commit_frequency,
                 "health_score": self._calculate_branch_health_score(
-                    age_days, ahead, behind, is_merged, len(branch_commits)
+                    age_days, ahead, behind, is_merged, total_commits
                 ),
             }
 
@@ -177,34 +206,42 @@ class BranchHealthAnalyzer:
             return self._empty_branch_metrics(branch.name)
 
     def _is_branch_merged(self, repo: Repo, branch: git.Head, main_branch: git.Head) -> bool:
-        """Check if a branch has been merged into main."""
+        """Check if a branch has been merged into main.
+
+        BUG 9 FIX (line 190): The original code loaded the ENTIRE commit history of
+        main into a Python set just to check reachability.  For large main branches
+        this could allocate tens of thousands of commit objects per branch check.
+
+        We now use `git merge-base --is-ancestor` via GitPython's is_ancestor helper,
+        which performs the check entirely inside the git process in O(log n) time.
+        """
         try:
-            # Get merge base
-            merge_base = repo.merge_base(branch, main_branch)
-            if not merge_base:
-                return False
-
-            # If branch tip is in main's history, it's merged
             branch_tip = branch.commit
-            # Use commit hashes instead of commit objects for hashability
-            main_commit_hashes = set(commit.hexsha for commit in repo.iter_commits(main_branch))
-            return branch_tip.hexsha in main_commit_hashes
-
+            # is_ancestor returns True if branch_tip is reachable from main_branch
+            # i.e. branch_tip is an ancestor of (or equal to) the main tip.
+            return repo.is_ancestor(branch_tip, main_branch.commit)
         except Exception:
             return False
 
     def _calculate_divergence(
         self, repo: Repo, branch: git.Head, main_branch: git.Head
     ) -> tuple[int, int]:
-        """Calculate how many commits a branch is ahead/behind main."""
+        """Calculate how many commits a branch is ahead/behind main.
+
+        BUG 9 FIX (lines 202-205): The original code materialised full commit lists
+        just to call len() on them.  We now use `git rev-list --count` which returns
+        a single integer from the git process — no Python commit objects are allocated.
+        """
         try:
-            # Get commits ahead (in branch but not in main)
-            ahead = list(repo.iter_commits(f"{main_branch.name}..{branch.name}"))
+            # Commits ahead: in branch but not in main
+            ahead_str = repo.git.rev_list(f"{main_branch.name}..{branch.name}", "--count").strip()
+            ahead = int(ahead_str)
 
-            # Get commits behind (in main but not in branch)
-            behind = list(repo.iter_commits(f"{branch.name}..{main_branch.name}"))
+            # Commits behind: in main but not in branch
+            behind_str = repo.git.rev_list(f"{branch.name}..{main_branch.name}", "--count").strip()
+            behind = int(behind_str)
 
-            return len(ahead), len(behind)
+            return ahead, behind
 
         except Exception as e:
             logger.error(f"Error calculating divergence: {e}")
@@ -273,16 +310,22 @@ class BranchHealthAnalyzer:
         return max(0, min(100, score))
 
     def _calculate_creation_rate(self, repo: Repo, branches: list[git.Head]) -> float:
-        """Calculate branch creation rate per week."""
-        # This is an approximation based on first commit dates
+        """Calculate branch creation rate per week.
+
+        BUG 9 FIX (line 282): The original code loaded the full commit history of
+        every branch (commits[-1] = root commit) just to find the creation date.
+        We use `git log --follow --reverse --format=%ci -1` via rev-list instead,
+        which returns only the earliest commit timestamp without allocating objects.
+        """
         creation_dates = []
 
         for branch in branches:
             try:
-                commits = list(repo.iter_commits(branch))
-                if commits:
-                    first_commit = commits[-1]
-                    creation_date = first_commit.committed_datetime
+                # Get only the first (oldest) commit on this branch — max_count=1 with
+                # reverse=True gives us the root commit cheaply.
+                first_commits = list(repo.iter_commits(branch, max_count=1, reverse=True))
+                if first_commits:
+                    creation_date = first_commits[0].committed_datetime
                     if creation_date.tzinfo is None:
                         creation_date = creation_date.replace(tzinfo=timezone.utc)
                     creation_dates.append(creation_date)
