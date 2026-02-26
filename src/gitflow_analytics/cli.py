@@ -19,6 +19,7 @@ import yaml
 
 from ._version import __version__
 from .cli_formatting import ImprovedErrorHandler, RichHelpFormatter, handle_timezone_error
+from .cli_utils import setup_logging
 from .config import ConfigLoader
 from .config.errors import ConfigurationError
 from .ui.progress_display import create_progress_display
@@ -418,32 +419,7 @@ def analyze(
         else None
     )
 
-    # Configure logging based on the --log option
-    if log.upper() != "NONE":
-        # Configure structured logging with detailed formatter
-        log_level = getattr(logging, log.upper())
-        logging.basicConfig(
-            level=log_level,
-            format="[%(levelname)s] %(filename)s:%(lineno)d - %(message)s",
-            handlers=[logging.StreamHandler(sys.stderr)],
-            force=True,  # Ensure reconfiguration of existing loggers
-        )
-
-        # Ensure all GitFlow Analytics loggers are configured properly
-        root_logger = logging.getLogger("gitflow_analytics")
-        root_logger.setLevel(log_level)
-
-        # Create logger for this module
-        logger = logging.getLogger(__name__)
-        logger.info(f"Logging enabled at {log.upper()} level")
-
-        # Log that logging is properly configured for all modules
-        logger.debug("Logging configuration applied to all gitflow_analytics modules")
-    else:
-        # Disable logging
-        logging.getLogger().setLevel(logging.CRITICAL)
-        logging.getLogger("gitflow_analytics").setLevel(logging.CRITICAL)
-        logger = logging.getLogger(__name__)
+    logger = setup_logging(log, __name__)
 
     try:
         if display:
@@ -4429,22 +4405,7 @@ def fetch(
         else None
     )
 
-    # Configure logging
-    if log.upper() != "NONE":
-        log_level = getattr(logging, log.upper())
-        logging.basicConfig(
-            level=log_level,
-            format="[%(levelname)s] %(filename)s:%(lineno)d - %(message)s",
-            handlers=[logging.StreamHandler(sys.stderr)],
-            force=True,
-        )
-        logging.getLogger("gitflow_analytics").setLevel(log_level)
-        logger = logging.getLogger(__name__)
-        logger.info(f"Logging enabled at {log.upper()} level")
-    else:
-        logging.getLogger().setLevel(logging.CRITICAL)
-        logging.getLogger("gitflow_analytics").setLevel(logging.CRITICAL)
-        logger = logging.getLogger(__name__)
+    logger = setup_logging(log, __name__)
 
     try:
         # Lazy imports
@@ -4731,15 +4692,7 @@ def collect_command(config_path: Path, weeks: int, force: bool, log: str) -> Non
     NEXT STEP:
       gfa classify -c config.yaml
     """
-    if log.upper() != "NONE":
-        log_level = getattr(logging, log.upper())
-        logging.basicConfig(
-            level=log_level,
-            format="[%(levelname)s] %(filename)s:%(lineno)d - %(message)s",
-            handlers=[logging.StreamHandler(sys.stderr)],
-            force=True,
-        )
-        logging.getLogger("gitflow_analytics").setLevel(log_level)
+    setup_logging(log, __name__)
 
     try:
         from .pipeline import run_collect
@@ -4824,15 +4777,7 @@ def classify_command(config_path: Path, weeks: int, reclassify: bool, log: str) 
     NEXT STEP:
       gfa report -c config.yaml
     """
-    if log.upper() != "NONE":
-        log_level = getattr(logging, log.upper())
-        logging.basicConfig(
-            level=log_level,
-            format="[%(levelname)s] %(filename)s:%(lineno)d - %(message)s",
-            handlers=[logging.StreamHandler(sys.stderr)],
-            force=True,
-        )
-        logging.getLogger("gitflow_analytics").setLevel(log_level)
+    setup_logging(log, __name__)
 
     try:
         from .pipeline import run_classify
@@ -4938,15 +4883,7 @@ def report_command(
       gfa collect -c config.yaml
       gfa classify -c config.yaml
     """
-    if log.upper() != "NONE":
-        log_level = getattr(logging, log.upper())
-        logging.basicConfig(
-            level=log_level,
-            format="[%(levelname)s] %(filename)s:%(lineno)d - %(message)s",
-            handlers=[logging.StreamHandler(sys.stderr)],
-            force=True,
-        )
-        logging.getLogger("gitflow_analytics").setLevel(log_level)
+    setup_logging(log, __name__)
 
     try:
         from .pipeline import run_report
@@ -6691,20 +6628,7 @@ def train(
     from .core.cache import GitAnalysisCache
     from .integrations.orchestrator import IntegrationOrchestrator
 
-    # Configure logging
-    if log.upper() != "NONE":
-        log_level = getattr(logging, log.upper())
-        logging.basicConfig(
-            level=log_level,
-            format="[%(levelname)s] %(filename)s:%(lineno)d - %(message)s",
-            handlers=[logging.StreamHandler(sys.stderr)],
-            force=True,
-        )
-        logger = logging.getLogger(__name__)
-        logger.info(f"Training logging enabled at {log.upper()} level")
-    else:
-        logging.getLogger().setLevel(logging.CRITICAL)
-        logger = logging.getLogger(__name__)
+    logger = setup_logging(log, __name__)
 
     try:
         click.echo("🚀 GitFlow Analytics - Commit Classification Training")
