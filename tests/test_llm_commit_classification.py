@@ -52,7 +52,7 @@ Signed-off-by: Developer <dev@example.com>"""
 Add support for Spanish and French translations.
 
 Co-authored-by: Translator <translator@example.com>
-Reviewed-by: Manager <manager@example.com>  
+Reviewed-by: Manager <manager@example.com>
 Signed-off-by: Developer <dev@example.com>
 Tested-by: QA <qa@example.com>"""
 
@@ -216,9 +216,20 @@ class TestLLMCommitClassifier(unittest.TestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_classifier_initialization_without_api_key(self):
-        """Test classifier initialization without API key."""
+        """Test classifier initialization without API key using explicit OpenRouter provider.
+
+        WHY: With auto-detection enabled, if AWS credentials exist in the environment
+        the model field is updated to the Bedrock model ID. This test uses an explicit
+        provider to pin the expected model name for a deterministic assertion.
+        """
+        config = LLMConfig(
+            api_key=None,
+            provider="openrouter",
+            confidence_threshold=0.7,
+            enable_caching=True,
+        )
         # The classifier should initialize successfully without API key
-        classifier = LLMCommitClassifier(self.config, self.temp_dir)
+        classifier = LLMCommitClassifier(config, self.temp_dir)
         # Should initialize successfully but won't make API calls
         self.assertIsNotNone(classifier)
         self.assertEqual(classifier.config.model, "mistralai/mistral-7b-instruct")

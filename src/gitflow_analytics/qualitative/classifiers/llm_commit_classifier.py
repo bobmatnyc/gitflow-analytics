@@ -9,12 +9,14 @@ maintaining backward compatibility with the existing interface.
 DESIGN DECISIONS:
 - Main orchestrator delegates to specialized components
 - Maintains backward compatibility with existing code
-- Supports multiple LLM providers through abstraction
-- Provides enhanced rule-based fallback
+- Supports multiple LLM providers (OpenRouter, AWS Bedrock) through abstraction
+- Provider auto-detection checks AWS credentials first, then OpenRouter API key
+- Provides enhanced rule-based fallback when no LLM provider is available
 - Comprehensive error handling and graceful degradation
 """
 
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -33,13 +35,23 @@ logger = logging.getLogger(__name__)
 class LLMConfig:
     """Configuration for LLM-based commit classification.
 
-    Maintains backward compatibility with existing configuration structure.
+    Maintains backward compatibility with existing configuration structure
+    while adding support for multiple LLM providers.
     """
+
+    # Provider selection: "auto", "openrouter", "bedrock"
+    # "auto" will pick Bedrock when AWS creds are available, else OpenRouter.
+    provider: str = "auto"
 
     # OpenRouter API configuration
     api_key: Optional[str] = None
     api_base_url: str = "https://openrouter.ai/api/v1"
     model: str = "mistralai/mistral-7b-instruct"  # Fast, affordable model
+
+    # AWS Bedrock configuration
+    aws_region: Optional[str] = None  # Defaults to AWS_REGION env or us-east-1
+    aws_profile: Optional[str] = None  # Named AWS profile (None = default chain)
+    bedrock_model_id: str = "anthropic.claude-3-haiku-20240307-v1:0"  # Fast, cheap
 
     # Classification parameters
     confidence_threshold: float = 0.7  # Minimum confidence for LLM predictions
@@ -104,6 +116,40 @@ class LLMConfig:
             }
 
 
+def _detect_aws_credentials() -> bool:
+    """Check whether AWS credentials are available for Bedrock.
+
+    WHY: We probe credentials before attempting to initialise the Bedrock
+    client so we can emit a clear log message about which provider was chosen
+    and avoid confusing ImportError / NoCredentialsError messages later.
+
+    The check mirrors the boto3 credential chain order:
+      1. AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY environment variables
+      2. boto3 Session credential resolution (profiles, instance metadata, etc.)
+
+    Returns:
+        True if at least one credential source was found.
+    """
+    # Fast path: explicit env-var credentials
+    if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
+        return True
+
+    # Slow path: ask boto3 (covers profiles, ECS task roles, EC2 instance metadata)
+    try:
+        import boto3  # type: ignore[import]
+
+        session = boto3.Session()
+        credentials = session.get_credentials()
+        if credentials is not None:
+            # Resolve refreshable credentials; returns None if they've expired
+            resolved = credentials.get_frozen_credentials()
+            return resolved is not None and bool(resolved.access_key)
+    except Exception:  # noqa: B110 — intentional: boto3 may raise various errors
+        return False
+
+    return False
+
+
 class LLMCommitClassifier:
     """LLM-based commit classifier with modular architecture.
 
@@ -154,8 +200,35 @@ class LLMCommitClassifier:
         """Initialize the LLM classifier component.
 
         WHY: Modular initialization allows easy switching between providers.
+        The provider selection follows this priority when set to "auto":
+          1. AWS Bedrock (if credentials are available via boto3 / env vars)
+          2. OpenRouter (if OPENROUTER_API_KEY or api_key is configured)
+          3. None — falls back to rule-based classification
         """
-        # Convert config to OpenAI config
+        provider = getattr(self.config, "provider", "auto")
+
+        # Resolve the effective provider when set to auto
+        if provider == "auto":
+            if _detect_aws_credentials():
+                provider = "bedrock"
+                logger.info("LLM provider auto-detected: AWS Bedrock (credentials found)")
+            elif self.config.api_key or os.environ.get("OPENROUTER_API_KEY"):
+                provider = "openrouter"
+                logger.info("LLM provider auto-detected: OpenRouter (API key found)")
+            else:
+                logger.info(
+                    "LLM provider auto-detected: none (no AWS credentials or OpenRouter key)"
+                )
+                self.classifier = None
+                return
+
+        if provider == "bedrock":
+            self._init_bedrock_classifier()
+        else:
+            self._init_openrouter_classifier()
+
+    def _init_openrouter_classifier(self) -> None:
+        """Initialise the OpenRouter/OpenAI-compatible classifier."""
         openai_config = OpenAIConfig(
             api_key=self.config.api_key,
             api_base_url=self.config.api_base_url,
@@ -164,23 +237,72 @@ class LLMCommitClassifier:
             max_tokens=self.config.max_tokens,
             timeout_seconds=self.config.timeout_seconds,
             max_daily_requests=self.config.max_daily_requests,
-            max_retries=getattr(self.config, "max_retries", 2),  # Use config or default to 2
-            use_openrouter=True,  # Default to OpenRouter
+            max_retries=getattr(self.config, "max_retries", 2),
+            use_openrouter=True,
         )
 
-        # Initialize classifier
         try:
             self.classifier = OpenAIClassifier(
                 config=openai_config,
                 cache_dir=self.cache_dir,
                 prompt_version=PromptVersion.V3_CONTEXTUAL,
             )
+            self.classifier.prompt_generator.domain_terms = self.config.domain_terms
+            logger.info("OpenRouter classifier initialised with model: %s", self.config.model)
+        except ImportError as exc:
+            logger.warning("Failed to initialise OpenRouter classifier: %s", exc)
+            self.classifier = None
 
-            # Set domain terms in prompt generator
+    def _init_bedrock_classifier(self) -> None:
+        """Initialise the AWS Bedrock classifier.
+
+        WHY: Bedrock uses IAM credentials rather than an API key.
+        The effective model displayed in stats/reports is updated to the
+        Bedrock model ID so users can see which model was actually used.
+        """
+        from .llm.bedrock_client import BedrockClassifier, BedrockConfig
+
+        bedrock_model_id = getattr(
+            self.config, "bedrock_model_id", "anthropic.claude-3-haiku-20240307-v1:0"
+        )
+        aws_region = (
+            getattr(self.config, "aws_region", None)
+            or os.environ.get("AWS_REGION")
+            or os.environ.get("AWS_DEFAULT_REGION")
+            or "us-east-1"
+        )
+        aws_profile = getattr(self.config, "aws_profile", None)
+
+        bedrock_config = BedrockConfig(
+            model=bedrock_model_id,
+            bedrock_model_id=bedrock_model_id,
+            aws_region=aws_region,
+            aws_profile=aws_profile,
+            temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens,
+            timeout_seconds=self.config.timeout_seconds,
+            max_daily_requests=self.config.max_daily_requests,
+            max_retries=getattr(self.config, "max_retries", 2),
+        )
+
+        try:
+            self.classifier = BedrockClassifier(
+                config=bedrock_config,
+                cache_dir=self.cache_dir,
+                prompt_version=PromptVersion.V3_CONTEXTUAL,
+            )
             self.classifier.prompt_generator.domain_terms = self.config.domain_terms
 
-        except ImportError as e:
-            logger.warning(f"Failed to initialize LLM classifier: {e}")
+            # Update the model field so stats and reports show the Bedrock model ID
+            self.config.model = bedrock_model_id
+
+            logger.info(
+                "Bedrock classifier initialised: model=%s region=%s",
+                bedrock_model_id,
+                aws_region,
+            )
+        except (ImportError, Exception) as exc:
+            logger.warning("Failed to initialise Bedrock classifier: %s", exc)
             self.classifier = None
 
     def _init_cache(self) -> None:
@@ -294,8 +416,17 @@ class LLMCommitClassifier:
                 cached_result["processing_time_ms"] = (time.time() - start_time) * 1000
                 return cached_result
 
-        # Try LLM classification if available and configured
-        if self.classifier and self.config.api_key:
+        # Try LLM classification if available and configured.
+        # For Bedrock the classifier is present but api_key is empty — check
+        # classifier presence alone to support both providers.
+        classifier_ready = self.classifier is not None and (
+            self.config.api_key
+            or (
+                hasattr(self.classifier, "get_provider_name")
+                and self.classifier.get_provider_name() == "bedrock"
+            )
+        )
+        if classifier_ready:
             try:
                 # Check rate limits
                 if self._check_rate_limits():
@@ -337,6 +468,12 @@ class LLMCommitClassifier:
     ) -> list[dict[str, Any]]:
         """Classify a batch of commits.
 
+        WHY: When the underlying classifier supports native batching (e.g.
+        BedrockClassifier sends N commits in one API call and gets a JSON
+        array back), we delegate directly to it for dramatically fewer API
+        round-trips.  Otherwise we fall back to the one-by-one batch
+        processor.
+
         Args:
             commits: List of commit dictionaries
             batch_id: Optional batch identifier
@@ -345,26 +482,69 @@ class LLMCommitClassifier:
         Returns:
             List of classification results (backward compatible format)
         """
+        # Fast path: delegate to the classifier's native batch method if the
+        # provider supports multi-commit-per-call batching (currently Bedrock).
+        classifier_ready = self.classifier is not None and (
+            self.config.api_key
+            or (
+                hasattr(self.classifier, "get_provider_name")
+                and self.classifier.get_provider_name() == "bedrock"
+            )
+        )
 
+        if classifier_ready and hasattr(self.classifier, "classify_commits_batch"):
+            try:
+                batch_results = self.classifier.classify_commits_batch(commits, batch_id=batch_id)
+
+                # Convert ClassificationResult objects to backward-compatible dicts
+                results: list[dict[str, Any]] = []
+                for cr in batch_results:
+                    result_dict = cr.to_dict()
+
+                    # Cache each successful LLM result
+                    if self.cache and cr.method in ("llm", "llm_batch"):
+                        msg = ""
+                        fc: list[str] = []
+                        # Find the original commit to get the message for caching
+                        idx = len(results)
+                        if idx < len(commits):
+                            msg = commits[idx].get("message", "")
+                            raw_fc = commits[idx].get("files_changed")
+                            fc = raw_fc if isinstance(raw_fc, list) else []
+                        if msg:
+                            self.cache.store(msg, fc, result_dict)
+
+                    results.append(result_dict)
+
+                # Sync cost stats from underlying classifier
+                stats = self.classifier.get_statistics()
+                self.total_tokens_used = stats.get("total_tokens_used", 0)
+                self.total_cost = stats.get("total_cost", 0.0)
+                self.api_calls_made = stats.get("api_calls_made", 0)
+
+                logger.info(f"Batch {batch_id}: Classified {len(results)} commits via native batch")
+                return results
+
+            except Exception as e:
+                logger.warning(
+                    f"Native batch classification failed ({e}), falling back to one-by-one"
+                )
+
+        # Fallback: one-by-one classification via batch processor
         def classify_func(commit: dict[str, Any]) -> dict[str, Any]:
             """Classification function for batch processor."""
             message = commit.get("message", "")
             files_changed = []
-
-            # Extract files from commit
             if "files_changed" in commit:
-                fc = commit["files_changed"]
-                if isinstance(fc, list):
-                    files_changed = fc
-
+                fc_val = commit["files_changed"]
+                if isinstance(fc_val, list):
+                    files_changed = fc_val
             return self.classify_commit(message, files_changed)
 
-        # Use batch processor
         results = self.batch_processor.process_commits(
             commits, classify_func, f"Classifying {len(commits)} commits"
         )
 
-        # Add batch_id if provided
         if batch_id:
             for result in results:
                 result["batch_id"] = batch_id
@@ -555,7 +735,13 @@ class LLMCommitClassifier:
             "max_daily_requests": self.config.max_daily_requests,
             "model": self.config.model,
             "cache_enabled": self.config.enable_caching,
-            "api_configured": bool(self.config.api_key),
+            "provider": getattr(self.config, "provider", "auto"),
+            "api_configured": bool(self.config.api_key)
+            or (
+                self.classifier is not None
+                and hasattr(self.classifier, "get_provider_name")
+                and self.classifier.get_provider_name() == "bedrock"
+            ),
             "total_tokens_used": self.total_tokens_used,
             "total_cost": self.total_cost,
             "api_calls_made": self.api_calls_made,

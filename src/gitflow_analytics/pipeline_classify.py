@@ -34,8 +34,8 @@ def run_classify(
         A :class:`ClassifyResult` with summary statistics.
     """
     from .classification.batch_classifier import BatchCommitClassifier
-    from .utils.date_utils import get_week_end, get_week_start
     from .core.cache import GitAnalysisCache
+    from .utils.date_utils import get_week_end, get_week_start
 
     def _emit(msg: str) -> None:
         if progress_callback:
@@ -102,8 +102,12 @@ def run_classify(
 
     llm_config = {
         "enabled": cfg.analysis.llm_classification.enabled,
+        "provider": cfg.analysis.llm_classification.provider,
         "api_key": cfg.analysis.llm_classification.api_key,
         "model": cfg.analysis.llm_classification.model,
+        "aws_region": cfg.analysis.llm_classification.aws_region,
+        "aws_profile": cfg.analysis.llm_classification.aws_profile,
+        "bedrock_model_id": cfg.analysis.llm_classification.bedrock_model_id,
         "confidence_threshold": cfg.analysis.llm_classification.confidence_threshold,
         "max_tokens": cfg.analysis.llm_classification.max_tokens,
         "temperature": cfg.analysis.llm_classification.temperature,

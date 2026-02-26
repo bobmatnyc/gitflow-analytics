@@ -70,10 +70,16 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
         # Initialize LLM classifier
         # Handle different config types
         if isinstance(llm_config, dict):
-            # Convert dict config to LLMConfig object
+            # Convert dict config to LLMConfig object, forwarding all provider fields
             llm_config_obj = LLMConfig(
+                provider=llm_config.get("provider", "auto"),
                 api_key=llm_config.get("api_key", ""),
                 model=llm_config.get("model", "mistralai/mistral-7b-instruct"),
+                aws_region=llm_config.get("aws_region"),
+                aws_profile=llm_config.get("aws_profile"),
+                bedrock_model_id=llm_config.get(
+                    "bedrock_model_id", "anthropic.claude-3-haiku-20240307-v1:0"
+                ),
                 max_tokens=llm_config.get("max_tokens", 50),
                 temperature=llm_config.get("temperature", 0.1),
                 confidence_threshold=llm_config.get("confidence_threshold", 0.7),
@@ -91,18 +97,26 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
 
         self.llm_classifier = LLMCommitClassifier(config=llm_config_obj, cache_dir=cache_dir)
 
-        # Warn if no API key is configured
-        if not llm_config_obj.api_key:
+        # Determine if LLM is operational.  With Bedrock, no api_key is needed
+        # so we check whether the classifier actually has a provider set up.
+        classifier_has_provider = self.llm_classifier.classifier is not None
+        if not classifier_has_provider and not llm_config_obj.api_key:
             logger.warning(
-                "No API key configured for LLM classification. "
+                "No LLM provider configured (no AWS credentials or OpenRouter key). "
                 "Will fall back to rule-based classification."
             )
-            # Set a flag to skip LLM calls entirely
             self.llm_enabled = False
         else:
             self.llm_enabled = True
+            provider_name = (
+                self.llm_classifier.classifier.get_provider_name()
+                if self.llm_classifier.classifier
+                else "unknown"
+            )
             logger.info(
-                f"LLM Classifier initialized with API key: Yes (model: {llm_config_obj.model})"
+                "LLM Classifier initialised: provider=%s model=%s",
+                provider_name,
+                llm_config_obj.model,
             )
 
         # Circuit breaker for LLM API failures
@@ -384,4 +398,3 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
             week_batches.sort(key=lambda b: b.date)
 
         return dict(weekly_batches)
-

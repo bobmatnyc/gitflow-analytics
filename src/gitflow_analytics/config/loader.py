@@ -6,9 +6,8 @@ validation) live in loader_sections.py (ConfigLoaderSectionsMixin).
 """
 
 import logging
-import os
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 import click
 import yaml
@@ -26,17 +25,11 @@ from .repository import RepositoryManager
 from .schema import (
     AnalysisConfig,
     BranchAnalysisConfig,
-    CacheConfig,
     CommitClassificationConfig,
     Config,
     GitHubConfig,
-    JIRAConfig,
-    JIRAIntegrationConfig,
     LLMClassificationConfig,
     MLCategorization,
-    OutputConfig,
-    PMIntegrationConfig,
-    PMPlatformConfig,
     RepositoryConfig,
 )
 from .validator import ConfigValidator
@@ -335,60 +328,85 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
 
     @classmethod
     def _load_environment(cls, config_path: Path) -> None:
-        """Load environment variables from .env file if present.
+        """Load environment variables from .env and .env.local files if present.
 
-        Searches for .env file in standard locations:
-        1. Same directory as config file
-        2. Current working directory
-        3. Project root (detected via .git)
-        4. User home directory (~/.gitflow-analytics.env)
+        Searches for env files in standard locations, loading base .env files
+        first then .env.local files as overrides (following standard convention).
+
+        WHY: .env.local is the conventional way to provide machine-local overrides
+        that should not be committed to version control. Loading all found files
+        (base first, then local overrides) allows layered configuration while
+        still respecting the override priority order.
 
         Args:
             config_path: Path to configuration file
         """
         env_files_to_check = cls._find_env_files(config_path)
 
+        loaded_any = False
         for env_file in env_files_to_check:
             if env_file.exists():
                 load_dotenv(env_file, override=True)
                 logger.debug(f"Loaded environment variables from {env_file}")
-                return  # Stop at first found file
+                loaded_any = True
 
-        logger.debug("No .env file found in any of the standard locations")
+        if not loaded_any:
+            logger.debug("No .env file found in any of the standard locations")
 
     @classmethod
     def _find_env_files(cls, config_path: Path) -> list[Path]:
         """Find potential .env file locations in priority order.
 
+        WHY: Returns both .env and .env.local at each location so that .env.local
+        can override .env values on a per-machine basis without changing committed
+        config. The order is: base files first (low priority), local overrides last
+        (high priority). All found files are loaded in sequence so later files win.
+
         Args:
             config_path: Path to configuration file
 
         Returns:
-            List of potential .env file paths in priority order
+            List of potential .env file paths in load order (base before local)
         """
-        search_paths = []
+        # Collect unique search directories in discovery order
+        search_dirs: list[Path] = []
 
         # 1. Same directory as config file
         config_dir = config_path.parent
-        search_paths.append(config_dir / ".env")
+        search_dirs.append(config_dir)
 
-        # 2. Current working directory
-        cwd_env = Path.cwd() / ".env"
-        if cwd_env not in search_paths:  # Avoid duplicates
-            search_paths.append(cwd_env)
+        # 2. Current working directory (if different from config dir)
+        cwd = Path.cwd()
+        if cwd not in search_dirs:
+            search_dirs.append(cwd)
 
-        # 3. Project root (detected via .git)
+        # 3. Project root detected via .git (if different from above)
         git_root = cls._find_git_root(config_path)
-        if git_root:
-            git_root_env = git_root / ".env"
-            if git_root_env not in search_paths:  # Avoid duplicates
-                search_paths.append(git_root_env)
+        if git_root and git_root not in search_dirs:
+            search_dirs.append(git_root)
 
-        # 4. User home directory (~/.gitflow-analytics.env)
+        # Build the final ordered list: base .env files first, then .env.local
+        # overrides. This ensures .env.local values always win.
+        base_files: list[Path] = []
+        local_files: list[Path] = []
+        seen: set[Path] = set()
+
+        for directory in search_dirs:
+            base = directory / ".env"
+            local = directory / ".env.local"
+            if base not in seen:
+                base_files.append(base)
+                seen.add(base)
+            if local not in seen:
+                local_files.append(local)
+                seen.add(local)
+
+        # 4. User home directory special file (highest priority, appended last)
         home_env = Path.home() / ".gitflow-analytics.env"
-        search_paths.append(home_env)
+        if home_env not in seen:
+            local_files.append(home_env)
 
-        return search_paths
+        return base_files + local_files
 
     @classmethod
     def _find_git_root(cls, start_path: Path) -> Path | None:
@@ -635,11 +653,17 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
         llm_classification_data = analysis_data.get("llm_classification", {})
         llm_classification_config = LLMClassificationConfig(
             enabled=llm_classification_data.get("enabled", False),
+            provider=llm_classification_data.get("provider", "auto"),
             api_key=cls._resolve_env_var(llm_classification_data.get("api_key")),
             api_base_url=llm_classification_data.get(
                 "api_base_url", "https://openrouter.ai/api/v1"
             ),
             model=llm_classification_data.get("model", "mistralai/mistral-7b-instruct"),
+            aws_region=llm_classification_data.get("aws_region"),
+            aws_profile=llm_classification_data.get("aws_profile"),
+            bedrock_model_id=llm_classification_data.get(
+                "bedrock_model_id", "anthropic.claude-3-haiku-20240307-v1:0"
+            ),
             confidence_threshold=llm_classification_data.get("confidence_threshold", 0.7),
             max_tokens=llm_classification_data.get("max_tokens", 50),
             temperature=llm_classification_data.get("temperature", 0.1),
@@ -724,4 +748,3 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             security=analysis_data.get("security", {}),
             qualitative=qualitative_config,
         )
-

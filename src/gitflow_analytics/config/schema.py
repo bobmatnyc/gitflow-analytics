@@ -68,11 +68,22 @@ class LLMClassificationConfig:
     """LLM-based commit classification configuration.
 
     This configuration enables Large Language Model-based commit classification
-    via OpenRouter API for more accurate and context-aware categorization.
+    via OpenRouter API or AWS Bedrock for more accurate and context-aware
+    categorization.
+
+    WHY: Supporting multiple providers gives users flexibility. OpenRouter is
+    convenient for API-key based access; Bedrock is preferable in AWS environments
+    where IAM credentials are already configured and billing is consolidated.
     """
 
     # Enable/disable LLM classification
     enabled: bool = False  # Disabled by default to avoid unexpected API costs
+
+    # Provider selection
+    # "auto"       - detect available credentials automatically
+    # "openrouter" - use OpenRouter (requires api_key)
+    # "bedrock"    - use AWS Bedrock (requires AWS credentials)
+    provider: str = "auto"
 
     # OpenRouter API configuration
     api_key: Optional[str] = None  # Set via environment variable or config
@@ -82,6 +93,12 @@ class LLMClassificationConfig:
     # Alternative models for different use cases:
     # - "meta-llama/llama-3-8b-instruct" (Higher accuracy, slightly more expensive)
     # - "openai/gpt-3.5-turbo" (Good balance, more expensive)
+
+    # AWS Bedrock configuration
+    aws_region: Optional[str] = None  # Defaults to AWS_REGION env or us-east-1
+    aws_profile: Optional[str] = None  # Named AWS profile (None = default)
+    # Claude 3 Haiku on Bedrock: fast, cheap ($0.25/1M in, $1.25/1M out)
+    bedrock_model_id: str = "anthropic.claude-3-haiku-20240307-v1:0"
 
     # Classification parameters
     confidence_threshold: float = 0.7  # Minimum confidence for LLM predictions
