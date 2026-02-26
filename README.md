@@ -62,14 +62,15 @@ gitflow-analytics -c config.yaml --weeks 8
 ✅ **Good Process**: 73% ticket coverage shows strong tracking
 ```
 
-## ✨ Latest Features (v1.2.x)
+## ✨ Latest Features (v3.13.14+)
 
-- **🚀 Two-Step Processing**: Optimized fetch-then-classify workflow for better performance
+- **🔄 Pipeline Architecture**: Independent `collect`, `classify`, and `report` stages — collect once, report many times
+- **📦 Week-Based Incremental Caching**: Data stored in Monday-aligned weekly increments; only missing weeks are fetched
+- **⚡ `-f/--force` Flag**: Force re-fetch of cached weeks when you need fresh data
+- **🧠 Memory Optimized**: O(1) commit-to-branch mapping eliminates memory leaks at scale (tested on 146+ repos)
+- **📊 DORA Metrics**: Deployment frequency, lead time, change failure rate, and MTTR
 - **💰 Cost Tracking**: Monitor LLM API usage with detailed token and cost reporting
-- **⚡ Smart Caching**: Intelligent caching reduces analysis time by up to 90%
-- **🔄 Automatic Updates**: Repositories automatically fetch latest commits before analysis
-- **📊 Weekly Trends**: Track classification pattern changes over time
-- **🎯 Enhanced Categorization**: All commits properly categorized with confidence scores
+- **📈 Weekly Trends**: Track classification pattern changes over time with proper Monday-aligned weeks
 
 ## 🔥 Core Capabilities
 
@@ -111,15 +112,28 @@ Comprehensive guides for every use case:
 
 ## ⚡ Installation Options
 
-### Standard Installation
+### Standard Installation (pip)
 ```bash
 pip install gitflow-analytics
+```
+
+### Homebrew (macOS)
+```bash
+brew tap bobmatnyc/tools
+brew install gitflow-analytics
 ```
 
 ### With ML Enhancement (Recommended)
 ```bash
 pip install gitflow-analytics
 python -m spacy download en_core_web_sm
+```
+
+### Run from Source (uv)
+```bash
+git clone https://github.com/bobmatnyc/gitflow-analytics.git
+cd gitflow-analytics
+uv run gfa analyze -c config.yaml --weeks 4
 ```
 
 ### Development Installation
@@ -168,12 +182,37 @@ GITHUB_TOKEN=ghp_your_token_here
 
 ### Run Analysis
 ```bash
-# Analyze last 8 weeks
-gitflow-analytics -c config.yaml --weeks 8
+# All-in-one analysis (collect → classify → report)
+gfa analyze -c config.yaml --weeks 8
 
 # With custom output directory
-gitflow-analytics -c config.yaml --weeks 8 --output ./reports
+gfa analyze -c config.yaml --weeks 8 --output ./reports
 ```
+
+### Pipeline Commands (Recommended for Large Codebases)
+
+For organizations with many repositories (50+), use the three-stage pipeline for faster iteration:
+
+```bash
+# Stage 1: Collect raw commits into weekly cache
+# Only fetches missing weeks — cached weeks are skipped automatically
+gfa collect -c config.yaml --weeks 4
+
+# Stage 2: Classify collected commits
+gfa classify -c config.yaml
+
+# Stage 3: Generate reports (instant — no git operations)
+gfa report -c config.yaml --weeks 4 --generate-csv
+
+# Force re-fetch all weeks (bypass cache)
+gfa collect -c config.yaml --weeks 4 -f
+```
+
+**Why use the pipeline?**
+- **Collect once, report many times** — regenerate reports without re-fetching repositories
+- **Re-classify without re-fetching** — tweak classification, rerun just stage 2
+- **Incremental by default** — historical weeks never change, so they're cached permanently
+- **Massive speedup** — subsequent runs of 146+ repos complete in seconds instead of minutes
 
 > 💡 **Need more configuration options?** See the [Complete Configuration Guide](docs/guides/configuration.md) for advanced features, integrations, and customization.
 

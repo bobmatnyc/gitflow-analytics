@@ -6616,8 +6616,18 @@ def alias_rename(
             click.echo("❌ Error: manual_mappings is empty", err=True)
             sys.exit(1)
 
+        # Validate explicitly empty strings before entering interactive mode
+        # (prevents infinite click.prompt() loop when "" is passed)
+        if old_name is not None and not old_name.strip():
+            click.echo("❌ Error: --old-name cannot be empty", err=True)
+            sys.exit(1)
+
+        if new_name is not None and not new_name.strip():
+            click.echo("❌ Error: --new-name cannot be empty", err=True)
+            sys.exit(1)
+
         # Interactive mode: display numbered list and prompt for selection
-        if interactive or not old_name or not new_name:
+        if interactive or old_name is None or new_name is None:
             click.echo("\n" + "=" * 60)
             click.echo(click.style("Current Developers:", fg="cyan", bold=True))
             click.echo("=" * 60 + "\n")
