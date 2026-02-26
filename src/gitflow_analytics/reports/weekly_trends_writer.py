@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
 
 import pandas as pd
 
@@ -25,6 +25,7 @@ class WeeklyTrendsWriter:
 
     def __init__(self) -> None:
         """Initialize weekly trends writer."""
+        # Full category list matching all possible return values of categorize_commit()
         self.classification_categories = [
             "feature",
             "bug_fix",
@@ -34,6 +35,17 @@ class WeeklyTrendsWriter:
             "test",
             "style",
             "build",
+            "chore",
+            "infrastructure",
+            "configuration",
+            "wip",
+            "version",
+            "ui",
+            "content",
+            "deployment",
+            "performance",
+            "security",
+            "integration",
             "other",
         ]
 
@@ -64,6 +76,7 @@ class WeeklyTrendsWriter:
         output_dir: Path,
         weeks: int = 12,
         date_suffix: str = "",
+        categorize_fn: Optional[Callable[[str], str]] = None,
     ) -> dict[str, Path]:
         """Generate both developer and project weekly trends reports.
 
@@ -76,6 +89,9 @@ class WeeklyTrendsWriter:
             output_dir: Directory to write CSV reports to
             weeks: Number of weeks to analyze (for validation)
             date_suffix: Date suffix for output filenames
+            categorize_fn: Optional callable that takes a commit message string and
+                returns a category string. Used when commits lack pre-computed
+                classification fields (e.g. when loaded from the database cache).
 
         Returns:
             Dictionary mapping report type to output file paths
@@ -84,19 +100,27 @@ class WeeklyTrendsWriter:
 
         # Generate developer trends report
         developer_trends_path = output_dir / f"developer_weekly_trends{date_suffix}.csv"
-        self._generate_developer_weekly_trends(commits, developer_trends_path, weeks)
+        self._generate_developer_weekly_trends(
+            commits, developer_trends_path, weeks, categorize_fn=categorize_fn
+        )
         output_paths["developer_trends"] = developer_trends_path
 
         # Generate project trends report
         project_trends_path = output_dir / f"project_weekly_trends{date_suffix}.csv"
-        self._generate_project_weekly_trends(commits, project_trends_path, weeks)
+        self._generate_project_weekly_trends(
+            commits, project_trends_path, weeks, categorize_fn=categorize_fn
+        )
         output_paths["project_trends"] = project_trends_path
 
         logger.info(f"Generated weekly trends reports: {len(output_paths)} files")
         return output_paths
 
     def _generate_developer_weekly_trends(
-        self, commits: list[dict[str, Any]], output_path: Path, weeks: int
+        self,
+        commits: list[dict[str, Any]],
+        output_path: Path,
+        weeks: int,
+        categorize_fn: Optional[Callable[[str], str]] = None,
     ) -> None:
         """Generate developer weekly classification trends CSV.
 
@@ -108,6 +132,8 @@ class WeeklyTrendsWriter:
             commits: List of commit data with developer and classification info
             output_path: Path to write the CSV file
             weeks: Number of weeks for trend analysis
+            categorize_fn: Optional callable to classify a commit message at report
+                time. Used when commit dicts lack pre-computed classification fields.
         """
         # Group commits by developer and week
         developer_weeks = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
@@ -169,8 +195,8 @@ class WeeklyTrendsWriter:
                 or commit.get("author_name", "Unknown")
             )
 
-            # Get classification - try multiple possible fields
-            classification = self._get_commit_classification(commit)
+            # Get classification - try multiple possible fields, fall back to categorize_fn
+            classification = self._get_commit_classification(commit, categorize_fn)
 
             # Key by (week_num, week_start_date) so we can recover the date later
             developer_weeks[developer][week_num][classification] += 1
@@ -238,7 +264,11 @@ class WeeklyTrendsWriter:
         logger.info(f"Generated developer weekly trends CSV: {output_path} ({len(df)} rows)")
 
     def _generate_project_weekly_trends(
-        self, commits: list[dict[str, Any]], output_path: Path, weeks: int
+        self,
+        commits: list[dict[str, Any]],
+        output_path: Path,
+        weeks: int,
+        categorize_fn: Optional[Callable[[str], str]] = None,
     ) -> None:
         """Generate project weekly classification trends CSV.
 
@@ -250,6 +280,8 @@ class WeeklyTrendsWriter:
             commits: List of commit data with project and classification info
             output_path: Path to write the CSV file
             weeks: Number of weeks for trend analysis
+            categorize_fn: Optional callable to classify a commit message at report
+                time. Used when commit dicts lack pre-computed classification fields.
         """
         # Group commits by project and week
         project_weeks = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
@@ -298,8 +330,8 @@ class WeeklyTrendsWriter:
             # Extract project info
             project = commit.get("project_key", "UNKNOWN")
 
-            # Get classification
-            classification = self._get_commit_classification(commit)
+            # Get classification - try multiple possible fields, fall back to categorize_fn
+            classification = self._get_commit_classification(commit, categorize_fn)
 
             project_weeks[project][week_num][classification] += 1
 
@@ -364,20 +396,31 @@ class WeeklyTrendsWriter:
         df.to_csv(output_path, index=False)
         logger.info(f"Generated project weekly trends CSV: {output_path} ({len(df)} rows)")
 
-    def _get_commit_classification(self, commit: dict[str, Any]) -> str:
+    def _get_commit_classification(
+        self,
+        commit: dict[str, Any],
+        categorize_fn: Optional[Callable[[str], str]] = None,
+    ) -> str:
         """Extract commit classification from commit data.
 
         WHY: Commits may have classification data in different fields depending
-        on the extraction method used (ML vs rule-based vs cached). This method
-        provides a consistent way to extract the classification.
+        on the extraction method used (ML vs rule-based vs cached). Commits loaded
+        from the database cache typically lack these fields entirely, so a
+        categorize_fn fallback is required to classify them at report time,
+        matching the approach used by generate_weekly_categorization_report().
 
         DESIGN DECISION: Priority order for classification sources:
         1. predicted_class (from ML classification)
         2. category (from rule-based classification)
-        3. 'other' (fallback for unclassified commits)
+        3. classification (generic field)
+        4. categorize_fn(message) if provided (classify at report time)
+        5. 'other' (final fallback for truly unclassifiable commits)
 
         Args:
             commit: Commit data dictionary
+            categorize_fn: Optional callable that takes a commit message string
+                and returns a category string. Invoked when no pre-computed
+                classification field is present on the commit dict.
 
         Returns:
             Classification category string
@@ -390,11 +433,41 @@ class WeeklyTrendsWriter:
         if commit.get("category"):
             return commit["category"]
 
-        # Try to extract from ticket extractor categorization
+        # Try generic classification field
         if "classification" in commit:
             return commit["classification"]
 
-        # Fallback to 'other'
+        # Classify at report time using the provided function (matches the pattern
+        # used by generate_weekly_categorization_report in csv_writer.py)
+        if categorize_fn is not None and callable(categorize_fn):
+            message = commit.get("message", "")
+            if message:  # Only classify if there's actually a message
+                try:
+                    result = categorize_fn(message)
+                    # Validate result and ensure it's a string
+                    if result and isinstance(result, str) and result != "":
+                        # Debug: Log first few classifications to help diagnose issues
+                        if not hasattr(self, "_debug_logged"):
+                            logger.debug(
+                                f"Classification debug - message: '{message[:50]}...' -> '{result}'"
+                            )
+                            self._debug_logged = True
+                        return result
+                    else:
+                        logger.debug(f"Classification function returned invalid result: {result}")
+                        return "other"
+                except Exception as e:
+                    logger.warning(f"Classification function failed for commit message: {e}")
+                    return "other"
+            else:
+                logger.debug("Empty commit message, defaulting to 'other'")
+                return "other"
+        else:
+            if categorize_fn is not None:
+                logger.warning("categorize_fn provided but is not callable")
+            return "other"
+
+        # Final fallback
         return "other"
 
     def _write_empty_developer_trends_csv(self, output_path: Path) -> None:
