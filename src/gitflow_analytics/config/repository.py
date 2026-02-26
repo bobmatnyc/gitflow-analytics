@@ -123,9 +123,15 @@ class RepositoryManager:
             elif self.github_config.owner:
                 github_repo = f"{self.github_config.owner}/{github_repo}"
 
+        # Resolve repository path relative to config file directory
+        repo_path = Path(repo_data["path"]).expanduser()
+        if not repo_path.is_absolute():
+            repo_path = config_path.parent / repo_path
+            repo_path = repo_path.resolve()
+
         return RepositoryConfig(
             name=repo_data["name"],
-            path=repo_data["path"],
+            path=str(repo_path),
             github_repo=github_repo,
             project_key=repo_data.get("project_key"),
             branch=repo_data.get("branch"),
