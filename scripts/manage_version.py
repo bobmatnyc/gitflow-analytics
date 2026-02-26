@@ -59,7 +59,7 @@ def set_version(new_version: str) -> None:
         FileNotFoundError: If version file doesn't exist
     """
     # Validate version format
-    if not re.match(r'^\d+\.\d+\.\d+$', new_version):
+    if not re.match(r"^\d+\.\d+\.\d+$", new_version):
         raise ValueError(f"Invalid version format: {new_version} (expected: X.Y.Z)")
 
     if not VERSION_FILE.exists():
@@ -69,9 +69,7 @@ def set_version(new_version: str) -> None:
 
     # Update __version__
     new_content = re.sub(
-        r'(__version__\s*=\s*["\'])[^"\']+(["\'])',
-        f'\\g<1>{new_version}\\g<2>',
-        content
+        r'(__version__\s*=\s*["\'])[^"\']+(["\'])', f"\\g<1>{new_version}\\g<2>", content
     )
 
     VERSION_FILE.write_text(new_content)
@@ -93,16 +91,16 @@ def bump_version(bump_type: str) -> str:
     current = get_current_version()
 
     try:
-        major, minor, patch = map(int, current.split('.'))
+        major, minor, patch = map(int, current.split("."))
     except ValueError:
-        raise ValueError(f"Current version has invalid format: {current}")
+        raise ValueError(f"Current version has invalid format: {current}") from None
 
-    if bump_type == 'patch':
+    if bump_type == "patch":
         patch += 1
-    elif bump_type == 'minor':
+    elif bump_type == "minor":
         minor += 1
         patch = 0
-    elif bump_type == 'major':
+    elif bump_type == "major":
         major += 1
         minor = 0
         patch = 0
@@ -121,7 +119,7 @@ def validate_version_format(version: str) -> bool:
     Returns:
         True if valid, False otherwise
     """
-    return bool(re.match(r'^\d+\.\d+\.\d+$', version))
+    return bool(re.match(r"^\d+\.\d+\.\d+$", version))
 
 
 def get_git_tag_version() -> str | None:
@@ -132,15 +130,15 @@ def get_git_tag_version() -> str | None:
     """
     try:
         result = subprocess.run(
-            ['git', 'describe', '--tags', '--abbrev=0'],
+            ["git", "describe", "--tags", "--abbrev=0"],
             capture_output=True,
             text=True,
             check=True,
-            cwd=get_project_root()
+            cwd=get_project_root(),
         )
         tag = result.stdout.strip()
         # Remove 'v' prefix if present
-        return tag[1:] if tag.startswith('v') else tag
+        return tag[1:] if tag.startswith("v") else tag
     except subprocess.CalledProcessError:
         return None
 
@@ -153,11 +151,11 @@ def check_git_status() -> bool:
     """
     try:
         result = subprocess.run(
-            ['git', 'status', '--porcelain'],
+            ["git", "status", "--porcelain"],
             capture_output=True,
             text=True,
             check=True,
-            cwd=get_project_root()
+            cwd=get_project_root(),
         )
         return len(result.stdout.strip()) == 0
     except subprocess.CalledProcessError:
@@ -181,42 +179,33 @@ Examples:
     python scripts/manage_version.py bump --type patch  # 3.13.1 → 3.13.2
     python scripts/manage_version.py bump --type minor  # 3.13.1 → 3.14.0
     python scripts/manage_version.py bump --type major  # 3.13.1 → 4.0.0
-        """
+        """,
     )
 
     parser.add_argument(
-        'action',
-        choices=['get', 'set', 'bump', 'validate'],
-        help='Action to perform'
+        "action", choices=["get", "set", "bump", "validate"], help="Action to perform"
     )
     parser.add_argument(
-        '--type',
-        choices=['patch', 'minor', 'major'],
-        help='Bump type (required for bump action)'
+        "--type", choices=["patch", "minor", "major"], help="Bump type (required for bump action)"
     )
+    parser.add_argument("--version", help="New version (required for set action)")
     parser.add_argument(
-        '--version',
-        help='New version (required for set action)'
-    )
-    parser.add_argument(
-        '--check-git',
-        action='store_true',
-        help='Check git status before version operations'
+        "--check-git", action="store_true", help="Check git status before version operations"
     )
 
     args = parser.parse_args()
 
     try:
-        if args.action == 'get':
+        if args.action == "get":
             version = get_current_version()
             print(version)
 
-        elif args.action == 'set':
+        elif args.action == "set":
             if not args.version:
                 parser.error("--version required for set action")
             set_version(args.version)
 
-        elif args.action == 'bump':
+        elif args.action == "bump":
             if not args.type:
                 parser.error("--type required for bump action")
 
@@ -226,7 +215,7 @@ Examples:
             print(f"New version: {new_version} (bumped {args.type})")
             set_version(new_version)
 
-        elif args.action == 'validate':
+        elif args.action == "validate":
             current = get_current_version()
             git_tag = get_git_tag_version()
 
@@ -252,5 +241,5 @@ Examples:
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

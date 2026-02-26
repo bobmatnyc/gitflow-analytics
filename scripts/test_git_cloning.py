@@ -28,9 +28,9 @@ class TestResults:
     def set_category(self, category: str):
         """Set current test category."""
         self.category = category
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"  {category}")
-        print(f"{'='*70}\n")
+        print(f"{'=' * 70}\n")
 
     def add(self, test_name: str, passed: bool, details: str = ""):
         """Add a test result."""
@@ -45,18 +45,18 @@ class TestResults:
         passed = sum(1 for _, p, _ in self.tests if p)
         total = len(self.tests)
 
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print("  TEST SUMMARY")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
         print(f"Total Tests: {total}")
         print(f"Passed: {passed} ✅")
         print(f"Failed: {total - passed} ❌")
-        print(f"Success Rate: {(passed/total)*100:.1f}%")
+        print(f"Success Rate: {(passed / total) * 100:.1f}%")
 
         if total - passed > 0:
-            print(f"\n{'='*70}")
+            print(f"\n{'=' * 70}")
             print("  FAILED TESTS")
-            print(f"{'='*70}")
+            print(f"{'=' * 70}")
             for name, passed, details in self.tests:
                 if not passed:
                     print(f"❌ {name}")
@@ -481,7 +481,7 @@ def main():
     print(f"\nTotal Tests Run: {total_tests}")
     print(f"Total Passed: {total_passed} ✅")
     print(f"Total Failed: {total_tests - total_passed} ❌")
-    print(f"Overall Success Rate: {(total_passed/total_tests)*100:.1f}%")
+    print(f"Overall Success Rate: {(total_passed / total_tests) * 100:.1f}%")
 
     # Show detailed summaries for each category
     print("\n" + "=" * 70)

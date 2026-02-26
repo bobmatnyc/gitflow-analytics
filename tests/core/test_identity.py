@@ -209,16 +209,12 @@ class TestCoAuthorAttribution:
         stats = resolver.get_developer_stats(ticket_coverage={})
 
         # Primary author (Alice) gets a commit
-        alice_stats = next(
-            (s for s in stats if s["primary_email"] == "alice@example.com"), None
-        )
+        alice_stats = next((s for s in stats if s["primary_email"] == "alice@example.com"), None)
         assert alice_stats is not None, "Alice not found in developer stats"
         assert alice_stats["total_commits"] >= 1
 
         # Co-author (Bob) also gets a commit credit
-        bob_stats = next(
-            (s for s in stats if s["primary_email"] == "bob@example.com"), None
-        )
+        bob_stats = next((s for s in stats if s["primary_email"] == "bob@example.com"), None)
         assert bob_stats is not None, "Bob not found in developer stats (co-author credit missing)"
         assert bob_stats["total_commits"] >= 1
 
@@ -239,12 +235,8 @@ class TestCoAuthorAttribution:
 
         stats = resolver.get_developer_stats(ticket_coverage={})
 
-        alice_stats = next(
-            (s for s in stats if s["primary_email"] == "alice@example.com"), None
-        )
-        bob_stats = next(
-            (s for s in stats if s["primary_email"] == "bob@example.com"), None
-        )
+        alice_stats = next((s for s in stats if s["primary_email"] == "alice@example.com"), None)
+        bob_stats = next((s for s in stats if s["primary_email"] == "bob@example.com"), None)
         assert alice_stats is not None and bob_stats is not None
 
         # Only Alice gets story points; Bob gets commit credit but no story points
@@ -292,9 +284,7 @@ class TestCoAuthorAttribution:
         resolver.update_commit_stats(commits)
 
         stats = resolver.get_developer_stats(ticket_coverage={})
-        dave_stats = next(
-            (s for s in stats if s["primary_email"] == "dave@example.com"), None
-        )
+        dave_stats = next((s for s in stats if s["primary_email"] == "dave@example.com"), None)
         assert dave_stats is not None
         # Should only count once (same person cannot be both author and co-author)
         assert dave_stats["total_commits"] == 1

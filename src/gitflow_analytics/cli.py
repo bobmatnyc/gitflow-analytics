@@ -3017,9 +3017,7 @@ def analyze(
                 identity_resolver.update_commit_stats([])
                 developer_stats = identity_resolver.get_developer_stats(ticket_coverage={})
             if ticket_analysis is None:
-                ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
-                    [], [], display
-                )
+                ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage([], [], display)
             _run_identity_resolution = False  # Skip identity resolution block below
         else:
             _run_identity_resolution = True

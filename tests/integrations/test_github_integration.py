@@ -413,9 +413,27 @@ class TestCalculatePrMetrics:
 
     def test_approval_rate_with_review_data(self) -> None:
         prs = [
-            {"number": 1, "additions": 10, "deletions": 2, "approvals_count": 1, "change_requests_count": 0},
-            {"number": 2, "additions": 10, "deletions": 2, "approvals_count": 0, "change_requests_count": 1},
-            {"number": 3, "additions": 10, "deletions": 2, "approvals_count": 2, "change_requests_count": 0},
+            {
+                "number": 1,
+                "additions": 10,
+                "deletions": 2,
+                "approvals_count": 1,
+                "change_requests_count": 0,
+            },
+            {
+                "number": 2,
+                "additions": 10,
+                "deletions": 2,
+                "approvals_count": 0,
+                "change_requests_count": 1,
+            },
+            {
+                "number": 3,
+                "additions": 10,
+                "deletions": 2,
+                "approvals_count": 2,
+                "change_requests_count": 0,
+            },
         ]
         integration = _make_integration()
 
@@ -429,8 +447,20 @@ class TestCalculatePrMetrics:
     def test_review_coverage(self) -> None:
         """PRs with neither approvals nor change requests are not 'reviewed'."""
         prs = [
-            {"number": 1, "additions": 10, "deletions": 0, "approvals_count": 1, "change_requests_count": 0},
-            {"number": 2, "additions": 10, "deletions": 0, "approvals_count": 0, "change_requests_count": 0},
+            {
+                "number": 1,
+                "additions": 10,
+                "deletions": 0,
+                "approvals_count": 1,
+                "change_requests_count": 0,
+            },
+            {
+                "number": 2,
+                "additions": 10,
+                "deletions": 0,
+                "approvals_count": 0,
+                "change_requests_count": 0,
+            },
         ]
         integration = _make_integration()
 
@@ -465,8 +495,20 @@ class TestCalculatePrMetrics:
 
     def test_pr_comments_and_revision_count(self) -> None:
         prs = [
-            {"number": 1, "additions": 5, "deletions": 0, "pr_comments_count": 4, "revision_count": 2},
-            {"number": 2, "additions": 5, "deletions": 0, "pr_comments_count": 6, "revision_count": 0},
+            {
+                "number": 1,
+                "additions": 5,
+                "deletions": 0,
+                "pr_comments_count": 4,
+                "revision_count": 2,
+            },
+            {
+                "number": 2,
+                "additions": 5,
+                "deletions": 0,
+                "pr_comments_count": 6,
+                "revision_count": 0,
+            },
         ]
         integration = _make_integration()
 

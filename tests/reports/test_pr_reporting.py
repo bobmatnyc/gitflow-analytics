@@ -8,6 +8,7 @@ Covers:
 - data_models.PullRequestData new fields and helpers
 - enhanced_analyzer._calculate_compliance_metrics() real approval rate
 """
+
 from __future__ import annotations
 
 import csv
@@ -22,7 +23,6 @@ from gitflow_analytics.reports.csv_writer import CSVReportGenerator
 from gitflow_analytics.reports.data_models import PullRequestData
 from gitflow_analytics.reports.narrative_writer import NarrativeReportGenerator
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -33,7 +33,9 @@ def recent_date() -> datetime:
     """A consistent recent datetime for tests (within the last week)."""
     from datetime import timedelta
 
-    return datetime.now(timezone.utc).replace(hour=10, minute=0, second=0, microsecond=0) - timedelta(days=7)
+    return datetime.now(timezone.utc).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    ) - timedelta(days=7)
 
 
 @pytest.fixture
@@ -275,9 +277,7 @@ class TestPullRequestDataModel:
         assert pr.approved_by == []
 
     def test_was_approved_via_approvals_count(self, recent_date: datetime) -> None:
-        pr = PullRequestData(
-            id=1, title="T", author="a", created_at=recent_date, approvals_count=2
-        )
+        pr = PullRequestData(id=1, title="T", author="a", created_at=recent_date, approvals_count=2)
         assert pr.was_approved() is True
 
     def test_was_approved_via_approved_by(self, recent_date: datetime) -> None:
@@ -602,9 +602,7 @@ class TestCSVDeveloperActivitySummaryPRStats:
     ) -> None:
         # alice authored PRs #10 and #12; bob authored PR #11
         rows = self._generate(temp_dir, sample_commits, sample_developer_stats, review_prs)
-        alice_row = next(
-            (r for r in rows if r["developer_name"] == "Alice"), None
-        )
+        alice_row = next((r for r in rows if r["developer_name"] == "Alice"), None)
         assert alice_row is not None
         # 2 PRs for alice: approvals = 2+1 = 3 → avg = 1.5
         assert float(alice_row["avg_approvals_per_pr"]) == pytest.approx(1.5, abs=0.01)
@@ -620,9 +618,7 @@ class TestCSVDeveloperActivitySummaryPRStats:
     ) -> None:
         # base_prs have no approvals_count field
         rows = self._generate(temp_dir, sample_commits, sample_developer_stats, base_prs)
-        alice_row = next(
-            (r for r in rows if r["developer_name"] == "Alice"), None
-        )
+        alice_row = next((r for r in rows if r["developer_name"] == "Alice"), None)
         if alice_row:
             # approvals_count not in base_prs → aggregated as 0 → avg_approvals
             # is 0/n → either empty string or 0.0 depending on branch
@@ -647,9 +643,7 @@ class TestCSVPRMetricsReport:
         with open(output) as f:
             return list(csv.DictReader(f))
 
-    def test_columns_present(
-        self, temp_dir: Path, review_prs: list[dict[str, Any]]
-    ) -> None:
+    def test_columns_present(self, temp_dir: Path, review_prs: list[dict[str, Any]]) -> None:
         rows = self._generate(temp_dir, review_prs)
         expected_cols = {
             "pr_number",
@@ -681,9 +675,7 @@ class TestCSVPRMetricsReport:
         rows = self._generate(temp_dir, review_prs)
         assert len(rows) == len(review_prs)
 
-    def test_lifetime_calculated(
-        self, temp_dir: Path, review_prs: list[dict[str, Any]]
-    ) -> None:
+    def test_lifetime_calculated(self, temp_dir: Path, review_prs: list[dict[str, Any]]) -> None:
         rows = self._generate(temp_dir, review_prs)
         # PR #10: created 10:00 merged 20:00 → 10 hours
         pr10 = next(r for r in rows if r["pr_number"] == "10")
@@ -814,6 +806,6 @@ class TestComplianceMetricsRealApprovalRate:
             result = analyzer._calculate_compliance_metrics(
                 commits, {"pr_metrics": {"approval_rate": rate, "total_prs": 5}}, {}
             )
-            assert result["pr_approval_rate"]["status"] == expected_status, (
-                f"rate={rate} expected '{expected_status}' got '{result['pr_approval_rate']['status']}'"
-            )
+            assert (
+                result["pr_approval_rate"]["status"] == expected_status
+            ), f"rate={rate} expected '{expected_status}' got '{result['pr_approval_rate']['status']}'"

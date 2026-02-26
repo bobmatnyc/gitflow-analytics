@@ -81,7 +81,7 @@ def check_database_story_points():
         print(f"   Commits with story points: {commits_with_points_count}")
         print(f"   Total story points: {total_points}")
         print(
-            f"   Coverage: {(commits_with_points_count/total_commits*100):.1f}%"
+            f"   Coverage: {(commits_with_points_count / total_commits * 100):.1f}%"
             if total_commits > 0
             else "   Coverage: 0%"
         )

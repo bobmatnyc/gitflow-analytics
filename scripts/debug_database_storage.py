@@ -181,7 +181,7 @@ def test_git_data_fetcher():
             print("Sample commits:")
             for i, commit in enumerate(commits[:3]):
                 print(
-                    f"  {i+1}. {commit.hexsha[:8]} - {commit.message.split()[0] if commit.message else 'No message'}"
+                    f"  {i + 1}. {commit.hexsha[:8]} - {commit.message.split()[0] if commit.message else 'No message'}"
                 )
 
         # Try to fetch data

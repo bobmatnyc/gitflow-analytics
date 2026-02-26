@@ -29,53 +29,50 @@ logger = logging.getLogger(__name__)
 
 class HTMLReportGenerator:
     """Generate interactive HTML reports from GitFlow Analytics JSON data.
-    
+
     This generator creates comprehensive, self-contained HTML reports that include:
     - Executive summary dashboard with KPIs and trends
     - Project-level analysis with health scores
-    - Developer profiles and contribution patterns  
+    - Developer profiles and contribution patterns
     - Workflow analysis and bottleneck identification
     - Interactive charts and filtering capabilities
     """
-    
+
     def __init__(self):
         """Initialize the HTML report generator."""
         pass
-    
+
     def generate_report(
-        self,
-        json_data: Dict[str, Any],
-        output_path: Path,
-        title: Optional[str] = None
+        self, json_data: Dict[str, Any], output_path: Path, title: Optional[str] = None
     ) -> Path:
         """Generate an interactive HTML report from JSON data.
-        
+
         Args:
             json_data: Comprehensive JSON data from GitFlow Analytics
             output_path: Path where HTML report will be written
             title: Optional custom title for the report
-            
+
         Returns:
             Path to the generated HTML file
         """
         logger.info(f"Generating interactive HTML report: {output_path}")
-        
+
         # Prepare report data
         report_title = title or self._generate_report_title(json_data)
-        
+
         # Generate HTML content
         html_content = self._generate_complete_html(json_data, report_title)
-        
+
         # Write HTML file
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(html_content)
-        
+
         logger.info(f"Interactive HTML report generated: {output_path}")
         return output_path
-    
+
     def _generate_complete_html(self, json_data: Dict[str, Any], title: str) -> str:
         """Generate complete HTML document with embedded dependencies."""
-        
+
         # Embed all dependencies and generate sections
         dependencies = self._embed_dependencies()
         executive_summary = self._generate_executive_summary_html(json_data)
@@ -83,9 +80,9 @@ class HTMLReportGenerator:
         developers_section = self._generate_developers_html(json_data)
         workflow_section = self._generate_workflow_html(json_data)
         charts_js = self._generate_charts_js(json_data)
-        
+
         generation_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        
+
         html_template = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -120,12 +117,12 @@ class HTMLReportGenerator:
                 <small class="text-muted">Generated: {generation_time}</small>
             </div>
         </nav>
-        
+
         <!-- Main Content -->
         <main class="flex-grow-1 p-4" style="margin-left: 0;">
             <div class="container-fluid">
                 <h1 class="mb-4">{title}</h1>
-                
+
                 {executive_summary}
                 {projects_section}
                 {developers_section}
@@ -133,51 +130,51 @@ class HTMLReportGenerator:
             </div>
         </main>
     </div>
-    
+
     <!-- Embedded JSON Data -->
     <script>
         window.gitflowData = {json.dumps(json_data, indent=2)};
     </script>
-    
+
     <!-- Chart.js Initialization -->
     <script>
         {charts_js}
     </script>
-    
+
     <!-- Bootstrap and interaction JavaScript -->
     <script>
         {self._get_interaction_js()}
     </script>
 </body>
 </html>"""
-        
+
         return html_template
-    
+
     def _generate_report_title(self, json_data: Dict[str, Any]) -> str:
         """Generate a report title from the JSON data."""
-        metadata = json_data.get('metadata', {})
-        data_summary = metadata.get('data_summary', {})
-        
+        metadata = json_data.get("metadata", {})
+        data_summary = metadata.get("data_summary", {})
+
         # Get time period info
-        analysis_period = metadata.get('analysis_period', {})
-        weeks = analysis_period.get('weeks_analyzed', 0)
-        
+        analysis_period = metadata.get("analysis_period", {})
+        weeks = analysis_period.get("weeks_analyzed", 0)
+
         # Get project/repo info
-        projects = data_summary.get('projects_identified', 0)
-        repos = data_summary.get('repositories_analyzed', 0)
-        
+        projects = data_summary.get("projects_identified", 0)
+        repos = data_summary.get("repositories_analyzed", 0)
+
         if projects > 1:
             scope = f"{projects} Projects"
         elif repos > 1:
             scope = f"{repos} Repositories"
         else:
             scope = "Team"
-        
+
         return f"GitFlow Analytics Report - {scope} ({weeks} Weeks)"
-    
+
     def _embed_dependencies(self) -> str:
         """Embed all CSS and JavaScript dependencies inline."""
-        
+
         # Bootstrap 5 CSS (minified)
         bootstrap_css = """
         <style>
@@ -195,7 +192,7 @@ class HTMLReportGenerator:
         .d-flex{display:flex!important}.d-none{display:none!important}.flex-column{flex-direction:column!important}.flex-grow-1{flex-grow:1!important}.justify-content-between{justify-content:space-between!important}.align-items-center{align-items:center!important}.text-center{text-align:center!important}.text-white{--bs-text-opacity:1;color:rgba(var(--bs-white-rgb),var(--bs-text-opacity))!important}.text-muted{--bs-text-opacity:1;color:#6c757d!important}.text-primary{--bs-text-opacity:1;color:rgba(var(--bs-primary-rgb),var(--bs-text-opacity))!important}.text-success{--bs-text-opacity:1;color:rgba(var(--bs-success-rgb),var(--bs-text-opacity))!important}.text-danger{--bs-text-opacity:1;color:rgba(var(--bs-danger-rgb),var(--bs-text-opacity))!important}.text-warning{--bs-text-opacity:1;color:rgba(var(--bs-warning-rgb),var(--bs-text-opacity))!important}.bg-primary{--bs-bg-opacity:1;background-color:rgba(var(--bs-primary-rgb),var(--bs-bg-opacity))!important}.bg-success{--bs-bg-opacity:1;background-color:rgba(var(--bs-success-rgb),var(--bs-bg-opacity))!important}.bg-danger{--bs-bg-opacity:1;background-color:rgba(var(--bs-danger-rgb),var(--bs-bg-opacity))!important}.bg-warning{--bs-bg-opacity:1;background-color:rgba(var(--bs-warning-rgb),var(--bs-bg-opacity))!important}.bg-light{--bs-bg-opacity:1;background-color:rgba(var(--bs-light-rgb),var(--bs-bg-opacity))!important}.bg-dark{--bs-bg-opacity:1;background-color:rgba(var(--bs-dark-rgb),var(--bs-bg-opacity))!important}.rounded{border-radius:var(--bs-border-radius)!important}.border{border:var(--bs-border-width) var(--bs-border-style) var(--bs-border-color)!important}.p-0{padding:0!important}.p-1{padding:.25rem!important}.p-2{padding:.5rem!important}.p-3{padding:1rem!important}.p-4{padding:1.5rem!important}.p-5{padding:3rem!important}.pt-0{padding-top:0!important}.pt-1{padding-top:.25rem!important}.pt-2{padding-top:.5rem!important}.pt-3{padding-top:1rem!important}.pt-4{padding-top:1.5rem!important}.pt-5{padding-top:3rem!important}.pe-0{padding-right:0!important}.pe-1{padding-right:.25rem!important}.pe-2{padding-right:.5rem!important}.pe-3{padding-right:1rem!important}.pe-4{padding-right:1.5rem!important}.pe-5{padding-right:3rem!important}.pb-0{padding-bottom:0!important}.pb-1{padding-bottom:.25rem!important}.pb-2{padding-bottom:.5rem!important}.pb-3{padding-bottom:1rem!important}.pb-4{padding-bottom:1.5rem!important}.pb-5{padding-bottom:3rem!important}.ps-0{padding-left:0!important}.ps-1{padding-left:.25rem!important}.ps-2{padding-left:.5rem!important}.ps-3{padding-left:1rem!important}.ps-4{padding-left:1.5rem!important}.ps-5{padding-left:3rem!important}.px-0{padding-right:0!important;padding-left:0!important}.px-1{padding-right:.25rem!important;padding-left:.25rem!important}.px-2{padding-right:.5rem!important;padding-left:.5rem!important}.px-3{padding-right:1rem!important;padding-left:1rem!important}.px-4{padding-right:1.5rem!important;padding-left:1.5rem!important}.px-5{padding-right:3rem!important;padding-left:3rem!important}.py-0{padding-top:0!important;padding-bottom:0!important}.py-1{padding-top:.25rem!important;padding-bottom:.25rem!important}.py-2{padding-top:.5rem!important;padding-bottom:.5rem!important}.py-3{padding-top:1rem!important;padding-bottom:1rem!important}.py-4{padding-top:1.5rem!important;padding-bottom:1.5rem!important}.py-5{padding-top:3rem!important;padding-bottom:3rem!important}.m-0{margin:0!important}.m-1{margin:.25rem!important}.m-2{margin:.5rem!important}.m-3{margin:1rem!important}.m-4{margin:1.5rem!important}.m-5{margin:3rem!important}.mt-0{margin-top:0!important}.mt-1{margin-top:.25rem!important}.mt-2{margin-top:.5rem!important}.mt-3{margin-top:1rem!important}.mt-4{margin-top:1.5rem!important}.mt-5{margin-top:3rem!important}.me-0{margin-right:0!important}.me-1{margin-right:.25rem!important}.me-2{margin-right:.5rem!important}.me-3{margin-right:1rem!important}.me-4{margin-right:1.5rem!important}.me-5{margin-right:3rem!important}.mb-0{margin-bottom:0!important}.mb-1{margin-bottom:.25rem!important}.mb-2{margin-bottom:.5rem!important}.mb-3{margin-bottom:1rem!important}.mb-4{margin-bottom:1.5rem!important}.mb-5{margin-bottom:3rem!important}.ms-0{margin-left:0!important}.ms-1{margin-left:.25rem!important}.ms-2{margin-left:.5rem!important}.ms-3{margin-left:1rem!important}.ms-4{margin-left:1.5rem!important}.ms-5{margin-left:3rem!important}.mx-0{margin-right:0!important;margin-left:0!important}.mx-1{margin-right:.25rem!important;margin-left:.25rem!important}.mx-2{margin-right:.5rem!important;margin-left:.5rem!important}.mx-3{margin-right:1rem!important;margin-left:1rem!important}.mx-4{margin-right:1.5rem!important;margin-left:1.5rem!important}.mx-5{margin-right:3rem!important;margin-left:3rem!important}.my-0{margin-top:0!important;margin-bottom:0!important}.my-1{margin-top:.25rem!important;margin-bottom:.25rem!important}.my-2{margin-top:.5rem!important;margin-bottom:.5rem!important}.my-3{margin-top:1rem!important;margin-bottom:1rem!important}.my-4{margin-top:1.5rem!important;margin-bottom:1.5rem!important}.my-5{margin-top:3rem!important;margin-bottom:3rem!important}
         </style>
         """
-        
+
         # Chart.js library (minified)
         chartjs_script = """
         <script>
@@ -209,9 +206,9 @@ class HTMLReportGenerator:
         //# sourceMappingURL=chart.umd.js.map
         </script>
         """
-        
+
         return bootstrap_css + chartjs_script
-    
+
     def _get_custom_css(self) -> str:
         """Get custom CSS for the report styling."""
         return """
@@ -224,72 +221,72 @@ class HTMLReportGenerator:
             z-index: 1000;
             width: 250px;
         }
-        
+
         .main-content {
             margin-left: 260px;
             padding: 20px;
             max-width: calc(100% - 260px);
         }
-        
+
         @media (max-width: 768px) {
             .sidebar {
                 position: static;
                 width: 100%;
                 height: auto;
             }
-            
+
             .main-content {
                 margin-left: 0;
                 max-width: 100%;
             }
         }
-        
+
         .metric-card {
             transition: transform 0.2s ease-in-out;
         }
-        
+
         .metric-card:hover {
             transform: translateY(-2px);
         }
-        
+
         .health-score {
             font-size: 2rem;
             font-weight: bold;
         }
-        
+
         .health-excellent { color: #28a745; }
         .health-good { color: #17a2b8; }
         .health-fair { color: #ffc107; }
         .health-needs-improvement { color: #dc3545; }
-        
+
         .trend-up { color: #28a745; }
         .trend-down { color: #dc3545; }
         .trend-stable { color: #6c757d; }
-        
+
         .chart-container {
             position: relative;
             height: 400px;
             margin: 20px 0;
         }
-        
+
         .nav-link {
             border-radius: 0.25rem;
             margin-bottom: 0.5rem;
         }
-        
+
         .nav-link:hover {
             background-color: rgba(255, 255, 255, 0.1);
         }
-        
+
         .table-responsive {
             border-radius: 0.375rem;
             overflow: hidden;
         }
-        
+
         .badge {
             font-size: 0.75em;
         }
-        
+
         .developer-avatar {
             width: 40px;
             height: 40px;
@@ -302,39 +299,39 @@ class HTMLReportGenerator:
             font-weight: bold;
             font-size: 1.2em;
         }
-        
+
         @media print {
             .sidebar { display: none; }
             .main-content { margin-left: 0; }
         }
-        
+
         @media (max-width: 768px) {
-            .sidebar { 
-                width: 100% !important; 
+            .sidebar {
+                width: 100% !important;
                 position: relative;
                 height: auto;
             }
             .main-content { margin-left: 0; }
         }
         """
-    
+
     def _generate_executive_summary_html(self, json_data: Dict[str, Any]) -> str:
         """Generate executive summary HTML section."""
-        exec_summary = json_data.get('executive_summary', {})
-        key_metrics = exec_summary.get('key_metrics', {})
-        performance_indicators = exec_summary.get('performance_indicators', {})
-        health_score = exec_summary.get('health_score', {})
-        
+        exec_summary = json_data.get("executive_summary", {})
+        key_metrics = exec_summary.get("key_metrics", {})
+        performance_indicators = exec_summary.get("performance_indicators", {})
+        health_score = exec_summary.get("health_score", {})
+
         # Get trends for display
-        trends = exec_summary.get('trends', {})
-        wins = exec_summary.get('wins', [])
-        concerns = exec_summary.get('concerns', [])
-        
+        trends = exec_summary.get("trends", {})
+        wins = exec_summary.get("wins", [])
+        concerns = exec_summary.get("concerns", [])
+
         # Build HTML
         html = f"""
         <section id="executive-summary" class="mb-5">
             <h2 class="mb-4">Executive Summary</h2>
-            
+
             <!-- Key Metrics Cards -->
             <div class="row mb-4">
                 <div class="col-md-3">
@@ -388,7 +385,7 @@ class HTMLReportGenerator:
                     </div>
                 </div>
             </div>
-            
+
             <!-- Overall Health Score -->
             <div class="row mb-4">
                 <div class="col-md-6">
@@ -413,7 +410,7 @@ class HTMLReportGenerator:
                     </div>
                 </div>
             </div>
-            
+
             <!-- Wins and Concerns -->
             <div class="row">
                 <div class="col-md-6">
@@ -437,7 +434,7 @@ class HTMLReportGenerator:
                     </div>
                 </div>
             </div>
-            
+
             <!-- Time Series Chart -->
             <div class="row mt-4">
                 <div class="col-12">
@@ -453,39 +450,41 @@ class HTMLReportGenerator:
                     </div>
                 </div>
             </div>
-            
+
             <!-- Enhanced Qualitative Analysis -->
             {self._generate_qualitative_analysis_section(json_data)}
         </section>
         """
-        
+
         return html
-    
+
     def _generate_projects_html(self, json_data: Dict[str, Any]) -> str:
         """Generate projects HTML section."""
-        projects = json_data.get('projects', {})
-        
+        projects = json_data.get("projects", {})
+
         if not projects:
             return '<section id="projects" class="mb-5"><h2>Projects</h2><p class="text-muted">No project data available.</p></section>'
-        
+
         project_cards = []
         for project_key, project_data in projects.items():
-            summary = project_data.get('summary', {})
-            health_score = project_data.get('health_score', {})
-            contributors = project_data.get('contributors', [])
-            
+            summary = project_data.get("summary", {})
+            health_score = project_data.get("health_score", {})
+            contributors = project_data.get("contributors", [])
+
             # Generate contributor list
             contributor_html = ""
             if contributors:
                 top_contributors = contributors[:3]  # Show top 3
                 contributor_html = "<div class='mt-2'>"
                 for contrib in top_contributors:
-                    initials = ''.join([n[0].upper() for n in contrib.get('name', 'U').split()[:2]])
+                    initials = "".join([n[0].upper() for n in contrib.get("name", "U").split()[:2]])
                     contributor_html += f'<span class="developer-avatar me-2" title="{contrib.get("name", "Unknown")}">{initials}</span>'
                 if len(contributors) > 3:
-                    contributor_html += f'<small class="text-muted">+{len(contributors) - 3} more</small>'
+                    contributor_html += (
+                        f'<small class="text-muted">+{len(contributors) - 3} more</small>'
+                    )
                 contributor_html += "</div>"
-            
+
             card_html = f"""
             <div class="col-md-6 mb-4">
                 <div class="card h-100">
@@ -516,7 +515,7 @@ class HTMLReportGenerator:
             </div>
             """
             project_cards.append(card_html)
-        
+
         html = f"""
         <section id="projects" class="mb-5">
             <h2 class="mb-4">Projects</h2>
@@ -525,36 +524,36 @@ class HTMLReportGenerator:
             </div>
         </section>
         """
-        
+
         return html
-    
+
     def _generate_developers_html(self, json_data: Dict[str, Any]) -> str:
         """Generate developers HTML section."""
-        developers = json_data.get('developers', {})
-        
+        developers = json_data.get("developers", {})
+
         if not developers:
             return '<section id="developers" class="mb-5"><h2>Developers</h2><p class="text-muted">No developer data available.</p></section>'
-        
+
         # Create table rows for developers
         developer_rows = []
         for dev_id, dev_data in developers.items():
-            identity = dev_data.get('identity', {})
-            summary = dev_data.get('summary', {})
-            health_score = dev_data.get('health_score', {})
-            projects = dev_data.get('projects', {})
-            
+            identity = dev_data.get("identity", {})
+            summary = dev_data.get("summary", {})
+            health_score = dev_data.get("health_score", {})
+            projects = dev_data.get("projects", {})
+
             # Create initials for avatar
-            name = identity.get('name', 'Unknown')
-            initials = ''.join([n[0].upper() for n in name.split()[:2]])
-            
+            name = identity.get("name", "Unknown")
+            initials = "".join([n[0].upper() for n in name.split()[:2]])
+
             # Format first and last seen dates
-            first_seen = summary.get('first_seen', '')
-            last_seen = summary.get('last_seen', '')
+            first_seen = summary.get("first_seen", "")
+            last_seen = summary.get("last_seen", "")
             if first_seen:
                 first_seen = first_seen[:10]  # Just the date part
             if last_seen:
                 last_seen = last_seen[:10]  # Just the date part
-            
+
             row_html = f"""
             <tr>
                 <td>
@@ -581,7 +580,7 @@ class HTMLReportGenerator:
             </tr>
             """
             developer_rows.append(row_html)
-        
+
         html = f"""
         <section id="developers" class="mb-5">
             <h2 class="mb-4">Developers</h2>
@@ -608,24 +607,24 @@ class HTMLReportGenerator:
             </div>
         </section>
         """
-        
+
         return html
-    
+
     def _generate_workflow_html(self, json_data: Dict[str, Any]) -> str:
         """Generate workflow analysis HTML section."""
-        workflow = json_data.get('workflow_analysis', {})
-        
+        workflow = json_data.get("workflow_analysis", {})
+
         if not workflow:
             return '<section id="workflow" class="mb-5"><h2>Workflow Analysis</h2><p class="text-muted">No workflow data available.</p></section>'
-        
-        branching = workflow.get('branching_strategy', {})
-        commit_patterns = workflow.get('commit_patterns', {})
-        process_health = workflow.get('process_health', {})
-        
+
+        branching = workflow.get("branching_strategy", {})
+        commit_patterns = workflow.get("commit_patterns", {})
+        process_health = workflow.get("process_health", {})
+
         html = f"""
         <section id="workflow" class="mb-5">
             <h2 class="mb-4">Workflow Analysis</h2>
-            
+
             <div class="row mb-4">
                 <!-- Branching Strategy -->
                 <div class="col-md-4">
@@ -642,7 +641,7 @@ class HTMLReportGenerator:
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Commit Timing -->
                 <div class="col-md-4">
                     <div class="card">
@@ -659,7 +658,7 @@ class HTMLReportGenerator:
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Process Health -->
                 <div class="col-md-4">
                     <div class="card">
@@ -678,28 +677,28 @@ class HTMLReportGenerator:
             </div>
         </section>
         """
-        
+
         return html
-    
+
     def _generate_charts_js(self, json_data: Dict[str, Any]) -> str:
         """Generate Chart.js initialization JavaScript."""
-        
+
         # Get data for charts
-        exec_summary = json_data.get('executive_summary', {})
-        health_score = exec_summary.get('health_score', {})
-        time_series = json_data.get('time_series', {})
-        
+        exec_summary = json_data.get("executive_summary", {})
+        health_score = exec_summary.get("health_score", {})
+        time_series = json_data.get("time_series", {})
+
         # Health score components
-        health_components = health_score.get('components', {})
+        health_components = health_score.get("components", {})
         health_labels = list(health_components.keys())
         health_data = list(health_components.values())
-        
+
         # Time series data
-        weekly_data = time_series.get('weekly', {})
-        weekly_labels = weekly_data.get('labels', [])
-        commits_data = weekly_data.get('datasets', {}).get('commits', {}).get('data', [])
-        lines_data = weekly_data.get('datasets', {}).get('lines_changed', {}).get('data', [])
-        
+        weekly_data = time_series.get("weekly", {})
+        weekly_labels = weekly_data.get("labels", [])
+        commits_data = weekly_data.get("datasets", {}).get("commits", {}).get("data", [])
+        lines_data = weekly_data.get("datasets", {}).get("lines_changed", {}).get("data", [])
+
         js_code = f"""
         // Chart.js configuration and initialization
         document.addEventListener('DOMContentLoaded', function() {{
@@ -730,7 +729,7 @@ class HTMLReportGenerator:
                     }}
                 }});
             }}
-            
+
             // Activity Trend Line Chart
             const activityCtx = document.getElementById('activityTrendChart');
             if (activityCtx) {{
@@ -778,9 +777,9 @@ class HTMLReportGenerator:
             }}
         }});
         """
-        
+
         return js_code
-    
+
     def _get_interaction_js(self) -> str:
         """Get JavaScript for page interactions."""
         return """
@@ -797,12 +796,12 @@ class HTMLReportGenerator:
                 }
             });
         });
-        
+
         // Update active navigation link on scroll
         window.addEventListener('scroll', function() {
             const sections = document.querySelectorAll('section[id]');
             const navLinks = document.querySelectorAll('.nav-link');
-            
+
             let current = '';
             sections.forEach(section => {
                 const sectionTop = section.offsetTop;
@@ -811,7 +810,7 @@ class HTMLReportGenerator:
                     current = section.getAttribute('id');
                 }
             });
-            
+
             navLinks.forEach(link => {
                 link.classList.remove('active');
                 if (link.getAttribute('href') === '#' + current) {
@@ -819,7 +818,7 @@ class HTMLReportGenerator:
                 }
             });
         });
-        
+
         // Add hover effects and tooltips
         document.querySelectorAll('.metric-card').forEach(card => {
             card.addEventListener('mouseenter', function() {
@@ -830,20 +829,20 @@ class HTMLReportGenerator:
             });
         });
         """
-    
+
     def _generate_qualitative_analysis_section(self, json_data: Dict[str, Any]) -> str:
         """Generate enhanced qualitative analysis section with executive narrative."""
-        
+
         # Get enhanced qualitative analysis if available
-        enhanced_analysis = json_data.get('enhanced_qualitative_analysis', {})
+        enhanced_analysis = json_data.get("enhanced_qualitative_analysis", {})
         if not enhanced_analysis:
             return ""
-        
+
         # Get executive analysis
-        exec_analysis = enhanced_analysis.get('executive_analysis', {})
+        exec_analysis = enhanced_analysis.get("executive_analysis", {})
         if not exec_analysis:
             return ""
-        
+
         # Build the qualitative analysis section
         html = f"""
         <div class="row mt-4">
@@ -858,7 +857,7 @@ class HTMLReportGenerator:
                             <h6 class="text-primary">Executive Summary</h6>
                             <p class="lead">{exec_analysis.get('executive_summary', 'No executive summary available.')}</p>
                         </div>
-                        
+
                         <!-- Health Assessment -->
                         <div class="mb-4">
                             <h6 class="text-primary">Team Health Assessment</h6>
@@ -866,7 +865,7 @@ class HTMLReportGenerator:
                             <div class="d-flex align-items-center mb-2">
                                 <strong class="me-2">Confidence:</strong>
                                 <div class="progress flex-grow-1" style="height: 20px;">
-                                    <div class="progress-bar" role="progressbar" 
+                                    <div class="progress-bar" role="progressbar"
                                          style="width: {exec_analysis.get('health_confidence', 0) * 100}%"
                                          aria-valuenow="{exec_analysis.get('health_confidence', 0) * 100}"
                                          aria-valuemin="0" aria-valuemax="100">
@@ -875,19 +874,19 @@ class HTMLReportGenerator:
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- Velocity Trends -->
                         <div class="mb-4">
                             <h6 class="text-primary">Velocity Analysis</h6>
                             <p>{exec_analysis.get('velocity_trends', {}).get('narrative', 'No velocity analysis available.')}</p>
                         </div>
-                        
+
                         <!-- Key Achievements -->
                         {self._format_achievements_section(exec_analysis.get('key_achievements', []))}
-                        
+
                         <!-- Major Concerns with Recommendations -->
                         {self._format_concerns_section(exec_analysis.get('major_concerns', []))}
-                        
+
                         <!-- Cross-Dimensional Insights -->
                         {self._format_cross_insights_section(enhanced_analysis.get('cross_insights', []))}
                     </div>
@@ -895,23 +894,23 @@ class HTMLReportGenerator:
             </div>
         </div>
         """
-        
+
         return html
-    
+
     def _format_achievements_section(self, achievements: List[Dict[str, Any]]) -> str:
         """Format achievements section with details."""
         if not achievements:
             return ""
-        
+
         items_html = []
         for achievement in achievements[:5]:  # Show top 5
             badge_color = {
-                'exceptional': 'success',
-                'excellent': 'primary', 
-                'good': 'info',
-                'notable': 'secondary'
-            }.get(achievement.get('impact', 'notable'), 'secondary')
-            
+                "exceptional": "success",
+                "excellent": "primary",
+                "good": "info",
+                "notable": "secondary",
+            }.get(achievement.get("impact", "notable"), "secondary")
+
             item = f"""
             <div class="achievement-item mb-2">
                 <div class="d-flex align-items-start">
@@ -925,28 +924,28 @@ class HTMLReportGenerator:
             </div>
             """
             items_html.append(item)
-        
+
         return f"""
         <div class="mb-4">
             <h6 class="text-success">Key Achievements</h6>
             {''.join(items_html)}
         </div>
         """
-    
+
     def _format_concerns_section(self, concerns: List[Dict[str, Any]]) -> str:
         """Format concerns section with recommendations."""
         if not concerns:
             return ""
-        
+
         items_html = []
         for concern in concerns[:5]:  # Show top 5
             severity_color = {
-                'critical': 'danger',
-                'high': 'warning',
-                'medium': 'info',
-                'low': 'secondary'
-            }.get(concern.get('severity', 'medium'), 'warning')
-            
+                "critical": "danger",
+                "high": "warning",
+                "medium": "info",
+                "low": "secondary",
+            }.get(concern.get("severity", "medium"), "warning")
+
             item = f"""
             <div class="concern-item mb-2">
                 <div class="d-flex align-items-start">
@@ -960,34 +959,38 @@ class HTMLReportGenerator:
             </div>
             """
             items_html.append(item)
-        
+
         return f"""
         <div class="mb-4">
             <h6 class="text-warning">Areas Requiring Attention</h6>
             {''.join(items_html)}
         </div>
         """
-    
+
     def _format_cross_insights_section(self, insights: List[Dict[str, Any]]) -> str:
         """Format cross-dimensional insights."""
         if not insights:
             return ""
-        
-        priority_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
-        sorted_insights = sorted(insights, key=lambda x: priority_order.get(x.get('priority', 'low'), 3))
-        
+
+        priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        sorted_insights = sorted(
+            insights, key=lambda x: priority_order.get(x.get("priority", "low"), 3)
+        )
+
         items_html = []
         for insight in sorted_insights[:3]:  # Show top 3
             priority_color = {
-                'critical': 'danger',
-                'high': 'warning',
-                'medium': 'info',
-                'low': 'secondary'
-            }.get(insight.get('priority', 'medium'), 'info')
-            
-            dimensions = insight.get('dimensions', [])
-            dimensions_badges = ' '.join([f'<span class="badge bg-light text-dark me-1">{d}</span>' for d in dimensions])
-            
+                "critical": "danger",
+                "high": "warning",
+                "medium": "info",
+                "low": "secondary",
+            }.get(insight.get("priority", "medium"), "info")
+
+            dimensions = insight.get("dimensions", [])
+            dimensions_badges = " ".join(
+                [f'<span class="badge bg-light text-dark me-1">{d}</span>' for d in dimensions]
+            )
+
             item = f"""
             <div class="insight-item mb-3 p-3 border rounded">
                 <div class="d-flex justify-content-between align-items-start mb-2">
@@ -1000,7 +1003,7 @@ class HTMLReportGenerator:
             </div>
             """
             items_html.append(item)
-        
+
         return f"""
         <div class="mb-4">
             <h6 class="text-info">Strategic Insights</h6>
@@ -1008,18 +1011,18 @@ class HTMLReportGenerator:
             {''.join(items_html)}
         </div>
         """
-    
+
     def _format_insights_list(self, insights: List[Dict[str, Any]]) -> str:
         """Format a list of insights as HTML."""
         if not insights:
             return '<p class="text-muted">No insights available.</p>'
-        
+
         html_items = []
         for insight in insights[:5]:  # Limit to top 5
-            title = insight.get('title', 'Insight')
-            description = insight.get('description', '')
-            impact = insight.get('impact', 'medium')
-            
+            title = insight.get("title", "Insight")
+            description = insight.get("description", "")
+            impact = insight.get("impact", "medium")
+
             item_html = f"""
             <div class="mb-3">
                 <div class="d-flex justify-content-between align-items-start">
@@ -1030,87 +1033,77 @@ class HTMLReportGenerator:
             </div>
             """
             html_items.append(item_html)
-        
-        return ''.join(html_items)
-    
+
+        return "".join(html_items)
+
     def _get_health_badge_color(self, rating: str) -> str:
         """Get Bootstrap badge color for health rating."""
         color_map = {
-            'excellent': 'success',
-            'good': 'info',
-            'fair': 'warning',
-            'needs_improvement': 'danger',
-            'no_data': 'secondary'
+            "excellent": "success",
+            "good": "info",
+            "fair": "warning",
+            "needs_improvement": "danger",
+            "no_data": "secondary",
         }
-        return color_map.get(rating, 'secondary')
-    
+        return color_map.get(rating, "secondary")
+
     def _get_complexity_badge_color(self, complexity: str) -> str:
         """Get Bootstrap badge color for complexity rating."""
-        color_map = {
-            'low': 'success',
-            'medium': 'warning',
-            'high': 'danger'
-        }
-        return color_map.get(complexity, 'secondary')
-    
+        color_map = {"low": "success", "medium": "warning", "high": "danger"}
+        return color_map.get(complexity, "secondary")
+
     def _get_quality_badge_color(self, quality: str) -> str:
         """Get Bootstrap badge color for quality rating."""
         color_map = {
-            'excellent': 'success',
-            'good': 'info',
-            'fair': 'warning',
-            'needs_improvement': 'danger',
-            'poor': 'danger'
+            "excellent": "success",
+            "good": "info",
+            "fair": "warning",
+            "needs_improvement": "danger",
+            "poor": "danger",
         }
-        return color_map.get(quality, 'secondary')
-    
+        return color_map.get(quality, "secondary")
+
     def _get_impact_badge_color(self, impact: str) -> str:
         """Get Bootstrap badge color for impact level."""
-        color_map = {
-            'high': 'danger',
-            'medium': 'warning',
-            'low': 'info'
-        }
-        return color_map.get(impact, 'secondary')
-
+        color_map = {"high": "danger", "medium": "warning", "low": "info"}
+        return color_map.get(impact, "secondary")
 
     # Maintain backward compatibility with the old method name
     def generate_html_report(
-        self,
-        json_data: Dict[str, Any],
-        output_path: Path,
-        title: Optional[str] = None
+        self, json_data: Dict[str, Any], output_path: Path, title: Optional[str] = None
     ) -> Path:
         """Generate an interactive HTML report from JSON data.
-        
+
         This method maintains backward compatibility with existing code.
-        
+
         Args:
             json_data: Comprehensive JSON data from GitFlow Analytics
             output_path: Path where HTML report will be written
             title: Optional custom title for the report
-            
+
         Returns:
             Path to the generated HTML file
         """
         return self.generate_report(json_data, output_path, title)
 
 
-def generate_html_from_json(json_file_path: Path, output_path: Path, title: Optional[str] = None) -> Path:
+def generate_html_from_json(
+    json_file_path: Path, output_path: Path, title: Optional[str] = None
+) -> Path:
     """Convenience function to generate HTML report from JSON file.
-    
+
     Args:
         json_file_path: Path to the JSON export file
         output_path: Path where HTML report will be written
         title: Optional custom title for the report
-        
+
     Returns:
         Path to the generated HTML file
     """
     # Load JSON data
-    with open(json_file_path, 'r', encoding='utf-8') as f:
+    with open(json_file_path, encoding="utf-8") as f:
         json_data = json.load(f)
-    
+
     # Generate HTML report
     generator = HTMLReportGenerator()
     return generator.generate_report(json_data, output_path, title)

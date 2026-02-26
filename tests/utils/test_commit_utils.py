@@ -115,10 +115,7 @@ class TestExtractCoAuthors:
 
     def test_github_copilot_style_trailer(self) -> None:
         """GitHub Copilot / VS Code auto-inserts a bot trailer — it should be extracted."""
-        message = (
-            "Generate boilerplate\n\n"
-            "Co-authored-by: GitHub Copilot <copilot@github.com>"
-        )
+        message = "Generate boilerplate\n\nCo-authored-by: GitHub Copilot <copilot@github.com>"
         result = extract_co_authors(message)
         assert len(result) == 1
         assert result[0]["name"] == "GitHub Copilot"

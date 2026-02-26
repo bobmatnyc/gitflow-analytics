@@ -29,7 +29,7 @@ def test_bulk_exists():
     all_commit_hashes = result.stdout.strip().split("\n")[:10]  # First 10 commits
     print(f"Testing with {len(all_commit_hashes)} commit hashes:")
     for i, hash in enumerate(all_commit_hashes):
-        print(f"  {i+1}. {hash}")
+        print(f"  {i + 1}. {hash}")
 
     # Test bulk_exists
     print(f"\nTesting bulk_exists for repo_path: {repo_path}")

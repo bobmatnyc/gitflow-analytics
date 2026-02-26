@@ -133,8 +133,7 @@ def main():
         print("\nTop Security Issues:")
         for i, issue in enumerate(summary["top_issues"][:5], 1):
             print(
-                f"  {i}. {issue['type']} ({issue['severity']}) - "
-                f"{issue['occurrences']} occurrences"
+                f"  {i}. {issue['type']} ({issue['severity']}) - {issue['occurrences']} occurrences"
             )
 
     # Recommendations
