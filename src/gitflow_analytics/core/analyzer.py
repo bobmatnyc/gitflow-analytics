@@ -11,7 +11,7 @@ import git
 from git import Repo
 
 from ..types import FilteredCommitStats
-from ..utils.commit_utils import is_merge_commit
+from ..utils.commit_utils import extract_co_authors, is_merge_commit
 from ..utils.debug import is_debug_mode
 from ..utils.glob_matcher import match_recursive_pattern as _match_recursive_pattern_fn
 from ..utils.glob_matcher import matches_glob_pattern as _matches_glob_pattern_fn
@@ -967,6 +967,13 @@ class GitAnalyzer:
 
         # Extract ticket references
         commit_data["ticket_references"] = self.ticket_extractor.extract_from_text(message_str)
+
+        # Gap 4: Extract Co-authored-by trailers for co-author attribution.
+        # WHY: GitHub, VS Code, and many tools add "Co-authored-by: Name <email>"
+        # trailers when pairs/groups collaborate on a commit.  Without parsing these,
+        # the co-author's work is invisible in the analytics.  We store them so the
+        # identity resolver can credit each co-author with the commit.
+        commit_data["co_authors"] = extract_co_authors(message_str)
 
         # Calculate complexity delta
         commit_data["complexity_delta"] = self._calculate_complexity_delta(commit)

@@ -19,6 +19,7 @@ from ..models.database import (
     PullRequestCache,
     RepositoryAnalysisStatus,
 )
+from ..utils.commit_utils import extract_co_authors as _extract_co_authors_from_message
 from ..utils.debug import is_debug_mode
 
 logger = logging.getLogger(__name__)
@@ -950,12 +951,18 @@ class GitAnalysisCache:
         return cached_at < now_utc - timedelta(hours=self.ttl_hours)
 
     def _commit_to_dict(self, commit: CachedCommit) -> dict[str, Any]:
-        """Convert CachedCommit to dictionary."""
+        """Convert CachedCommit to dictionary.
+
+        Gap 4: Co-author trailers are parsed from the cached commit message
+        so that the identity resolver can credit co-authors even when the
+        commit is served from cache rather than re-analysed from git.
+        """
+        message = commit.message or ""
         return {
             "hash": commit.commit_hash,
             "author_name": commit.author_name,
             "author_email": commit.author_email,
-            "message": commit.message,
+            "message": message,
             "timestamp": commit.timestamp,
             "branch": commit.branch,
             "is_merge": commit.is_merge,
@@ -967,6 +974,9 @@ class GitAnalysisCache:
             "complexity_delta": commit.complexity_delta,
             "story_points": commit.story_points,
             "ticket_references": commit.ticket_references or [],
+            # Gap 4: parse Co-authored-by trailers so co-author attribution
+            # works for cache hits without a full re-analysis pass.
+            "co_authors": _extract_co_authors_from_message(message),
         }
 
     def _pr_to_dict(self, pr: PullRequestCache) -> dict[str, Any]:

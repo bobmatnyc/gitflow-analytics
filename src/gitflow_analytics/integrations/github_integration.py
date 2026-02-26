@@ -202,24 +202,42 @@ class GitHubIntegration:
             if since.tzinfo is None:
                 since = since.replace(tzinfo=timezone.utc)
 
+            from sqlalchemy import or_
+
+            since_naive = since.replace(tzinfo=None)  # Store as naive UTC
             cached_results = (
                 session.query(PullRequestCache)
                 .filter(
                     PullRequestCache.repo_path == repo_name,
-                    PullRequestCache.merged_at >= since.replace(tzinfo=None),  # Store as naive UTC
+                    # Gap 2: include merged PRs AND closed-without-merge PRs in date range
+                    or_(
+                        PullRequestCache.merged_at >= since_naive,
+                        PullRequestCache.created_at >= since_naive,
+                    ),
                 )
                 .all()
             )
 
             for cached_pr in cached_results:
                 if not self._is_pr_stale(cached_pr.cached_at):
+                    merged_at = cached_pr.merged_at
+                    is_merged = merged_at is not None
+
+                    # Gap 2: reconstruct pr_state from cached fields
+                    pr_state = "merged" if is_merged else "closed"
+
                     pr_data = {
                         "number": cached_pr.pr_number,
                         "title": cached_pr.title or "",
                         "description": cached_pr.description or "",
-                        "author": cached_pr.author or "",
+                        # Gap 5: ensure lowercase on cache read too
+                        "author": (cached_pr.author or "").lower(),
                         "created_at": cached_pr.created_at,
-                        "merged_at": cached_pr.merged_at,
+                        "merged_at": merged_at,
+                        "closed_at": getattr(cached_pr, "closed_at", None),
+                        # Gap 2: state fields
+                        "pr_state": pr_state,
+                        "is_merged": is_merged,
                         "story_points": cached_pr.story_points or 0,
                         "labels": cached_pr.labels or [],
                         "commit_hashes": cached_pr.commit_hashes or [],
@@ -280,7 +298,13 @@ class GitHubIntegration:
         return cached_at < stale_threshold
 
     def _get_pull_requests(self, repo, since: datetime) -> list[Any]:
-        """Get pull requests with rate limit handling."""
+        """Get pull requests with rate limit handling.
+
+        WHY (Gap 2): Previously only merged PRs were collected.  Closed-without-merge
+        PRs ("rejected" PRs) are now included so their lifecycle — and the effort spent
+        on them — is reflected in developer metrics.  The ``pr_state`` field added by
+        ``_extract_pr_data`` distinguishes them from merged PRs.
+        """
         prs = []
 
         # Ensure since is timezone-aware for comparison with GitHub's timezone-aware datetimes
@@ -294,8 +318,16 @@ class GitHubIntegration:
                     if pr.updated_at < since:
                         break
 
-                    # Only include PRs that were merged in our time period
                     if pr.merged and pr.merged_at >= since:
+                        # Merged PR — always include
+                        prs.append(pr)
+                    elif (
+                        not pr.merged
+                        and pr.state == "closed"
+                        and pr.closed_at
+                        and pr.closed_at >= since
+                    ):
+                        # Gap 2: Closed-without-merge ("rejected") PR — track it too
                         prs.append(pr)
 
                 return prs
@@ -337,7 +369,10 @@ class GitHubIntegration:
 
         try:
             for review in pr.get_reviews():
-                reviewer_login: str = review.user.login if review.user else "unknown"
+                # Gap 5: Normalize reviewer login to lowercase
+                reviewer_login: str = (
+                    review.user.login.lower() if review.user and review.user.login else "unknown"
+                )
                 state: str = review.state  # APPROVED | CHANGES_REQUESTED | COMMENTED | DISMISSED
 
                 # Track unique reviewers (any meaningful interaction)
@@ -445,13 +480,30 @@ class GitHubIntegration:
         # Get commit SHAs — pr.get_commits() is paginated automatically by PyGitHub
         commit_hashes = [c.sha for c in pr.get_commits()]
 
+        # Gap 5: Normalize author login to lowercase (GitHub usernames are case-insensitive)
+        author_login: str = pr.user.login.lower() if pr.user and pr.user.login else "unknown"
+
+        # Gap 2: Determine PR state — "merged", "closed" (rejected), or "open"
+        if pr.merged:
+            pr_state = "merged"
+        elif pr.state == "closed":
+            pr_state = "closed"  # closed without merge = rejected
+        else:
+            pr_state = pr.state  # "open"
+
         pr_data: dict[str, Any] = {
             "number": pr.number,
             "title": pr.title,
             "description": pr.body,
-            "author": pr.user.login,
+            # Gap 5: lowercase for consistent tracking
+            "author": author_login,
             "created_at": pr.created_at,
             "merged_at": pr.merged_at,
+            # Gap 2: closed_at is set for both merged and closed PRs
+            "closed_at": getattr(pr, "closed_at", None),
+            # Gap 2: explicit state field distinguishes merged vs rejected
+            "pr_state": pr_state,
+            "is_merged": pr.merged,
             "story_points": story_points,
             "labels": [label.name for label in pr.labels],
             "commit_hashes": commit_hashes,

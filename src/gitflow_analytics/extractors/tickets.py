@@ -200,7 +200,7 @@ class TicketExtractor:
                 r"\bcode\s+cleanup\b",
             ],
             "documentation": [
-                r"\b(doc|docs|documentation|readme|comment|comments)\b",
+                r"\b(doc|docs|documentation|readme)\b",
                 r"\b(javadoc|jsdoc|docstring|sphinx)\b",
                 r"\b(manual|guide|tutorial|how-to|howto)\b",
                 r"\b(explain|clarify|describe)\b",
@@ -208,6 +208,10 @@ class TicketExtractor:
                 r"\bupdating\s+readme\b",
                 r"\bdoc\s+update\b",
                 r"\bdocumentation\s+fix\b",
+                # "comment" only matches when paired with doc-context words to avoid
+                # false positives on commits like "add comment to PR" or "remove comment"
+                r"\bcomments?\b.*\b(doc|readme|changelog|docstring)\b",
+                r"\b(doc|readme|changelog|docstring)\b.*\bcomments?\b",
             ],
             "deployment": [
                 r"^deploy:",

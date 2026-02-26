@@ -186,3 +186,173 @@ class TestDatabaseIntegration:
         cache_key = "john@example.com:john doe"
         assert cache_key in resolver._cache
         assert resolver._cache[cache_key] == canonical_id1
+
+
+class TestCoAuthorAttribution:
+    """Tests for Gap 4: Co-authored-by trailer attribution in update_commit_stats."""
+
+    def test_co_author_gets_commit_credit(self, temp_dir):
+        """Co-author listed in the commit trailer receives a commit credit."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commits = [
+            {
+                "author_name": "Alice",
+                "author_email": "alice@example.com",
+                "story_points": 3,
+                "co_authors": [{"name": "Bob", "email": "bob@example.com"}],
+            }
+        ]
+        resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats(ticket_coverage={})
+
+        # Primary author (Alice) gets a commit
+        alice_stats = next(
+            (s for s in stats if s["primary_email"] == "alice@example.com"), None
+        )
+        assert alice_stats is not None, "Alice not found in developer stats"
+        assert alice_stats["total_commits"] >= 1
+
+        # Co-author (Bob) also gets a commit credit
+        bob_stats = next(
+            (s for s in stats if s["primary_email"] == "bob@example.com"), None
+        )
+        assert bob_stats is not None, "Bob not found in developer stats (co-author credit missing)"
+        assert bob_stats["total_commits"] >= 1
+
+    def test_co_author_does_not_receive_story_points(self, temp_dir):
+        """Co-authors do not get story-point double-credit — only the primary author does."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commits = [
+            {
+                "author_name": "Alice",
+                "author_email": "alice@example.com",
+                "story_points": 5,
+                "co_authors": [{"name": "Bob", "email": "bob@example.com"}],
+            }
+        ]
+        resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats(ticket_coverage={})
+
+        alice_stats = next(
+            (s for s in stats if s["primary_email"] == "alice@example.com"), None
+        )
+        bob_stats = next(
+            (s for s in stats if s["primary_email"] == "bob@example.com"), None
+        )
+        assert alice_stats is not None and bob_stats is not None
+
+        # Only Alice gets story points; Bob gets commit credit but no story points
+        assert alice_stats["total_story_points"] == 5
+        assert bob_stats["total_story_points"] == 0
+
+    def test_commit_with_no_co_authors_is_unaffected(self, temp_dir):
+        """Commits without co_authors key behave identically to before Gap 4."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commits = [
+            {
+                "author_name": "Charlie",
+                "author_email": "charlie@example.com",
+                "story_points": 2,
+                # no co_authors key at all
+            }
+        ]
+        resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats(ticket_coverage={})
+        charlie_stats = next(
+            (s for s in stats if s["primary_email"] == "charlie@example.com"), None
+        )
+        assert charlie_stats is not None
+        assert charlie_stats["total_commits"] == 1
+        assert len(stats) == 1  # No phantom co-authors created
+
+    def test_same_email_co_author_as_primary_not_double_counted(self, temp_dir):
+        """If the co-author email matches the primary author, no duplicate credit is given."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commits = [
+            {
+                "author_name": "Dave",
+                "author_email": "dave@example.com",
+                "story_points": 1,
+                "co_authors": [
+                    {"name": "Dave", "email": "dave@example.com"}  # same as author
+                ],
+            }
+        ]
+        resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats(ticket_coverage={})
+        dave_stats = next(
+            (s for s in stats if s["primary_email"] == "dave@example.com"), None
+        )
+        assert dave_stats is not None
+        # Should only count once (same person cannot be both author and co-author)
+        assert dave_stats["total_commits"] == 1
+
+    def test_co_author_ids_added_to_commit(self, temp_dir):
+        """update_commit_stats adds co_author_ids to the commit dict for downstream use."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commit = {
+            "author_name": "Eve",
+            "author_email": "eve@example.com",
+            "story_points": 0,
+            "co_authors": [{"name": "Frank", "email": "frank@example.com"}],
+        }
+        resolver.update_commit_stats([commit])
+
+        assert "co_author_ids" in commit
+        assert len(commit["co_author_ids"]) == 1
+
+    def test_empty_co_authors_list_produces_empty_ids(self, temp_dir):
+        """Explicitly empty co_authors list results in empty co_author_ids."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commit = {
+            "author_name": "Grace",
+            "author_email": "grace@example.com",
+            "story_points": 0,
+            "co_authors": [],
+        }
+        resolver.update_commit_stats([commit])
+
+        assert commit.get("co_author_ids") == []
+
+    def test_multiple_co_authors_all_credited(self, temp_dir):
+        """Every co-author in a commit trailer is credited, not just the first."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commits = [
+            {
+                "author_name": "Lead",
+                "author_email": "lead@example.com",
+                "story_points": 0,
+                "co_authors": [
+                    {"name": "Dev1", "email": "dev1@example.com"},
+                    {"name": "Dev2", "email": "dev2@example.com"},
+                    {"name": "Dev3", "email": "dev3@example.com"},
+                ],
+            }
+        ]
+        resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats(ticket_coverage={})
+        # Lead + 3 co-authors = 4 distinct developers
+        assert len(stats) == 4
+        emails = {s["primary_email"] for s in stats}
+        assert "dev1@example.com" in emails
+        assert "dev2@example.com" in emails
+        assert "dev3@example.com" in emails

@@ -1176,9 +1176,18 @@ class CSVReportGenerator(BaseReportGenerator):
 
         # Process PRs — basic count plus per-author review aggregation
         # Per-developer PR review stats (populated when fetch_pr_reviews=true)
+        # Gap 3: also track prs_reviewed, prs_commented, prs_merged
+
+        # Create lookup for identity resolution (Gap 1)
+        dev_lookup = {dev["canonical_id"]: dev for dev in developer_stats}
+
         dev_pr_review: dict[str, dict[str, Any]] = defaultdict(
             lambda: {
                 "prs_authored": 0,
+                "prs_merged": 0,  # Gap 3: subset of authored that were merged
+                "prs_closed": 0,  # Gap 2: authored PRs closed without merge
+                "prs_reviewed": 0,  # Gap 3: PRs where dev left an approval/change-request
+                "prs_commented": 0,  # Gap 3: PRs where dev left comments (any review type)
                 "total_approvals": 0,
                 "total_change_requests": 0,
                 "total_review_comments": 0,
@@ -1190,12 +1199,29 @@ class CSVReportGenerator(BaseReportGenerator):
 
         for pr in prs:
             author_id = pr.get("canonical_id", pr.get("author", "unknown"))
+
+            # Gap 1: bridge GitHub username → canonical identity using identity resolver
+            if self.identity_resolver and author_id not in dev_lookup:
+                # author_id may be a raw GitHub username — try to resolve it
+                github_username = pr.get("author", "")
+                if github_username:
+                    resolved = self.identity_resolver.resolve_by_github_username(github_username)
+                    if resolved:
+                        author_id = resolved
+
             if author_id in developer_metrics:
                 developer_metrics[author_id]["prs_involved"] += 1
 
             # Collect enhanced review stats keyed by author
             rev = dev_pr_review[author_id]
             rev["prs_authored"] += 1
+
+            # Gap 3: track merged vs closed
+            if pr.get("is_merged") or pr.get("pr_state") == "merged":
+                rev["prs_merged"] += 1
+            elif pr.get("pr_state") == "closed":
+                rev["prs_closed"] += 1
+
             rev["total_approvals"] += pr.get("approvals_count", 0) or 0
             rev["total_change_requests"] += pr.get("change_requests_count", 0) or 0
             rev["total_review_comments"] += pr.get("review_comments", 0) or 0
@@ -1204,6 +1230,41 @@ class CSVReportGenerator(BaseReportGenerator):
             ttfr = pr.get("time_to_first_review_hours")
             if ttfr is not None:
                 rev["ttfr_values"].append(ttfr)
+
+            # Gap 3: attribute reviewer/commenter counts to the reviewing developers
+            # reviewers list contains GitHub logins of anyone who reviewed this PR
+            for reviewer_login in pr.get("reviewers", []):
+                reviewer_login_lower = reviewer_login.lower() if reviewer_login else ""
+                if not reviewer_login_lower:
+                    continue
+
+                # Gap 1: resolve GitHub login → canonical identity
+                reviewer_id: Optional[str] = None
+                if self.identity_resolver:
+                    reviewer_id = self.identity_resolver.resolve_by_github_username(
+                        reviewer_login_lower
+                    )
+                # Fall back to using the login itself as the key
+                if not reviewer_id:
+                    reviewer_id = reviewer_login_lower
+
+                dev_pr_review[reviewer_id]["prs_commented"] += 1
+
+            # Gap 3: approved_by → increment prs_reviewed for each approver
+            for approver_login in pr.get("approved_by", []):
+                approver_login_lower = approver_login.lower() if approver_login else ""
+                if not approver_login_lower:
+                    continue
+
+                approver_id: Optional[str] = None
+                if self.identity_resolver:
+                    approver_id = self.identity_resolver.resolve_by_github_username(
+                        approver_login_lower
+                    )
+                if not approver_id:
+                    approver_id = approver_login_lower
+
+                dev_pr_review[approver_id]["prs_reviewed"] += 1
 
         # Calculate activity scores
         developer_scores = {}
@@ -1259,6 +1320,12 @@ class CSVReportGenerator(BaseReportGenerator):
                 "lines_removed": metrics["lines_removed"],
                 "files_changed": metrics["files_changed"],
                 "unique_tickets": metrics["unique_tickets"],
+                # Gap 3: per-developer PR role breakdown
+                "prs_authored": pr_rev.get("prs_authored", 0),
+                "prs_merged": pr_rev.get("prs_merged", 0),
+                "prs_closed_without_merge": pr_rev.get("prs_closed", 0),
+                "prs_reviewed": pr_rev.get("prs_reviewed", 0),
+                "prs_commented": pr_rev.get("prs_commented", 0),
                 # PR review stats (empty string when review data not collected)
                 "pr_review_comments": pr_rev.get("total_review_comments", "") or "",
                 "pr_general_comments": pr_rev.get("total_pr_comments", "") or "",
@@ -1306,6 +1373,12 @@ class CSVReportGenerator(BaseReportGenerator):
             "lines_removed",
             "files_changed",
             "unique_tickets",
+            # Gap 3: per-developer PR role breakdown
+            "prs_authored",
+            "prs_merged",
+            "prs_closed_without_merge",
+            "prs_reviewed",
+            "prs_commented",
             "pr_review_comments",
             "pr_general_comments",
             "pr_approvals_received",

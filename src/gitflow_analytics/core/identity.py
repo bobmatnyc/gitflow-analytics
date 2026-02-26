@@ -286,6 +286,47 @@ class DeveloperIdentityResolver:
         self._cache.clear()
         self._load_cache()
 
+    def resolve_by_github_username(self, github_username: str) -> Optional[str]:
+        """
+        Look up a canonical ID by GitHub username.
+
+        WHY: PR reviewers/approvers are stored as GitHub logins (e.g. "octocat")
+        but the identity system uses email/name keys.  This bridge method lets PR
+        review activity be attributed to the correct developer identity so per-
+        developer reviewed/approved counts are accurate.
+
+        GitHub logins are case-insensitive, so the lookup normalises to lowercase.
+
+        Args:
+            github_username: GitHub login to look up (case-insensitive).
+
+        Returns:
+            Canonical ID if the username is linked to a known identity, else None.
+        """
+        if not github_username:
+            return None
+
+        username_lower = github_username.lower().strip()
+
+        if not self._database_available:
+            # Search in-memory identities
+            for canonical_id, identity in self._in_memory_identities.items():
+                stored = identity.get("github_username")
+                if stored and stored.lower() == username_lower:
+                    return canonical_id
+            return None
+
+        with self.get_session() as session:
+            identity = (
+                session.query(DeveloperIdentity)
+                .filter(DeveloperIdentity.github_username == username_lower)
+                .first()
+            )
+            if identity:
+                return identity.canonical_id
+
+        return None
+
     def resolve_developer(
         self, name: str, email: str, github_username: Optional[str] = None
     ) -> str:
@@ -302,6 +343,9 @@ class DeveloperIdentityResolver:
         # Normalize inputs
         name = name.strip()
         email = email.lower().strip()
+        # Gap 5: Normalize GitHub login casing — GitHub usernames are case-insensitive
+        if github_username:
+            github_username = github_username.lower().strip()
 
         # Check cache first
         cache_key = f"{email}:{name.lower()}"
@@ -608,7 +652,16 @@ class DeveloperIdentityResolver:
         return sorted(stats, key=lambda x: x["total_commits"], reverse=True)
 
     def update_commit_stats(self, commits: list[dict[str, Any]]):
-        """Update developer statistics based on commits."""
+        """Update developer statistics based on commits.
+
+        Gap 4: Co-author trailer attribution.
+        WHY: When a commit carries ``Co-authored-by:`` trailers, every
+        listed co-author should also receive credit for the commit.  The
+        primary author is resolved as usual; each co-author is resolved
+        through the same identity system and added to ``co_author_ids``
+        on the commit dict so downstream reports can surface the full
+        contributor list.
+        """
         # Aggregate stats by canonical ID
         stats_by_dev = defaultdict(lambda: {"commits": 0, "story_points": 0})
 
@@ -626,6 +679,26 @@ class DeveloperIdentityResolver:
 
             stats_by_dev[canonical_id]["commits"] += 1
             stats_by_dev[canonical_id]["story_points"] += commit.get("story_points", 0) or 0
+
+            # Gap 4: Credit co-authors found in Co-authored-by trailers.
+            co_author_ids: list[str] = []
+            for co_author in commit.get("co_authors", []):
+                co_name = co_author.get("name", "")
+                co_email = co_author.get("email", "")
+                if not co_email:
+                    continue
+                # Skip if this is the same person as the primary author (same email)
+                if co_email.lower() == commit.get("author_email", "").lower():
+                    continue
+                co_id = self.resolve_developer(co_name, co_email)
+                co_author_ids.append(co_id)
+                # Co-author gets commit credit (not story points to avoid double-counting)
+                stats_by_dev[co_id]["commits"] += 1
+                logger.debug(
+                    f"Attributed co-authored commit {commit.get('hash', '')[:8]} "
+                    f"to co-author {co_name} <{co_email}>"
+                )
+            commit["co_author_ids"] = co_author_ids
 
         # Update database
         with self.get_session() as session:

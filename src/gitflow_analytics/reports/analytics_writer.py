@@ -306,11 +306,18 @@ class AnalyticsReportGenerator:
         
         # Sort by total activity
         rows.sort(key=lambda x: x['total_activity_pct'], reverse=True)
-        
-        # Write CSV
-        df = pd.DataFrame(rows)
+
+        # Write CSV — handle empty case with explicit headers so downstream readers don't crash
+        if rows:
+            df = pd.DataFrame(rows)
+        else:
+            df = pd.DataFrame(columns=[
+                'developer', 'project', 'commits', 'lines_changed', 'files_changed',
+                'story_points', 'dev_commit_pct', 'dev_lines_pct', 'dev_files_pct',
+                'proj_commit_pct', 'proj_lines_pct', 'proj_files_pct', 'total_activity_pct',
+            ])
         df.to_csv(output_path, index=False)
-        
+
         return output_path
     
     def generate_qualitative_insights_report(self, commits: List[Dict[str, Any]],
@@ -339,10 +346,13 @@ class AnalyticsReportGenerator:
         dist_insights = self._analyze_work_distribution(commits)
         insights.extend(dist_insights)
         
-        # Write insights to CSV
-        df = pd.DataFrame(insights)
+        # Write insights to CSV — handle empty case with explicit headers
+        if insights:
+            df = pd.DataFrame(insights)
+        else:
+            df = pd.DataFrame(columns=['category', 'insight', 'value', 'impact'])
         df.to_csv(output_path, index=False)
-        
+
         return output_path
     
     def generate_developer_focus_report(self, commits: List[Dict[str, Any]],
@@ -511,11 +521,18 @@ class AnalyticsReportGenerator:
         
         # Sort by focus score
         focus_data.sort(key=lambda x: x['focus_score'], reverse=True)
-        
-        # Write CSV
-        df = pd.DataFrame(focus_data)
+
+        # Write CSV — handle empty case with explicit headers
+        if focus_data:
+            df = pd.DataFrame(focus_data)
+        else:
+            df = pd.DataFrame(columns=[
+                'developer', 'total_commits', 'num_projects', 'primary_project',
+                'primary_project_pct', 'focus_score', 'avg_commit_size', 'peak_hour',
+                'active_weeks', 'commits_per_week',
+            ])
         df.to_csv(output_path, index=False)
-        
+
         return output_path
     
     def generate_weekly_trends_report(self, commits: List[Dict[str, Any]], 
@@ -664,10 +681,18 @@ class AnalyticsReportGenerator:
             }
             rows.append(row)
         
-        # Write main CSV
-        df = pd.DataFrame(rows)
+        # Write main CSV — handle empty case with explicit headers
+        if rows:
+            df = pd.DataFrame(rows)
+        else:
+            df = pd.DataFrame(columns=[
+                'week_start', 'commits', 'active_developers', 'active_projects',
+                'lines_changed', 'story_points', 'commits_change', 'developers_change',
+                'top_project', 'top_developer', 'avg_commits_per_dev', 'avg_lines_per_commit',
+                'developer_trends', 'project_trends',
+            ])
         df.to_csv(output_path, index=False)
-        
+
         # Also generate detailed developer trends CSV with weekly columns
         dev_trends_path = output_path.parent / f'developer_trends_{output_path.stem.split("_")[-1]}.csv'
         dev_trend_rows = []
@@ -807,23 +832,24 @@ class AnalyticsReportGenerator:
         
         # Commit message patterns
         message_lengths = [len(c['message'].split()) for c in commits]
-        avg_message_length = np.mean(message_lengths)
-        
-        if avg_message_length < 5:
-            quality = "Very brief"
-        elif avg_message_length < 10:
-            quality = "Concise"
-        elif avg_message_length < 20:
-            quality = "Detailed"
-        else:
-            quality = "Very detailed"
-        
-        insights.append({
-            'category': 'Quality',
-            'insight': 'Commit message quality',
-            'value': quality,
-            'impact': f"Average {avg_message_length:.1f} words per message"
-        })
+        if message_lengths:
+            avg_message_length = np.mean(message_lengths)
+
+            if avg_message_length < 5:
+                quality = "Very brief"
+            elif avg_message_length < 10:
+                quality = "Concise"
+            elif avg_message_length < 20:
+                quality = "Detailed"
+            else:
+                quality = "Very detailed"
+
+            insights.append({
+                'category': 'Quality',
+                'insight': 'Commit message quality',
+                'value': quality,
+                'impact': f"Average {avg_message_length:.1f} words per message"
+            })
         
         # Ticket coverage insights
         commits_with_tickets = sum(1 for c in commits if c.get('ticket_references'))

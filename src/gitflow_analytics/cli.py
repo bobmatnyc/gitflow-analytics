@@ -2398,38 +2398,20 @@ def analyze(
                         )
 
                         if final_commits == 0:
-                            error_msg = (
-                                "❌ CRITICAL: Initial fetch completed but still 0 commits "
-                                "stored in database"
+                            # No commits in DB after fetch — this is a legitimate scenario when
+                            # the repository genuinely has no commits in the analysis window
+                            # (e.g. --weeks 1 on a quiet repo).  Log a warning and let the
+                            # downstream empty-state path generate empty reports gracefully.
+                            empty_msg = (
+                                f"No commits stored for date range "
+                                f"{start_date.strftime('%Y-%m-%d')} to "
+                                f"{end_date.strftime('%Y-%m-%d')} after initial fetch. "
+                                "Generating empty reports."
                             )
                             if display:
-                                display.print_status(error_msg, "error")
+                                display.print_status(empty_msg, "warning")
                             else:
-                                click.echo(error_msg)
-                            click.echo(
-                                f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
-                            )
-                            click.echo(
-                                f"   📊 Initial fetch stats: {total_commits} commits reported"
-                            )
-                            click.echo(
-                                f"   🗃️ Database result: {final_commits} commits, "
-                                f"{final_batches} batches"
-                            )
-                            click.echo("   🔍 Possible causes:")
-                            click.echo(
-                                "      - Timezone mismatch between commit timestamps "
-                                "and analysis range"
-                            )
-                            click.echo("      - Date filtering excluding all commits")
-                            click.echo("      - Database transaction not committed")
-                            click.echo(
-                                "      - Repository has no commits in the specified time range"
-                            )
-                            raise click.ClickException(
-                                "Initial fetch failed validation - "
-                                "no data available for classification"
-                            )
+                                click.echo(f"   ℹ️  {empty_msg}")
 
                         if display:
                             display.print_status(
@@ -2467,31 +2449,43 @@ def analyze(
                 )
 
                 if pre_classification_commits == 0:
-                    error_msg = (
-                        "❌ PRE-CLASSIFICATION CHECK FAILED: "
-                        "No commits available for batch classification"
+                    # No commits found for the analysis period — generate empty reports gracefully
+                    # rather than crashing with an error. This handles --weeks 1 or other short
+                    # periods where no commits were made.
+                    empty_period_msg = (
+                        f"No commits found in the analysis period "
+                        f"({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}). "
+                        "Generating empty reports."
                     )
                     if display:
-                        display.print_status(error_msg, "error")
+                        display.print_status(empty_period_msg, "warning")
                     else:
-                        click.echo(error_msg)
-                    click.echo(
-                        f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to "
-                        f"{end_date.strftime('%Y-%m-%d')}"
+                        click.echo(f"   ℹ️  {empty_period_msg}")
+
+                    # Set up empty state for report generation and jump past classification
+                    all_commits = []
+                    all_prs = []
+                    all_enrichments = {}
+                    branch_health_metrics = {}
+                    skip_repository_analysis = True
+
+                    # Resolve empty stats so downstream report code has valid objects
+                    identity_resolver.update_commit_stats([])
+                    developer_ticket_coverage = {}
+                    developer_stats = identity_resolver.get_developer_stats(
+                        ticket_coverage=developer_ticket_coverage
                     )
-                    click.echo(
-                        f"   🗃️ Database state: {pre_classification_commits} commits, "
-                        f"{pre_classification_batches} batches"
-                    )
-                    click.echo(
-                        "   💡 This indicates all previous validation and fetch steps "
-                        "failed to store any data"
-                    )
-                    raise click.ClickException(
-                        "No data available for batch classification - cannot proceed"
+                    ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
+                        [], [], display
                     )
 
-                if pre_classification_batches == 0:
+                    # Jump directly to report generation by skipping the rest of the
+                    # use_batch_classification block.  We use a flag checked below.
+                    _skip_batch_classification = True
+                else:
+                    _skip_batch_classification = False
+
+                if not _skip_batch_classification and pre_classification_batches == 0:
                     error_msg = (
                         "❌ PRE-CLASSIFICATION CHECK FAILED: "
                         "No daily batches available for classification"
@@ -3004,25 +2998,46 @@ def analyze(
             display.stop_live_display()
 
         if not all_commits:
+            # No commits in the analysis period — generate empty reports gracefully instead of
+            # exiting early. This handles --weeks 1 on a quiet repo or any other period with
+            # no activity.
+            empty_msg = (
+                f"No commits found in the analysis period "
+                f"({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}). "
+                "Generating empty reports."
+            )
             if display:
-                display.show_error("No commits found in the specified period!")
+                display.print_status(empty_msg, "warning")
             else:
-                click.echo("\n❌ No commits found in the specified period!")
-            return
+                click.echo(f"\n   ℹ️  {empty_msg}")
+
+            # Ensure developer_stats and ticket_analysis are initialized for the empty case.
+            # In the batch path they may already be set; in the traditional path they are not.
+            if developer_stats is None:
+                identity_resolver.update_commit_stats([])
+                developer_stats = identity_resolver.get_developer_stats(ticket_coverage={})
+            if ticket_analysis is None:
+                ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
+                    [], [], display
+                )
+            _run_identity_resolution = False  # Skip identity resolution block below
+        else:
+            _run_identity_resolution = True
 
         # NOTE: Bot exclusion moved to Phase 2 (reporting) to work with canonical_id
         # after identity resolution. This ensures manual identity mappings work correctly.
         # The exclusion logic now happens in report generators using canonical_id field.
 
-        # Update developer statistics
-        if display:
-            display.print_status("Resolving developer identities...", "info")
-        else:
-            click.echo("\n👥 Resolving developer identities...")
+        if _run_identity_resolution:
+            # Update developer statistics
+            if display:
+                display.print_status("Resolving developer identities...", "info")
+            else:
+                click.echo("\n👥 Resolving developer identities...")
 
-        identity_resolver.update_commit_stats(all_commits)
-        # Initialize empty ticket coverage - will be calculated after ticket analysis
-        developer_stats = identity_resolver.get_developer_stats()
+            identity_resolver.update_commit_stats(all_commits)
+            # Initialize empty ticket coverage - will be calculated after ticket analysis
+            developer_stats = identity_resolver.get_developer_stats()
 
         if display:
             display.print_status(f"Identified {len(developer_stats)} unique developers", "success")
@@ -3876,7 +3891,11 @@ def analyze(
             try:
                 logger.debug("Starting weekly classification trends report generation")
                 trends_paths = weekly_trends_writer.generate_weekly_trends_reports(
-                    all_commits, output, weeks, date_suffix
+                    all_commits,
+                    output,
+                    weeks,
+                    date_suffix,
+                    categorize_fn=analyzer.ticket_extractor.categorize_commit,
                 )
                 logger.debug("Weekly classification trends reports completed successfully")
 
@@ -4334,12 +4353,10 @@ def analyze(
             if display:
                 logger.debug("Starting display.show_analysis_summary")
                 display.show_analysis_summary(
-                    total_commits=len(all_commits),
-                    total_prs=len(all_prs),
-                    active_developers=len(developer_stats),
-                    ticket_coverage=ticket_analysis["commit_coverage_pct"],
-                    story_points=total_story_points,
-                    qualitative_analyzed=qualitative_count,
+                    len(all_commits),
+                    len(developer_stats),
+                    ticket_analysis["commits_with_tickets"],
+                    prs=len(all_prs),
                 )
                 logger.debug("display.show_analysis_summary completed successfully")
 

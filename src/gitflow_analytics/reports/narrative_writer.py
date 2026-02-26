@@ -309,6 +309,21 @@ class NarrativeReportGenerator:
             report.write(f"**Generated**: {formatted_time}\n")
             report.write(f"**Analysis Period**: Last {weeks} weeks\n\n")
 
+            # When there are no commits, emit a clear notice and skip the detailed sections.
+            if not commits:
+                report.write("## No Commits Found\n\n")
+                report.write(
+                    "No commits were found in the analysis period. "
+                    "This report has been generated with empty data.\n\n"
+                    "Possible reasons:\n"
+                    "- The repository was quiet during this period\n"
+                    "- The `--weeks` window is too short\n"
+                    "- The date range does not overlap with any commits in the configured repositories\n"
+                )
+                with open(output_path, "w") as f:
+                    f.write(report.getvalue())
+                return output_path
+
             # Executive Summary
             progress_service.set_description(progress_ctx, "Generating Executive Summary")
             report.write("## Executive Summary\n\n")
