@@ -1069,8 +1069,15 @@ class RichProgressDisplay:
 
         for key, name in metric_names.items():
             if key in metrics:
-                value = metrics[key].get("value", "N/A")
-                rating = metrics[key].get("rating", "")
+                metric_data = metrics[key]
+                # Handle both dict format (with 'value' key) and direct float values
+                if isinstance(metric_data, dict):
+                    value = metric_data.get("value", "N/A")
+                    rating = metric_data.get("rating", "")
+                else:
+                    # Direct value (float, int, string)
+                    value = metric_data
+                    rating = ""
                 table.add_row(name, str(value), rating)
 
         self.console.print(table)
