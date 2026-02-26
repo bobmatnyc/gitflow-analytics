@@ -34,7 +34,7 @@ def run_classify(
         A :class:`ClassifyResult` with summary statistics.
     """
     from .classification.batch_classifier import BatchCommitClassifier
-    from .cli import get_week_end, get_week_start
+    from .utils.date_utils import get_week_end, get_week_start
     from .core.cache import GitAnalysisCache
 
     def _emit(msg: str) -> None:

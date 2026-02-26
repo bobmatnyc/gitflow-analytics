@@ -36,7 +36,7 @@ def run_collect(
     Returns:
         A :class:`CollectResult` with summary statistics.
     """
-    from .cli import get_week_end, get_week_start
+    from .utils.date_utils import get_week_end, get_week_start
     from .core.cache import GitAnalysisCache
     from .core.data_fetcher import GitDataFetcher
     from .integrations.orchestrator import IntegrationOrchestrator

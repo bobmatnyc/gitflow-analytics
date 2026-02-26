@@ -39,7 +39,7 @@ def run_report(
     Returns:
         A :class:`ReportResult` with the list of generated file names.
     """
-    from .cli import get_week_end, get_week_start
+    from .utils.date_utils import get_week_end, get_week_start
     from .core.cache import GitAnalysisCache
     from .core.identity import DeveloperIdentityResolver
     from .metrics.dora import DORAMetricsCalculator
