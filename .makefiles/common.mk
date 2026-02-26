@@ -40,7 +40,7 @@ GH := $(shell command -v gh 2>/dev/null)
 # ============================================================================
 # Homebrew Tap Configuration
 # ============================================================================
-HOMEBREW_TAP_DIR := $(HOME)/homebrew-tools
+HOMEBREW_TAP_DIR := $(shell brew --repository bobmatnyc/tools 2>/dev/null || echo "$(HOME)/homebrew-tools")
 HOMEBREW_FORMULA := $(HOMEBREW_TAP_DIR)/Formula/gitflow-analytics.rb
 
 # ============================================================================
