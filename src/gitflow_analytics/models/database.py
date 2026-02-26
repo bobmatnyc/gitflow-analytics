@@ -17,6 +17,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    UniqueConstraint,
     create_engine,
     text,
 )
@@ -980,6 +981,48 @@ class CICDPipelineCache(Base):
             f"status='{self.status}', "
             f"repo='{self.repo_path}')>"
         )
+
+
+class WeeklyFetchStatus(Base):
+    """Track which Monday-aligned ISO weeks have been fetched per repository.
+
+    WHY: Historical weeks never change once committed, so fetching them once is
+    sufficient. This table enables week-granularity incremental fetching: on each
+    run, only weeks absent from this table are fetched from Git, cutting repeat
+    run times from minutes to seconds for large repository sets.
+
+    Design decisions:
+    - week_start is always Monday 00:00:00 UTC (ISO-week alignment)
+    - week_end is always Sunday 23:59:59 UTC
+    - fetch_timestamp records when the row was written for audit/debugging
+    - commit_count is informational — it does NOT gate cache validity
+
+    Uniqueness is on (repository_path, week_start) so a second fetch of the
+    same week UPSERTS rather than duplicates.
+    """
+
+    __tablename__ = "weekly_fetch_status"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Repository identification
+    repository_path = Column(String, nullable=False)
+
+    # Week boundaries (always Monday-aligned UTC)
+    week_start = Column(DateTime(timezone=True), nullable=False)  # Monday 00:00:00 UTC
+    week_end = Column(DateTime(timezone=True), nullable=False)  # Sunday 23:59:59 UTC
+
+    # Metadata recorded at fetch time
+    commit_count = Column(Integer, default=0)  # Informational — commits found in this week
+    fetch_timestamp = Column(
+        DateTime(timezone=True), nullable=False, default=utcnow_tz_aware
+    )  # When this week was fetched
+
+    __table_args__ = (
+        UniqueConstraint("repository_path", "week_start", name="uq_repo_week"),
+        Index("idx_weekly_fetch_repo", "repository_path"),
+        Index("idx_weekly_fetch_week_start", "week_start"),
+    )
 
 
 class SchemaVersion(Base):

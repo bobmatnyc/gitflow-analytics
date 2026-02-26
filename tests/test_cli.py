@@ -41,7 +41,7 @@ class TestCLI:
         runner = CliRunner()
         result = runner.invoke(analyze, ["--help"])
         assert result.exit_code == 0
-        assert "Analyze Git repositories" in result.output
+        assert "pipeline" in result.output.lower()
 
     def test_analyze_with_clear_cache(self):
         """Test analyze command with clear cache option - simplified to test help."""

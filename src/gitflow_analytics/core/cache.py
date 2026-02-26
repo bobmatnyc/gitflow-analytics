@@ -18,6 +18,7 @@ from ..models.database import (
     IssueCache,
     PullRequestCache,
     RepositoryAnalysisStatus,
+    WeeklyFetchStatus,
 )
 from ..utils.commit_utils import extract_co_authors as _extract_co_authors_from_message
 from ..utils.debug import is_debug_mode
@@ -477,6 +478,11 @@ class GitAnalysisCache:
         WHY: Used by --clear-cache flag to force complete re-analysis.
         Returns counts of cleared entries for user feedback.
 
+        BUG FIX: Now also clears WeeklyFetchStatus so that --clear-cache forces
+        a full re-fetch on the next run.  Previously, WeeklyFetchStatus rows
+        survived clear_all_cache, causing the incremental fetcher to believe all
+        weeks were already cached even after an explicit cache clear.
+
         Returns:
             Dictionary with counts of cleared entries by type
         """
@@ -486,19 +492,22 @@ class GitAnalysisCache:
             pr_count = session.query(PullRequestCache).count()
             issue_count = session.query(IssueCache).count()
             status_count = session.query(RepositoryAnalysisStatus).count()
+            weekly_count = session.query(WeeklyFetchStatus).count()
 
             # Clear all entries
             session.query(CachedCommit).delete()
             session.query(PullRequestCache).delete()
             session.query(IssueCache).delete()
             session.query(RepositoryAnalysisStatus).delete()
+            session.query(WeeklyFetchStatus).delete()
 
             return {
                 "commits": commit_count,
                 "pull_requests": pr_count,
                 "issues": issue_count,
                 "repository_status": status_count,
-                "total": commit_count + pr_count + issue_count + status_count,
+                "weekly_fetch_status": weekly_count,
+                "total": commit_count + pr_count + issue_count + status_count + weekly_count,
             }
 
     def get_cache_stats(self) -> dict[str, Any]:
@@ -1391,6 +1400,188 @@ class GitAnalysisCache:
             return total_deletions
         except Exception:
             return 0
+
+    # ---------------------------------------------------------------------------
+    # Week-granularity incremental fetch tracking
+    # ---------------------------------------------------------------------------
+
+    @staticmethod
+    def calculate_weeks(
+        start_date: datetime, end_date: datetime
+    ) -> list[tuple[datetime, datetime]]:
+        """Calculate Monday-aligned ISO weeks covering the date range.
+
+        WHY: Historical weeks never change once committed, so each Monday-to-Sunday
+        week is a discrete cacheable unit. Aligning to Monday boundaries ensures
+        consistent week definitions regardless of when the user runs the tool.
+
+        Args:
+            start_date: Inclusive start of the date range (timezone-aware UTC)
+            end_date: Inclusive end of the date range (timezone-aware UTC)
+
+        Returns:
+            List of (week_start, week_end) tuples where week_start is always
+            Monday 00:00:00 UTC and week_end is always Sunday 23:59:59 UTC.
+            The last tuple's week_end is capped to end_date when end_date
+            falls mid-week.
+        """
+        if start_date.tzinfo is None:
+            start_date = start_date.replace(tzinfo=timezone.utc)
+        if end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=timezone.utc)
+
+        weeks: list[tuple[datetime, datetime]] = []
+        # Align start to Monday of the week containing start_date
+        current = start_date - timedelta(days=start_date.weekday())
+        current = current.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        while current < end_date:
+            week_end = current + timedelta(days=6, hours=23, minutes=59, seconds=59)
+            # Cap the last partial week to end_date so we don't claim we've fetched
+            # future data that doesn't exist yet.
+            capped_end = min(week_end, end_date)
+            weeks.append((current, capped_end))
+            current += timedelta(weeks=1)
+
+        return weeks
+
+    def get_cached_weeks(self, repo_path: str) -> list[tuple[datetime, datetime]]:
+        """Return the (week_start, week_end) pairs already fetched for this repo.
+
+        Args:
+            repo_path: Canonical string form of the repository path.
+
+        Returns:
+            List of (week_start, week_end) tuples for weeks that have a
+            WeeklyFetchStatus row.  Empty list if nothing is cached.
+        """
+        with self.get_session() as session:
+            rows = (
+                session.query(WeeklyFetchStatus.week_start, WeeklyFetchStatus.week_end)
+                .filter(WeeklyFetchStatus.repository_path == repo_path)
+                .all()
+            )
+            return [(row.week_start, row.week_end) for row in rows]
+
+    def get_missing_weeks(
+        self,
+        repo_path: str,
+        required_weeks: list[tuple[datetime, datetime]],
+    ) -> list[tuple[datetime, datetime]]:
+        """Return which of the required weeks are NOT yet cached for this repo.
+
+        WHY: The caller passes the full list of weeks it needs; we return only
+        the subset that must be fetched.  The comparison is done on week_start
+        alone because week_start uniquely identifies a Monday-aligned week.
+
+        NOTE on SQLite timezone handling: SQLite's DateTime column strips tzinfo
+        when reading back values, so the queried week_start values are naive
+        datetimes in UTC.  We normalise both sides to timezone-naive UTC before
+        the set comparison to avoid false "missing" mismatches.
+
+        Args:
+            repo_path: Canonical string form of the repository path.
+            required_weeks: List of (week_start, week_end) tuples the caller needs.
+
+        Returns:
+            Subset of required_weeks that have no WeeklyFetchStatus row yet.
+        """
+        if not required_weeks:
+            return []
+
+        def _to_naive_utc(dt: datetime) -> datetime:
+            """Strip tzinfo after converting to UTC so comparisons are reliable."""
+            if dt.tzinfo is not None:
+                return dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+
+        with self.get_session() as session:
+            # SQLite may return naive datetimes here; normalise defensively.
+            cached_starts = set(
+                _to_naive_utc(row[0])
+                for row in session.query(WeeklyFetchStatus.week_start)
+                .filter(WeeklyFetchStatus.repository_path == repo_path)
+                .all()
+            )
+
+        missing = []
+        for week_start, week_end in required_weeks:
+            if _to_naive_utc(week_start) not in cached_starts:
+                missing.append((week_start, week_end))
+
+        return missing
+
+    def mark_week_cached(
+        self,
+        repo_path: str,
+        week_start: datetime,
+        week_end: datetime,
+        commit_count: int,
+    ) -> None:
+        """Record that a specific ISO week has been fetched for this repo.
+
+        Uses an UPSERT pattern (delete-then-insert inside the same transaction)
+        so that force-refetching a week simply overwrites the previous record.
+
+        Args:
+            repo_path: Canonical string form of the repository path.
+            week_start: Monday 00:00:00 UTC of the week.
+            week_end: Sunday 23:59:59 UTC of the week (may be capped to today).
+            commit_count: Number of commits found during the fetch (informational).
+        """
+        if week_start.tzinfo is None:
+            week_start = week_start.replace(tzinfo=timezone.utc)
+        if week_end.tzinfo is None:
+            week_end = week_end.replace(tzinfo=timezone.utc)
+
+        with self.get_session() as session:
+            # Delete any existing row for this (repo, week_start) pair so we can
+            # re-insert cleanly without hitting the unique constraint.
+            session.query(WeeklyFetchStatus).filter(
+                and_(
+                    WeeklyFetchStatus.repository_path == repo_path,
+                    WeeklyFetchStatus.week_start == week_start,
+                )
+            ).delete(synchronize_session=False)
+
+            session.add(
+                WeeklyFetchStatus(
+                    repository_path=repo_path,
+                    week_start=week_start,
+                    week_end=week_end,
+                    commit_count=commit_count,
+                    fetch_timestamp=datetime.now(timezone.utc),
+                )
+            )
+
+    def clear_weekly_cache(
+        self,
+        repo_path: Optional[str] = None,
+        week_start: Optional[datetime] = None,
+    ) -> int:
+        """Clear WeeklyFetchStatus rows.
+
+        Args:
+            repo_path: If provided, only clear rows for this repository.
+            week_start: If provided (alongside repo_path), clear only the row
+                for this specific week.  Ignored when repo_path is None.
+
+        Returns:
+            Number of rows deleted.
+        """
+        with self.get_session() as session:
+            query = session.query(WeeklyFetchStatus)
+
+            if repo_path is not None:
+                query = query.filter(WeeklyFetchStatus.repository_path == repo_path)
+                if week_start is not None:
+                    ws = (
+                        week_start if week_start.tzinfo else week_start.replace(tzinfo=timezone.utc)
+                    )
+                    query = query.filter(WeeklyFetchStatus.week_start == ws)
+
+            deleted = query.delete(synchronize_session=False)
+            return deleted
 
     def get_repository_analysis_status(
         self,

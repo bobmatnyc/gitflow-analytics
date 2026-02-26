@@ -130,6 +130,7 @@ class GitDataFetcher:
         progress_callback: Optional[callable] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
+        force: bool = False,
     ) -> dict[str, Any]:
         """Fetch all data for a repository and organize by day.
 
@@ -138,6 +139,11 @@ class GitDataFetcher:
         2. All referenced tickets with full metadata
         3. Commit-ticket correlations
         4. Developer identity mappings
+
+        Week-level incremental caching:
+        - The date range is split into Monday-aligned ISO weeks.
+        - Only weeks absent from WeeklyFetchStatus are fetched from Git.
+        - When force=True every week is re-fetched regardless of cache status.
 
         Args:
             repo_path: Path to the Git repository
@@ -148,6 +154,7 @@ class GitDataFetcher:
             progress_callback: Optional callback for progress updates
             start_date: Optional explicit start date (overrides weeks_back calculation)
             end_date: Optional explicit end date (overrides weeks_back calculation)
+            force: If True, re-fetch all weeks even if already cached.
 
         Returns:
             Dictionary containing fetch results and statistics
@@ -165,6 +172,68 @@ class GitDataFetcher:
             logger.debug(
                 f"🔍 DEBUG: Calculated date range from weeks_back: {start_date} to {end_date}"
             )
+
+        # -----------------------------------------------------------------
+        # Week-level incremental fetch gate
+        # -----------------------------------------------------------------
+        required_weeks = self.cache.calculate_weeks(start_date, end_date)
+        repo_path_str = str(repo_path)
+
+        if force:
+            weeks_to_fetch = required_weeks
+            if required_weeks:
+                logger.info(
+                    f"Force mode: re-fetching all {len(required_weeks)} weeks for {repo_path_str}"
+                )
+                # Clear existing weekly status so mark_week_cached can upsert cleanly
+                self.cache.clear_weekly_cache(repo_path=repo_path_str)
+        else:
+            weeks_to_fetch = self.cache.get_missing_weeks(repo_path_str, required_weeks)
+
+        if not weeks_to_fetch:
+            # Every required week is already cached — return a lightweight summary
+            # built from commits already stored in the database.
+            cached_count = self._count_cached_commits(repo_path_str, start_date, end_date)
+            logger.info(
+                f"All {len(required_weeks)} weeks already cached for {repo_path_str} "
+                f"({cached_count} commits)"
+            )
+            return {
+                "project_key": project_key,
+                "repo_path": repo_path_str,
+                "date_range": {"start": start_date, "end": end_date},
+                "stats": {
+                    "total_commits": cached_count,
+                    "stored_commits": cached_count,
+                    "storage_success": True,
+                    "days_with_commits": 0,
+                    "unique_tickets": 0,
+                    "correlations_created": 0,
+                    "batches_created": 0,
+                    "weeks_cached": len(required_weeks),
+                    "weeks_fetched": 0,
+                    "cache_hit": True,
+                },
+                "exclusions": {
+                    "patterns_applied": len(self.exclude_paths),
+                    "enabled": bool(self.exclude_paths),
+                },
+                "daily_commits": {},
+            }
+
+        if len(weeks_to_fetch) < len(required_weeks):
+            cached_week_count = len(required_weeks) - len(weeks_to_fetch)
+            logger.info(
+                f"Incremental fetch: {len(weeks_to_fetch)}/{len(required_weeks)} weeks needed "
+                f"({cached_week_count} weeks already cached) for {repo_path_str}"
+            )
+        else:
+            logger.info(f"Fetching all {len(required_weeks)} weeks for {repo_path_str}")
+
+        # Narrow the date range to only the weeks we need to fetch so that
+        # _fetch_commits_by_day doesn't re-scan weeks we already have.
+        effective_start = min(ws for ws, _ in weeks_to_fetch)
+        effective_end = max(we for _, we in weeks_to_fetch)
 
         # Get progress service for top-level progress tracking
         progress = get_progress_service()
@@ -197,10 +266,16 @@ class GitDataFetcher:
             description=f"📊 Processing repository: {project_key}",
             unit="steps",
         ) as repo_progress_ctx:
-            # Step 1: Fetch commits
+            # Step 1: Fetch commits — use the narrowed date range so we only
+            # scan the weeks that are actually missing from the cache.
             progress.set_description(repo_progress_ctx, f"🔍 {project_key}: Fetching commits")
             daily_commits = self._fetch_commits_by_day(
-                repo_path, project_key, start_date, end_date, branch_patterns, progress_callback
+                repo_path,
+                project_key,
+                effective_start,
+                effective_end,
+                branch_patterns,
+                progress_callback,
             )
             logger.debug(f"🔍 DEBUG: Fetched {len(daily_commits)} days of commits")
             progress.update(repo_progress_ctx)
@@ -297,6 +372,29 @@ class GitDataFetcher:
             finally:
                 session.close()
 
+        # -----------------------------------------------------------------
+        # Mark fetched weeks as cached regardless of commit count.
+        # Even weeks with 0 commits must be marked so we don't re-fetch
+        # them on the next run (the repo simply had no activity that week).
+        # -----------------------------------------------------------------
+        for week_start, week_end in weeks_to_fetch:
+            # Count commits that fall within this specific week
+            week_commit_count = self._count_cached_commits(
+                repo_path_str,
+                week_start,
+                week_end,
+            )
+            try:
+                self.cache.mark_week_cached(
+                    repo_path=repo_path_str,
+                    week_start=week_start,
+                    week_end=week_end,
+                    commit_count=week_commit_count,
+                )
+            except Exception as e:
+                # Non-fatal: next run will just re-fetch this week
+                logger.warning(f"Could not mark week {week_start.date()} as cached: {e}")
+
         results = {
             "project_key": project_key,
             "repo_path": str(repo_path),
@@ -309,6 +407,9 @@ class GitDataFetcher:
                 "unique_tickets": len(ticket_ids),
                 "correlations_created": correlations_created,
                 "batches_created": batches_created,
+                "weeks_cached": len(required_weeks),
+                "weeks_fetched": len(weeks_to_fetch),
+                "cache_hit": False,
             },
             "exclusions": exclusion_stats,
             "daily_commits": daily_commits,  # For immediate use if needed
@@ -335,6 +436,50 @@ class GitDataFetcher:
                 )
 
         return results
+
+    def _count_cached_commits(
+        self,
+        repo_path: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> int:
+        """Count commits already stored in CachedCommit for a repo and date range.
+
+        WHY: Used to populate the informational commit_count field in
+        WeeklyFetchStatus and to produce an accurate summary when all weeks
+        are already cached (avoiding a full Git log scan).
+
+        Args:
+            repo_path: Canonical string form of the repository path.
+            start_date: Inclusive start of the date range (timezone-aware UTC).
+            end_date: Inclusive end of the date range (timezone-aware UTC).
+
+        Returns:
+            Number of CachedCommit rows within the date range.
+        """
+        session = self.database.get_session()
+        try:
+            from sqlalchemy import and_
+
+            from ..models.database import CachedCommit
+
+            count = (
+                session.query(CachedCommit)
+                .filter(
+                    and_(
+                        CachedCommit.repo_path == repo_path,
+                        CachedCommit.timestamp >= start_date,
+                        CachedCommit.timestamp <= end_date,
+                    )
+                )
+                .count()
+            )
+            return count
+        except Exception as e:
+            logger.debug(f"Could not count cached commits for {repo_path}: {e}")
+            return 0
+        finally:
+            session.close()
 
     def _fetch_commits_by_day(
         self,
