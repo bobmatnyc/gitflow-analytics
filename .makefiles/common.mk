@@ -30,6 +30,20 @@ MAGENTA := \033[0;35m
 NC := \033[0m  # No Color
 
 # ============================================================================
+# External Tool Detection
+# ============================================================================
+# uv: fast Python package manager (replaces pip + twine for build/publish)
+UV := $(shell command -v uv 2>/dev/null)
+# gh: GitHub CLI for creating releases and interacting with GitHub API
+GH := $(shell command -v gh 2>/dev/null)
+
+# ============================================================================
+# Homebrew Tap Configuration
+# ============================================================================
+HOMEBREW_TAP_DIR := $(HOME)/homebrew-tools
+HOMEBREW_FORMULA := $(HOMEBREW_TAP_DIR)/Formula/gitflow-analytics.rb
+
+# ============================================================================
 # Environment Detection & Configuration
 # ============================================================================
 # Environment-based configuration system
@@ -94,9 +108,11 @@ export
 # Check if command exists in PATH
 command-exists = $(shell command -v $(1) 2>/dev/null)
 
-# Get current version from _version.py
+# Get current version — read directly from _version.py for reliability.
+# Falls back to version script if _version.py is unavailable.
 ifneq (,$(wildcard $(VERSION_FILE)))
-    VERSION := $(shell $(PYTHON) $(VERSION_SCRIPT) get 2>/dev/null || echo "unknown")
+    VERSION := $(shell grep '__version__' $(VERSION_FILE) | sed 's/.*"\(.*\)"/\1/' 2>/dev/null || \
+                       $(PYTHON) $(VERSION_SCRIPT) get 2>/dev/null || echo "unknown")
 endif
 
 # Get current build number (if BUILD_NUMBER file exists)
