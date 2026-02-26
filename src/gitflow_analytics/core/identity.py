@@ -168,6 +168,8 @@ class DeveloperIdentityResolver:
 
     def _apply_manual_mappings(self, manual_mappings: list[dict[str, Any]]) -> None:
         """Apply manual identity mappings from configuration."""
+        logger.info(f"Applying {len(manual_mappings)} manual identity mappings")
+
         # Handle database unavailable scenario
         if not self._database_available:
             self._apply_manual_mappings_to_memory()
@@ -189,7 +191,12 @@ class DeveloperIdentityResolver:
                 preferred_name = mapping.get("name")  # Optional display name
 
                 if not canonical_email or not aliases:
+                    logger.warning(f"Skipping invalid manual mapping: {mapping}")
                     continue
+
+                logger.info(
+                    f"Processing manual mapping: {preferred_name} → {canonical_email} with {len(aliases)} aliases"
+                )
 
                 # Find or create the canonical identity
                 canonical_identity = (

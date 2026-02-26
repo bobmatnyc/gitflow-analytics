@@ -267,13 +267,14 @@ class ConfigLoader:
             # Convert legacy format to modern format
             for canonical_name, emails in data["developer_aliases"].items():
                 if isinstance(emails, list) and emails:
-                    # Use first email as primary, all as aliases
+                    # Use first email as primary, all emails as aliases
+                    # Note: aliases list includes primary_email to ensure all emails map to canonical identity
                     primary_email = emails[0]
                     data["analysis"]["identity"]["manual_mappings"].append(
                         {"name": canonical_name, "primary_email": primary_email, "aliases": emails}
                     )
-                    logger.debug(
-                        f"Converted legacy alias: {canonical_name} with {len(emails)} email(s)"
+                    logger.info(
+                        f"Converted legacy alias: {canonical_name} → {primary_email} with aliases: {emails}"
                     )
 
             # Remove the old format and warn user
