@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ..core.progress import get_progress_service
-from ..models.database import CachedCommit, DailyCommitBatch, DetailedTicketData
+from ..models.database import CachedCommit, DailyCommitBatch, DetailedTicketData, QualitativeCommitData
 
 logger = logging.getLogger(__name__)
 
@@ -31,36 +31,68 @@ class BatchClassifierImplMixin:
     """
 
     def _classify_weekly_batches(self, weekly_batches: list[DailyCommitBatch]) -> dict[str, Any]:
-        """Classify all batches for a single week with shared context."""
+        """Classify all batches for a single week with shared context.
+
+        Bug B fix: ``weekly_batches`` are ORM objects loaded by
+        ``_get_batches_to_process()`` in a *closed* session.  They are
+        detached, so mutating them and calling ``session.commit()`` here
+        would silently do nothing.  We therefore re-fetch fresh ORM objects
+        using the IDs of the detached instances so that all mutations
+        (classification_status, classified_at) are tracked by the active
+        session and actually written to the database.
+        """
+        # Collect the primary-key IDs from the detached objects so we can
+        # re-fetch them inside the new session below.
+        batch_ids = [batch.id for batch in weekly_batches]
+
         session = self.database.get_session()
         batches_processed = 0
         commits_processed = 0
 
         try:
+            # Re-fetch fresh (attached) ORM objects for this session so that
+            # status updates are actually persisted on commit.
+            live_batches: list[DailyCommitBatch] = (
+                session.query(DailyCommitBatch)
+                .filter(DailyCommitBatch.id.in_(batch_ids))
+                .order_by(DailyCommitBatch.date)
+                .all()
+            )
+
+            # Build a lookup so we can correlate detached metadata with live rows.
+            live_by_id = {b.id: b for b in live_batches}
+
             # Collect all commits for the week
             week_commits = []
-            batch_commit_map = {}  # Maps commit hash to batch
+            batch_commit_map = {}  # Maps commit hash to live batch
 
-            for batch in weekly_batches:
-                # Mark batch as processing
-                batch.classification_status = "processing"
+            for detached_batch in weekly_batches:
+                live_batch = live_by_id.get(detached_batch.id)
+                if live_batch is None:
+                    logger.warning(
+                        f"Batch id={detached_batch.id} not found in re-fetch; skipping"
+                    )
+                    continue
 
-                # Get commits for this day
-                daily_commits = self._get_commits_for_batch(session, batch)
+                # Mark batch as processing (on the live, attached object)
+                live_batch.classification_status = "processing"
+
+                # Get commits for this day (using live_batch for accurate metadata)
+                daily_commits = self._get_commits_for_batch(session, live_batch)
                 week_commits.extend(daily_commits)
 
                 # Track which batch each commit belongs to
                 for commit in daily_commits:
-                    batch_commit_map[commit["commit_hash"]] = batch
+                    batch_commit_map[commit["commit_hash"]] = live_batch
 
             if not week_commits:
                 logger.warning(
-                    f"No commits found for weekly batches (expected {sum(batch.commit_count for batch in weekly_batches)} commits)"
+                    f"No commits found for weekly batches (expected {sum(b.commit_count for b in live_batches)} commits)"
                 )
                 # Mark batches as failed due to missing commits
-                for batch in weekly_batches:
-                    batch.classification_status = "failed"
-                    batch.classified_at = datetime.utcnow()
+                for live_batch in live_batches:
+                    live_batch.classification_status = "failed"
+                    live_batch.classified_at = datetime.now(timezone.utc)
                 session.commit()
                 return {"batches_processed": 0, "commits_processed": 0}
 
@@ -133,10 +165,10 @@ class BatchClassifierImplMixin:
                 self._store_commit_classification(session, commit_result)
                 commits_processed += 1
 
-            # Mark all daily batches as completed
-            for batch in weekly_batches:
-                batch.classification_status = "completed"
-                batch.classified_at = datetime.utcnow()
+            # Mark all daily batches as completed (using live, attached objects)
+            for live_batch in live_batches:
+                live_batch.classification_status = "completed"
+                live_batch.classified_at = datetime.now(timezone.utc)
                 batches_processed += 1
 
             session.commit()
@@ -147,10 +179,14 @@ class BatchClassifierImplMixin:
 
         except Exception as e:
             logger.error(f"Error in weekly batch classification: {e}")
-            # Mark batches as failed
-            for batch in weekly_batches:
-                batch.classification_status = "failed"
-            session.rollback()
+            # Mark batches as failed.  ``live_batches`` may be unbound if the
+            # re-fetch query itself raised, so guard with a try/except.
+            try:
+                for live_batch in live_batches:  # type: ignore[possibly-undefined]
+                    live_batch.classification_status = "failed"
+                session.commit()
+            except Exception:
+                session.rollback()
         finally:
             session.close()
 
@@ -457,7 +493,13 @@ class BatchClassifierImplMixin:
     def _store_commit_classification(
         self, session: Any, classification_result: dict[str, Any]
     ) -> None:
-        """Store classification result in cached commit record."""
+        """Store classification result in the qualitative_commits table.
+
+        WHY: QualitativeCommitData uses commit_id (FK to cached_commits.id) as
+        its primary key.  We look up the CachedCommit row first, then either
+        INSERT a new QualitativeCommitData row or UPDATE the existing one so
+        that re-classification runs are idempotent.
+        """
         try:
             commit_hash = classification_result["commit_hash"]
 
@@ -466,26 +508,61 @@ class BatchClassifierImplMixin:
                 session.query(CachedCommit).filter(CachedCommit.commit_hash == commit_hash).first()
             )
 
-            if cached_commit:
-                # Store classification in ticket_references as temporary solution
-                # In production, this would go in a separate classification table
-                if not hasattr(cached_commit, "classification_data"):
-                    cached_commit.ticket_references = cached_commit.ticket_references or []
-
-                # Add classification data to the record
-                # Note: This is a simplified approach - in production you'd want a separate table
-                {
-                    "category": classification_result["category"],
-                    "confidence": classification_result["confidence"],
-                    "method": classification_result["method"],
-                    "classified_at": datetime.utcnow().isoformat(),
-                    "batch_id": classification_result.get("batch_id"),
-                }
-
-                # Store in a JSON field or separate table in production
-                logger.debug(
-                    f"Classified commit {commit_hash[:7]} as {classification_result['category']}"
+            if not cached_commit:
+                logger.warning(
+                    f"Cannot store classification for {commit_hash[:7]}: commit not found in cache"
                 )
+                return
+
+            # Map batch-classifier category names to QualitativeCommitData fields.
+            # QualitativeCommitData.change_type stores the canonical category string.
+            category = classification_result["category"]
+            confidence = float(classification_result["confidence"])
+            method = classification_result.get("method", "unknown")
+
+            # Upsert: update existing row or create a new one.
+            qualitative = (
+                session.query(QualitativeCommitData)
+                .filter(QualitativeCommitData.commit_id == cached_commit.id)
+                .first()
+            )
+
+            if qualitative:
+                # Update existing classification record
+                qualitative.change_type = category
+                qualitative.change_type_confidence = confidence
+                qualitative.confidence_score = confidence
+                qualitative.processing_method = method
+                qualitative.analyzed_at = datetime.now(timezone.utc)
+            else:
+                # Create new classification record
+                qualitative = QualitativeCommitData(
+                    commit_id=cached_commit.id,
+                    change_type=category,
+                    change_type_confidence=confidence,
+                    # business_domain and domain_confidence are required NOT NULL —
+                    # use sensible defaults when the batch classifier does not provide them.
+                    business_domain="unknown",
+                    domain_confidence=0.0,
+                    risk_level="low",
+                    risk_factors=[],
+                    intent_signals={"batch_id": classification_result.get("batch_id")},
+                    collaboration_patterns={},
+                    technical_context={
+                        "llm_category": classification_result.get("llm_category"),
+                        "llm_confidence": classification_result.get("llm_confidence"),
+                        "error": classification_result.get("error"),
+                    },
+                    processing_method=method,
+                    processing_time_ms=0.0,
+                    confidence_score=confidence,
+                )
+                session.add(qualitative)
+
+            logger.debug(
+                f"Stored classification for commit {commit_hash[:7]}: "
+                f"category={category}, confidence={confidence:.2f}, method={method}"
+            )
 
         except Exception as e:
             logger.error(
