@@ -162,6 +162,8 @@ test_*.sh
 run_*.sh
 validate_*.sh
 analyze_*.py
+# Allow pipeline module files in core/ to be tracked (not ad-hoc scripts)
+!src/gitflow_analytics/core/analyze_pipeline*.py
 # Allow all Python files in scripts/ to be tracked (overrides the rules above for scripts/)
 !scripts/*.py
 mock_*.py

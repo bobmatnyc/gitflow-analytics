@@ -389,16 +389,28 @@ def analyze(
     # This improves CLI startup time from ~2s to <100ms for commands like --help
     from .core.analyzer import GitAnalyzer
     from .core.cache import GitAnalysisCache
-    from .core.git_auth import preflight_git_authentication
     from .core.identity import DeveloperIdentityResolver
     from .core.progress import get_progress_service
-    from .integrations.orchestrator import IntegrationOrchestrator
-    from .metrics.dora import DORAMetricsCalculator
-    from .reports.analytics_writer import AnalyticsReportGenerator
-    from .reports.csv_writer import CSVReportGenerator
-    from .reports.json_exporter import ComprehensiveJSONExporter
-    from .reports.narrative_writer import NarrativeReportGenerator
-    from .reports.weekly_trends_writer import WeeklyTrendsWriter
+
+    # Pipeline stage functions (extracted from this function)
+    from .core.analyze_pipeline import (
+        ClassificationResult,
+        CommitLoadResult,
+        QualitativeResult,
+        analyze_tickets_and_store_metrics,
+        calculate_date_range,
+        classify_commits_batch,
+        discover_repositories,
+        fetch_repositories_batch,
+        generate_all_reports,
+        load_and_validate_config,
+        load_commits_from_db,
+        resolve_developer_identities,
+        run_qualitative_analysis,
+        aggregate_pm_data,
+        validate_batch_state,
+    )
+    from .core.analyze_pipeline_helpers import get_qualitative_config, is_qualitative_enabled
 
     try:
         from ._version import __version__
@@ -424,16 +436,26 @@ def analyze(
         if display:
             display.show_header()
 
-        # Load configuration
+        # ------------------------------------------------------------------
+        # STAGE 1 – Config loading & validation
+        # ------------------------------------------------------------------
         if display:
             display.print_status(f"Loading configuration from {config}...", "info")
         else:
             click.echo(f"📋 Loading configuration from {config}...")
 
         try:
-            cfg = ConfigLoader.load(config)
+            from .config.errors import ConfigurationError
+
+            cfg_result = load_and_validate_config(
+                config=config,
+                enable_pm=enable_pm,
+                disable_pm=disable_pm,
+                pm_platform=pm_platform,
+                cicd_metrics=cicd_metrics,
+                cicd_platforms=cicd_platforms,
+            )
         except (FileNotFoundError, ConfigurationError) as e:
-            # Provide user-friendly guidance for missing config file
             error_msg = str(e)
             if "not found" in error_msg.lower() or isinstance(e, FileNotFoundError):
                 friendly_msg = (
@@ -450,83 +472,39 @@ def analyze(
                     click.echo(friendly_msg, err=True)
                 sys.exit(1)
             else:
-                # Re-raise other configuration errors (they already have good messages)
                 raise
 
-        # Helper function to check if qualitative analysis is enabled
-        # Supports both top-level cfg.qualitative and nested cfg.analysis.qualitative
-        def is_qualitative_enabled() -> bool:
-            """Check if qualitative analysis is enabled in either location."""
-            if cfg.qualitative and cfg.qualitative.enabled:
-                return True
-            return (
-                hasattr(cfg.analysis, "qualitative")
-                and cfg.analysis.qualitative
-                and cfg.analysis.qualitative.enabled
+        cfg = cfg_result.cfg
+        if cfg_result.warnings:
+            warning_msg = "Configuration warnings:\n" + "\n".join(
+                f"• {w}" for w in cfg_result.warnings
             )
+            if display:
+                display.show_warning(warning_msg)
+            else:
+                click.echo("⚠️  Configuration warnings:")
+                for warning in cfg_result.warnings:
+                    click.echo(f"   - {warning}")
 
-        # Helper function to get qualitative config from either location
-        def get_qualitative_config():
-            """Get qualitative config from either top-level or nested location."""
-            if cfg.qualitative:
-                return cfg.qualitative
-            if hasattr(cfg.analysis, "qualitative") and cfg.analysis.qualitative:
-                return cfg.analysis.qualitative
-            return None
-
-        # Apply CLI overrides for PM integration
+        # PM / CI-CD override feedback
         if disable_pm:
-            # Disable PM integration if explicitly requested
-            if cfg.pm_integration:
-                cfg.pm_integration.enabled = False
             if display:
                 display.print_status("PM integration disabled via CLI flag", "info")
             else:
                 click.echo("🚫 PM integration disabled via CLI flag")
         elif enable_pm:
-            # Enable PM integration if explicitly requested
-            if not cfg.pm_integration:
-                from .config import PMIntegrationConfig
-
-                cfg.pm_integration = PMIntegrationConfig(enabled=True)
-            else:
-                cfg.pm_integration.enabled = True
             if display:
                 display.print_status("PM integration enabled via CLI flag", "info")
             else:
                 click.echo("📋 PM integration enabled via CLI flag")
-
-        # Filter PM platforms if specific ones are requested
         if pm_platform and cfg.pm_integration:
-            requested_platforms = set(pm_platform)
-            # Disable platforms not requested
-            for platform_name in list(cfg.pm_integration.platforms.keys()):
-                if platform_name not in requested_platforms:
-                    cfg.pm_integration.platforms[platform_name].enabled = False
             if display:
                 display.print_status(
                     f"PM integration limited to platforms: {', '.join(pm_platform)}", "info"
                 )
             else:
                 click.echo(f"📋 PM integration limited to platforms: {', '.join(pm_platform)}")
-
-        # Apply CLI overrides for CI/CD integration
         if cicd_metrics:
-            # Enable CI/CD integration via CLI flag
-            if not hasattr(cfg, "cicd"):
-                # Create a simple config object with cicd attributes
-                class CICDConfig:
-                    def __init__(self):
-                        self.enabled = True
-                        self.github_actions_enabled = "github-actions" in cicd_platforms
-
-                cfg.cicd = CICDConfig()
-            else:
-                cfg.cicd.enabled = True
-                # Enable requested platforms
-                if "github-actions" in cicd_platforms:
-                    cfg.cicd.github_actions_enabled = True
-
             if display:
                 display.print_status(
                     f"CI/CD metrics enabled for platforms: {', '.join(cicd_platforms)}", "info"
@@ -534,59 +512,22 @@ def analyze(
             else:
                 click.echo(f"🔄 CI/CD metrics enabled for platforms: {', '.join(cicd_platforms)}")
 
-        # Validate configuration
-        warnings = ConfigLoader.validate_config(cfg)
-        if warnings:
-            warning_msg = "Configuration warnings:\n" + "\n".join(f"• {w}" for w in warnings)
-            if display:
-                display.show_warning(warning_msg)
-            else:
-                click.echo("⚠️  Configuration warnings:")
-                for warning in warnings:
-                    click.echo(f"   - {warning}")
-
-        # Determine whether GitHub authentication is required for this analysis run.
-        #
-        # GitHub auth is only needed when the configuration actually exercises
-        # GitHub-specific features:
-        #
-        #   1. Any repository has a github_repo specified — enables PR/issue
-        #      enrichment and CI/CD data fetching via the GitHub API.
-        #   2. GitHub organization discovery is configured — requires a valid
-        #      token to enumerate org repositories.
-        #
-        # Note on CI/CD (github-actions): the orchestrator gates all GitHub
-        # Actions API calls on repo_config.github_repo being set, so enabling
-        # the github-actions platform alone (without any github_repo in the
-        # repos list) is a no-op and does NOT require authentication.
-        def _requires_github_auth() -> bool:
-            """Return True only when GitHub features are actively configured."""
-            # Any repository with a github_repo triggers GitHub API usage.
-            if cfg.repositories and any(
-                getattr(repo, "github_repo", None) for repo in cfg.repositories
-            ):
-                return True
-
-            # GitHub organisation discovery requires a valid token.
-            return bool(cfg.github and cfg.github.organization)
-
-        github_auth_needed = _requires_github_auth()
+        # ------------------------------------------------------------------
+        # STAGE 2 – GitHub authentication pre-flight
+        # ------------------------------------------------------------------
+        github_auth_needed = bool(
+            (cfg.repositories and any(getattr(r, "github_repo", None) for r in cfg.repositories))
+            or (cfg.github and cfg.github.organization)
+        )
 
         if github_auth_needed:
-            # Convert config object to dict for preflight check
-            config_dict = {
-                "github": {
-                    "token": cfg.github.token if cfg.github else None,
-                    "organization": cfg.github.organization if cfg.github else None,
-                }
-            }
-
             if display:
                 display.print_status("Verifying GitHub authentication...", "info")
             else:
                 click.echo("Verifying GitHub authentication...")
+            from .core.analyze_pipeline import check_github_auth
 
-            if not preflight_git_authentication(config_dict):
+            if not check_github_auth(cfg):
                 if display:
                     display.print_status(
                         "GitHub authentication failed. Cannot proceed with analysis.", "error"
@@ -595,7 +536,6 @@ def analyze(
                     click.echo("GitHub authentication failed. Cannot proceed with analysis.")
                 sys.exit(1)
         else:
-            # No GitHub features configured — local-only analysis mode.
             if display:
                 display.print_status(
                     "Running in local-only mode (no GitHub features configured).", "info"
@@ -604,7 +544,7 @@ def analyze(
                 click.echo("Running in local-only mode (no GitHub features configured).")
 
         if validate_only:
-            if not warnings:
+            if not cfg_result.warnings:
                 if display:
                     display.print_status("Configuration is valid!", "success")
                 else:
@@ -618,109 +558,76 @@ def analyze(
                     click.echo("❌ Configuration has issues that should be addressed.")
             return
 
-        # Use output directory from CLI or config
+        # ------------------------------------------------------------------
+        # STAGE 3 – Output directory & display setup
+        # ------------------------------------------------------------------
         if output is None:
-            # cfg.output.directory is already resolved relative to config file by ConfigLoader
             output = cfg.output.directory if cfg.output.directory else Path("./reports")
-
-        # Setup output directory
         output.mkdir(parents=True, exist_ok=True)
 
-        # Show configuration status in rich display
         if display:
             github_org = cfg.github.organization if cfg.github else None
             github_token_valid = bool(cfg.github and cfg.github.token)
             jira_configured = bool(cfg.jira and cfg.jira.base_url)
-            jira_valid = jira_configured  # Simplified validation
-
             display.show_configuration_status(
                 config,
                 github_org=github_org,
                 github_token_valid=github_token_valid,
                 jira_configured=jira_configured,
-                jira_valid=jira_valid,
+                jira_valid=jira_configured,
                 analysis_weeks=weeks,
             )
-
-            # Start full-screen display immediately after showing configuration
-            # This ensures smooth transition for all modes, especially with organization discovery
-            # and prevents console prints from breaking the full-screen experience
             try:
-                # Check if display has the method before calling
                 if hasattr(display, "start_live_display"):
                     display.start_live_display()
                 elif hasattr(display, "start"):
                     display.start(total_items=100, description="Initializing GitFlow Analytics")
-
-                # Add progress task if method exists
                 if hasattr(display, "add_progress_task"):
                     display.add_progress_task("main", "Initializing GitFlow Analytics", 100)
             except Exception as e:
-                # Fall back to simple display if Rich has issues
                 click.echo(f"⚠️ Rich display initialization failed: {e}")
                 click.echo("   Continuing with simple output mode...")
-                # Set display to None to use fallback everywhere
                 display = None
 
-        # Initialize components
+        # ------------------------------------------------------------------
+        # STAGE 4 – Cache initialisation / warm / validate / clear
+        # ------------------------------------------------------------------
         cache_dir = cfg.cache.directory
         cache = GitAnalysisCache(cache_dir, ttl_hours=0 if no_cache else cfg.cache.ttl_hours)
 
         if clear_cache:
             if display and display._live:
-                # We're in full-screen mode, update the task
                 display.update_progress_task("main", description="Clearing cache...", completed=5)
             elif display:
                 display.print_status("Clearing cache...", "info")
             else:
                 click.echo("🗑️  Clearing cache...")
-
             try:
-                # Use the new method that provides detailed feedback
                 cleared_counts = cache.clear_all_cache()
+                msg = (
+                    f"Cache cleared: {cleared_counts['commits']} commits, "
+                    f"{cleared_counts['total']} total"
+                )
                 if display and display._live:
-                    display.update_progress_task(
-                        "main",
-                        description=(
-                            f"Cache cleared: {cleared_counts['commits']} commits, "
-                            f"{cleared_counts['total']} total"
-                        ),
-                        completed=10,
-                    )
+                    display.update_progress_task("main", description=msg, completed=10)
                 elif display:
-                    display.print_status(
-                        f"Cache cleared: {cleared_counts['commits']} commits, "
-                        f"{cleared_counts['repository_status']} repo status records, "
-                        f"{cleared_counts['total']} total entries",
-                        "success",
-                    )
+                    display.print_status(msg, "success")
                 else:
-                    click.echo(
-                        f"✅ Cache cleared: {cleared_counts['commits']} commits, "
-                        f"{cleared_counts['repository_status']} repo status records, "
-                        f"{cleared_counts['total']} total entries"
-                    )
+                    click.echo(f"✅ {msg}")
             except Exception:
-                # Fallback to old method if database methods fail
-                if display:
-                    display.print_status("Using fallback cache clearing...", "info")
-                else:
-                    click.echo("🗑️  Using fallback cache clearing...")
                 import shutil
 
                 if cache_dir.exists():
                     shutil.rmtree(cache_dir)
-                    if display:
-                        display.print_status("Cache directory removed", "success")
-                    else:
-                        click.echo("✅ Cache directory removed")
+                if display:
+                    display.print_status("Cache directory removed", "success")
+                else:
+                    click.echo("✅ Cache directory removed")
 
-        # Handle cache validation if requested
         if validate_cache:
             if display:
                 display.print_status("Validating cache integrity...", "info")
             validation_result = cache.validate_cache()
-
             if display:
                 if validation_result["is_valid"]:
                     display.print_status("✅ Cache validation passed", "success")
@@ -728,233 +635,72 @@ def analyze(
                     display.print_status("❌ Cache validation failed", "error")
                     for issue in validation_result["issues"]:
                         display.print_status(f"  Issue: {issue}", "error")
-
-                if validation_result["warnings"]:
-                    for warning in validation_result["warnings"]:
-                        display.print_status(f"  Warning: {warning}", "warning")
-
-                # Show validation statistics
+                for warning in validation_result.get("warnings", []):
+                    display.print_status(f"  Warning: {warning}", "warning")
                 stats = validation_result["stats"]
-                display.print_status(f"Cache contains {stats['total_commits']} commits", "info")
-                if stats["duplicates"] > 0:
+                display.print_status(
+                    f"Cache contains {stats['total_commits']} commits", "info"
+                )
+                if stats.get("duplicates", 0) > 0:
                     display.print_status(
                         f"Found {stats['duplicates']} duplicate entries", "warning"
                     )
             else:
-                # Simple output when not using rich display
                 if validation_result["is_valid"]:
                     click.echo("✅ Cache validation passed")
                 else:
                     click.echo("❌ Cache validation failed:")
                     for issue in validation_result["issues"]:
                         click.echo(f"  Issue: {issue}")
-
-                if validation_result["warnings"]:
-                    click.echo("Warnings:")
-                    for warning in validation_result["warnings"]:
-                        click.echo(f"  {warning}")
-
-            # Exit after validation if no other action requested
+                for warning in validation_result.get("warnings", []):
+                    click.echo(f"  {warning}")
             if not warm_cache:
                 return
 
-        # Handle cache warming if requested
         if warm_cache:
             if display:
                 display.print_status("Warming cache with all repository commits...", "info")
-
-            # Get all repository paths from configuration
-            repo_paths = []
-            for repo_config in cfg.repositories:
-                repo_paths.append(repo_config.path)
-
+            repo_paths = [rc.path for rc in cfg.repositories]
             warming_result = cache.warm_cache(repo_paths, weeks=weeks)
-
             if display:
                 display.print_status("✅ Cache warming completed", "success")
                 display.print_status(
                     f"  Repositories processed: {warming_result['repos_processed']}", "info"
                 )
                 display.print_status(
-                    f"  Total commits found: {warming_result['total_commits_found']}", "info"
-                )
-                display.print_status(
                     f"  Commits cached: {warming_result['commits_cached']}", "info"
                 )
-                display.print_status(
-                    f"  Already cached: {warming_result['commits_already_cached']}", "info"
-                )
-                display.print_status(
-                    f"  Duration: {warming_result['duration_seconds']:.1f}s", "info"
-                )
-
-                if warming_result["errors"]:
-                    for error in warming_result["errors"]:
-                        display.print_status(f"  Error: {error}", "error")
             else:
-                # Simple output when not using rich display
                 click.echo(
                     f"✅ Cache warming completed in {warming_result['duration_seconds']:.1f}s"
                 )
                 click.echo(f"  Repositories: {warming_result['repos_processed']}")
-                click.echo(f"  Commits found: {warming_result['total_commits_found']}")
                 click.echo(f"  Newly cached: {warming_result['commits_cached']}")
-                click.echo(f"  Already cached: {warming_result['commits_already_cached']}")
-
-                if warming_result["errors"]:
-                    click.echo("Errors encountered:")
+                if warming_result.get("errors"):
                     for error in warming_result["errors"]:
                         click.echo(f"  {error}")
-
-            # Exit after warming unless we're also doing normal analysis
             if validate_only:
                 return
 
-        # Security-only mode: Run only security analysis and exit
+        # ------------------------------------------------------------------
+        # STAGE 5 – Security-only mode
+        # ------------------------------------------------------------------
         if security_only:
-            if display:
-                display.print_status("🔒 Running security-only analysis...", "info")
-            else:
-                click.echo("\n🔒 Running security-only analysis...")
-
-            from .core.data_fetcher import GitDataFetcher
-            from .security import SecurityAnalyzer, SecurityConfig
-            from .security.reports import SecurityReportGenerator
-
-            # GitAnalysisCache already imported at module level (line 24)
-            # Load security configuration
-            security_config = SecurityConfig.from_dict(
-                cfg.analysis.security if hasattr(cfg.analysis, "security") else {}
-            )
-
-            if not security_config.enabled:
-                if display:
-                    display.show_error("Security analysis is not enabled in configuration")
-                else:
-                    click.echo("❌ Security analysis is not enabled in configuration")
-                    click.echo("💡 Add 'security:' section to your config with 'enabled: true'")
-                return
-
-            # Setup cache directory
-            cache_dir = cfg.cache.directory
-            if not cache_dir.is_absolute():
-                cache_dir = config.parent / cache_dir
-            cache_dir.mkdir(parents=True, exist_ok=True)
-
-            # Initialize cache for data fetcher
-            cache = GitAnalysisCache(
-                cache_dir=cache_dir,
-                ttl_hours=cfg.cache.ttl_hours if not no_cache else 0,
-            )
-
-            # Initialize data fetcher for getting commits
-            data_fetcher = GitDataFetcher(
+            _run_security_only_analysis(
+                cfg=cfg,
                 cache=cache,
-                branch_mapping_rules=cfg.analysis.branch_mapping_rules,
-                allowed_ticket_platforms=cfg.get_effective_ticket_platforms(),
-                exclude_paths=cfg.analysis.exclude_paths,
-                exclude_merge_commits=cfg.analysis.exclude_merge_commits,
+                cache_dir=cache_dir,
+                config=config,
+                no_cache=no_cache,
+                output=output,
+                display=display,
+                weeks=weeks,
             )
+            return
 
-            # Get commits from all repositories
-            all_commits = []
-            for repo_config in cfg.repositories:
-                repo_path = Path(repo_config["path"])
-                if not repo_path.exists():
-                    click.echo(f"⚠️  Repository not found: {repo_path}")
-                    continue
-
-                # Bug 3 fix: use Monday-aligned week boundaries so the fetch path
-                # produces the same date range as the main batch-mode analysis path.
-                # Previously this used a raw timedelta rollback that could span a
-                # partial week and misalign with the Monday-to-Sunday windows used
-                # everywhere else.
-                start_date = get_monday_aligned_start(weeks)
-                end_date = get_week_end(start_date + timedelta(weeks=weeks) - timedelta(days=1))
-
-                if display:
-                    display.print_status(f"Fetching commits from {repo_config['name']}...", "info")
-                else:
-                    click.echo(f"📥 Fetching commits from {repo_config['name']}...")
-
-                # Fetch raw data for the repository
-                raw_data = data_fetcher.fetch_raw_data(
-                    repositories=[repo_config],
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-
-                # Extract commits from the raw data
-                commits = raw_data["commits"] if raw_data and raw_data.get("commits") else []
-                all_commits.extend(commits)
-
-            if not all_commits:
-                if display:
-                    display.show_error("No commits found to analyze")
-                else:
-                    click.echo("❌ No commits found to analyze")
-                return
-
-            # Initialize security analyzer
-            security_analyzer = SecurityAnalyzer(config=security_config)
-
-            # Analyze commits for security issues
-            if display:
-                display.print_status(
-                    f"Analyzing {len(all_commits)} commits for security issues...", "info"
-                )
-            else:
-                click.echo(f"\n🔍 Analyzing {len(all_commits)} commits for security issues...")
-
-            analyses = []
-            for commit in all_commits:
-                analysis = security_analyzer.analyze_commit(commit)
-                analyses.append(analysis)
-
-            # Generate summary
-            summary = security_analyzer.generate_summary_report(analyses)
-
-            # Print summary to console
-            click.echo("\n" + "=" * 60)
-            click.echo("SECURITY ANALYSIS SUMMARY")
-            click.echo("=" * 60)
-            click.echo(f"Total Commits Analyzed: {summary['total_commits']}")
-            click.echo(f"Commits with Issues: {summary['commits_with_issues']}")
-            click.echo(f"Total Security Findings: {summary['total_findings']}")
-            click.echo(
-                f"Risk Level: {summary['risk_level']} (Score: {summary['average_risk_score']:.1f})"
-            )
-
-            if summary["severity_distribution"]["critical"] > 0:
-                click.echo(f"\n🔴 Critical Issues: {summary['severity_distribution']['critical']}")
-            if summary["severity_distribution"]["high"] > 0:
-                click.echo(f"🟠 High Issues: {summary['severity_distribution']['high']}")
-            if summary["severity_distribution"]["medium"] > 0:
-                click.echo(f"🟡 Medium Issues: {summary['severity_distribution']['medium']}")
-
-            # Generate reports
-            report_dir = output or Path(cfg.output.directory)
-            report_dir.mkdir(parents=True, exist_ok=True)
-
-            report_gen = SecurityReportGenerator(output_dir=report_dir)
-            reports = report_gen.generate_reports(analyses, summary)
-
-            click.echo("\n✅ Security Reports Generated:")
-            for report_type, path in reports.items():
-                click.echo(f"  - {report_type.upper()}: {path}")
-
-            # Show recommendations
-            if summary["recommendations"]:
-                click.echo("\n💡 Recommendations:")
-                for rec in summary["recommendations"][:5]:
-                    click.echo(f"  {rec}")
-
-            if display:
-                display.print_status("Security analysis completed!", "success")
-
-            return  # Exit after security-only analysis
-
-        # Initialize identity resolver with comprehensive error handling
+        # ------------------------------------------------------------------
+        # STAGE 6 – Identity resolver initialisation
+        # ------------------------------------------------------------------
         identity_db_path = cache_dir / "identities.db"
         try:
             identity_resolver = DeveloperIdentityResolver(
@@ -962,8 +708,6 @@ def analyze(
                 similarity_threshold=cfg.analysis.similarity_threshold,
                 manual_mappings=cfg.analysis.manual_identity_mappings,
             )
-
-            # Check if we're using fallback and inform user
             if (
                 hasattr(identity_resolver, "_database_available")
                 and not identity_resolver._database_available
@@ -974,7 +718,6 @@ def analyze(
                 )
                 click.echo("   Identity mappings will not persist between runs.")
                 click.echo(f"   Check permissions on: {identity_db_path.parent}")
-
             elif (
                 hasattr(identity_resolver.db, "is_readonly_fallback")
                 and identity_resolver.db.is_readonly_fallback
@@ -985,7 +728,6 @@ def analyze(
                 )
                 click.echo("   Identity mappings will not persist between runs.")
                 click.echo(f"   Check permissions on: {identity_db_path.parent}")
-
         except Exception as e:
             click.echo(
                 click.style("❌ Error: ", fg="red", bold=True)
@@ -995,14 +737,11 @@ def analyze(
                 click.style("💡 Fix: ", fg="blue", bold=True) + "Try one of these solutions:"
             )
             click.echo(f"   • Check directory permissions: {cache_dir}")
-            click.echo(f"   • Check available disk space: {cache_dir}")
-            click.echo("   • Run with different cache directory:")
-            click.echo("     export GITFLOW_CACHE_DIR=/tmp/gitflow-cache")
-            click.echo("   • Run in readonly mode (analysis will work, no persistence):")
-            click.echo(f"     chmod -w {cache_dir}")
             raise click.ClickException(f"Identity resolver initialization failed: {e}") from e
 
-        # Prepare ML categorization config for analyzer
+        # ------------------------------------------------------------------
+        # STAGE 7 – Analyzer initialisation
+        # ------------------------------------------------------------------
         ml_config = None
         if hasattr(cfg.analysis, "ml_categorization"):
             ml_config = {
@@ -1017,7 +756,6 @@ def analyze(
                 "spacy_model": cfg.analysis.ml_categorization.spacy_model,
             }
 
-        # LLM classification configuration
         llm_config = {
             "enabled": cfg.analysis.llm_classification.enabled,
             "api_key": cfg.analysis.llm_classification.api_key,
@@ -1032,7 +770,6 @@ def analyze(
             "domain_terms": cfg.analysis.llm_classification.domain_terms,
         }
 
-        # Configure branch analysis
         branch_analysis_config = {
             "strategy": cfg.analysis.branch_analysis.strategy,
             "max_branches_per_repo": cfg.analysis.branch_analysis.max_branches_per_repo,
@@ -1055,125 +792,80 @@ def analyze(
             branch_analysis_config=branch_analysis_config,
             exclude_merge_commits=cfg.analysis.exclude_merge_commits,
         )
-        orchestrator = IntegrationOrchestrator(cfg, cache)
 
-        # Discovery organization repositories if needed
-        repositories_to_analyze = cfg.repositories
-        if cfg.github.organization and not repositories_to_analyze:
+        # ------------------------------------------------------------------
+        # STAGE 8 – Repository discovery (org)
+        # ------------------------------------------------------------------
+        def _discovery_progress(repo_name: str, count: int) -> None:
             if display and display._live:
-                # We're in full-screen mode, update the task
                 display.update_progress_task(
                     "main",
-                    description=(
-                        f"🔍 Discovering repositories from organization: {cfg.github.organization}"
-                    ),
-                    completed=15,
+                    description=f"🔍 Discovering: {repo_name} ({count} repos checked)",
+                    completed=15 + min(count % 5, 4),
                 )
             else:
-                click.echo(
-                    f"🔍 Discovering repositories from organization: {cfg.github.organization}"
-                )
-            try:
-                # Use a 'repos' directory in the config directory for cloned repositories
-                config_dir = Path(config).parent if config else Path.cwd()
-                repos_dir = config_dir / "repos"
+                click.echo(f"\r   📦 Checking repositories... {count}", nl=False)
 
-                # Progress callback for repository discovery
-                def discovery_progress(repo_name, count):
-                    if display and display._live:
-                        display.update_progress_task(
-                            "main",
-                            description=f"🔍 Discovering: {repo_name} ({count} repos checked)",
-                            completed=15 + min(count % 5, 4),  # Show some movement
-                        )
-                    else:
-                        # Simple inline progress - just show count
-                        click.echo(f"\r   📦 Checking repositories... {count}", nl=False)
-
-                discovered_repos = cfg.discover_organization_repositories(
-                    clone_base_path=repos_dir, progress_callback=discovery_progress
-                )
-                repositories_to_analyze = discovered_repos
-
-                # Clear the progress line
-                if not (display and display._live):
-                    click.echo("\r" + " " * 60 + "\r", nl=False)  # Clear line
-
-                if display and display._live:
-                    # We're in full-screen mode, update progress and initialize repo list
-                    display.update_progress_task(
-                        "main",
-                        description=(
-                            f"✅ Found {len(discovered_repos)} repositories in "
-                            f"{cfg.github.organization}"
-                        ),
-                        completed=20,
-                    )
-                    # Initialize repository list for the full-screen display
-                    repo_list = []
-                    for repo in discovered_repos:
-                        repo_list.append({"name": repo.name, "status": "pending"})
-                    display.initialize_repositories(repo_list)
-                else:
-                    click.echo(f"   ✅ Found {len(discovered_repos)} repositories in organization")
-                    for repo in discovered_repos:
-                        status = "exists locally" if repo.path.exists() else "needs cloning"
-                        click.echo(f"      - {repo.name} ({status})")
-            except Exception as e:
-                if display and display._live:
-                    # Update error in full-screen mode
-                    display.update_progress_task(
-                        "main", description=f"❌ Failed to discover repositories: {e}", completed=20
-                    )
-                else:
-                    click.echo(f"   ❌ Failed to discover repositories: {e}")
-                return
-
-        # Analysis period (timezone-aware to match commit timestamps)
-        # Calculate week-aligned boundaries for exact N-week analysis period
-        current_time = datetime.now(timezone.utc)
-
-        # Calculate dates to use last N complete weeks (not including current week)
-        # Get the start of current week, then go back 1 week to get last complete week
-        current_week_start = get_week_start(current_time)
-        last_complete_week_start = current_week_start - timedelta(weeks=1)
-
-        # Start date is N weeks back from the last complete week
-        start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
-
-        # End date is the end of the last complete week (last Sunday)
-        end_date = get_week_end(last_complete_week_start + timedelta(days=6))
-
-        if display:
-            # Update task or initialize repositories in full-screen mode
-            if display._live:
-                # We're in full-screen mode
-                display.update_progress_task(
-                    "main",
-                    description=f"Analyzing {len(repositories_to_analyze)} repositories",
-                    completed=25,
-                )
-                # Initialize repositories if not already done (e.g., when not using org discovery)
-                if not cfg.github.organization or cfg.repositories:
-                    repo_list = [
-                        {
-                            "name": repo.name or repo.project_key or Path(repo.path).name,
-                            "status": "pending",
-                        }
-                        for repo in repositories_to_analyze
-                    ]
-                    display.initialize_repositories(repo_list)
-        else:
-            click.echo(f"\n🚀 Analyzing {len(repositories_to_analyze)} repositories...")
+        if display and display._live:
+            display.update_progress_task(
+                "main",
+                description=(
+                    f"🔍 Discovering repositories from organization: "
+                    f"{cfg.github.organization}"
+                    if cfg.github.organization
+                    else "Preparing analysis"
+                ),
+                completed=15,
+            )
+        elif cfg.github.organization and not cfg.repositories:
             click.echo(
-                f"   Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+                f"🔍 Discovering repositories from organization: {cfg.github.organization}"
             )
 
-        # Initialize variables for both batch and non-batch modes
-        developer_stats = None
-        ticket_analysis = None
+        try:
+            repositories_to_analyze = discover_repositories(cfg, config, _discovery_progress)
+        except Exception as e:
+            if display and display._live:
+                display.update_progress_task(
+                    "main",
+                    description=f"❌ Failed to discover repositories: {e}",
+                    completed=20,
+                )
+            else:
+                click.echo(f"   ❌ Failed to discover repositories: {e}")
+            return
 
-        # Generate configuration hash for cache validation
+        if not (display and display._live):
+            click.echo("")  # clear progress line after discovery
+
+        if display and display._live:
+            display.update_progress_task(
+                "main",
+                description=f"Analyzing {len(repositories_to_analyze)} repositories",
+                completed=25,
+            )
+            repo_list = [
+                {"name": repo.name or repo.project_key or Path(repo.path).name, "status": "pending"}
+                for repo in repositories_to_analyze
+            ]
+            display.initialize_repositories(repo_list)
+        else:
+            click.echo(f"\n🚀 Analyzing {len(repositories_to_analyze)} repositories...")
+
+        # ------------------------------------------------------------------
+        # STAGE 9 – Date range calculation
+        # ------------------------------------------------------------------
+        date_range_result = calculate_date_range(weeks)
+        start_date = date_range_result.start_date
+        end_date = date_range_result.end_date
+
+        if not (display and display._live):
+            click.echo(
+                f"   Period: {start_date.strftime('%Y-%m-%d')} to "
+                f"{end_date.strftime('%Y-%m-%d')}"
+            )
+
+        # Generate config hash for cache validation
         config_hash = cache.generate_config_hash(
             branch_mapping_rules=getattr(cfg.analysis, "branch_mapping_rules", {}),
             ticket_platforms=getattr(
@@ -1190,483 +882,99 @@ def analyze(
             },
         )
 
-        # Check if we should use batch classification (two-step process)
+        # Initialise variables for downstream stages
+        developer_stats: list[dict] = []
+        ticket_analysis: dict = {}
+        all_commits: list[dict] = []
+        all_prs: list = []
+        all_enrichments: dict = {}
+        branch_health_metrics: dict = {}
+
+        # ------------------------------------------------------------------
+        # STAGE 10 – Batch fetch + classify (two-step process)
+        # ------------------------------------------------------------------
         if use_batch_classification:
             if display:
-                # Add the repos task - this will start the display if needed
                 display.add_progress_task(
-                    "repos", "Checking cache and preparing analysis", len(repositories_to_analyze)
+                    "repos", "Checking cache and preparing analysis",
+                    len(repositories_to_analyze),
                 )
             else:
                 click.echo("🔄 Using two-step process: fetch then classify...")
 
-            # Cache-first logic: Check if analysis is already complete
-            repos_needing_analysis = []
-            cached_repos = []
-
-            if not force_fetch:
-                if display:
-                    # Check if display is actually running, if not fall back to simple output
-                    if hasattr(display, "_live") and display._live:
-                        display.update_progress_task(
-                            "repos", description="Checking cache completeness...", completed=0
-                        )
-                    else:
-                        click.echo("🔍 Checking cache completeness...")
-                else:
-                    click.echo("🔍 Checking cache completeness...")
-
-                for repo_config in repositories_to_analyze:
-                    repo_path = str(Path(repo_config.path))
-                    status = cache.get_repository_analysis_status(
-                        repo_path=repo_path,
-                        analysis_start=start_date,
-                        analysis_end=end_date,
-                        config_hash=config_hash,
-                    )
-
-                    if status:
-                        cached_repos.append((repo_config, status))
-                        # In full-screen mode, we'll update repo status via the display
-                    else:
-                        repos_needing_analysis.append(repo_config)
-
-                if cached_repos:
-                    total_cached_commits = sum(status["commit_count"] for _, status in cached_repos)
-                    if display and hasattr(display, "_live") and display._live:
-                        display.update_progress_task(
-                            "repos",
-                            description=(
-                                f"Found {len(cached_repos)} repos with cached data "
-                                f"({total_cached_commits} commits)"
-                            ),
-                            completed=10,
-                        )
-                    else:
-                        click.echo(
-                            f"✅ Found {len(cached_repos)} repos with cached data "
-                            f"({total_cached_commits} commits)"
-                        )
-            else:
-                # Force fetch: analyze all repositories
-                repos_needing_analysis = repositories_to_analyze
-                if display and display._live:
-                    display.update_progress_task(
-                        "repos",
-                        description="Force fetch enabled - analyzing all repositories",
-                        completed=5,
-                    )
-                else:
-                    click.echo("🔄 Force fetch enabled - analyzing all repositories")
-
-            # Initialize counters before fetching (used in validation even if skipped)
-            total_commits = 0
-            total_tickets = 0
-            total_developers = set()
-
-            # Step 1: Fetch data only for repos that need analysis
-            if repos_needing_analysis:
-                if display and display._live:
-                    display.update_progress_task(
-                        "repos",
-                        description=(
-                            f"Step 1: Fetching data for "
-                            f"{len(repos_needing_analysis)} repositories..."
-                        ),
-                        completed=15,
-                    )
-                else:
-                    click.echo(
-                        f"📥 Step 1: Fetching data for "
-                        f"{len(repos_needing_analysis)} repositories..."
-                    )
-
-                # Perform data fetch for repositories that need analysis
-                from .core.data_fetcher import GitDataFetcher
-                from .core.progress import get_progress_service
-
-                data_fetcher = GitDataFetcher(
-                    cache=cache,
-                    branch_mapping_rules=getattr(cfg.analysis, "branch_mapping_rules", {}),
-                    allowed_ticket_platforms=getattr(
-                        cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]
+            # Step 1 – Fetch
+            if display and display._live:
+                display.update_progress_task(
+                    "repos",
+                    description=(
+                        f"Step 1: Fetching data for {len(repositories_to_analyze)} repositories..."
                     ),
-                    exclude_paths=getattr(cfg.analysis, "exclude_paths", None),
-                    exclude_merge_commits=cfg.analysis.exclude_merge_commits,
+                    completed=15,
                 )
-
-                # Initialize integrations for ticket fetching
-                orchestrator = IntegrationOrchestrator(cfg, cache)
-                jira_integration = orchestrator.integrations.get("jira")
-
-                # Progress service already initialized at the start of the function
-                # We can use the progress instance that was created earlier
-
-                # Update the progress task since display is already started
-                if display:
-                    # Update the existing task since display was already started
-                    display.update_progress_task(
-                        "repos",
-                        description=(
-                            f"Step 1: Fetching data for {len(repos_needing_analysis)} repositories"
-                        ),
-                        completed=0,
-                    )
-
-                    # Initialize ALL repositories (both cached and to-be-fetched) with their status
-                    if hasattr(display, "initialize_repositories"):
-                        all_repo_list = []
-
-                        # Add cached repos as COMPLETE
-                        for cached_repo, _ in cached_repos:
-                            repo_name = (
-                                cached_repo.name
-                                or cached_repo.project_key
-                                or Path(cached_repo.path).name
-                            )
-                            all_repo_list.append({"name": repo_name, "status": "complete"})
-
-                        # Add repos needing analysis as PENDING
-                        for repo in repos_needing_analysis:
-                            repo_name = repo.name or repo.project_key or Path(repo.path).name
-                            all_repo_list.append({"name": repo_name, "status": "pending"})
-
-                        display.initialize_repositories(all_repo_list)
-
-                    # Also initialize progress service for compatibility
-                    if progress_style == "rich" or (
-                        progress_style == "auto" and progress._use_rich
-                    ):
-                        progress.start_rich_display(
-                            total_items=len(repos_needing_analysis),
-                            description=f"Analyzing {len(repos_needing_analysis)} repositories",
-                        )
-                        progress.initialize_repositories(
-                            all_repo_list if "all_repo_list" in locals() else []
-                        )
-                        progress.set_phase("Step 1: Data Fetching")
-                else:
-                    # Fallback to progress service if no display
-                    if progress_style == "rich" or (
-                        progress_style == "auto" and progress._use_rich
-                    ):
-                        progress.start_rich_display(
-                            total_items=len(repos_needing_analysis),
-                            description=f"Analyzing {len(repos_needing_analysis)} repositories",
-                        )
-
-                        # Initialize ALL repositories (both cached and to-be-fetched)
-                        # with their status
-                        all_repo_list = []
-
-                        # Add cached repos as COMPLETE
-                        for cached_repo, _ in cached_repos:
-                            repo_name = (
-                                cached_repo.name
-                                or cached_repo.project_key
-                                or Path(cached_repo.path).name
-                            )
-                            all_repo_list.append({"name": repo_name, "status": "complete"})
-
-                        # Add repos needing analysis as PENDING
-                        for repo in repos_needing_analysis:
-                            repo_name = repo.name or repo.project_key or Path(repo.path).name
-                            all_repo_list.append({"name": repo_name, "status": "pending"})
-
-                        progress.initialize_repositories(all_repo_list)
-                        progress.set_phase("Step 1: Data Fetching")
-
-                # Create top-level progress for all repositories
-                with progress.progress(
-                    total=len(repos_needing_analysis),
-                    description="Processing repositories",
-                    unit="repos",
-                ) as repos_progress_ctx:
-                    for idx, repo_config in enumerate(repos_needing_analysis, 1):
-                        try:
-                            repo_path = Path(repo_config.path)
-                            project_key = repo_config.project_key or repo_path.name
-
-                            # Update overall progress description with clear repository info
-                            repo_display_name = repo_config.name or project_key
-                            progress.set_description(
-                                repos_progress_ctx,
-                                f"🔄 Analyzing repository: {repo_display_name} "
-                                f"({idx}/{len(repos_needing_analysis)})",
-                            )
-
-                            # Also update the display if available
-                            if display:
-                                display.update_progress_task(
-                                    "repos",
-                                    description=(
-                                        f"🔄 Processing: {repo_display_name} "
-                                        f"({idx}/{len(repos_needing_analysis)})"
-                                    ),
-                                    completed=idx - 1,
-                                )
-                                # Update repository status to processing
-                                if hasattr(display, "update_repository_status"):
-                                    display.update_repository_status(
-                                        repo_display_name,
-                                        "processing",
-                                        f"Fetching data from {repo_display_name}",
-                                        {},
-                                    )
-
-                            # Progress callback for fetch
-                            def progress_callback(message: str):
-                                if display:
-                                    display.print_status(f"   {message}", "info")
-
-                            # Fetch repository data
-                            # For organization discovery, use branch patterns from analysis config
-                            # Default to ["*"] to analyze all branches when not specified
-                            branch_patterns = None
-                            if hasattr(cfg.analysis, "branch_patterns"):
-                                branch_patterns = cfg.analysis.branch_patterns
-                            elif cfg.github.organization:
-                                # For organization discovery, default to analyzing all branches
-                                branch_patterns = ["*"]
-
-                            result = data_fetcher.fetch_repository_data(
-                                repo_path=repo_path,
-                                project_key=project_key,
-                                weeks_back=weeks,
-                                branch_patterns=branch_patterns,
-                                jira_integration=jira_integration,
-                                progress_callback=progress_callback,
-                                start_date=start_date,
-                                end_date=end_date,
-                                force=force_fetch,
-                            )
-
-                            total_commits += result["stats"]["total_commits"]
-                            total_tickets += result["stats"]["unique_tickets"]
-
-                            # Fetch and enrich with GitHub PRs after data collection
-                            if repo_config.github_repo:
-                                try:
-                                    if display:
-                                        display.print_status(
-                                            "   📥 Fetching pull requests from GitHub...",
-                                            "info",
-                                        )
-
-                                    # Load commits that were just fetched from cache
-                                    with cache.get_session() as session:
-                                        from gitflow_analytics.models.database import CachedCommit
-
-                                        cached_commits = (
-                                            session.query(CachedCommit)
-                                            .filter(
-                                                CachedCommit.repo_path == str(repo_path),
-                                                CachedCommit.timestamp >= start_date,
-                                                CachedCommit.timestamp <= end_date,
-                                            )
-                                            .all()
-                                        )
-
-                                        # Convert to dict format for enrichment
-                                        commits_for_enrichment = []
-                                        for cached_commit in cached_commits:
-                                            commit_dict = {
-                                                "hash": cached_commit.commit_hash,
-                                                "author_name": cached_commit.author_name,
-                                                "author_email": cached_commit.author_email,
-                                                "date": cached_commit.timestamp,
-                                                "message": cached_commit.message,
-                                            }
-                                            commits_for_enrichment.append(commit_dict)
-
-                                    # Enrich with GitHub PR data
-                                    enrichment = orchestrator.enrich_repository_data(
-                                        repo_config, commits_for_enrichment, start_date
-                                    )
-
-                                    if enrichment["prs"]:
-                                        pr_count = len(enrichment["prs"])
-                                        if display:
-                                            display.print_status(
-                                                f"   ✅ Found {pr_count} pull requests",
-                                                "success",
-                                            )
-                                        else:
-                                            click.echo(f"   ✅ Found {pr_count} pull requests")
-
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Failed to fetch PRs for {repo_config.github_repo}: {e}"
-                                    )
-                                    if display:
-                                        display.print_status(
-                                            f"   ⚠️  Could not fetch PRs: {e}",
-                                            "warning",
-                                        )
-                                    else:
-                                        click.echo(f"   ⚠️  Could not fetch PRs: {e}")
-
-                            # Collect unique developers if available
-                            if "developers" in result["stats"]:
-                                total_developers.update(result["stats"]["developers"])
-
-                            # Update Rich display statistics
-                            if progress._use_rich:
-                                progress.update_statistics(
-                                    total_commits=total_commits,
-                                    total_tickets=total_tickets,
-                                    total_developers=len(total_developers),
-                                    total_repositories=len(repos_needing_analysis),
-                                    processed_repositories=idx,
-                                )
-                                # Note: finish_repository is now called in data_fetcher
-
-                            if display:
-                                display.print_status(
-                                    f"   ✅ {project_key}: "
-                                    f"{result['stats']['total_commits']} commits, "
-                                    f"{result['stats']['unique_tickets']} tickets",
-                                    "success",
-                                )
-
-                            # Mark repository analysis as complete
-                            cache.mark_repository_analysis_complete(
-                                repo_path=str(repo_path),
-                                repo_name=repo_config.name,
-                                project_key=project_key,
-                                analysis_start=start_date,
-                                analysis_end=end_date,
-                                weeks_analyzed=weeks,
-                                commit_count=result["stats"]["total_commits"],
-                                ticket_count=result["stats"]["unique_tickets"],
-                                config_hash=config_hash,
-                            )
-
-                            # Update repository status to completed in display
-                            if display and hasattr(display, "update_repository_status"):
-                                repo_display_name = repo_config.name or project_key
-                                display.update_repository_status(
-                                    repo_display_name,
-                                    "completed",
-                                    f"Completed {repo_display_name}",
-                                    {
-                                        "commits": result["stats"]["total_commits"],
-                                        "tickets": result["stats"]["unique_tickets"],
-                                        "developers": len(result["stats"].get("developers", [])),
-                                    },
-                                )
-
-                            # Update overall repository progress
-                            progress.update(repos_progress_ctx)
-
-                        except Exception as e:
-                            if display and display._live:
-                                # Update repository status to error in full-screen mode
-                                if hasattr(display, "update_repository_status"):
-                                    repo_display_name = repo_config.name or project_key
-                                    display.update_repository_status(
-                                        repo_display_name, "error", f"Error: {str(e)}", {}
-                                    )
-                            else:
-                                click.echo(f"   ❌ Error fetching {project_key}: {e}")
-
-                            # Mark repository analysis as failed
-                            with contextlib.suppress(Exception):
-                                cache.mark_repository_analysis_failed(
-                                    repo_path=str(repo_path),
-                                    repo_name=repo_config.name,
-                                    analysis_start=start_date,
-                                    analysis_end=end_date,
-                                    error_message=str(e),
-                                    config_hash=config_hash,
-                                )
-
-                            # Update progress even on failure
-                            progress.update(repos_progress_ctx)
-                            continue
-
-                # Display repository fetch status summary
-                repo_status = data_fetcher.get_repository_status_summary()
-                if repo_status["failed_updates"] > 0 or repo_status["errors"]:
-                    logger.warning(
-                        f"\n⚠️  Repository Update Summary:\n"
-                        f"   • Total repositories: {repo_status['total_repositories']}\n"
-                        f"   • Successful updates: {repo_status['successful_updates']}\n"
-                        f"   • Failed updates: {repo_status['failed_updates']}\n"
-                        f"   • Skipped updates: {repo_status['skipped_updates']}"
-                    )
-                    if repo_status["failed_updates"] > 0:
-                        logger.warning(
-                            "   ⚠️  Some repositories failed to fetch updates. "
-                            "Analysis uses potentially stale data.\n"
-                            "   Check authentication, network connectivity, or try "
-                            "with --skip-remote-fetch."
-                        )
-
-                if display and display._live:
-                    display.update_progress_task(
-                        "repos",
-                        description=(
-                            f"Step 1 complete: {total_commits} commits, "
-                            f"{total_tickets} tickets fetched"
-                        ),
-                        completed=100,
-                    )
-                    # Stop the live display after Step 1
-                    display.stop_live_display()
-                else:
-                    click.echo(
-                        f"📥 Step 1 complete: {total_commits} commits, "
-                        f"{total_tickets} tickets fetched"
-                    )
             else:
-                if display and display._live:
-                    display.update_progress_task(
-                        "repos",
-                        description="All repositories use cached data - skipping data fetch",
-                        completed=100,
-                    )
-                    # Stop the live display if all data was cached
-                    display.stop_live_display()
+                click.echo(
+                    f"📥 Step 1: Fetching data for {len(repositories_to_analyze)} repositories..."
+                )
+
+            fetch_result = fetch_repositories_batch(
+                cfg=cfg,
+                cache=cache,
+                repositories=repositories_to_analyze,
+                start_date=start_date,
+                end_date=end_date,
+                weeks=weeks,
+                config_hash=config_hash,
+                force_fetch=force_fetch,
+                progress_callback=lambda msg: (
+                    display.print_status(f"   {msg}", "info") if display else None
+                ),
+            )
+
+            if display and display._live:
+                display.update_progress_task(
+                    "repos",
+                    description=(
+                        f"Step 1 complete: {fetch_result.total_commits} commits, "
+                        f"{fetch_result.total_tickets} tickets fetched"
+                    ),
+                    completed=100,
+                )
+                display.stop_live_display()
+            else:
+                click.echo(
+                    f"📥 Step 1 complete: {fetch_result.total_commits} commits, "
+                    f"{fetch_result.total_tickets} tickets fetched"
+                )
+
+            # Validate DB state
+            validation_passed, stored_commits, existing_batches = validate_batch_state(
+                cache=cache,
+                start_date=start_date,
+                end_date=end_date,
+                total_commits_fetched=fetch_result.total_commits,
+            )
+
+            if stored_commits == 0:
+                # No commits at all – generate empty reports gracefully
+                empty_msg = (
+                    f"No commits found in the analysis period "
+                    f"({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}). "
+                    "Generating empty reports."
+                )
+                if display:
+                    display.print_status(empty_msg, "warning")
                 else:
-                    click.echo("✅ All repositories use cached data - skipping data fetch")
-
-            # Step 2: Batch classification
-            # ENHANCED VALIDATION: Verify both commits and batches exist before proceeding
-            from sqlalchemy import and_
-
-            from .models.database import CachedCommit, DailyCommitBatch
-
-            validation_passed = False
-
-            with cache.get_session() as session:
-                # Check 1: Verify commits were actually stored for the date range
-                stored_commits = (
-                    session.query(CachedCommit)
-                    .filter(
-                        and_(
-                            CachedCommit.timestamp >= start_date, CachedCommit.timestamp <= end_date
-                        )
-                    )
-                    .count()
+                    click.echo(f"   ℹ️  {empty_msg}")
+                identity_resolver.update_commit_stats([])
+                developer_ticket_coverage: dict = {}
+                developer_stats = identity_resolver.get_developer_stats(
+                    ticket_coverage=developer_ticket_coverage
                 )
-
-                # Check 2: Verify daily batches exist for classification
-                existing_batches = (
-                    session.query(DailyCommitBatch)
-                    .filter(
-                        and_(
-                            DailyCommitBatch.date >= start_date.date(),
-                            DailyCommitBatch.date <= end_date.date(),
-                        )
-                    )
-                    .count()
+                ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
+                    [], [], display
                 )
-
-                # VALIDATION LOGIC
-                if stored_commits > 0 and existing_batches > 0:
-                    # All good - we have both commits and batches
-                    validation_passed = True
+            else:
+                if validation_passed:
                     if display:
                         display.print_status(
                             f"✅ Data validation passed: {stored_commits} commits, "
@@ -1679,614 +987,61 @@ def analyze(
                             f"{existing_batches} batches ready"
                         )
 
-                elif stored_commits > 0 and existing_batches == 0:
-                    # We have commits but no batches - this shouldn't happen but we can recover
-                    if display:
-                        display.print_status(
-                            f"⚠️ Found {stored_commits} commits but no daily batches - "
-                            f"data inconsistency detected",
-                            "warning",
-                        )
-                    else:
-                        click.echo(
-                            f"⚠️ Found {stored_commits} commits but no daily batches - "
-                            f"data inconsistency detected"
-                        )
+                # Step 2 – Classify
+                if display:
+                    display.print_status("Step 2: Batch classification...", "info")
+                    display.start_live_display()
+                    display.add_progress_task(
+                        "repos", f"Classifying batches", existing_batches or 1
+                    )
+                else:
+                    click.echo("🧠 Step 2: Batch classification...")
 
-                elif stored_commits == 0 and total_commits > 0:
-                    # Step 1 claimed success but no commits were stored - critical error
-                    error_msg = (
-                        f"❌ VALIDATION FAILED: Step 1 reported {total_commits} commits "
-                        f"but database contains 0 commits for date range"
+                classification_result = classify_commits_batch(
+                    cfg=cfg,
+                    cache=cache,
+                    repositories=repositories_to_analyze,
+                    start_date=start_date,
+                    end_date=end_date,
+                    force_reclassify=clear_cache,
+                )
+
+                if display:
+                    display.complete_progress_task("repos", "Batch classification complete")
+                    display.stop_live_display()
+                    display.print_status(
+                        f"✅ Batch classification completed: "
+                        f"{classification_result.processed_batches} batches, "
+                        f"{classification_result.total_commits} commits",
+                        "success",
                     )
-                    if display:
-                        display.print_status(error_msg, "error")
-                    else:
-                        click.echo(error_msg)
+                else:
+                    click.echo("   ✅ Batch classification completed:")
                     click.echo(
-                        f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to "
-                        f"{end_date.strftime('%Y-%m-%d')}"
+                        f"      - Processed batches: {classification_result.processed_batches}"
                     )
                     click.echo(
-                        f"   📊 Step 1 stats: {total_commits} commits, {total_tickets} tickets"
-                    )
-                    click.echo(
-                        f"   🗃️ Database reality: {stored_commits} commits, "
-                        f"{existing_batches} batches"
-                    )
-                    click.echo(
-                        "   💡 This suggests a timezone, date filtering, or database storage issue"
-                    )
-                    raise click.ClickException(
-                        "Data validation failed - Step 1 success was misleading"
+                        f"      - Total commits: {classification_result.total_commits}"
                     )
 
-                elif stored_commits == 0 and existing_batches == 0:
-                    # No data at all - need to fetch or explain why
-                    if display:
-                        display.print_status(
-                            "📊 No commits or batches found for date range - "
-                            "proceeding with data fetch",
-                            "warning",
-                        )
-                    else:
-                        click.echo(
-                            "📊 No commits or batches found for date range - "
-                            "proceeding with data fetch"
-                        )
-
-            # PROCEED WITH INITIAL FETCH if validation didn't pass
-            if not validation_passed:
+                # Load classified commits from DB
                 if display:
                     display.print_status(
-                        "Data validation failed - running initial data fetch", "warning"
+                        "Loading classified commits from database...", "info"
                     )
                 else:
-                    click.echo("⚠️ Data validation failed - running initial data fetch")
+                    click.echo("📊 Loading classified commits from database...")
 
-                # Force data fetch for all repositories since we have no batches
-                repos_needing_analysis = repositories_to_analyze
-
-                # Run the data fetch step that was skipped
-                if repos_needing_analysis:
-                    if display:
-                        display.print_status(
-                            f"Initial fetch: Fetching data for "
-                            f"{len(repos_needing_analysis)} repositories...",
-                            "info",
-                        )
-                    else:
-                        click.echo(
-                            f"🚨 Initial fetch: Fetching data for "
-                            f"{len(repos_needing_analysis)} repositories..."
-                        )
-                        click.echo(
-                            "   📋 Reason: Need to ensure commits and batches exist "
-                            "for classification"
-                        )
-
-                    # Perform data fetch for repositories that need analysis
-                    from .core.data_fetcher import GitDataFetcher
-
-                    data_fetcher = GitDataFetcher(
-                        cache=cache,
-                        branch_mapping_rules=getattr(cfg.analysis, "branch_mapping_rules", {}),
-                        allowed_ticket_platforms=getattr(
-                            cfg.analysis,
-                            "ticket_platforms",
-                            ["jira", "github", "clickup", "linear"],
-                        ),
-                        exclude_paths=getattr(cfg.analysis, "exclude_paths", None),
-                        exclude_merge_commits=cfg.analysis.exclude_merge_commits,
-                    )
-
-                    # Initialize integrations for ticket fetching
-                    orchestrator = IntegrationOrchestrator(cfg, cache)
-                    jira_integration = orchestrator.integrations.get("jira")
-
-                    # Fetch data for repositories that need analysis
-                    total_commits = 0
-                    total_tickets = 0
-
-                    for repo_config in repos_needing_analysis:
-                        try:
-                            repo_path = Path(repo_config.path)
-                            project_key = repo_config.project_key or repo_path.name
-
-                            # Check if repo exists, clone if needed (critical for organization mode)
-                            if not repo_path.exists():
-                                if repo_config.github_repo and cfg.github.organization:
-
-                                    def _clone_progress(msg: str) -> None:
-                                        if display:
-                                            display.print_status(f"   {msg}", "info")
-                                        else:
-                                            click.echo(f"   {msg}")
-
-                                    clone_result = clone_repository(
-                                        repo_path=repo_path,
-                                        github_repo=repo_config.github_repo,
-                                        token=cfg.github.token if cfg.github else None,
-                                        branch=getattr(repo_config, "branch", None),
-                                        timeout_seconds=300,
-                                        max_retries=2,
-                                        progress_callback=_clone_progress,
-                                    )
-                                    if not clone_result.success:
-                                        continue  # Skip this repo and move to next
-                                else:
-                                    # No github_repo configured, can't clone
-                                    if display:
-                                        display.print_status(
-                                            f"   ❌ Repository not found: {repo_path}", "error"
-                                        )
-                                    else:
-                                        click.echo(f"   ❌ Repository not found: {repo_path}")
-                                    continue
-
-                            # Progress callback for fetch
-                            def progress_callback(message: str):
-                                if display:
-                                    display.print_status(f"   {message}", "info")
-
-                            # Fetch repository data
-                            # For organization discovery, use branch patterns from analysis config
-                            # Default to ["*"] to analyze all branches when not specified
-                            branch_patterns = None
-                            if hasattr(cfg.analysis, "branch_patterns"):
-                                branch_patterns = cfg.analysis.branch_patterns
-                            elif cfg.github.organization:
-                                # For organization discovery, default to analyzing all branches
-                                branch_patterns = ["*"]
-
-                            result = data_fetcher.fetch_repository_data(
-                                repo_path=repo_path,
-                                project_key=project_key,
-                                weeks_back=weeks,
-                                branch_patterns=branch_patterns,
-                                jira_integration=jira_integration,
-                                progress_callback=progress_callback,
-                                start_date=start_date,
-                                end_date=end_date,
-                                force=force_fetch,
-                            )
-
-                            total_commits += result["stats"]["total_commits"]
-                            total_tickets += result["stats"]["unique_tickets"]
-
-                            # Fetch and enrich with GitHub PRs after data collection
-                            if repo_config.github_repo:
-                                try:
-                                    if display:
-                                        display.print_status(
-                                            "   📥 Fetching pull requests from GitHub...",
-                                            "info",
-                                        )
-
-                                    # Load commits that were just fetched from cache
-                                    with cache.get_session() as session:
-                                        from gitflow_analytics.models.database import CachedCommit
-
-                                        cached_commits = (
-                                            session.query(CachedCommit)
-                                            .filter(
-                                                CachedCommit.repo_path == str(repo_path),
-                                                CachedCommit.timestamp >= start_date,
-                                                CachedCommit.timestamp <= end_date,
-                                            )
-                                            .all()
-                                        )
-
-                                        # Convert to dict format for enrichment
-                                        commits_for_enrichment = []
-                                        for cached_commit in cached_commits:
-                                            commit_dict = {
-                                                "hash": cached_commit.commit_hash,
-                                                "author_name": cached_commit.author_name,
-                                                "author_email": cached_commit.author_email,
-                                                "date": cached_commit.timestamp,
-                                                "message": cached_commit.message,
-                                            }
-                                            commits_for_enrichment.append(commit_dict)
-
-                                    # Enrich with GitHub PR data
-                                    enrichment = orchestrator.enrich_repository_data(
-                                        repo_config, commits_for_enrichment, start_date
-                                    )
-
-                                    if enrichment["prs"]:
-                                        pr_count = len(enrichment["prs"])
-                                        if display:
-                                            display.print_status(
-                                                f"   ✅ Found {pr_count} pull requests",
-                                                "success",
-                                            )
-                                        else:
-                                            click.echo(f"   ✅ Found {pr_count} pull requests")
-
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Failed to fetch PRs for {repo_config.github_repo}: {e}"
-                                    )
-                                    if display:
-                                        display.print_status(
-                                            f"   ⚠️  Could not fetch PRs: {e}",
-                                            "warning",
-                                        )
-                                    else:
-                                        click.echo(f"   ⚠️  Could not fetch PRs: {e}")
-
-                            # Collect unique developers if available
-                            if "developers" in result["stats"]:
-                                total_developers.update(result["stats"]["developers"])
-
-                            # Update Rich display statistics
-                            if progress._use_rich:
-                                progress.update_statistics(
-                                    total_commits=total_commits,
-                                    total_tickets=total_tickets,
-                                    total_developers=len(total_developers),
-                                    total_repositories=len(repos_needing_analysis),
-                                    processed_repositories=idx,
-                                )
-                                # Note: finish_repository is now called in data_fetcher
-
-                            if display:
-                                display.print_status(
-                                    f"   ✅ {project_key}: "
-                                    f"{result['stats']['total_commits']} commits, "
-                                    f"{result['stats']['unique_tickets']} tickets",
-                                    "success",
-                                )
-
-                            # Mark repository analysis as complete
-                            cache.mark_repository_analysis_complete(
-                                repo_path=str(repo_path),
-                                repo_name=repo_config.name,
-                                project_key=project_key,
-                                analysis_start=start_date,
-                                analysis_end=end_date,
-                                weeks_analyzed=weeks,
-                                commit_count=result["stats"]["total_commits"],
-                                ticket_count=result["stats"]["unique_tickets"],
-                                config_hash=config_hash,
-                            )
-
-                        except Exception as e:
-                            if display:
-                                display.print_status(
-                                    f"   ❌ Error fetching {project_key}: {e}",
-                                    "error",
-                                )
-                            else:
-                                click.echo(f"   ❌ Error fetching {project_key}: {e}")
-                            continue
-
-                    if display:
-                        display.print_status(
-                            f"Initial fetch complete: {total_commits} commits, "
-                            f"{total_tickets} tickets",
-                            "success",
-                        )
-                    else:
-                        click.echo(
-                            f"🚨 Initial fetch complete: {total_commits} commits, "
-                            f"{total_tickets} tickets"
-                        )
-
-                    # RE-VALIDATE after initial fetch
-                    with cache.get_session() as session:
-                        final_commits = (
-                            session.query(CachedCommit)
-                            .filter(
-                                and_(
-                                    CachedCommit.timestamp >= start_date,
-                                    CachedCommit.timestamp <= end_date,
-                                )
-                            )
-                            .count()
-                        )
-
-                        final_batches = (
-                            session.query(DailyCommitBatch)
-                            .filter(
-                                and_(
-                                    DailyCommitBatch.date >= start_date.date(),
-                                    DailyCommitBatch.date <= end_date.date(),
-                                )
-                            )
-                            .count()
-                        )
-
-                        if final_commits == 0:
-                            # No commits in DB after fetch — this is a legitimate scenario when
-                            # the repository genuinely has no commits in the analysis window
-                            # (e.g. --weeks 1 on a quiet repo).  Log a warning and let the
-                            # downstream empty-state path generate empty reports gracefully.
-                            empty_msg = (
-                                f"No commits stored for date range "
-                                f"{start_date.strftime('%Y-%m-%d')} to "
-                                f"{end_date.strftime('%Y-%m-%d')} after initial fetch. "
-                                "Generating empty reports."
-                            )
-                            if display:
-                                display.print_status(empty_msg, "warning")
-                            else:
-                                click.echo(f"   ℹ️  {empty_msg}")
-
-                        if display:
-                            display.print_status(
-                                f"✅ Post-fetch validation: {final_commits} commits, "
-                                f"{final_batches} batches confirmed",
-                                "success",
-                            )
-                        else:
-                            click.echo(
-                                f"✅ Post-fetch validation: {final_commits} commits, "
-                                f"{final_batches} batches confirmed"
-                            )
-
-            # FINAL PRE-CLASSIFICATION CHECK: Ensure we have data before starting batch classifier
-            with cache.get_session() as session:
-                pre_classification_commits = (
-                    session.query(CachedCommit)
-                    .filter(
-                        and_(
-                            CachedCommit.timestamp >= start_date, CachedCommit.timestamp <= end_date
-                        )
-                    )
-                    .count()
+                commit_load = load_commits_from_db(
+                    cache=cache,
+                    repositories=repositories_to_analyze,
+                    start_date=start_date,
+                    end_date=end_date,
                 )
-
-                pre_classification_batches = (
-                    session.query(DailyCommitBatch)
-                    .filter(
-                        and_(
-                            DailyCommitBatch.date >= start_date.date(),
-                            DailyCommitBatch.date <= end_date.date(),
-                        )
-                    )
-                    .count()
-                )
-
-                if pre_classification_commits == 0:
-                    # No commits found for the analysis period — generate empty reports gracefully
-                    # rather than crashing with an error. This handles --weeks 1 or other short
-                    # periods where no commits were made.
-                    empty_period_msg = (
-                        f"No commits found in the analysis period "
-                        f"({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}). "
-                        "Generating empty reports."
-                    )
-                    if display:
-                        display.print_status(empty_period_msg, "warning")
-                    else:
-                        click.echo(f"   ℹ️  {empty_period_msg}")
-
-                    # Set up empty state for report generation and jump past classification
-                    all_commits = []
-                    all_prs = []
-                    all_enrichments = {}
-                    branch_health_metrics = {}
-                    skip_repository_analysis = True
-
-                    # Resolve empty stats so downstream report code has valid objects
-                    identity_resolver.update_commit_stats([])
-                    developer_ticket_coverage = {}
-                    developer_stats = identity_resolver.get_developer_stats(
-                        ticket_coverage=developer_ticket_coverage
-                    )
-                    ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
-                        [], [], display
-                    )
-
-                    # Jump directly to report generation by skipping the rest of the
-                    # use_batch_classification block.  We use a flag checked below.
-                    _skip_batch_classification = True
-                else:
-                    _skip_batch_classification = False
-
-                if not _skip_batch_classification and pre_classification_batches == 0:
-                    error_msg = (
-                        "❌ PRE-CLASSIFICATION CHECK FAILED: "
-                        "No daily batches available for classification"
-                    )
-                    if display:
-                        display.print_status(error_msg, "error")
-                    else:
-                        click.echo(error_msg)
-                    click.echo(
-                        f"   📅 Date range: {start_date.strftime('%Y-%m-%d')} to "
-                        f"{end_date.strftime('%Y-%m-%d')}"
-                    )
-                    click.echo(
-                        f"   🗃️ Database state: {pre_classification_commits} commits, "
-                        f"{pre_classification_batches} batches"
-                    )
-                    click.echo("   💡 Commits exist but no daily batches - batch creation failed")
-                    raise click.ClickException(
-                        "No batches available for classification - batch creation process failed"
-                    )
-
-            if display:
-                display.print_status("Step 2: Batch classification...", "info")
-                # Restart the full-screen live display for Step 2
-                display.start_live_display()
-                # Get total number of batches to process
-                with cache.get_session() as session:
-                    total_batches = (
-                        session.query(DailyCommitBatch)
-                        .filter(
-                            and_(
-                                DailyCommitBatch.date >= start_date.date(),
-                                DailyCommitBatch.date <= end_date.date(),
-                            )
-                        )
-                        .count()
-                    )
-                display.add_progress_task(
-                    "repos",  # Use "repos" task id to trigger the full display
-                    f"Classifying {total_batches} batches",
-                    total_batches,
-                )
-                # Reinitialize repositories for Step 2 display
-                if hasattr(display, "initialize_repositories"):
-                    # Create a list of "batches" to display
-                    batch_list = []
-                    for repo in repositories_to_analyze:
-                        repo_name = repo.name or repo.project_key or Path(repo.path).name
-                        batch_list.append({"name": f"{repo_name} batches", "status": "pending"})
-                    display.initialize_repositories(batch_list)
-            else:
-                click.echo("🧠 Step 2: Batch classification...")
-
-            # Use batch classifier instead of regular analyzer
-            from .classification.batch_classifier import BatchCommitClassifier
-
-            # Extract LLM config for batch classifier
-            llm_config = {
-                "enabled": cfg.analysis.llm_classification.enabled,
-                "api_key": cfg.analysis.llm_classification.api_key,
-                "model": cfg.analysis.llm_classification.model,
-                "confidence_threshold": cfg.analysis.llm_classification.confidence_threshold,
-                "max_tokens": cfg.analysis.llm_classification.max_tokens,
-                "temperature": cfg.analysis.llm_classification.temperature,
-                "timeout_seconds": cfg.analysis.llm_classification.timeout_seconds,
-                "cache_duration_days": cfg.analysis.llm_classification.cache_duration_days,
-                "enable_caching": cfg.analysis.llm_classification.enable_caching,
-                "max_daily_requests": cfg.analysis.llm_classification.max_daily_requests,
-            }
-
-            batch_classifier = BatchCommitClassifier(
-                cache_dir=cfg.cache.directory,
-                llm_config=llm_config,
-                batch_size=50,
-                confidence_threshold=(cfg.analysis.llm_classification.confidence_threshold),
-                fallback_enabled=True,
-            )
-
-            # Get project keys from repositories
-            project_keys = []
-            for repo_config in repositories_to_analyze:
-                project_key = repo_config.project_key or repo_config.name
-                project_keys.append(project_key)
-
-            # Run batch classification
-            # Note: The batch classifier will create its own progress bars,
-            # but our display should remain active
-            classification_result = batch_classifier.classify_date_range(
-                start_date=start_date,
-                end_date=end_date,
-                project_keys=project_keys,
-                force_reclassify=clear_cache,
-            )
-
-            # Update display progress after classification
-            if display and hasattr(display, "update_progress_task"):
-                display.update_progress_task(
-                    "repos",
-                    completed=total_batches if "total_batches" in locals() else 0,
-                )
-
-            if display:
-                # Complete the progress task and stop the live display
-                display.complete_progress_task("repos", "Batch classification complete")
-                display.stop_live_display()
-                display.print_status(
-                    f"✅ Batch classification completed: "
-                    f"{classification_result['processed_batches']} batches, "
-                    f"{classification_result['total_commits']} commits",
-                    "success",
-                )
-            else:
-                click.echo("   ✅ Batch classification completed:")
-                click.echo(
-                    f"      - Processed batches: {classification_result['processed_batches']}"
-                )
-                click.echo(f"      - Total commits: {classification_result['total_commits']}")
-
-            # Display LLM usage statistics if available
-            if hasattr(batch_classifier, "llm_classifier"):
-                llm_stats = batch_classifier.llm_classifier.get_statistics()
-                if llm_stats.get("api_calls_made", 0) > 0:
-                    click.echo("\n📊 LLM Classification Statistics:")
-                    click.echo(f"   - Model: {llm_stats.get('model', 'Unknown')}")
-                    click.echo(f"   - API calls: {llm_stats.get('api_calls_made', 0)}")
-                    click.echo(f"   - Total tokens: {llm_stats.get('total_tokens_used', 0):,}")
-                    click.echo(f"   - Total cost: ${llm_stats.get('total_cost', 0):.4f}")
-                    click.echo(
-                        f"   - Avg tokens/call: {llm_stats.get('average_tokens_per_call', 0):.0f}"
-                    )
-
-                    # Show cache statistics if available
-                    cache_stats = llm_stats.get("cache_statistics", {})
-                    if cache_stats.get("active_entries", 0) > 0:
-                        click.echo(
-                            f"   - Cache hits: {cache_stats.get('active_entries', 0)} cached predictions"
-                        )
-
-            # Skip to report generation by setting empty collections but continue with the flow
-            # The reports will read from the database instead of memory
-            all_commits = []
-            all_prs = []
-            all_enrichments = {}
-            branch_health_metrics = {}
-
-            # Skip repository analysis loop by setting a flag
-            skip_repository_analysis = True
-
-            # Load classified commits from database for report generation
-            if display:
-                display.print_status("Loading classified commits from database...", "info")
-            else:
-                click.echo("📊 Loading classified commits from database...")
-
-            # Load commits from cache for the analysis period
-            with cache.get_session() as session:
-                from sqlalchemy import and_
-
-                from .models.database import CachedCommit
-
-                # Query commits for the analysis period across all repositories
-                cached_commits = (
-                    session.query(CachedCommit)
-                    .filter(
-                        and_(
-                            CachedCommit.timestamp >= start_date,
-                            CachedCommit.timestamp <= end_date,
-                            # Filter by project repositories if needed
-                            CachedCommit.repo_path.in_(
-                                [str(Path(repo.path)) for repo in repositories_to_analyze]
-                            ),
-                        )
-                    )
-                    .order_by(CachedCommit.timestamp.desc())
-                    .all()
-                )
-
-                # Convert cached commits to the format expected by reports
-                all_commits = []
-                for cached_commit in cached_commits:
-                    commit_dict = cache._commit_to_dict(cached_commit)
-                    # Ensure required fields for report generation
-                    if "project_key" not in commit_dict:
-                        # Infer project key from repo path
-                        repo_path = Path(cached_commit.repo_path)
-                        # Find matching repository config
-                        for repo_config in repositories_to_analyze:
-                            if repo_config.path == repo_path:
-                                commit_dict["project_key"] = (
-                                    repo_config.project_key or repo_config.name
-                                )
-                                break
-                        else:
-                            commit_dict["project_key"] = repo_path.name
-
-                    # Add canonical_id field needed for reports
-                    # This will be properly resolved by identity_resolver later
-                    commit_dict["canonical_id"] = cached_commit.author_email or "unknown"
-
-                    all_commits.append(commit_dict)
+                all_commits = commit_load.all_commits
+                all_prs = commit_load.all_prs
+                all_enrichments = commit_load.all_enrichments
+                branch_health_metrics = commit_load.branch_health_metrics
 
                 if display and display._live:
                     display.update_progress_task(
@@ -2295,91 +1050,87 @@ def analyze(
                         completed=85,
                     )
                 else:
-                    click.echo(f"✅ Loaded {len(all_commits)} classified commits from database")
+                    click.echo(
+                        f"✅ Loaded {len(all_commits)} classified commits from database"
+                    )
 
-            # Process the loaded commits to generate required statistics
-            # Update developer identities
-            if display and display._live:
-                display.update_progress_task(
-                    "main", description="Processing developer identities...", completed=90
+                # Identity resolution
+                if display and display._live:
+                    display.update_progress_task(
+                        "main",
+                        description="Processing developer identities...",
+                        completed=90,
+                    )
+                else:
+                    click.echo("👥 Processing developer identities...")
+
+                identity_result = resolve_developer_identities(
+                    identity_resolver=identity_resolver,
+                    all_commits=all_commits,
+                    ticket_extractor=analyzer.ticket_extractor,
                 )
-            else:
-                click.echo("👥 Processing developer identities...")
+                developer_stats = identity_result.developer_stats
+                developer_ticket_coverage = identity_result.developer_ticket_coverage
 
-            identity_resolver.update_commit_stats(all_commits)
+                # Ticket analysis
+                if display and display._live:
+                    display.update_progress_task(
+                        "main",
+                        description="Analyzing ticket references...",
+                        completed=95,
+                    )
+                else:
+                    click.echo("🎫 Analyzing ticket references...")
 
-            # Analyze ticket references using loaded commits
-            if display and display._live:
-                display.update_progress_task(
-                    "main", description="Analyzing ticket references...", completed=95
+                ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
+                    all_commits, all_prs, display
                 )
-            else:
-                click.echo("🎫 Analyzing ticket references...")
-
-            ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
-                all_commits, all_prs, display
-            )
-
-            # Calculate per-developer ticket coverage and get updated developer stats
-            developer_ticket_coverage = (
-                analyzer.ticket_extractor.calculate_developer_ticket_coverage(all_commits)
-            )
-            developer_stats = identity_resolver.get_developer_stats(
-                ticket_coverage=developer_ticket_coverage
-            )
-
-            if display and display._live:
-                display.update_progress_task(
-                    "main",
-                    description=f"Identified {len(developer_stats)} unique developers",
-                    completed=98,
+                developer_stats = identity_resolver.get_developer_stats(
+                    ticket_coverage=analyzer.ticket_extractor.calculate_developer_ticket_coverage(
+                        all_commits
+                    )
                 )
-            else:
-                click.echo(f"   ✅ Identified {len(developer_stats)} unique developers")
+
+                if display and display._live:
+                    display.update_progress_task(
+                        "main",
+                        description=f"Identified {len(developer_stats)} unique developers",
+                        completed=98,
+                    )
+                else:
+                    click.echo(f"   ✅ Identified {len(developer_stats)} unique developers")
 
         else:
-            skip_repository_analysis = False
-            # Initialize collections for traditional mode
-            all_commits = []
-            all_prs = []
-            all_enrichments = {}
-            branch_health_metrics = {}  # Store branch health metrics per repository
-
-            # Note: Full-screen display is already started early after configuration
-            # Just add the repository processing task
+            # ------------------------------------------------------------------
+            # STAGE 10b – Traditional (non-batch) repository analysis
+            # ------------------------------------------------------------------
             if display and display._live:
                 display.add_progress_task(
                     "repos", "Processing repositories", len(repositories_to_analyze)
                 )
 
-        # Analyze repositories (traditional mode or forced fetch)
-        # Note: In batch mode, these are already populated from database
+            from .integrations.orchestrator import IntegrationOrchestrator
 
-        if not skip_repository_analysis:
+            orchestrator = IntegrationOrchestrator(cfg, cache)
+
             for idx, repo_config in enumerate(repositories_to_analyze, 1):
                 if display:
                     display.update_progress_task(
                         "repos",
-                        description=f"Analyzing {repo_config.name}... ({idx}/{len(repositories_to_analyze)})",
+                        description=(
+                            f"Analyzing {repo_config.name}... "
+                            f"({idx}/{len(repositories_to_analyze)})"
+                        ),
                     )
                 else:
                     click.echo(
-                        f"\n📁 Analyzing {repo_config.name}... ({idx}/{len(repositories_to_analyze)})"
+                        f"\n📁 Analyzing {repo_config.name}... "
+                        f"({idx}/{len(repositories_to_analyze)})"
                     )
 
-                # Check if repo exists, clone if needed
                 if not repo_config.path.exists():
-                    # Try to clone if we have a github_repo configured
                     if repo_config.github_repo and cfg.github.organization:
-                        if display and display._live:
-                            if hasattr(display, "update_repository_status"):
-                                display.update_repository_status(
-                                    repo_config.name,
-                                    "processing",
-                                    f"Cloning {repo_config.github_repo} from GitHub...",
-                                )
-
-                        def _clone_progress_trad(msg: str) -> None:
+                        def _clone_p(msg: str) -> None:
                             if display:
                                 display.print_status(f"   {msg}", "info")
                             else:
@@ -2392,7 +1143,7 @@ def analyze(
                             branch=getattr(repo_config, "branch", None),
                             timeout_seconds=120,
                             max_retries=1,
-                            progress_callback=_clone_progress_trad,
+                            progress_callback=_clone_p,
                         )
                         if not clone_result.success:
                             continue
@@ -2402,70 +1153,44 @@ def analyze(
                                 f"Repository path not found: {repo_config.path}", "error"
                             )
                         else:
-                            click.echo(f"   ❌ Repository path not found: {repo_config.path}")
+                            click.echo(
+                                f"   ❌ Repository path not found: {repo_config.path}"
+                            )
                         continue
 
-                # Analyze repository
                 try:
                     commits = analyzer.analyze_repository(
                         repo_config.path, start_date, repo_config.branch
                     )
-
-                    # Add project key and resolve developer identities
                     for commit in commits:
-                        # Use configured project key or fall back to inferred project
                         if repo_config.project_key and repo_config.project_key != "UNKNOWN":
                             commit["project_key"] = repo_config.project_key
                         else:
                             commit["project_key"] = commit.get("inferred_project", "UNKNOWN")
-
                         canonical_id = identity_resolver.resolve_developer(
                             commit["author_name"], commit["author_email"]
                         )
                         commit["canonical_id"] = canonical_id
-                        # Also add canonical display name for reports
                         commit["canonical_name"] = identity_resolver.get_canonical_name(
                             canonical_id
                         )
-
                     all_commits.extend(commits)
                     if display:
                         display.print_status(f"Found {len(commits)} commits", "success")
                     else:
                         click.echo(f"   ✅ Found {len(commits)} commits")
 
-                    # Analyze branch health
                     from .metrics.branch_health import BranchHealthAnalyzer
 
-                    branch_analyzer = BranchHealthAnalyzer()
-                    branch_metrics = branch_analyzer.analyze_repository_branches(
+                    branch_metrics = BranchHealthAnalyzer().analyze_repository_branches(
                         str(repo_config.path)
                     )
                     branch_health_metrics[repo_config.name] = branch_metrics
 
-                    # Log branch health summary
-                    health_summary = branch_metrics.get("summary", {})
-                    health_indicators = branch_metrics.get("health_indicators", {})
-                    if display:
-                        display.print_status(
-                            f"Branch health: {health_indicators.get('overall_health', 'unknown')} "
-                            f"({health_summary.get('total_branches', 0)} branches, "
-                            f"{health_summary.get('stale_branches', 0)} stale)",
-                            "info",
-                        )
-                    else:
-                        click.echo(
-                            f"   📊 Branch health: {health_indicators.get('overall_health', 'unknown')} "
-                            f"({health_summary.get('total_branches', 0)} branches, "
-                            f"{health_summary.get('stale_branches', 0)} stale)"
-                        )
-
-                    # Enrich with integration data
                     enrichment = orchestrator.enrich_repository_data(
                         repo_config, commits, start_date
                     )
                     all_enrichments[repo_config.name] = enrichment
-
                     if enrichment["prs"]:
                         all_prs.extend(enrichment["prs"])
                         if display:
@@ -2473,8 +1198,9 @@ def analyze(
                                 f"Found {len(enrichment['prs'])} pull requests", "success"
                             )
                         else:
-                            click.echo(f"   ✅ Found {len(enrichment['prs'])} pull requests")
-
+                            click.echo(
+                                f"   ✅ Found {len(enrichment['prs'])} pull requests"
+                            )
                 except Exception as e:
                     if display:
                         display.print_status(f"Error: {e}", "error")
@@ -2484,558 +1210,171 @@ def analyze(
                     if display:
                         display.update_progress_task("repos", advance=1)
 
-        # Stop repository progress and clean up display
-        if display:
-            display.complete_progress_task("repos", "Repository analysis complete")
-            display.stop_live_display()
-
-        if not all_commits:
-            # No commits in the analysis period — generate empty reports gracefully instead of
-            # exiting early. This handles --weeks 1 on a quiet repo or any other period with
-            # no activity.
-            empty_msg = (
-                f"No commits found in the analysis period "
-                f"({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}). "
-                "Generating empty reports."
-            )
             if display:
-                display.print_status(empty_msg, "warning")
-            else:
-                click.echo(f"\n   ℹ️  {empty_msg}")
+                display.complete_progress_task("repos", "Repository analysis complete")
+                display.stop_live_display()
 
-            # Ensure developer_stats and ticket_analysis are initialized for the empty case.
-            # In the batch path they may already be set; in the traditional path they are not.
-            if developer_stats is None:
+            if not all_commits:
+                empty_msg = (
+                    f"No commits found in the analysis period "
+                    f"({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}). "
+                    "Generating empty reports."
+                )
+                if display:
+                    display.print_status(empty_msg, "warning")
+                else:
+                    click.echo(f"\n   ℹ️  {empty_msg}")
                 identity_resolver.update_commit_stats([])
                 developer_stats = identity_resolver.get_developer_stats(ticket_coverage={})
-            if ticket_analysis is None:
-                ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage([], [], display)
-            _run_identity_resolution = False  # Skip identity resolution block below
-        else:
-            _run_identity_resolution = True
-
-        # NOTE: Bot exclusion moved to Phase 2 (reporting) to work with canonical_id
-        # after identity resolution. This ensures manual identity mappings work correctly.
-        # The exclusion logic now happens in report generators using canonical_id field.
-
-        if _run_identity_resolution:
-            # Update developer statistics
-            if display:
-                display.print_status("Resolving developer identities...", "info")
-            else:
-                click.echo("\n👥 Resolving developer identities...")
-
-            identity_resolver.update_commit_stats(all_commits)
-            # Initialize empty ticket coverage - will be calculated after ticket analysis
-            developer_stats = identity_resolver.get_developer_stats()
-
-        if display:
-            display.print_status(f"Identified {len(developer_stats)} unique developers", "success")
-        else:
-            click.echo(f"   ✅ Identified {len(developer_stats)} unique developers")
-
-        # Check if we should run identity analysis
-        should_check_identities = (
-            not skip_identity_analysis
-            and cfg.analysis.auto_identity_analysis  # Not explicitly skipped
-            and not cfg.analysis.manual_identity_mappings  # Auto analysis is enabled
-            and len(developer_stats) > 1  # No manual mappings  # Multiple developers to analyze
-        )
-
-        # Debug identity analysis decision
-        if not should_check_identities:
-            reasons = []
-            if skip_identity_analysis:
-                reasons.append("--skip-identity-analysis flag used")
-            if not cfg.analysis.auto_identity_analysis:
-                reasons.append("auto_identity_analysis disabled in config")
-            if cfg.analysis.manual_identity_mappings:
-                reasons.append(
-                    f"manual identity mappings already exist ({len(cfg.analysis.manual_identity_mappings)} mappings)"
+                ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
+                    [], [], display
                 )
-            if len(developer_stats) <= 1:
-                reasons.append(f"only {len(developer_stats)} developer(s) detected")
-
-            if reasons and not skip_identity_analysis:
-                if display:
-                    display.print_status(f"Identity analysis skipped: {', '.join(reasons)}", "info")
-                else:
-                    click.echo(f"   ℹ️  Identity analysis skipped: {', '.join(reasons)}")
-
-        if should_check_identities:
-            from .identity_llm.analysis_pass import IdentityAnalysisPass
-
-            try:
-                # Check when we last prompted for identity suggestions
-                last_prompt_file = cache_dir / ".identity_last_prompt"
-                should_prompt = True
-
-                if last_prompt_file.exists():
-                    last_prompt_age = datetime.now() - datetime.fromtimestamp(
-                        os.path.getmtime(last_prompt_file)
-                    )
-                    if last_prompt_age < timedelta(days=7):
-                        should_prompt = False
-
-                if should_prompt:
-                    if display:
-                        display.print_status("Analyzing developer identities...", "info")
-                    else:
-                        click.echo("\n🔍 Analyzing developer identities...")
-
-                    analysis_pass = IdentityAnalysisPass(config)
-
-                    # Run analysis
-                    identity_cache_file = cache_dir / "identity_analysis_cache.yaml"
-                    identity_result = analysis_pass.run_analysis(
-                        all_commits, output_path=identity_cache_file, apply_to_config=False
-                    )
-
-                    if identity_result.clusters:
-                        # Generate suggested configuration
-                        suggested_config = analysis_pass.generate_suggested_config(identity_result)
-
-                        # Show suggestions
-                        if display:
-                            display.print_status(
-                                f"Found {len(identity_result.clusters)} potential identity clusters",
-                                "warning",
-                            )
-                        else:
-                            click.echo(
-                                f"\n⚠️  Found {len(identity_result.clusters)} potential identity clusters:"
-                            )
-
-                        # Display all mappings
-                        if suggested_config.get("analysis", {}).get("manual_identity_mappings"):
-                            click.echo("\n📋 Suggested identity mappings:")
-                            for mapping in suggested_config["analysis"]["manual_identity_mappings"]:
-                                canonical = mapping["canonical_email"]
-                                aliases = mapping.get("aliases", [])
-                                if aliases:
-                                    click.echo(f"   {canonical}")
-                                    for alias in aliases:
-                                        click.echo(f"     → {alias}")
-
-                        # Check for bot exclusions
-                        if suggested_config.get("exclude", {}).get("authors"):
-                            bot_count = len(suggested_config["exclude"]["authors"])
-                            click.echo(f"\n🤖 Found {bot_count} bot accounts to exclude:")
-                            for bot in suggested_config["exclude"]["authors"][:5]:  # Show first 5
-                                click.echo(f"   - {bot}")
-                            if bot_count > 5:
-                                click.echo(f"   ... and {bot_count - 5} more")
-
-                        # Prompt user
-                        click.echo("\n" + "─" * 60)
-                        if click.confirm(
-                            "Apply these identity mappings to your configuration?", default=True
-                        ):
-                            # Apply mappings to config
-                            try:
-                                # Reload config to ensure we have latest
-                                with open(config) as f:
-                                    config_data = yaml.safe_load(f)
-
-                                # Update analysis section
-                                if "analysis" not in config_data:
-                                    config_data["analysis"] = {}
-                                if "identity" not in config_data["analysis"]:
-                                    config_data["analysis"]["identity"] = {}
-
-                                # Apply manual mappings
-                                existing_mappings = config_data["analysis"]["identity"].get(
-                                    "manual_mappings", []
-                                )
-                                new_mappings = suggested_config.get("analysis", {}).get(
-                                    "manual_identity_mappings", []
-                                )
-
-                                # Merge mappings
-                                existing_emails = {
-                                    m.get("canonical_email", "").lower() for m in existing_mappings
-                                }
-                                for new_mapping in new_mappings:
-                                    if (
-                                        new_mapping["canonical_email"].lower()
-                                        not in existing_emails
-                                    ):
-                                        existing_mappings.append(new_mapping)
-
-                                config_data["analysis"]["identity"]["manual_mappings"] = (
-                                    existing_mappings
-                                )
-
-                                # Apply bot exclusions
-                                if suggested_config.get("exclude", {}).get("authors"):
-                                    if "exclude" not in config_data["analysis"]:
-                                        config_data["analysis"]["exclude"] = {}
-                                    if "authors" not in config_data["analysis"]["exclude"]:
-                                        config_data["analysis"]["exclude"]["authors"] = []
-
-                                    existing_excludes = set(
-                                        config_data["analysis"]["exclude"]["authors"]
-                                    )
-                                    for bot in suggested_config["exclude"]["authors"]:
-                                        if bot not in existing_excludes:
-                                            config_data["analysis"]["exclude"]["authors"].append(
-                                                bot
-                                            )
-
-                                # Write updated config
-                                with open(config, "w") as f:
-                                    yaml.dump(
-                                        config_data, f, default_flow_style=False, sort_keys=False
-                                    )
-
-                                if display:
-                                    display.print_status(
-                                        "Applied identity mappings to configuration", "success"
-                                    )
-                                else:
-                                    click.echo("✅ Applied identity mappings to configuration")
-
-                                # Reload configuration with new mappings
-                                cfg = ConfigLoader.load(config)
-
-                                # Re-initialize identity resolver with new mappings
-                                identity_resolver = DeveloperIdentityResolver(
-                                    cache_dir / "identities.db",
-                                    similarity_threshold=cfg.analysis.similarity_threshold,
-                                    manual_mappings=cfg.analysis.manual_identity_mappings,
-                                )
-
-                                # Re-resolve identities with new mappings
-                                click.echo(
-                                    "\n🔄 Re-resolving developer identities with new mappings..."
-                                )
-                                identity_resolver.update_commit_stats(all_commits)
-                                # Use the previously calculated ticket coverage for accurate reporting
-                                developer_stats = identity_resolver.get_developer_stats(
-                                    ticket_coverage=developer_ticket_coverage
-                                )
-
-                                if display:
-                                    display.print_status(
-                                        f"Consolidated to {len(developer_stats)} unique developers",
-                                        "success",
-                                    )
-                                else:
-                                    click.echo(
-                                        f"✅ Consolidated to {len(developer_stats)} unique developers"
-                                    )
-
-                            except Exception as e:
-                                logger.error(f"Failed to apply identity mappings: {e}")
-                                click.echo(f"❌ Failed to apply identity mappings: {e}")
-                        else:
-                            click.echo("⏭️  Skipping identity mapping suggestions")
-                            click.echo("💡 Run with --analyze-identities to see suggestions again")
-
-                        # Update last prompt timestamp
-                        last_prompt_file.touch()
-
-                    else:
-                        if display:
-                            display.print_status(
-                                "No identity clusters found - all developers appear unique",
-                                "success",
-                            )
-                        else:
-                            click.echo(
-                                "✅ No identity clusters found - all developers appear unique"
-                            )
-
-                        # Still update timestamp so we don't check again for 7 days
-                        last_prompt_file.touch()
-
-            except Exception as e:
-                if display:
-                    display.print_status(f"Identity analysis failed: {e}", "warning")
-                else:
-                    click.echo(f"⚠️  Identity analysis failed: {e}")
-                logger.debug(f"Identity analysis error: {e}", exc_info=True)
-
-        # Analyze tickets
-        if display:
-            display.print_status("Analyzing ticket references...", "info")
-        else:
-            click.echo("\n🎫 Analyzing ticket references...")
-
-        # Use the analyzer's ticket extractor which may be ML-enhanced
-        ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
-            all_commits, all_prs, display
-        )
-
-        # Calculate per-developer ticket coverage and update developer stats with accurate coverage
-        developer_ticket_coverage = analyzer.ticket_extractor.calculate_developer_ticket_coverage(
-            all_commits
-        )
-        developer_stats = identity_resolver.get_developer_stats(
-            ticket_coverage=developer_ticket_coverage
-        )
-
-        for platform, count in ticket_analysis["ticket_summary"].items():
-            if display:
-                display.print_status(f"{platform.title()}: {count} unique tickets", "success")
             else:
-                click.echo(f"   - {platform.title()}: {count} unique tickets")
+                # Identity resolution
+                if display:
+                    display.print_status("Resolving developer identities...", "info")
+                else:
+                    click.echo("\n👥 Resolving developer identities...")
+                identity_resolver.update_commit_stats(all_commits)
+                developer_stats = identity_resolver.get_developer_stats()
 
-        # Store daily metrics in database for reporting
+            if display:
+                display.print_status(
+                    f"Identified {len(developer_stats)} unique developers", "success"
+                )
+            else:
+                click.echo(f"   ✅ Identified {len(developer_stats)} unique developers")
+
+            # Auto identity analysis (traditional mode only)
+            should_check_identities = (
+                not skip_identity_analysis
+                and cfg.analysis.auto_identity_analysis
+                and not cfg.analysis.manual_identity_mappings
+                and len(developer_stats) > 1
+            )
+            if should_check_identities:
+                _run_identity_analysis(
+                    config=config,
+                    cfg=cfg,
+                    cache_dir=cache_dir,
+                    identity_resolver=identity_resolver,
+                    all_commits=all_commits,
+                    developer_stats=developer_stats,
+                    display=display,
+                    logger=logger,
+                )
+
+            # Ticket analysis
+            if display:
+                display.print_status("Analyzing ticket references...", "info")
+            else:
+                click.echo("\n🎫 Analyzing ticket references...")
+            ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
+                all_commits, all_prs, display
+            )
+            developer_ticket_coverage = (
+                analyzer.ticket_extractor.calculate_developer_ticket_coverage(all_commits)
+            )
+            developer_stats = identity_resolver.get_developer_stats(
+                ticket_coverage=developer_ticket_coverage
+            )
+            for platform, count in ticket_analysis["ticket_summary"].items():
+                if display:
+                    display.print_status(
+                        f"{platform.title()}: {count} unique tickets", "success"
+                    )
+                else:
+                    click.echo(f"   - {platform.title()}: {count} unique tickets")
+
+        # ------------------------------------------------------------------
+        # STAGE 11 – Store daily metrics
+        # ------------------------------------------------------------------
         if display:
-            display.print_status("Storing daily metrics for database-backed reporting...", "info")
+            display.print_status(
+                "Storing daily metrics for database-backed reporting...", "info"
+            )
         else:
             click.echo("\n💾 Storing daily metrics for database-backed reporting...")
 
-        try:
-            from .core.metrics_storage import DailyMetricsStorage
+        ticket_result = analyze_tickets_and_store_metrics(
+            analyzer=analyzer,
+            identity_resolver=identity_resolver,
+            all_commits=all_commits,
+            all_prs=all_prs,
+            display=display,
+            cfg=cfg,
+            start_date=start_date,
+            weeks=weeks,
+        )
+        # Update with re-calculated ticket data
+        ticket_analysis = ticket_result.ticket_analysis
+        developer_stats = ticket_result.developer_stats
 
-            # Initialize daily metrics storage
-            metrics_db_path = cfg.cache.directory / "daily_metrics.db"
-            metrics_storage = DailyMetricsStorage(metrics_db_path)
-
-            # Get developer identities for storage
-            developer_identities = {}
-            for commit in all_commits:
-                email = commit.get("author_email", "")
-                canonical_id = commit.get("canonical_id", email)
-                name = commit.get("author_name", "Unknown")
-                developer_identities[email] = {
-                    "canonical_id": canonical_id,
-                    "name": name,
-                    "email": email,
-                }
-
-            # Store metrics for each day in the analysis period
-            current_date = start_date.date() if hasattr(start_date, "date") else start_date
-            end_date_obj = (
-                (start_date + timedelta(weeks=weeks)).date()
-                if hasattr(start_date, "date")
-                else (start_date + timedelta(weeks=weeks))
-            )
-
-            daily_commits = {}
-            for commit in all_commits:
-                commit_date = commit.get("timestamp")
-                if commit_date:
-                    if hasattr(commit_date, "date"):
-                        commit_date = commit_date.date()
-                    elif isinstance(commit_date, str):
-                        from datetime import datetime as dt
-
-                        commit_date = dt.fromisoformat(commit_date.replace("Z", "+00:00")).date()
-
-                    if commit_date not in daily_commits:
-                        daily_commits[commit_date] = []
-                    daily_commits[commit_date].append(commit)
-
-            total_records = 0
-            for analysis_date, day_commits in daily_commits.items():
-                if current_date <= analysis_date <= end_date_obj:
-                    records = metrics_storage.store_daily_metrics(
-                        analysis_date, day_commits, developer_identities
-                    )
-                    total_records += records
-
-            if display:
-                display.print_status(f"Stored {total_records} daily metric records", "success")
-            else:
-                click.echo(f"   ✅ Stored {total_records} daily metric records")
-
-        except Exception as e:
-            logger.error(f"Failed to store daily metrics: {e}")
-            if display:
-                display.print_status(f"Failed to store daily metrics: {e}", "warning")
-            else:
-                click.echo(f"   ⚠️  Failed to store daily metrics: {e}")
-
-        # Perform qualitative analysis if enabled
-        qualitative_results = []
-        qual_cost_stats = None
-        qual_config = get_qualitative_config()
-        if (enable_qualitative or qualitative_only or is_qualitative_enabled()) and qual_config:
+        # ------------------------------------------------------------------
+        # STAGE 12 – Qualitative analysis
+        # ------------------------------------------------------------------
+        qualitative_result = QualitativeResult(
+            results=[], cost_stats=None, commits_for_qual=[]
+        )
+        if (enable_qualitative or qualitative_only or is_qualitative_enabled(cfg)) and get_qualitative_config(cfg):
             if display:
                 display.print_status("Performing qualitative analysis...", "info")
             else:
                 click.echo("\n🧠 Performing qualitative analysis...")
-
             try:
-                from .models.database import Database
-                from .qualitative import QualitativeProcessor
-
-                # Initialize qualitative analysis components
-                qual_db = Database(cfg.cache.directory / "qualitative.db")
-                qual_processor = QualitativeProcessor(qual_config, qual_db)
-
-                # Validate setup
-                is_valid, issues = qual_processor.validate_setup()
-                if not is_valid:
-                    issue_msg = "Qualitative analysis setup issues:\n" + "\n".join(
-                        f"• {issue}" for issue in issues
-                    )
-                    if issues:
-                        issue_msg += "\n\n💡 Install dependencies: pip install spacy scikit-learn openai tiktoken"
-                        issue_msg += (
-                            "\n💡 Download spaCy model: python -m spacy download en_core_web_sm"
-                        )
-
-                    if display:
-                        display.show_warning(issue_msg)
-                    else:
-                        click.echo("   ⚠️  Qualitative analysis setup issues:")
-                        for issue in issues:
-                            click.echo(f"      - {issue}")
-                        if issues:
-                            click.echo(
-                                "   💡 Install dependencies: pip install spacy scikit-learn openai tiktoken"
-                            )
-                            click.echo(
-                                "   💡 Download spaCy model: python -m spacy download en_core_web_sm"
-                            )
-
-                # Convert commits to qualitative format
-                commits_for_qual = []
-                for commit in all_commits:
-                    # Handle both dict and object formats
-                    if isinstance(commit, dict):
-                        commit_dict = {
-                            "hash": commit.get("hash") or commit.get("commit_hash"),
-                            "message": commit.get("message"),
-                            "author_name": commit.get("author_name"),
-                            "author_email": commit.get("author_email"),
-                            "timestamp": commit.get("timestamp"),
-                            "files_changed": commit.get("files_changed") or [],
-                            "insertions": commit.get(
-                                "filtered_insertions", commit.get("insertions", 0)
-                            ),
-                            "deletions": commit.get(
-                                "filtered_deletions", commit.get("deletions", 0)
-                            ),
-                            "branch": commit.get("branch", "main"),
-                        }
-                    else:
-                        commit_dict = {
-                            "hash": commit.hash,
-                            "message": commit.message,
-                            "author_name": commit.author_name,
-                            "author_email": commit.author_email,
-                            "timestamp": commit.timestamp,
-                            "files_changed": commit.files_changed or [],
-                            "insertions": getattr(commit, "filtered_insertions", commit.insertions),
-                            "deletions": getattr(commit, "filtered_deletions", commit.deletions),
-                            "branch": getattr(commit, "branch", "main"),
-                        }
-                    commits_for_qual.append(commit_dict)
-
-                # Perform qualitative analysis with progress tracking
                 if display:
                     display.start_live_display()
                     display.add_progress_task(
                         "qualitative",
                         "Analyzing commits with qualitative insights",
-                        len(commits_for_qual),
+                        len(all_commits),
                     )
-
-                qualitative_results = qual_processor.process_commits(
-                    commits_for_qual, show_progress=True
+                qualitative_result = run_qualitative_analysis(
+                    cfg=cfg,
+                    all_commits=all_commits,
+                    enable_qualitative=enable_qualitative,
+                    qualitative_only=qualitative_only,
+                    display=display,
                 )
-
                 if display:
-                    display.complete_progress_task("qualitative", "Qualitative analysis complete")
+                    display.complete_progress_task(
+                        "qualitative", "Qualitative analysis complete"
+                    )
                     display.stop_live_display()
                     display.print_status(
-                        f"Analyzed {len(qualitative_results)} commits with qualitative insights",
+                        f"Analyzed {len(qualitative_result.results)} commits with qualitative insights",
                         "success",
                     )
                 else:
                     click.echo(
-                        f"   ✅ Analyzed {len(qualitative_results)} commits with qualitative insights"
+                        f"   ✅ Analyzed {len(qualitative_result.results)} commits with qualitative insights"
                     )
-
-                # Get processing statistics and show them
-                qual_stats = qual_processor.get_processing_statistics()
-
-                # Extract cost statistics for later display
-                if qual_stats and "llm_statistics" in qual_stats:
-                    llm_stats = qual_stats["llm_statistics"]
-                    if llm_stats.get("model_usage") == "available":
-                        qual_cost_stats = llm_stats.get("cost_tracking", {})
-
-                if display:
-                    display.show_qualitative_stats(qual_stats)
-                else:
-                    processing_summary = qual_stats["processing_summary"]
-                    click.echo(
-                        f"   📈 Processing: {processing_summary['commits_per_second']:.1f} commits/sec"
-                    )
-                    click.echo(
-                        f"   🎯 Methods: {processing_summary['method_breakdown']['cache']:.1f}% cached, "
-                        f"{processing_summary['method_breakdown']['nlp']:.1f}% NLP, "
-                        f"{processing_summary['method_breakdown']['llm']:.1f}% LLM"
-                    )
-
-                    if qual_stats["llm_statistics"]["model_usage"] == "available":
-                        llm_stats = qual_stats["llm_statistics"]["cost_tracking"]
-                        if llm_stats["total_cost"] > 0:
-                            click.echo(f"   💰 LLM Cost: ${llm_stats['total_cost']:.4f}")
-
             except ImportError as e:
-                error_msg = (
-                    f"Qualitative analysis dependencies missing: {e}\n\n"
-                    "💡 Install with: pip install spacy scikit-learn openai tiktoken"
-                )
                 if display:
-                    display.show_error(error_msg)
+                    display.show_error(f"Qualitative analysis dependencies missing: {e}")
                 else:
-                    click.echo(f"   ❌ Qualitative analysis dependencies missing: {e}")
-                    click.echo("   💡 Install with: pip install spacy scikit-learn openai tiktoken")
-
-                if not qualitative_only:
-                    if display:
-                        display.print_status("Continuing with standard analysis...", "info")
-                    else:
-                        click.echo("   ⏭️  Continuing with standard analysis...")
-                else:
-                    if display:
-                        display.show_error(
-                            "Cannot perform qualitative-only analysis without dependencies"
-                        )
-                    else:
-                        click.echo(
-                            "   ❌ Cannot perform qualitative-only analysis without dependencies"
-                        )
+                    click.echo(
+                        f"   ❌ Qualitative analysis dependencies missing: {e}"
+                    )
+                if qualitative_only:
                     return
             except Exception as e:
-                error_msg = f"Qualitative analysis failed: {e}"
                 if display:
-                    display.show_error(error_msg)
+                    display.show_error(f"Qualitative analysis failed: {e}")
                 else:
                     click.echo(f"   ❌ Qualitative analysis failed: {e}")
-
                 if qualitative_only:
-                    if display:
-                        display.show_error("Cannot continue with qualitative-only analysis")
-                    else:
-                        click.echo("   ❌ Cannot continue with qualitative-only analysis")
                     return
-                else:
-                    if display:
-                        display.print_status("Continuing with standard analysis...", "info")
-                    else:
-                        click.echo("   ⏭️  Continuing with standard analysis...")
-        elif enable_qualitative and not get_qualitative_config():
+        elif enable_qualitative and not get_qualitative_config(cfg):
             warning_msg = (
                 "Qualitative analysis requested but not configured in config file\n\n"
-                "Add a 'qualitative:' section (top-level or under 'analysis:') "
-                "to your configuration"
+                "Add a 'qualitative:' section to your configuration"
             )
             if display:
                 display.show_warning(warning_msg)
             else:
-                click.echo("\n⚠️  Qualitative analysis requested but not configured in config file")
-                click.echo("   Add a 'qualitative:' section to your configuration")
+                click.echo("\n⚠️  Qualitative analysis requested but not configured")
 
-        # Skip standard analysis if qualitative-only mode
         if qualitative_only:
             if display:
                 display.print_status("Qualitative-only analysis completed!", "success")
@@ -3043,850 +1382,87 @@ def analyze(
                 click.echo("\n✅ Qualitative-only analysis completed!")
             return
 
-        # Aggregate PM platform data BEFORE report generation
-        if not disable_pm and cfg.pm_integration and cfg.pm_integration.enabled:
-            try:
-                logger.debug("Starting PM data aggregation")
-                aggregated_pm_data = {"issues": {}, "correlations": [], "metrics": {}}
+        # ------------------------------------------------------------------
+        # STAGE 13 – PM data aggregation
+        # ------------------------------------------------------------------
+        aggregated_pm_data = aggregate_pm_data(
+            cfg=cfg,
+            all_enrichments=all_enrichments,
+            disable_pm=disable_pm,
+        )
 
-                for _repo_name, enrichment in all_enrichments.items():
-                    pm_data = enrichment.get("pm_data", {})
-                    if pm_data:
-                        # Aggregate issues by platform
-                        for platform, issues in pm_data.get("issues", {}).items():
-                            if platform not in aggregated_pm_data["issues"]:
-                                aggregated_pm_data["issues"][platform] = []
-                            aggregated_pm_data["issues"][platform].extend(issues)
-
-                        # Aggregate correlations
-                        aggregated_pm_data["correlations"].extend(pm_data.get("correlations", []))
-
-                        # Use metrics from last repository with PM data (could be enhanced to merge)
-                        if pm_data.get("metrics"):
-                            aggregated_pm_data["metrics"] = pm_data["metrics"]
-
-                # Only keep PM data if we actually have some
-                if not aggregated_pm_data["correlations"] and not aggregated_pm_data["issues"]:
-                    aggregated_pm_data = None
-
-                logger.debug("PM data aggregation completed successfully")
-            except Exception as e:
-                logger.error(f"Error in PM data aggregation: {e}")
-                click.echo(f"   ⚠️ Warning: PM data aggregation failed: {e}")
-                aggregated_pm_data = None
-        else:
-            aggregated_pm_data = None
-
-        # Generate reports
+        # ------------------------------------------------------------------
+        # STAGE 14 – Report generation
+        # ------------------------------------------------------------------
         if display:
-            if generate_csv:
-                display.print_status("Generating reports...", "info")
-            else:
-                display.print_status(
-                    "Generating narrative report (CSV generation disabled)...", "info"
-                )
+            display.print_status(
+                "Generating reports..." if generate_csv else
+                "Generating narrative report (CSV generation disabled)...",
+                "info",
+            )
         else:
-            if generate_csv:
-                click.echo("\n📊 Generating reports...")
-            else:
-                click.echo("\n📊 Generating narrative report (CSV generation disabled)...")
+            click.echo(
+                "\n📊 Generating reports..."
+                if generate_csv
+                else "\n📊 Generating narrative report (CSV generation disabled)..."
+            )
 
-        logger.debug(f"Starting report generation with {len(all_commits)} commits")
-
-        report_gen = CSVReportGenerator(
-            anonymize=anonymize or cfg.output.anonymize_enabled,
-            exclude_authors=cfg.analysis.exclude_authors,
+        report_result = generate_all_reports(
+            cfg=cfg,
+            output=output,
+            all_commits=all_commits,
+            all_prs=all_prs,
+            all_enrichments=all_enrichments,
+            developer_stats=developer_stats,
+            ticket_analysis=ticket_analysis,
+            branch_health_metrics=branch_health_metrics,
+            start_date=start_date,
+            end_date=end_date,
+            weeks=weeks,
+            anonymize=anonymize,
+            generate_csv=generate_csv,
+            aggregated_pm_data=aggregated_pm_data,
+            qualitative_result=qualitative_result,
+            analyzer=analyzer,
             identity_resolver=identity_resolver,
         )
-        analytics_gen = AnalyticsReportGenerator(
-            anonymize=anonymize or cfg.output.anonymize_enabled,
-            exclude_authors=cfg.analysis.exclude_authors,
-            identity_resolver=identity_resolver,
-        )
 
-        # Collect generated report files for display
-        generated_reports = []
-
-        # Weekly metrics report (only if CSV generation is enabled)
-        if generate_csv:
-            weekly_report = (
-                output / f"weekly_metrics_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
-            )
-            try:
-                logger.debug("Starting weekly metrics report generation")
-                report_gen.generate_weekly_report(
-                    all_commits, developer_stats, weekly_report, weeks
-                )
-                logger.debug("Weekly metrics report completed successfully")
-                generated_reports.append(weekly_report.name)
-                if not display:
-                    click.echo(f"   ✅ Weekly metrics: {weekly_report}")
-            except Exception as e:
-                logger.error(f"Error in weekly metrics report generation: {e}")
-                with contextlib.suppress(builtins.BaseException):
-                    handle_timezone_error(e, "weekly metrics report", all_commits, logger)
-
-        # Developer activity summary with curve normalization (only if CSV generation is enabled)
-        if generate_csv:
-            activity_summary_report = (
-                output
-                / f"developer_activity_summary_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
-            )
-            try:
-                logger.debug("Starting developer activity summary report generation")
-                report_gen.generate_developer_activity_summary(
-                    all_commits, developer_stats, all_prs, activity_summary_report, weeks
-                )
-                logger.debug("Developer activity summary report completed successfully")
-                generated_reports.append(activity_summary_report.name)
-                if not display:
-                    click.echo(f"   ✅ Developer activity summary: {activity_summary_report}")
-            except Exception as e:
-                logger.error(f"Error in developer activity summary report generation: {e}")
-                with contextlib.suppress(Exception):
-                    handle_timezone_error(
-                        e, "developer activity summary report", all_commits, logger
-                    )
-                click.echo(f"   ❌ Error generating weekly metrics report: {e}")
-                click.echo(f"   🔍 Error type: {type(e).__name__}")
-                click.echo(f"   📍 Error details: {str(e)}")
-
-                traceback.print_exc()
-                raise
-
-        # Summary report (only if CSV generation is enabled)
-        if generate_csv:
-            summary_report = output / f"summary_{datetime.now().strftime('%Y%m%d')}.csv"
-            try:
-                report_gen.generate_summary_report(
-                    all_commits,
-                    all_prs,
-                    developer_stats,
-                    ticket_analysis,
-                    summary_report,
-                    aggregated_pm_data,
-                    pr_metrics=None,
-                )
-                generated_reports.append(summary_report.name)
-                if not display:
-                    click.echo(f"   ✅ Summary stats: {summary_report}")
-            except Exception as e:
-                click.echo(f"   ❌ Error generating summary report: {e}")
-                click.echo(f"   🔍 Error type: {type(e).__name__}")
-                click.echo(f"   📍 Error details: {str(e)}")
-
-                traceback.print_exc()
-                raise
-
-        # Developer report (only if CSV generation is enabled)
-        if generate_csv:
-            developer_report = output / f"developers_{datetime.now().strftime('%Y%m%d')}.csv"
-            try:
-                report_gen.generate_developer_report(developer_stats, developer_report)
-                generated_reports.append(developer_report.name)
-                if not display:
-                    click.echo(f"   ✅ Developer stats: {developer_report}")
-            except Exception as e:
-                click.echo(f"   ❌ Error generating developer report: {e}")
-                click.echo(f"   🔍 Error type: {type(e).__name__}")
-                click.echo(f"   📍 Error details: {str(e)}")
-
-                traceback.print_exc()
-                raise
-
-        # PR metrics detailed report (only if PRs are available and CSV is enabled)
-        if generate_csv and all_prs:
-            pr_metrics_report = output / f"pr_metrics_{datetime.now().strftime('%Y%m%d')}.csv"
-            try:
-                logger.debug("Starting PR metrics report generation")
-                report_gen.generate_pr_metrics_report(all_prs, pr_metrics_report)
-                logger.debug("PR metrics report completed successfully")
-                generated_reports.append(pr_metrics_report.name)
-                if not display:
-                    click.echo(f"   ✅ PR metrics: {pr_metrics_report}")
-            except Exception as e:
-                logger.error(f"Error generating PR metrics report: {e}")
-                click.echo(f"   ⚠️ Warning: PR metrics report failed: {e}")
-
-        # Untracked commits report (only if CSV generation is enabled)
-        if generate_csv:
-            untracked_commits_report = (
-                output / f"untracked_commits_{datetime.now().strftime('%Y%m%d')}.csv"
-            )
-            try:
-                report_gen.generate_untracked_commits_report(
-                    ticket_analysis, untracked_commits_report
-                )
-                generated_reports.append(untracked_commits_report.name)
-                if not display:
-                    click.echo(f"   ✅ Untracked commits: {untracked_commits_report}")
-            except Exception as e:
-                click.echo(f"   ❌ Error generating untracked commits report: {e}")
-                click.echo(f"   🔍 Error type: {type(e).__name__}")
-                click.echo(f"   📍 Error details: {str(e)}")
-
-                traceback.print_exc()
-                raise
-
-        # Weekly Categorization report (only if CSV generation is enabled)
-        if generate_csv:
-            weekly_categorization_report = (
-                output / f"weekly_categorization_{datetime.now().strftime('%Y%m%d')}.csv"
-            )
-            try:
-                logger.debug("Starting weekly categorization report generation")
-                report_gen.generate_weekly_categorization_report(
-                    all_commits, analyzer.ticket_extractor, weekly_categorization_report, weeks
-                )
-                logger.debug("Weekly categorization report completed successfully")
-                generated_reports.append(weekly_categorization_report.name)
-                if not display:
-                    click.echo(f"   ✅ Weekly categorization: {weekly_categorization_report}")
-            except Exception as e:
-                logger.error(f"Error generating weekly categorization report: {e}")
-                click.echo(f"   ⚠️ Warning: Weekly categorization report failed: {e}")
-
-        # PM Correlations report (if PM data is available and CSV generation is enabled)
-        if aggregated_pm_data and generate_csv:
-            pm_correlations_report = (
-                output / f"pm_correlations_{datetime.now().strftime('%Y%m%d')}.csv"
-            )
-            try:
-                report_gen.generate_pm_correlations_report(
-                    aggregated_pm_data, pm_correlations_report
-                )
-                generated_reports.append(pm_correlations_report.name)
-                if not display:
-                    click.echo(f"   ✅ PM correlations: {pm_correlations_report}")
-            except Exception as e:
-                click.echo(f"   ⚠️ Warning: PM correlations report failed: {e}")
-
-        # Story Point Correlation report (only if CSV generation is enabled)
-        if generate_csv:
-            story_point_correlation_report = (
-                output / f"story_point_correlation_{datetime.now().strftime('%Y%m%d')}.csv"
-            )
-            try:
-                logger.debug("Starting story point correlation report generation")
-                report_gen.generate_story_point_correlation_report(
-                    all_commits, all_prs, aggregated_pm_data, story_point_correlation_report, weeks
-                )
-                logger.debug("Story point correlation report completed successfully")
-                generated_reports.append(story_point_correlation_report.name)
-                if not display:
-                    click.echo(f"   ✅ Story point correlation: {story_point_correlation_report}")
-            except Exception as e:
-                logger.error(f"Error generating story point correlation report: {e}")
-                click.echo(f"   ⚠️ Warning: Story point correlation report failed: {e}")
-
-        # Activity distribution report (always generate data, optionally write CSV)
-        activity_report = output / f"activity_distribution_{datetime.now().strftime('%Y%m%d')}.csv"
+        # ------------------------------------------------------------------
+        # STAGE 15 – Final summary display
+        # ------------------------------------------------------------------
         try:
-            logger.debug("Starting activity distribution report generation")
-            analytics_gen.generate_activity_distribution_report(
-                all_commits, developer_stats, activity_report
-            )
-            logger.debug("Activity distribution report completed successfully")
-            if generate_csv:
-                generated_reports.append(activity_report.name)
-                if not display:
-                    click.echo(f"   ✅ Activity distribution: {activity_report}")
-        except Exception as e:
-            logger.error(f"Error in activity distribution report generation: {e}")
-            with contextlib.suppress(Exception):
-                handle_timezone_error(e, "activity distribution report", all_commits, logger)
-            click.echo(f"   ❌ Error generating activity distribution report: {e}")
-            click.echo(f"   🔍 Error type: {type(e).__name__}")
-            click.echo(f"   📍 Error details: {str(e)}")
-
-            traceback.print_exc()
-            raise
-
-        # Developer focus report (always generate data, optionally write CSV)
-        focus_report = output / f"developer_focus_{datetime.now().strftime('%Y%m%d')}.csv"
-        try:
-            logger.debug("Starting developer focus report generation")
-            analytics_gen.generate_developer_focus_report(
-                all_commits, developer_stats, focus_report, weeks
-            )
-            logger.debug("Developer focus report completed successfully")
-            if generate_csv:
-                generated_reports.append(focus_report.name)
-                if not display:
-                    click.echo(f"   ✅ Developer focus: {focus_report}")
-        except Exception as e:
-            logger.error(f"Error in developer focus report generation: {e}")
-            with contextlib.suppress(Exception):
-                handle_timezone_error(e, "developer focus report", all_commits, logger)
-            click.echo(f"   ❌ Error generating developer focus report: {e}")
-            click.echo(f"   🔍 Error type: {type(e).__name__}")
-            click.echo(f"   📍 Error details: {str(e)}")
-
-            traceback.print_exc()
-            raise
-
-        # Qualitative insights report (always generate data, optionally write CSV)
-        insights_report = output / f"qualitative_insights_{datetime.now().strftime('%Y%m%d')}.csv"
-        try:
-            logger.debug("Starting qualitative insights report generation")
-            analytics_gen.generate_qualitative_insights_report(
-                all_commits, developer_stats, ticket_analysis, insights_report
-            )
-            logger.debug("Qualitative insights report completed successfully")
-            if generate_csv:
-                generated_reports.append(insights_report.name)
-                if not display:
-                    click.echo(f"   ✅ Qualitative insights: {insights_report}")
-        except Exception as e:
-            logger.error(f"Error in qualitative insights report generation: {e}")
-
-        # Branch health report (only if CSV generation is enabled)
-        if branch_health_metrics and generate_csv:
-            from .reports.branch_health_writer import BranchHealthReportGenerator
-
-            branch_health_gen = BranchHealthReportGenerator()
-
-            branch_health_report = output / f"branch_health_{datetime.now().strftime('%Y%m%d')}.csv"
-            try:
-                logger.debug("Starting branch health report generation")
-                branch_health_gen.generate_csv_report(branch_health_metrics, branch_health_report)
-                logger.debug("Branch health report completed successfully")
-                generated_reports.append(branch_health_report.name)
-                if not display:
-                    click.echo(f"   ✅ Branch health: {branch_health_report}")
-            except Exception as e:
-                logger.error(f"Error in branch health report generation: {e}")
-                click.echo(f"   ❌ Error generating branch health report: {e}")
-
-            # Detailed branch report
-            detailed_branch_report = (
-                output / f"branch_details_{datetime.now().strftime('%Y%m%d')}.csv"
-            )
-            try:
-                branch_health_gen.generate_detailed_branch_report(
-                    branch_health_metrics, detailed_branch_report
-                )
-                generated_reports.append(detailed_branch_report.name)
-                if not display:
-                    click.echo(f"   ✅ Branch details: {detailed_branch_report}")
-            except Exception as e:
-                logger.error(f"Error in detailed branch report generation: {e}")
-                click.echo(f"   ❌ Error generating detailed branch report: {e}")
-
-        # Weekly classification trends reports (developer and project) (only if CSV generation is enabled)
-        if generate_csv:
-            weekly_trends_writer = WeeklyTrendsWriter()
-            date_suffix = f"_{datetime.now().strftime('%Y%m%d')}"
-
-            try:
-                logger.debug("Starting weekly classification trends report generation")
-                trends_paths = weekly_trends_writer.generate_weekly_trends_reports(
-                    all_commits,
-                    output,
-                    weeks,
-                    date_suffix,
-                    categorize_fn=analyzer.ticket_extractor.categorize_commit,
-                )
-                logger.debug("Weekly classification trends reports completed successfully")
-
-                # Add both reports to generated reports list
-                for report_type, report_path in trends_paths.items():
-                    generated_reports.append(report_path.name)
-                    if not display:
-                        trend_type = "Developer" if "developer" in report_type else "Project"
-                        click.echo(f"   ✅ {trend_type} weekly trends: {report_path}")
-
-            except Exception as e:
-                logger.error(f"Error in weekly classification trends report generation: {e}")
-                click.echo(f"   ❌ Error generating weekly classification trends reports: {e}")
-                click.echo(f"   🔍 Error type: {type(e).__name__}")
-                click.echo(f"   📍 Error details: {str(e)}")
-
-        # Weekly trends report (includes developer and project trends) (only if CSV generation is enabled)
-        if generate_csv:
-            trends_report = output / f"weekly_trends_{datetime.now().strftime('%Y%m%d')}.csv"
-            try:
-                logger.debug("Starting weekly trends report generation")
-                analytics_gen.generate_weekly_trends_report(
-                    all_commits, developer_stats, trends_report, weeks
-                )
-                logger.debug("Weekly trends report completed successfully")
-                generated_reports.append(trends_report.name)
-
-                # Check for additional trend files generated
-                timestamp = trends_report.stem.split("_")[-1]
-                dev_trends_file = output / f"developer_trends_{timestamp}.csv"
-                proj_trends_file = output / f"project_trends_{timestamp}.csv"
-
-                if dev_trends_file.exists():
-                    generated_reports.append(dev_trends_file.name)
-                if proj_trends_file.exists():
-                    generated_reports.append(proj_trends_file.name)
-
-                if not display:
-                    click.echo(f"   ✅ Weekly trends: {trends_report}")
-                    if dev_trends_file.exists():
-                        click.echo(f"   ✅ Developer trends: {dev_trends_file}")
-                    if proj_trends_file.exists():
-                        click.echo(f"   ✅ Project trends: {proj_trends_file}")
-            except Exception as e:
-                logger.error(f"Error in weekly trends report generation: {e}")
-                handle_timezone_error(e, "weekly trends report", all_commits, logger)
-                click.echo(f"   ❌ Error generating weekly trends report: {e}")
-                raise
-
-        # Calculate DORA metrics
-        try:
-            logger.debug("Starting DORA metrics calculation")
-            dora_calculator = DORAMetricsCalculator()
-            dora_metrics = dora_calculator.calculate_dora_metrics(
-                all_commits, all_prs, start_date, end_date
-            )
-            logger.debug("DORA metrics calculation completed successfully")
-        except Exception as e:
-            logger.error(f"Error in DORA metrics calculation: {e}")
-            with contextlib.suppress(Exception):
-                handle_timezone_error(e, "DORA metrics calculation", all_commits, logger)
-            click.echo(f"   ❌ Error calculating DORA metrics: {e}")
-            click.echo(f"   🔍 Error type: {type(e).__name__}")
-            click.echo(f"   📍 Error details: {str(e)}")
-
-            traceback.print_exc()
-            raise
-
-        # Aggregate PR metrics
-        try:
-            logger.debug("Starting PR metrics aggregation")
-            pr_metrics = {}
-            for enrichment in all_enrichments.values():
-                if enrichment.get("pr_metrics"):
-                    # Combine metrics (simplified - in production would properly aggregate)
-                    pr_metrics = enrichment["pr_metrics"]
-                    break
-            logger.debug("PR metrics aggregation completed successfully")
-        except Exception as e:
-            logger.error(f"Error in PR metrics aggregation: {e}")
-            with contextlib.suppress(Exception):
-                handle_timezone_error(e, "PR metrics aggregation", all_commits, logger)
-            click.echo(f"   ❌ Error aggregating PR metrics: {e}")
-            click.echo(f"   🔍 Error type: {type(e).__name__}")
-            click.echo(f"   📍 Error details: {str(e)}")
-
-            traceback.print_exc()
-            raise
-
-        # Weekly velocity report (only if CSV generation is enabled)
-        if generate_csv:
-            weekly_velocity_report = (
-                output / f"weekly_velocity_{datetime.now().strftime('%Y%m%d')}.csv"
-            )
-            try:
-                logger.debug("Starting weekly velocity report generation")
-                report_gen.generate_weekly_velocity_report(
-                    all_commits, all_prs, weekly_velocity_report, weeks
-                )
-                logger.debug("Weekly velocity report completed successfully")
-                generated_reports.append(weekly_velocity_report.name)
-                if not display:
-                    click.echo(f"   ✅ Weekly velocity: {weekly_velocity_report}")
-            except Exception as e:
-                logger.error(f"Error in weekly velocity report generation: {e}")
-                with contextlib.suppress(Exception):
-                    handle_timezone_error(e, "weekly velocity report", all_commits, logger)
-                click.echo(f"   ❌ Error generating weekly velocity report: {e}")
-                click.echo(f"   🔍 Error type: {type(e).__name__}")
-                click.echo(f"   📍 Error details: {str(e)}")
-
-                traceback.print_exc()
-                raise
-
-        # Weekly DORA metrics report (only if CSV generation is enabled)
-        if generate_csv:
-            weekly_dora_report = (
-                output / f"weekly_dora_metrics_{datetime.now().strftime('%Y%m%d')}.csv"
-            )
-            try:
-                logger.debug("Starting weekly DORA metrics report generation")
-                report_gen.generate_weekly_dora_report(
-                    all_commits, all_prs, weekly_dora_report, weeks
-                )
-                logger.debug("Weekly DORA metrics report completed successfully")
-                generated_reports.append(weekly_dora_report.name)
-                if not display:
-                    click.echo(f"   ✅ Weekly DORA metrics: {weekly_dora_report}")
-            except Exception as e:
-                logger.error(f"Error in weekly DORA metrics report generation: {e}")
-                with contextlib.suppress(Exception):
-                    handle_timezone_error(e, "weekly DORA metrics report", all_commits, logger)
-                click.echo(f"   ❌ Error generating weekly DORA metrics report: {e}")
-                click.echo(f"   🔍 Error type: {type(e).__name__}")
-                click.echo(f"   📍 Error details: {str(e)}")
-
-                traceback.print_exc()
-                raise
-
-        # Calculate date range for consistent filename formatting across all markdown reports
-        # Define outside conditional blocks so it's available for all report types
-        date_range = f"{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
-
-        # Generate markdown reports if enabled (requires CSV files)
-        if "markdown" in cfg.output.formats and generate_csv:
-            try:
-                logger.debug("Starting narrative report generation")
-                narrative_gen = NarrativeReportGenerator()
-
-                # Lazy import pandas - only needed for CSV reading in narrative generation
-                import pandas as pd
-
-                # Load activity distribution data
-                logger.debug("Loading activity distribution data")
-                activity_df = pd.read_csv(activity_report)
-                activity_data = cast(list[dict[str, Any]], activity_df.to_dict("records"))
-
-                # Load focus data
-                logger.debug("Loading focus data")
-                focus_df = pd.read_csv(focus_report)
-                focus_data = cast(list[dict[str, Any]], focus_df.to_dict("records"))
-
-                # Load insights data
-                logger.debug("Loading insights data")
-                insights_df = pd.read_csv(insights_report)
-                insights_data = cast(list[dict[str, Any]], insights_df.to_dict("records"))
-
-                logger.debug("Generating narrative report")
-                # Use pre-calculated date range for filename consistency
-                narrative_report = output / f"narrative_report_{date_range}.md"
-
-                # Try to generate ChatGPT summary
-                chatgpt_summary = None
-
-                openai_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-                if openai_key:
-                    try:
-                        # Create temporary comprehensive data for ChatGPT
-                        from .qualitative.chatgpt_analyzer import ChatGPTQualitativeAnalyzer
-
-                        logger.debug("Preparing data for ChatGPT analysis")
-
-                        # Create minimal comprehensive data structure
-                        comprehensive_data = {
-                            "metadata": {
-                                "analysis_weeks": weeks,
-                                "generated_at": datetime.now(timezone.utc).isoformat(),
-                            },
-                            "executive_summary": {
-                                "key_metrics": {
-                                    "commits": {"total": len(all_commits)},
-                                    "developers": {"total": len(developer_stats)},
-                                    "lines_changed": {
-                                        "total": sum(
-                                            c.get("filtered_insertions", c.get("insertions", 0))
-                                            + c.get("filtered_deletions", c.get("deletions", 0))
-                                            for c in all_commits
-                                        )
-                                    },
-                                    "story_points": {
-                                        "total": sum(
-                                            c.get("story_points", 0) or 0 for c in all_commits
-                                        )
-                                    },
-                                    "ticket_coverage": {
-                                        "percentage": ticket_analysis.get("commit_coverage_pct", 0)
-                                    },
-                                },
-                                "health_score": {"overall": 75, "rating": "good"},  # Placeholder
-                                "trends": {"velocity": {"direction": "stable"}},
-                                "wins": [],
-                                "concerns": [],
-                            },
-                            "developers": {},
-                            "projects": {},
-                        }
-
-                        # Add developer data
-                        for dev in developer_stats:  # All developers
-                            dev_id = dev.get("canonical_id", dev.get("primary_email", "unknown"))
-                            comprehensive_data["developers"][dev_id] = {
-                                "identity": {"name": dev.get("primary_name", "Unknown")},
-                                "summary": {
-                                    "total_commits": dev.get("total_commits", 0),
-                                    "total_story_points": dev.get("total_story_points", 0),
-                                },
-                                "projects": {},
-                            }
-
-                        analyzer = ChatGPTQualitativeAnalyzer(openai_key)
-                        logger.debug("Generating ChatGPT qualitative summary")
-                        chatgpt_summary = analyzer.generate_executive_summary(comprehensive_data)
-                        logger.debug("ChatGPT summary generated successfully")
-
-                    except Exception as e:
-                        logger.warning(f"ChatGPT summary generation failed: {e}")
-                        click.echo(f"   ⚠️ ChatGPT analysis skipped: {str(e)[:100]}")
-
-                narrative_gen.generate_narrative_report(
-                    all_commits,
-                    all_prs,
-                    developer_stats,
-                    activity_data,
-                    focus_data,
-                    insights_data,
-                    ticket_analysis,
-                    pr_metrics,
-                    narrative_report,
-                    weeks,
-                    aggregated_pm_data,
-                    chatgpt_summary,
-                    branch_health_metrics,
-                    cfg.analysis.exclude_authors,
-                    analysis_start_date=start_date,
-                    analysis_end_date=end_date,
-                )
-                generated_reports.append(narrative_report.name)
-                logger.debug("Narrative report generation completed successfully")
-                if not display:
-                    click.echo(f"   ✅ Narrative report: {narrative_report}")
-            except Exception as e:
-                logger.error(f"Error in narrative report generation: {e}")
-                with contextlib.suppress(Exception):
-                    handle_timezone_error(e, "narrative report generation", all_commits, logger)
-                click.echo(f"   ❌ Error generating narrative report: {e}")
-                click.echo(f"   🔍 Error type: {type(e).__name__}")
-                click.echo(f"   📍 Error details: {str(e)}")
-
-                traceback.print_exc()
-                raise
-        elif "markdown" in cfg.output.formats and not generate_csv:
-            # Narrative report requires CSV files, but CSV generation is disabled
-            logger.info(
-                "Skipping narrative report generation - CSV files required but CSV generation is disabled"
-            )
-            if not display:
-                click.echo(
-                    "   ℹ️  Narrative report skipped (requires CSV files - enable with --csv flag)"
-                )
-
-        # Generate database-backed qualitative report
-        if "markdown" in cfg.output.formats:
-            try:
-                logger.debug("Starting database-backed qualitative report generation")
-                if display:
-                    display.print_status("Generating database-backed qualitative report...", "info")
-                else:
-                    click.echo("   🔄 Generating database-backed qualitative report...")
-
-                # Initialize database report generator
-                from .core.metrics_storage import DailyMetricsStorage
-                from .reports.database_report_generator import DatabaseReportGenerator
-
-                # Use existing metrics storage from earlier in the pipeline
-                metrics_db_path = cfg.cache.directory / "daily_metrics.db"
-                metrics_storage = DailyMetricsStorage(metrics_db_path)
-                db_report_gen = DatabaseReportGenerator(metrics_storage)
-
-                # Generate report for the analysis period
-                # Use pre-calculated date range for filename consistency
-                db_qualitative_report = output / f"database_qualitative_report_{date_range}.md"
-                analysis_start_date = (
-                    start_date.date() if hasattr(start_date, "date") else start_date
-                )
-                analysis_end_date = (
-                    (start_date + timedelta(weeks=weeks)).date()
-                    if hasattr(start_date, "date")
-                    else (start_date + timedelta(weeks=weeks))
-                )
-
-                report_stats = db_report_gen.generate_qualitative_report(
-                    analysis_start_date, analysis_end_date, db_qualitative_report
-                )
-
-                generated_reports.append(db_qualitative_report.name)
-                logger.debug(f"Database qualitative report generated: {report_stats}")
-
-                if display:
-                    display.print_status(
-                        f"Generated report with {report_stats['total_records']} records, "
-                        f"{report_stats['trends_calculated']} trends",
-                        "success",
-                    )
-                else:
-                    click.echo(f"   ✅ Database qualitative report: {db_qualitative_report}")
-                    click.echo(
-                        f"      📊 {report_stats['total_records']} records, {report_stats['trends_calculated']} trends analyzed"
-                    )
-
-            except Exception as e:
-                logger.error(f"Error in database qualitative report generation: {e}")
-                if display:
-                    display.print_status(f"Database report generation failed: {e}", "warning")
-                else:
-                    click.echo(f"   ❌ Error generating database qualitative report: {e}")
-                # Don't raise - this is a new feature and shouldn't break existing functionality
-
-        # Generate comprehensive JSON export if enabled
-        if "json" in cfg.output.formats:
-            try:
-                logger.debug("Starting comprehensive JSON export generation")
-                click.echo("   🔄 Generating comprehensive JSON export...")
-                json_report = (
-                    output / f"comprehensive_export_{datetime.now().strftime('%Y%m%d')}.json"
-                )
-
-                # Initialize comprehensive JSON exporter
-                json_exporter = ComprehensiveJSONExporter(anonymize=anonymize)
-
-                # Enhanced qualitative analysis if available
-                enhanced_analysis = None
-                if qualitative_results:
-                    try:
-                        from .qualitative.enhanced_analyzer import EnhancedQualitativeAnalyzer
-
-                        logger.debug("Running enhanced qualitative analysis")
-                        enhanced_analyzer = EnhancedQualitativeAnalyzer()
-                        enhanced_analysis = enhanced_analyzer.analyze_comprehensive(
-                            commits=commits_for_qual,
-                            qualitative_data=qualitative_results,
-                            developer_stats=developer_stats,
-                            project_metrics={
-                                "ticket_analysis": ticket_analysis,
-                                "pr_metrics": pr_metrics,
-                                "enrichments": all_enrichments,
-                            },
-                            pm_data=aggregated_pm_data,
-                            weeks_analyzed=weeks,
-                        )
-                        logger.debug("Enhanced qualitative analysis completed")
-                    except Exception as e:
-                        logger.warning(f"Enhanced qualitative analysis failed: {e}")
-                        enhanced_analysis = None
-
-                # Prepare project metrics
-                project_metrics = {
-                    "ticket_analysis": ticket_analysis,
-                    "pr_metrics": pr_metrics,
-                    "enrichments": all_enrichments,
-                }
-
-                # Generate comprehensive export
-                logger.debug("Calling comprehensive JSON exporter")
-                json_exporter.export_comprehensive_data(
-                    commits=all_commits,
-                    prs=all_prs,
-                    developer_stats=developer_stats,
-                    project_metrics=project_metrics,
-                    dora_metrics=dora_metrics,
-                    output_path=json_report,
-                    weeks=weeks,
-                    pm_data=aggregated_pm_data if aggregated_pm_data else None,
-                    qualitative_data=qualitative_results if qualitative_results else None,
-                    enhanced_qualitative_analysis=enhanced_analysis,
-                )
-                generated_reports.append(json_report.name)
-                logger.debug("Comprehensive JSON export generation completed successfully")
-                if not display:
-                    click.echo(f"   ✅ Comprehensive JSON export: {json_report}")
-
-                # Generate HTML report from JSON if requested
-                # NOTE: HTML report generation temporarily disabled for database-backed reporting implementation
-                # if "html" in cfg.output.formats:
-                #     try:
-                #         click.echo("   🔄 Generating HTML report...")
-                #         from .reports.html_generator import HTMLReportGenerator
-                #         html_report = output / f'gitflow_report_{datetime.now().strftime("%Y%m%d")}.html'
-                #         logger.debug("Generating HTML report from JSON data")
-                #
-                #         # Read the JSON data we just wrote
-                #         if not json_report.exists():
-                #             # Check for alternative JSON file name
-                #             alt_json = output / f'gitflow_export_{datetime.now().strftime("%Y%m%d")}.json'
-                #             if alt_json.exists():
-                #                 click.echo(f"   ⚠️ Using alternative JSON file: {alt_json.name}")
-                #                 json_report = alt_json
-                #
-                #         with open(json_report) as f:
-                #             import json
-                #             json_data = json.load(f)
-                #
-                #         html_generator = HTMLReportGenerator()
-                #         html_generator.generate_report(
-                #             json_data=json_data,
-                #             output_path=html_report,
-                #             title=f"GitFlow Analytics Report - {datetime.now().strftime('%B %Y')}"
-                #         )
-                #         generated_reports.append(html_report.name)
-                #         if not display:
-                #             click.echo(f"   ✅ HTML report: {html_report}")
-                #         logger.debug("HTML report generation completed successfully")
-                #     except Exception as e:
-                #         logger.error(f"Error generating HTML report: {e}")
-                #         click.echo(f"   ⚠️ Warning: HTML report generation failed: {e}")
-            except Exception as e:
-                logger.error(f"Error in comprehensive JSON export generation: {e}")
-                with contextlib.suppress(Exception):
-                    handle_timezone_error(
-                        e, "comprehensive JSON export generation", all_commits, logger
-                    )
-                click.echo(f"   ❌ Error generating comprehensive JSON export: {e}")
-                click.echo(f"   🔍 Error type: {type(e).__name__}")
-                click.echo(f"   📍 Error details: {str(e)}")
-
-                traceback.print_exc()
-                raise
-
-        try:
-            logger.debug("Starting final summary calculations")
             total_story_points = sum(c.get("story_points", 0) or 0 for c in all_commits)
-            qualitative_count = len(qualitative_results) if qualitative_results else 0
-            logger.debug("Final summary calculations completed successfully")
+            dora_metrics = report_result.dora_metrics
 
-            # Show results summary
             if display:
-                logger.debug("Starting display.show_analysis_summary")
                 display.show_analysis_summary(
                     len(all_commits),
                     len(developer_stats),
-                    ticket_analysis["commits_with_tickets"],
+                    ticket_analysis.get("commits_with_tickets", 0),
                     prs=len(all_prs),
                 )
-                logger.debug("display.show_analysis_summary completed successfully")
-
-                # Show DORA metrics
                 if dora_metrics:
-                    logger.debug("Starting display.show_dora_metrics")
                     display.show_dora_metrics(dora_metrics)
-                    logger.debug("display.show_dora_metrics completed successfully")
-
-                # Show generated reports
-                logger.debug("Starting display.show_reports_generated")
-                display.show_reports_generated(output, generated_reports)
-                logger.debug("display.show_reports_generated completed successfully")
-
-                # Show LLM cost summary if cost tracking data is available
-                if qual_cost_stats:
-                    logger.debug("Starting display.show_llm_cost_summary")
-                    display.show_llm_cost_summary(qual_cost_stats)
-                    logger.debug("display.show_llm_cost_summary completed successfully")
-
-                logger.debug("Starting display.print_status")
+                display.show_reports_generated(output, report_result.generated_reports)
+                if qualitative_result.cost_stats:
+                    display.show_llm_cost_summary(qualitative_result.cost_stats)
                 display.print_status("Analysis complete!", "success")
-                logger.debug("display.print_status completed successfully")
 
-                # Display cache statistics
-                logger.debug("Starting cache statistics display")
+                # Cache statistics
                 try:
                     cache_stats = cache.get_cache_stats()
-
-                    # Display cache performance summary
                     display.print_status("📊 Cache Performance Summary", "info")
                     display.print_status(
                         f"  Total requests: {cache_stats['total_requests']}", "info"
                     )
                     display.print_status(
-                        f"  Cache hits: {cache_stats['cache_hits']} ({cache_stats['hit_rate_percent']:.1f}%)",
+                        f"  Cache hits: {cache_stats['cache_hits']} "
+                        f"({cache_stats['hit_rate_percent']:.1f}%)",
                         "info",
                     )
-                    display.print_status(f"  Cache misses: {cache_stats['cache_misses']}", "info")
-
+                    display.print_status(
+                        f"  Cache misses: {cache_stats['cache_misses']}", "info"
+                    )
                     if cache_stats["time_saved_seconds"] > 0:
                         if cache_stats["time_saved_minutes"] >= 1:
                             display.print_status(
@@ -3898,132 +1474,103 @@ def analyze(
                                 f"  Time saved: {cache_stats['time_saved_seconds']:.1f} seconds",
                                 "success",
                             )
-
-                    # Display cache storage info
-                    display.print_status("💾 Cache Storage", "info")
                     display.print_status(
                         f"  Cached commits: {cache_stats['fresh_commits']}", "info"
                     )
-                    if cache_stats["stale_commits"] > 0:
+                    if cache_stats.get("stale_commits", 0) > 0:
                         display.print_status(
                             f"  Stale commits: {cache_stats['stale_commits']}", "warning"
                         )
                     display.print_status(
                         f"  Database size: {cache_stats['database_size_mb']:.1f} MB", "info"
                     )
-
-                    if cache_stats["debug_mode"]:
-                        display.print_status("🔍 Debug mode active (GITFLOW_DEBUG=1)", "info")
-
                 except Exception as e:
-                    logger.error(f"Error displaying cache statistics: {e}")
-                    display.print_status(
-                        f"Warning: Could not display cache statistics: {e}", "warning"
-                    )
-
-                logger.debug("Cache statistics display completed")
-        except Exception as e:
-            logger.error(f"Error in final summary/display: {e}")
-            with contextlib.suppress(Exception):
-                handle_timezone_error(e, "final summary/display", all_commits, logger)
-            click.echo(f"   ❌ Error in final summary/display: {e}")
-            click.echo(f"   🔍 Error type: {type(e).__name__}")
-            click.echo(f"   📍 Error details: {str(e)}")
-
-            traceback.print_exc()
-            raise
-        else:
-            # Print summary in simple format
-            click.echo("\n📈 Analysis Summary:")
-            click.echo(f"   - Total commits: {len(all_commits)}")
-            click.echo(f"   - Total PRs: {len(all_prs)}")
-            click.echo(f"   - Active developers: {len(developer_stats)}")
-            click.echo(f"   - Ticket coverage: {ticket_analysis['commit_coverage_pct']:.1f}%")
-            click.echo(f"   - Total story points: {total_story_points}")
-
-            if dora_metrics:
-                click.echo("\n🎯 DORA Metrics:")
-                click.echo(
-                    f"   - Deployment frequency: {dora_metrics['deployment_frequency']['category']}"
-                )
-                click.echo(f"   - Lead time: {dora_metrics['lead_time_hours']:.1f} hours")
-                click.echo(f"   - Change failure rate: {dora_metrics['change_failure_rate']:.1f}%")
-                click.echo(f"   - MTTR: {dora_metrics['mttr_hours']:.1f} hours")
-                click.echo(f"   - Performance level: {dora_metrics['performance_level']}")
-
-            # Show LLM cost summary if available
-            if qual_cost_stats and qual_cost_stats.get("total_cost", 0) > 0:
-                click.echo("\n🤖 LLM Usage Summary:")
-                total_calls = qual_cost_stats.get("total_calls", 0)
-                total_tokens = qual_cost_stats.get("total_tokens", 0)
-                total_cost = qual_cost_stats.get("total_cost", 0)
-                click.echo(
-                    f"   - Qualitative Analysis: {total_calls:,} calls, {total_tokens:,} tokens (${total_cost:.4f})"
-                )
-
-                # Show budget info if available
-                daily_budget = 5.0  # Default budget from CostTracker
-                remaining = daily_budget - total_cost
-                utilization = (total_cost / daily_budget) * 100 if daily_budget > 0 else 0
-                click.echo(
-                    f"   - Budget: ${daily_budget:.2f}, Remaining: ${remaining:.2f}, Utilization: {utilization:.1f}%"
-                )
-
-                # Show optimization suggestions if cost is significant
-                if total_cost > 0.01:
-                    model_usage = qual_cost_stats.get("model_usage", {})
-                    expensive_models = ["anthropic/claude-3-opus", "openai/gpt-4"]
-                    expensive_cost = sum(
-                        model_usage.get(model, {}).get("cost", 0) for model in expensive_models
-                    )
-
-                    if expensive_cost > total_cost * 0.3:
-                        click.echo(
-                            "   💡 Cost Optimization: Consider using cheaper models (Claude Haiku, GPT-3.5) for routine tasks (save ~40%)"
-                        )
+                    logger.error("Error displaying cache statistics: %s", e)
             else:
-                # Show note about token tracking when qualitative analysis is not configured
-                if not (enable_qualitative or is_qualitative_enabled()):
-                    click.echo(
-                        "\n💡 Note: Token/cost tracking is only available with qualitative analysis enabled."
-                    )
-                    click.echo(
-                        "   Add 'qualitative:' section (top-level or under 'analysis:') "
-                        "to your config to enable detailed LLM cost tracking."
-                    )
-
-            # Display cache statistics in simple format
-            try:
-                cache_stats = cache.get_cache_stats()
-                click.echo("\n📊 Cache Performance:")
-                click.echo(f"   - Total requests: {cache_stats['total_requests']}")
+                click.echo("\n📈 Analysis Summary:")
+                click.echo(f"   - Total commits: {len(all_commits)}")
+                click.echo(f"   - Total PRs: {len(all_prs)}")
+                click.echo(f"   - Active developers: {len(developer_stats)}")
                 click.echo(
-                    f"   - Cache hits: {cache_stats['cache_hits']} ({cache_stats['hit_rate_percent']:.1f}%)"
+                    f"   - Ticket coverage: {ticket_analysis.get('commit_coverage_pct', 0):.1f}%"
                 )
-                click.echo(f"   - Cache misses: {cache_stats['cache_misses']}")
+                click.echo(f"   - Total story points: {total_story_points}")
 
-                if cache_stats["time_saved_seconds"] > 0:
-                    if cache_stats["time_saved_minutes"] >= 1:
+                if dora_metrics:
+                    click.echo("\n🎯 DORA Metrics:")
+                    click.echo(
+                        f"   - Deployment frequency: "
+                        f"{dora_metrics['deployment_frequency']['category']}"
+                    )
+                    click.echo(
+                        f"   - Lead time: {dora_metrics['lead_time_hours']:.1f} hours"
+                    )
+                    click.echo(
+                        f"   - Change failure rate: "
+                        f"{dora_metrics['change_failure_rate']:.1f}%"
+                    )
+                    click.echo(f"   - MTTR: {dora_metrics['mttr_hours']:.1f} hours")
+                    click.echo(
+                        f"   - Performance level: {dora_metrics['performance_level']}"
+                    )
+
+                qual_cost_stats = qualitative_result.cost_stats
+                if qual_cost_stats and qual_cost_stats.get("total_cost", 0) > 0:
+                    click.echo("\n🤖 LLM Usage Summary:")
+                    total_calls = qual_cost_stats.get("total_calls", 0)
+                    total_tokens = qual_cost_stats.get("total_tokens", 0)
+                    total_cost = qual_cost_stats.get("total_cost", 0)
+                    click.echo(
+                        f"   - Qualitative Analysis: {total_calls:,} calls, "
+                        f"{total_tokens:,} tokens (${total_cost:.4f})"
+                    )
+                    daily_budget = 5.0
+                    remaining = daily_budget - total_cost
+                    utilization = (total_cost / daily_budget) * 100 if daily_budget > 0 else 0
+                    click.echo(
+                        f"   - Budget: ${daily_budget:.2f}, Remaining: ${remaining:.2f}, "
+                        f"Utilization: {utilization:.1f}%"
+                    )
+
+                try:
+                    cache_stats = cache.get_cache_stats()
+                    click.echo("\n📊 Cache Performance:")
+                    click.echo(
+                        f"   - Total requests: {cache_stats['total_requests']}"
+                    )
+                    click.echo(
+                        f"   - Cache hits: {cache_stats['cache_hits']} "
+                        f"({cache_stats['hit_rate_percent']:.1f}%)"
+                    )
+                    click.echo(
+                        f"   - Cache misses: {cache_stats['cache_misses']}"
+                    )
+                    if cache_stats["time_saved_seconds"] > 0:
+                        if cache_stats["time_saved_minutes"] >= 1:
+                            click.echo(
+                                f"   - Time saved: {cache_stats['time_saved_minutes']:.1f} minutes"
+                            )
+                        else:
+                            click.echo(
+                                f"   - Time saved: {cache_stats['time_saved_seconds']:.1f} seconds"
+                            )
+                    click.echo(f"   - Cached commits: {cache_stats['fresh_commits']}")
+                    if cache_stats.get("stale_commits", 0) > 0:
                         click.echo(
-                            f"   - Time saved: {cache_stats['time_saved_minutes']:.1f} minutes"
+                            f"   - Stale commits: {cache_stats['stale_commits']}"
                         )
-                    else:
-                        click.echo(
-                            f"   - Time saved: {cache_stats['time_saved_seconds']:.1f} seconds"
-                        )
+                    click.echo(
+                        f"   - Database size: {cache_stats['database_size_mb']:.1f} MB"
+                    )
+                except Exception as e:
+                    click.echo(f"   Warning: Could not display cache statistics: {e}")
 
-                click.echo(f"   - Cached commits: {cache_stats['fresh_commits']}")
-                if cache_stats["stale_commits"] > 0:
-                    click.echo(f"   - Stale commits: {cache_stats['stale_commits']}")
-                click.echo(f"   - Database size: {cache_stats['database_size_mb']:.1f} MB")
+                click.echo(f"\n✅ Analysis complete! Reports saved to {output}")
 
-                if cache_stats["debug_mode"]:
-                    click.echo("   - Debug mode: ACTIVE (GITFLOW_DEBUG=1)")
-
-            except Exception as e:
-                click.echo(f"   Warning: Could not display cache statistics: {e}")
-
-            click.echo(f"\n✅ Analysis complete! Reports saved to {output}")
+        except Exception as e:
+            logger.error("Error in final summary/display: %s", e)
+            click.echo(f"   ❌ Error in final summary/display: {e}")
+            raise
 
         # Stop Rich display if it was started
         if (
@@ -4058,6 +1605,284 @@ def analyze(
         if "--debug" in sys.argv:
             raise
         sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Private helpers called from analyze()
+# ---------------------------------------------------------------------------
+
+
+def _run_security_only_analysis(
+    cfg: Any,
+    cache: Any,
+    cache_dir: Path,
+    config: Path,
+    no_cache: bool,
+    output: Optional[Path],
+    display: Any,
+    weeks: int,
+) -> None:
+    """Run the security-only analysis path and print results to console."""
+    from .core.data_fetcher import GitDataFetcher
+    from .security import SecurityAnalyzer, SecurityConfig
+    from .security.reports import SecurityReportGenerator
+    from .utils.date_utils import get_monday_aligned_start, get_week_end
+
+    if display:
+        display.print_status("🔒 Running security-only analysis...", "info")
+    else:
+        click.echo("\n🔒 Running security-only analysis...")
+
+    security_config = SecurityConfig.from_dict(
+        cfg.analysis.security if hasattr(cfg.analysis, "security") else {}
+    )
+    if not security_config.enabled:
+        if display:
+            display.show_error("Security analysis is not enabled in configuration")
+        else:
+            click.echo("❌ Security analysis is not enabled in configuration")
+            click.echo("💡 Add 'security:' section to your config with 'enabled: true'")
+        return
+
+    _cache_dir = cfg.cache.directory
+    if not _cache_dir.is_absolute():
+        _cache_dir = config.parent / _cache_dir
+    _cache_dir.mkdir(parents=True, exist_ok=True)
+
+    from .core.cache import GitAnalysisCache
+
+    _cache = GitAnalysisCache(
+        cache_dir=_cache_dir,
+        ttl_hours=cfg.cache.ttl_hours if not no_cache else 0,
+    )
+    data_fetcher = GitDataFetcher(
+        cache=_cache,
+        branch_mapping_rules=cfg.analysis.branch_mapping_rules,
+        allowed_ticket_platforms=cfg.get_effective_ticket_platforms(),
+        exclude_paths=cfg.analysis.exclude_paths,
+        exclude_merge_commits=cfg.analysis.exclude_merge_commits,
+    )
+
+    all_commits: list[Any] = []
+    for repo_config in cfg.repositories:
+        repo_path = Path(repo_config["path"])
+        if not repo_path.exists():
+            click.echo(f"⚠️  Repository not found: {repo_path}")
+            continue
+
+        start_date = get_monday_aligned_start(weeks)
+        from datetime import timedelta
+
+        end_date = get_week_end(start_date + timedelta(weeks=weeks) - timedelta(days=1))
+
+        if display:
+            display.print_status(f"Fetching commits from {repo_config['name']}...", "info")
+        else:
+            click.echo(f"📥 Fetching commits from {repo_config['name']}...")
+
+        raw_data = data_fetcher.fetch_raw_data(
+            repositories=[repo_config],
+            start_date=start_date,
+            end_date=end_date,
+        )
+        commits = raw_data["commits"] if raw_data and raw_data.get("commits") else []
+        all_commits.extend(commits)
+
+    if not all_commits:
+        if display:
+            display.show_error("No commits found to analyze")
+        else:
+            click.echo("❌ No commits found to analyze")
+        return
+
+    security_analyzer = SecurityAnalyzer(config=security_config)
+    if display:
+        display.print_status(
+            f"Analyzing {len(all_commits)} commits for security issues...", "info"
+        )
+    else:
+        click.echo(f"\n🔍 Analyzing {len(all_commits)} commits for security issues...")
+
+    analyses = [security_analyzer.analyze_commit(c) for c in all_commits]
+    summary = security_analyzer.generate_summary_report(analyses)
+
+    click.echo("\n" + "=" * 60)
+    click.echo("SECURITY ANALYSIS SUMMARY")
+    click.echo("=" * 60)
+    click.echo(f"Total Commits Analyzed: {summary['total_commits']}")
+    click.echo(f"Commits with Issues: {summary['commits_with_issues']}")
+    click.echo(f"Total Security Findings: {summary['total_findings']}")
+    click.echo(
+        f"Risk Level: {summary['risk_level']} (Score: {summary['average_risk_score']:.1f})"
+    )
+
+    for severity, label in [("critical", "🔴"), ("high", "🟠"), ("medium", "🟡")]:
+        count = summary["severity_distribution"].get(severity, 0)
+        if count > 0:
+            click.echo(f"\n{label} {severity.title()} Issues: {count}")
+
+    report_dir = output or Path(cfg.output.directory)
+    report_dir.mkdir(parents=True, exist_ok=True)
+    reports = SecurityReportGenerator(output_dir=report_dir).generate_reports(analyses, summary)
+    click.echo("\n✅ Security Reports Generated:")
+    for report_type, path in reports.items():
+        click.echo(f"  - {report_type.upper()}: {path}")
+
+    if summary.get("recommendations"):
+        click.echo("\n💡 Recommendations:")
+        for rec in summary["recommendations"][:5]:
+            click.echo(f"  {rec}")
+
+    if display:
+        display.print_status("Security analysis completed!", "success")
+
+
+def _run_identity_analysis(
+    config: Path,
+    cfg: Any,
+    cache_dir: Path,
+    identity_resolver: Any,
+    all_commits: list[Any],
+    developer_stats: list[Any],
+    display: Any,
+    logger: Any,
+) -> None:
+    """Run the optional identity-cluster analysis and prompt user to apply mappings."""
+    from .identity_llm.analysis_pass import IdentityAnalysisPass
+    from datetime import datetime as _dt
+
+    try:
+        last_prompt_file = cache_dir / ".identity_last_prompt"
+        should_prompt = True
+        if last_prompt_file.exists():
+            last_prompt_age = _dt.now() - _dt.fromtimestamp(
+                os.path.getmtime(last_prompt_file)
+            )
+            if last_prompt_age < timedelta(days=7):
+                should_prompt = False
+
+        if not should_prompt:
+            return
+
+        if display:
+            display.print_status("Analyzing developer identities...", "info")
+        else:
+            click.echo("\n🔍 Analyzing developer identities...")
+
+        analysis_pass = IdentityAnalysisPass(config)
+        identity_cache_file = cache_dir / "identity_analysis_cache.yaml"
+        identity_result = analysis_pass.run_analysis(
+            all_commits, output_path=identity_cache_file, apply_to_config=False
+        )
+
+        if not identity_result.clusters:
+            if display:
+                display.print_status(
+                    "No identity clusters found - all developers appear unique", "success"
+                )
+            else:
+                click.echo("✅ No identity clusters found - all developers appear unique")
+            last_prompt_file.touch()
+            return
+
+        suggested_config = analysis_pass.generate_suggested_config(identity_result)
+
+        if display:
+            display.print_status(
+                f"Found {len(identity_result.clusters)} potential identity clusters",
+                "warning",
+            )
+        else:
+            click.echo(
+                f"\n⚠️  Found {len(identity_result.clusters)} potential identity clusters:"
+            )
+
+        if suggested_config.get("analysis", {}).get("manual_identity_mappings"):
+            click.echo("\n📋 Suggested identity mappings:")
+            for mapping in suggested_config["analysis"]["manual_identity_mappings"]:
+                canonical = mapping["canonical_email"]
+                aliases = mapping.get("aliases", [])
+                if aliases:
+                    click.echo(f"   {canonical}")
+                    for alias in aliases:
+                        click.echo(f"     → {alias}")
+
+        if suggested_config.get("exclude", {}).get("authors"):
+            bot_count = len(suggested_config["exclude"]["authors"])
+            click.echo(f"\n🤖 Found {bot_count} bot accounts to exclude:")
+            for bot in suggested_config["exclude"]["authors"][:5]:
+                click.echo(f"   - {bot}")
+            if bot_count > 5:
+                click.echo(f"   ... and {bot_count - 5} more")
+
+        click.echo("\n" + "─" * 60)
+        if click.confirm(
+            "Apply these identity mappings to your configuration?", default=True
+        ):
+            try:
+                with open(config) as f:
+                    config_data = yaml.safe_load(f)
+
+                config_data.setdefault("analysis", {}).setdefault("identity", {})
+                existing_mappings = config_data["analysis"]["identity"].get(
+                    "manual_mappings", []
+                )
+                new_mappings = suggested_config.get("analysis", {}).get(
+                    "manual_identity_mappings", []
+                )
+                existing_emails = {
+                    m.get("canonical_email", "").lower() for m in existing_mappings
+                }
+                for new_mapping in new_mappings:
+                    if new_mapping["canonical_email"].lower() not in existing_emails:
+                        existing_mappings.append(new_mapping)
+                config_data["analysis"]["identity"]["manual_mappings"] = existing_mappings
+
+                if suggested_config.get("exclude", {}).get("authors"):
+                    config_data["analysis"].setdefault("exclude", {}).setdefault(
+                        "authors", []
+                    )
+                    existing_excludes = set(config_data["analysis"]["exclude"]["authors"])
+                    for bot in suggested_config["exclude"]["authors"]:
+                        if bot not in existing_excludes:
+                            config_data["analysis"]["exclude"]["authors"].append(bot)
+
+                with open(config, "w") as f:
+                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+                if display:
+                    display.print_status(
+                        "Applied identity mappings to configuration", "success"
+                    )
+                else:
+                    click.echo("✅ Applied identity mappings to configuration")
+
+                # Reload config & re-init identity resolver
+                from .config import ConfigLoader
+
+                cfg_new = ConfigLoader.load(config)
+                identity_resolver.__init__(
+                    cache_dir / "identities.db",
+                    similarity_threshold=cfg_new.analysis.similarity_threshold,
+                    manual_mappings=cfg_new.analysis.manual_identity_mappings,
+                )
+                click.echo("\n🔄 Re-resolving developer identities with new mappings...")
+                identity_resolver.update_commit_stats(all_commits)
+
+            except Exception as e:
+                logger.error("Failed to apply identity mappings: %s", e)
+                click.echo(f"❌ Failed to apply identity mappings: {e}")
+        else:
+            click.echo("⏭️  Skipping identity mapping suggestions")
+
+        last_prompt_file.touch()
+
+    except Exception as e:
+        if display:
+            display.print_status(f"Identity analysis failed: {e}", "warning")
+        else:
+            click.echo(f"⚠️  Identity analysis failed: {e}")
+        logger.debug("Identity analysis error: %s", e, exc_info=True)
 
 
 @cli.command(name="fetch")
