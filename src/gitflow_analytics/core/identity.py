@@ -3,7 +3,6 @@
 import difflib
 import logging
 import uuid
-from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,12 +11,9 @@ from typing import Any, Optional
 from sqlalchemy import and_
 
 from ..models.database import Database, DeveloperAlias, DeveloperIdentity
+from .identity_stats import IdentityStatsMixin
 
 logger = logging.getLogger(__name__)
-
-
-
-from .identity_stats import IdentityStatsMixin
 
 
 class DeveloperIdentityResolver(IdentityStatsMixin):
@@ -367,6 +363,48 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
             logger.debug(f"Resolved {name} <{email}> from cache to {canonical_id}")
             return canonical_id
 
+        # Fix 2: Detect GitHub noreply emails and resolve via username.
+        # Pattern: {numeric_id}+{username}@users.noreply.github.com
+        # Extract the username portion and try to match it against existing aliases.
+        if email.endswith("@users.noreply.github.com") and "+" in email:
+            local_part = email.split("@")[0]
+            github_username = local_part.split("+", 1)[1]  # part after the numeric ID
+            # Look for an existing alias or identity with this username as email/alias
+            with self.get_session() as session:
+                # Search aliases where email equals the plain username (common pattern
+                # when users commit directly via the GitHub web UI or CLI with their
+                # username set as "email").
+                username_alias = (
+                    session.query(DeveloperAlias)
+                    .filter(DeveloperAlias.email == github_username.lower())
+                    .first()
+                )
+                if username_alias:
+                    # Register the noreply address under the same identity so future
+                    # lookups hit the cache without another DB round-trip.
+                    self._add_alias(username_alias.canonical_id, name, email)
+                    self._cache[cache_key] = username_alias.canonical_id
+                    logger.debug(
+                        f"Matched GitHub noreply email {email!r} to username "
+                        f"{github_username!r} → canonical_id={username_alias.canonical_id}"
+                    )
+                    return username_alias.canonical_id
+
+                # Also check if the username itself is a primary identity email
+                username_identity = (
+                    session.query(DeveloperIdentity)
+                    .filter(DeveloperIdentity.primary_email == github_username.lower())
+                    .first()
+                )
+                if username_identity:
+                    self._add_alias(username_identity.canonical_id, name, email)
+                    self._cache[cache_key] = username_identity.canonical_id
+                    logger.debug(
+                        f"Matched GitHub noreply email {email!r} to primary identity "
+                        f"{github_username!r} → canonical_id={username_identity.canonical_id}"
+                    )
+                    return username_identity.canonical_id
+
         # Check exact email match in database
         with self.get_session() as session:
             # Check aliases
@@ -581,4 +619,3 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
         # Clear cache to force reload
         self._cache.clear()
         self._load_cache()
-

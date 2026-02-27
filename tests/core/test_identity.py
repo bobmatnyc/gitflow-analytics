@@ -346,3 +346,241 @@ class TestCoAuthorAttribution:
         assert "dev1@example.com" in emails
         assert "dev2@example.com" in emails
         assert "dev3@example.com" in emails
+
+
+class TestGitHubNoReplyEmailResolution:
+    """Fix 2: GitHub noreply email auto-detection.
+
+    GitHub noreply addresses follow the pattern:
+        {numeric_id}+{username}@users.noreply.github.com
+
+    The resolver must automatically link these to the canonical identity that
+    already exists under the plain username alias, without requiring a manual
+    mapping entry.
+    """
+
+    def test_noreply_email_matches_username_alias(self, temp_dir):
+        """61434073+chungk-duetto@users.noreply.github.com resolves to chungk-duetto identity."""
+        db_path = temp_dir / "identities.db"
+
+        manual_mappings = [
+            {
+                "name": "Chung Kim",
+                "primary_email": "chung.kim@company.com",
+                "aliases": ["chung.kim@company.com", "chungk-duetto"],
+            }
+        ]
+        resolver = DeveloperIdentityResolver(db_path, manual_mappings=manual_mappings)
+
+        # Resolve via the plain username first (simulates a commit authored with username)
+        canonical_via_username = resolver.resolve_developer("Chung Kim", "chungk-duetto")
+
+        # Now resolve via the GitHub noreply address
+        canonical_via_noreply = resolver.resolve_developer(
+            "Chung Kim",
+            "61434073+chungk-duetto@users.noreply.github.com",
+        )
+
+        assert (
+            canonical_via_noreply == canonical_via_username
+        ), "GitHub noreply address should resolve to the same identity as the plain username alias"
+
+    def test_noreply_email_matches_primary_identity(self, temp_dir):
+        """noreply email resolves to an identity whose primary_email is the bare username."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        # Create an identity where the primary email is the bare username
+        # (e.g. created automatically from a commit that used a username)
+        canonical_via_username = resolver.resolve_developer("octocat", "octocat")
+
+        # The noreply address should find the same identity
+        canonical_via_noreply = resolver.resolve_developer(
+            "The Octocat",
+            "583231+octocat@users.noreply.github.com",
+        )
+
+        assert canonical_via_noreply == canonical_via_username, (
+            "GitHub noreply address should resolve to the identity whose primary_email "
+            "is the extracted username"
+        )
+
+    def test_noreply_email_without_plus_creates_new_identity(self, temp_dir):
+        """Noreply-style address without the numeric+username format is treated as a new identity."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        resolver.resolve_developer("Alice", "alice")
+
+        # An address that ends with noreply domain but lacks "+" should NOT trigger the
+        # username-extraction path and should therefore create a distinct identity.
+        id_plain = resolver.resolve_developer("Alice", "alice@users.noreply.github.com")
+        id_user = resolver.resolve_developer("Alice", "alice")
+
+        # These are separate identities; the noreply path only fires when "+" is present.
+        assert id_plain != id_user
+
+    def test_noreply_match_is_cached(self, temp_dir):
+        """Resolving the same noreply address twice uses the cache on the second call."""
+        db_path = temp_dir / "identities.db"
+
+        manual_mappings = [
+            {
+                "name": "Dev User",
+                "primary_email": "dev@company.com",
+                "aliases": ["dev@company.com", "devuser"],
+            }
+        ]
+        resolver = DeveloperIdentityResolver(db_path, manual_mappings=manual_mappings)
+
+        noreply = "99999+devuser@users.noreply.github.com"
+        id1 = resolver.resolve_developer("Dev User", noreply)
+        id2 = resolver.resolve_developer("Dev User", noreply)
+
+        assert id1 == id2
+        cache_key = f"{noreply}:dev user"
+        assert cache_key in resolver._cache
+
+
+class TestStaleCanonicalNameFix:
+    """Fix 1: canonical_name on commit dicts must reflect post-mapping names.
+
+    update_commit_stats() sets canonical_name BEFORE apply_manual_mappings() runs.
+    After the fix, a second pass re-stamps each commit with the fresh canonical name.
+    """
+
+    def test_canonical_name_updated_after_manual_mappings(self, temp_dir):
+        """commit['canonical_name'] shows the mapped display name, not the raw git name."""
+        db_path = temp_dir / "identities.db"
+
+        manual_mappings = [
+            {
+                "name": "Chung Kim",
+                "primary_email": "chung.kim@company.com",
+                "aliases": ["chung.kim@company.com", "chungk-duetto"],
+            }
+        ]
+        resolver = DeveloperIdentityResolver(db_path, manual_mappings=manual_mappings)
+
+        commit = {
+            "author_name": "chungk-duetto",
+            "author_email": "chungk-duetto",
+            "story_points": 0,
+        }
+        resolver.update_commit_stats([commit])
+
+        assert commit.get("canonical_name") == "Chung Kim", (
+            f"Expected 'Chung Kim' but got {commit.get('canonical_name')!r}. "
+            "The second-pass re-application of canonical_name after manual mappings is missing."
+        )
+
+    def test_canonical_name_correct_without_mappings(self, temp_dir):
+        """Without manual mappings, canonical_name still reflects the git author name."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commit = {
+            "author_name": "Alice Developer",
+            "author_email": "alice@example.com",
+            "story_points": 0,
+        }
+        resolver.update_commit_stats([commit])
+
+        assert commit.get("canonical_name") == "Alice Developer"
+
+    def test_multiple_commits_all_receive_updated_canonical_name(self, temp_dir):
+        """All commits in a batch get correct canonical_name after mappings."""
+        db_path = temp_dir / "identities.db"
+
+        manual_mappings = [
+            {
+                "name": "Jane Smith",
+                "primary_email": "jane@company.com",
+                "aliases": ["jane@company.com", "jsmith-gh"],
+            }
+        ]
+        resolver = DeveloperIdentityResolver(db_path, manual_mappings=manual_mappings)
+
+        commits = [
+            {"author_name": "jsmith-gh", "author_email": "jsmith-gh", "story_points": 0},
+            {"author_name": "jsmith-gh", "author_email": "jsmith-gh", "story_points": 1},
+        ]
+        resolver.update_commit_stats(commits)
+
+        for i, commit in enumerate(commits):
+            assert (
+                commit.get("canonical_name") == "Jane Smith"
+            ), f"Commit {i} has canonical_name={commit.get('canonical_name')!r}, expected 'Jane Smith'"
+
+
+class TestLoaderPrimaryEmailHardening:
+    """Fix 3: loader must prefer a real email address over a plain username.
+
+    When developer_aliases lists a username before any real email address,
+    the loader previously used the username as primary_email.  After the fix
+    it skips plain usernames and picks the first entry that contains '@'.
+    """
+
+    def test_loader_picks_email_over_username(self):
+        """primary_email is chosen from the first entry that contains '@'."""
+        emails = ["chungk-duetto", "chung.kim@company.com", "chung@personal.com"]
+
+        primary_email = next((e for e in emails if "@" in e), emails[0])
+
+        assert (
+            primary_email == "chung.kim@company.com"
+        ), f"Expected first real email but got {primary_email!r}"
+
+    def test_loader_falls_back_to_first_entry_when_no_email(self):
+        """When no entry contains '@', the first entry is still used as primary."""
+        emails = ["useronly", "anotheruser"]
+
+        primary_email = next((e for e in emails if "@" in e), emails[0])
+
+        assert primary_email == "useronly"
+
+    def test_loader_uses_only_entry_when_it_is_email(self):
+        """Single-entry list with a real email works correctly."""
+        emails = ["dev@example.com"]
+
+        primary_email = next((e for e in emails if "@" in e), emails[0])
+
+        assert primary_email == "dev@example.com"
+
+    def test_loader_integration_with_developer_aliases(self, tmp_path):
+        """End-to-end: loader converts developer_aliases with leading username correctly."""
+        import textwrap
+
+        from gitflow_analytics.config.loader import ConfigLoader
+
+        config_content = textwrap.dedent(
+            f"""
+            version: "1.0"
+            github:
+              token: "ghp_test"
+              owner: "test-org"
+            repositories:
+              - name: "repo"
+                path: "{str(tmp_path)}"
+            developer_aliases:
+              "Chung Kim":
+                - chungk-duetto
+                - chung.kim@company.com
+                - 61434073+chungk-duetto@users.noreply.github.com
+            """
+        )
+
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(config_content)
+
+        config = ConfigLoader.load(config_path)
+
+        mappings = config.analysis.manual_identity_mappings
+        assert len(mappings) == 1, f"Expected 1 mapping, got {len(mappings)}: {mappings}"
+
+        mapping = mappings[0]
+        primary = mapping["primary_email"]
+        assert "@" in primary, f"primary_email should be a real email address, got {primary!r}"
+        assert (
+            primary == "chung.kim@company.com"
+        ), f"Expected 'chung.kim@company.com' but got {primary!r}"

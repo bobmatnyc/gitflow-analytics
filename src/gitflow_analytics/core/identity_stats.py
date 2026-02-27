@@ -1,23 +1,14 @@
 """Developer identity stats and mappings mixin."""
 
-"""Developer identity resolution with persistence."""
-
-import difflib
 import logging
 import uuid
 from collections import defaultdict
-from contextlib import contextmanager
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import and_
-
-from ..models.database import Database, DeveloperAlias, DeveloperIdentity
+from ..models.database import DeveloperAlias, DeveloperIdentity
 
 logger = logging.getLogger(__name__)
-
-
 
 
 class IdentityStatsMixin:
@@ -169,6 +160,13 @@ class IdentityStatsMixin:
         # Apply manual mappings after all identities are created
         if self.manual_mappings:
             self.apply_manual_mappings()
+            # Re-apply canonical names now that mappings have taken effect.
+            # The canonical_name set above may be stale because apply_manual_mappings()
+            # can rename identities (e.g. merge an alias into a preferred display name).
+            for commit in commits:
+                cid = commit.get("canonical_id")
+                if cid:
+                    commit["canonical_name"] = self.get_canonical_name(cid)
 
     def apply_manual_mappings(self):
         """Apply manual mappings - can be called explicitly after identities are created."""

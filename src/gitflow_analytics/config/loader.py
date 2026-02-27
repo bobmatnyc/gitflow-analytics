@@ -267,9 +267,10 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             # Convert legacy format to modern format
             for canonical_name, emails in data["developer_aliases"].items():
                 if isinstance(emails, list) and emails:
-                    # Use first email as primary, all emails as aliases
+                    # Prefer an actual email address (contains "@") over a plain
+                    # username.  Fall back to the first entry when none contain "@".
+                    primary_email = next((e for e in emails if "@" in e), emails[0])
                     # Note: aliases list includes primary_email to ensure all emails map to canonical identity
-                    primary_email = emails[0]
                     data["analysis"]["identity"]["manual_mappings"].append(
                         {"name": canonical_name, "primary_email": primary_email, "aliases": emails}
                     )
