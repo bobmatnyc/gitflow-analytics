@@ -36,10 +36,10 @@ def run_collect(
     Returns:
         A :class:`CollectResult` with summary statistics.
     """
-    from .utils.date_utils import get_week_end, get_week_start
     from .core.cache import GitAnalysisCache
     from .core.data_fetcher import GitDataFetcher
     from .integrations.orchestrator import IntegrationOrchestrator
+    from .utils.date_utils import get_week_end, get_week_start
 
     def _emit(msg: str) -> None:
         if progress_callback:
@@ -218,6 +218,48 @@ def run_collect(
                     error_message=str(exc),
                     config_hash=config_hash,
                 )
+
+    # --- PR enrichment for already-cached repos that have github_repo set ---
+    cached_with_github = [r for r in repos_already_cached if getattr(r, "github_repo", None)]
+    if cached_with_github and orchestrator:
+        _emit(f"Enriching {len(cached_with_github)} cached repos with PR data...")
+        for idx, repo_config in enumerate(cached_with_github, 1):
+            repo_path = Path(repo_config.path)
+            project_key = repo_config.project_key or repo_path.name
+            try:
+                with cache.get_session() as session:
+                    from gitflow_analytics.models.database import CachedCommit
+
+                    cached_commits_rows = (
+                        session.query(CachedCommit)
+                        .filter(
+                            CachedCommit.repo_path == str(repo_path),
+                            CachedCommit.timestamp >= start_date,
+                            CachedCommit.timestamp <= end_date,
+                        )
+                        .all()
+                    )
+                    commits_for_enrichment = [
+                        {
+                            "hash": c.commit_hash,
+                            "author_name": c.author_name,
+                            "author_email": c.author_email,
+                            "date": c.timestamp,
+                            "message": c.message,
+                        }
+                        for c in cached_commits_rows
+                    ]
+
+                enrichment = orchestrator.enrich_repository_data(
+                    repo_config, commits_for_enrichment, start_date
+                )
+                if enrichment["prs"]:
+                    _emit(
+                        f"  {project_key}: {len(enrichment['prs'])} PRs ({idx}/{len(cached_with_github)})"
+                    )
+            except Exception as pr_err:
+                logger.warning(f"PR enrichment failed for {repo_config.github_repo}: {pr_err}")
+                _emit(f"  {project_key}: PR fetch skipped ({idx}/{len(cached_with_github)})")
 
     result.total_developers = len(total_developers)
     return result
