@@ -1098,6 +1098,461 @@ class TestGetCachedPrsForReport:
 
 
 # ---------------------------------------------------------------------------
+# Qualitative join tests — run_report merges change_type / complexity
+# ---------------------------------------------------------------------------
+
+
+class TestRunReportQualitativeJoin:
+    """Verify that run_report merges QualitativeCommitData into commit dicts.
+
+    The fix ensures that ``change_type``, ``change_type_confidence``,
+    ``complexity``, and ``processing_method`` stored in the
+    ``qualitative_commits`` table are included in the commit dicts passed to
+    all downstream report generators.
+    """
+
+    _REPORT_PATCH_PATHS = {
+        "cache": "gitflow_analytics.core.cache.GitAnalysisCache",
+        "identity": "gitflow_analytics.core.identity.DeveloperIdentityResolver",
+        "analyzer": "gitflow_analytics.core.analyzer.GitAnalyzer",
+        "csv_writer": "gitflow_analytics.reports.csv_writer.CSVReportGenerator",
+        "analytics_writer": "gitflow_analytics.reports.analytics_writer.AnalyticsReportGenerator",
+        "narrative_writer": "gitflow_analytics.reports.narrative_writer.NarrativeReportGenerator",
+        "trends_writer": "gitflow_analytics.reports.weekly_trends_writer.WeeklyTrendsWriter",
+        "json_exporter": "gitflow_analytics.reports.json_exporter.ComprehensiveJSONExporter",
+        "dora": "gitflow_analytics.metrics.dora.DORAMetricsCalculator",
+    }
+
+    def _make_identity_mock(self) -> MagicMock:
+        mock_identity = MagicMock()
+        mock_identity.get_developer_stats.return_value = {}
+        return mock_identity
+
+    def _make_analyzer_mock(self) -> MagicMock:
+        mock_analyzer = MagicMock()
+        mock_analyzer.ticket_extractor.analyze_ticket_coverage.return_value = {}
+        mock_analyzer.ticket_extractor.calculate_developer_ticket_coverage.return_value = {}
+        return mock_analyzer
+
+    def _make_cache_mock_with_commits(
+        self,
+        commit_rows: list[MagicMock],
+        qual_rows: list[MagicMock],
+    ) -> MagicMock:
+        """Build a GitAnalysisCache mock that returns given ORM row mocks.
+
+        The session's ``query()`` must dispatch differently depending on which
+        model class is queried:
+
+        - ``CachedCommit`` → returns commit_rows
+        - ``QualitativeCommitData`` → returns qual_rows
+        """
+        from gitflow_analytics.models.database import CachedCommit
+        from gitflow_analytics.models.database_metrics_models import QualitativeCommitData
+
+        mock_cache = MagicMock()
+
+        # Build two independent query mocks, one per model class
+        commit_query = MagicMock()
+        commit_query.filter.return_value = commit_query
+        commit_query.order_by.return_value = commit_query
+        commit_query.all.return_value = commit_rows
+
+        qual_query = MagicMock()
+        qual_query.filter.return_value = qual_query
+        qual_query.all.return_value = qual_rows
+
+        def _dispatch_query(model_class: type) -> MagicMock:
+            if model_class is CachedCommit:
+                return commit_query
+            if model_class is QualitativeCommitData:
+                return qual_query
+            return MagicMock()
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.side_effect = _dispatch_query
+
+        mock_cache.get_session.return_value = mock_session
+        mock_cache._commit_to_dict.side_effect = lambda cc: {
+            "hash": cc.commit_hash,
+            "author_email": cc.author_email,
+        }
+        mock_cache.get_cached_prs_for_report.return_value = []
+        return mock_cache
+
+    def _make_commit_row(self, row_id: int, commit_hash: str = "abc123") -> MagicMock:
+        """Build a minimal CachedCommit ORM row mock."""
+        row = MagicMock()
+        row.id = row_id
+        row.commit_hash = commit_hash
+        row.author_email = "dev@example.com"
+        row.repo_path = "/repos/test"
+        return row
+
+    def _make_qual_row(
+        self,
+        commit_id: int,
+        change_type: str = "feature",
+        confidence: float = 0.9,
+        complexity: int = 3,
+        processing_method: str = "llm",
+    ) -> MagicMock:
+        """Build a minimal QualitativeCommitData ORM row mock."""
+        row = MagicMock()
+        row.commit_id = commit_id
+        row.change_type = change_type
+        row.change_type_confidence = confidence
+        row.complexity = complexity
+        row.processing_method = processing_method
+        return row
+
+    def _captured_commit_dicts(
+        self,
+        cfg: Any,
+        output_dir: Path,
+        cache_mock: MagicMock,
+    ) -> list[dict]:
+        """Run run_report and capture all_commits via the DORA calculator call."""
+        captured: list[list] = []
+
+        with (
+            patch(self._REPORT_PATCH_PATHS["cache"]) as MockCache,
+            patch(self._REPORT_PATCH_PATHS["identity"]) as MockIdentity,
+            patch(self._REPORT_PATCH_PATHS["analyzer"]) as MockAnalyzer,
+            patch(self._REPORT_PATCH_PATHS["csv_writer"]),
+            patch(self._REPORT_PATCH_PATHS["analytics_writer"]),
+            patch(self._REPORT_PATCH_PATHS["narrative_writer"]),
+            patch(self._REPORT_PATCH_PATHS["trends_writer"]),
+            patch(self._REPORT_PATCH_PATHS["json_exporter"]),
+            patch(self._REPORT_PATCH_PATHS["dora"]) as MockDora,
+        ):
+            MockCache.return_value = cache_mock
+            MockIdentity.return_value = self._make_identity_mock()
+            MockAnalyzer.return_value = self._make_analyzer_mock()
+
+            mock_dora_instance = MagicMock()
+            # Capture the first positional arg (all_commits) passed to DORA
+            mock_dora_instance.calculate_dora_metrics.side_effect = (
+                lambda commits, *args, **kwargs: captured.append(commits) or {}
+            )
+            MockDora.return_value = mock_dora_instance
+
+            run_report(cfg=cfg, weeks=4, output_dir=output_dir)
+
+        return captured[0] if captured else []
+
+    # ------------------------------------------------------------------
+    # Tests
+    # ------------------------------------------------------------------
+
+    def test_qualitative_fields_merged_into_commit_dicts(self, tmp_path: Path) -> None:
+        """Commits with qualitative data have change_type and complexity populated."""
+        cfg = _make_config(tmp_path)
+        output_dir = tmp_path / "reports"
+        output_dir.mkdir(exist_ok=True)
+
+        commit_row = self._make_commit_row(row_id=1, commit_hash="deadbeef")
+        qual_row = self._make_qual_row(
+            commit_id=1, change_type="bugfix", confidence=0.95, complexity=2
+        )
+        cache_mock = self._make_cache_mock_with_commits([commit_row], [qual_row])
+
+        commits = self._captured_commit_dicts(cfg, output_dir, cache_mock)
+
+        assert len(commits) == 1
+        commit = commits[0]
+        assert commit["change_type"] == "bugfix"
+        assert commit["change_type_confidence"] == 0.95
+        assert commit["complexity"] == 2
+        assert commit["processing_method"] == "llm"
+
+    def test_commits_without_qualitative_data_unaffected(self, tmp_path: Path) -> None:
+        """Commits with no qualitative row are returned without change_type keys."""
+        cfg = _make_config(tmp_path)
+        output_dir = tmp_path / "reports"
+        output_dir.mkdir(exist_ok=True)
+
+        commit_row = self._make_commit_row(row_id=42, commit_hash="cafebabe")
+        # No qualitative rows
+        cache_mock = self._make_cache_mock_with_commits([commit_row], [])
+
+        commits = self._captured_commit_dicts(cfg, output_dir, cache_mock)
+
+        assert len(commits) == 1
+        # change_type must not be present when there is no qualitative row
+        assert "change_type" not in commits[0]
+
+    def test_partial_qualitative_data_merged_correctly(self, tmp_path: Path) -> None:
+        """Only commits that have qualitative rows get classification fields."""
+        cfg = _make_config(tmp_path)
+        output_dir = tmp_path / "reports"
+        output_dir.mkdir(exist_ok=True)
+
+        row_with_qual = self._make_commit_row(row_id=1, commit_hash="aaa111")
+        row_without_qual = self._make_commit_row(row_id=2, commit_hash="bbb222")
+        qual_row = self._make_qual_row(commit_id=1, change_type="refactor", complexity=4)
+
+        cache_mock = self._make_cache_mock_with_commits(
+            [row_with_qual, row_without_qual], [qual_row]
+        )
+
+        commits = self._captured_commit_dicts(cfg, output_dir, cache_mock)
+
+        assert len(commits) == 2
+        # Find the enriched commit
+        enriched = next(c for c in commits if c.get("hash") == "aaa111")
+        bare = next(c for c in commits if c.get("hash") == "bbb222")
+
+        assert enriched["change_type"] == "refactor"
+        assert enriched["complexity"] == 4
+        assert "change_type" not in bare
+
+    def test_multiple_commits_multiple_qual_rows(self, tmp_path: Path) -> None:
+        """All commits with qualitative rows receive their correct classifications."""
+        cfg = _make_config(tmp_path)
+        output_dir = tmp_path / "reports"
+        output_dir.mkdir(exist_ok=True)
+
+        rows = [
+            self._make_commit_row(row_id=1, commit_hash="hash1"),
+            self._make_commit_row(row_id=2, commit_hash="hash2"),
+            self._make_commit_row(row_id=3, commit_hash="hash3"),
+        ]
+        qual_rows = [
+            self._make_qual_row(commit_id=1, change_type="feature", complexity=5),
+            self._make_qual_row(commit_id=2, change_type="bugfix", complexity=1),
+            self._make_qual_row(commit_id=3, change_type="chore", complexity=2),
+        ]
+        cache_mock = self._make_cache_mock_with_commits(rows, qual_rows)
+
+        commits = self._captured_commit_dicts(cfg, output_dir, cache_mock)
+
+        by_hash = {c["hash"]: c for c in commits}
+        assert by_hash["hash1"]["change_type"] == "feature"
+        assert by_hash["hash1"]["complexity"] == 5
+        assert by_hash["hash2"]["change_type"] == "bugfix"
+        assert by_hash["hash3"]["change_type"] == "chore"
+
+    def test_no_commits_produces_no_errors(self, tmp_path: Path) -> None:
+        """An empty commit result set does not cause errors in qualitative join."""
+        cfg = _make_config(tmp_path)
+        output_dir = tmp_path / "reports"
+        output_dir.mkdir(exist_ok=True)
+
+        cache_mock = self._make_cache_mock_with_commits([], [])
+
+        with (
+            patch(self._REPORT_PATCH_PATHS["cache"]) as MockCache,
+            patch(self._REPORT_PATCH_PATHS["identity"]) as MockIdentity,
+            patch(self._REPORT_PATCH_PATHS["analyzer"]) as MockAnalyzer,
+            patch(self._REPORT_PATCH_PATHS["csv_writer"]),
+            patch(self._REPORT_PATCH_PATHS["analytics_writer"]),
+            patch(self._REPORT_PATCH_PATHS["narrative_writer"]),
+            patch(self._REPORT_PATCH_PATHS["trends_writer"]),
+            patch(self._REPORT_PATCH_PATHS["json_exporter"]),
+            patch(self._REPORT_PATCH_PATHS["dora"]) as MockDora,
+        ):
+            MockCache.return_value = cache_mock
+            MockIdentity.return_value = self._make_identity_mock()
+            MockAnalyzer.return_value = self._make_analyzer_mock()
+            MockDora.return_value = MagicMock(calculate_dora_metrics=MagicMock(return_value={}))
+
+            result = run_report(cfg=cfg, weeks=4, output_dir=output_dir)
+
+        qual_errors = [e for e in result.errors if "qualitative" in e.lower()]
+        assert qual_errors == []
+
+
+# ---------------------------------------------------------------------------
+# Tests for strip_suffixes wiring to DeveloperIdentityResolver
+# ---------------------------------------------------------------------------
+
+
+class TestDeveloperIdentityResolverStripSuffixes:
+    """Verify that strip_suffixes is accepted and applied by DeveloperIdentityResolver.
+
+    These tests use a real in-memory SQLite database to confirm the suffix
+    normalisation actually improves fuzzy-match results.
+    """
+
+    def _make_resolver(
+        self,
+        tmp_path: Path,
+        strip_suffixes: list[str] | None = None,
+    ) -> Any:
+        from gitflow_analytics.core.identity import DeveloperIdentityResolver
+
+        db_path = tmp_path / "identities.db"
+        return DeveloperIdentityResolver(
+            str(db_path),
+            similarity_threshold=0.85,
+            strip_suffixes=strip_suffixes,
+        )
+
+    def test_strip_suffixes_stored_on_instance(self, tmp_path: Path) -> None:
+        """Constructor stores strip_suffixes on the instance."""
+        from gitflow_analytics.core.identity import DeveloperIdentityResolver
+
+        resolver = DeveloperIdentityResolver(
+            str(tmp_path / "id.db"),
+            strip_suffixes=["-dev", "-staging"],
+        )
+        assert "-dev" in resolver._strip_suffixes
+        assert "-staging" in resolver._strip_suffixes
+
+    def test_no_strip_suffixes_defaults_to_empty(self, tmp_path: Path) -> None:
+        """When strip_suffixes is not provided the list is empty."""
+        from gitflow_analytics.core.identity import DeveloperIdentityResolver
+
+        resolver = DeveloperIdentityResolver(str(tmp_path / "id.db"))
+        assert resolver._strip_suffixes == []
+
+    def test_normalize_email_local_strips_suffix(self, tmp_path: Path) -> None:
+        """_normalize_email_local removes configured suffixes from the local-part."""
+        resolver = self._make_resolver(tmp_path, strip_suffixes=["-dev", "-staging"])
+        assert resolver._normalize_email_local("john-dev") == "john"
+        assert resolver._normalize_email_local("alice-staging") == "alice"
+
+    def test_normalize_email_local_no_suffix_unchanged(self, tmp_path: Path) -> None:
+        """_normalize_email_local leaves local-parts without matching suffixes intact."""
+        resolver = self._make_resolver(tmp_path, strip_suffixes=["-dev"])
+        assert resolver._normalize_email_local("john") == "john"
+
+    def test_strip_suffixes_improves_fuzzy_match(self, tmp_path: Path) -> None:
+        """Suffix stripping allows john-dev@co.com to match john@co.com.
+
+        Scoring breakdown (name similarity = 1.0, same domain):
+          Without stripping: 0.4 (name) + 0.3 (domain) = 0.7
+          With stripping:    0.4 (name) + 0.3 (domain) + 0.1 (stripped-local match) = 0.8
+
+        Using a threshold of 0.75 means:
+          - Without stripping: 0.7 < 0.75  → new identity created
+          - With stripping:    0.8 >= 0.75 → existing identity reused
+        """
+        from gitflow_analytics.core.identity import DeveloperIdentityResolver
+
+        threshold = 0.75
+        resolver_without = DeveloperIdentityResolver(
+            str(tmp_path / "without" / "id.db"),
+            similarity_threshold=threshold,
+            strip_suffixes=None,
+        )
+        resolver_with = DeveloperIdentityResolver(
+            str(tmp_path / "with" / "id.db"),
+            similarity_threshold=threshold,
+            strip_suffixes=["-dev"],
+        )
+
+        # Seed the canonical identity into both resolvers
+        canonical_email = "john@example.com"
+        canonical_id_without = resolver_without.resolve_developer("John Smith", canonical_email)
+        canonical_id_with = resolver_with.resolve_developer("John Smith", canonical_email)
+
+        # Resolve the suffixed variant
+        variant_email = "john-dev@example.com"
+        id_without = resolver_without.resolve_developer("John Smith", variant_email)
+        id_with = resolver_with.resolve_developer("John Smith", variant_email)
+
+        # Without suffix stripping the variant misses the threshold → new identity
+        assert id_without != canonical_id_without, (
+            "Without strip_suffixes, john-dev@ should create a new identity "
+            "(score 0.7 < threshold 0.75)"
+        )
+        # With suffix stripping the normalised local-parts match → reuses canonical identity
+        assert id_with == canonical_id_with, (
+            "With strip_suffixes=['-dev'], john-dev@example.com should resolve to the "
+            "same identity as john@example.com (score 0.8 >= threshold 0.75)"
+        )
+
+    def test_strip_suffixes_wired_from_pipeline_report(self, tmp_path: Path) -> None:
+        """run_report passes analysis.identity.strip_suffixes to DeveloperIdentityResolver."""
+        from gitflow_analytics.config import ConfigLoader
+
+        cfg_dict = yaml.safe_load(
+            _MINIMAL_CONFIG_TEMPLATE.format(
+                cache_dir=str(tmp_path / ".cache"),
+                repo_path=str(tmp_path / "repo"),
+                output_dir=str(tmp_path / "reports"),
+            )
+        )
+        # Inject identity.strip_suffixes into config
+        cfg_dict.setdefault("analysis", {})["identity"] = {
+            "strip_suffixes": ["-dev", "-contractor"]
+        }
+        config_file = tmp_path / "cfg.yaml"
+        config_file.write_text(yaml.dump(cfg_dict))
+        cfg = ConfigLoader.load(config_file)
+        output_dir = tmp_path / "reports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        _PATCHES = {
+            "cache": "gitflow_analytics.core.cache.GitAnalysisCache",
+            "identity": "gitflow_analytics.core.identity.DeveloperIdentityResolver",
+            "analyzer": "gitflow_analytics.core.analyzer.GitAnalyzer",
+            "csv_writer": "gitflow_analytics.reports.csv_writer.CSVReportGenerator",
+            "analytics_writer": "gitflow_analytics.reports.analytics_writer.AnalyticsReportGenerator",
+            "narrative_writer": "gitflow_analytics.reports.narrative_writer.NarrativeReportGenerator",
+            "trends_writer": "gitflow_analytics.reports.weekly_trends_writer.WeeklyTrendsWriter",
+            "json_exporter": "gitflow_analytics.reports.json_exporter.ComprehensiveJSONExporter",
+            "dora": "gitflow_analytics.metrics.dora.DORAMetricsCalculator",
+        }
+
+        captured_kwargs: list[dict] = []
+
+        with (
+            patch(_PATCHES["cache"]) as MockCache,
+            patch(_PATCHES["identity"]) as MockIdentity,
+            patch(_PATCHES["analyzer"]) as MockAnalyzer,
+            patch(_PATCHES["csv_writer"]),
+            patch(_PATCHES["analytics_writer"]),
+            patch(_PATCHES["narrative_writer"]),
+            patch(_PATCHES["trends_writer"]),
+            patch(_PATCHES["json_exporter"]),
+            patch(_PATCHES["dora"]) as MockDora,
+        ):
+            # Minimal cache mock (no commits)
+            mock_cache = MagicMock()
+            mock_session = MagicMock()
+            mock_session.__enter__ = MagicMock(return_value=mock_session)
+            mock_session.__exit__ = MagicMock(return_value=False)
+            mock_query = MagicMock()
+            mock_query.filter.return_value = mock_query
+            mock_query.order_by.return_value = mock_query
+            mock_query.all.return_value = []
+            mock_session.query.return_value = mock_query
+            mock_cache.get_session.return_value = mock_session
+            mock_cache._commit_to_dict.return_value = {}
+            mock_cache.get_cached_prs_for_report.return_value = []
+            MockCache.return_value = mock_cache
+
+            # Capture constructor kwargs
+            def _capture_identity(*args: Any, **kwargs: Any) -> MagicMock:
+                captured_kwargs.append(kwargs)
+                mock_id = MagicMock()
+                mock_id.get_developer_stats.return_value = {}
+                return mock_id
+
+            MockIdentity.side_effect = _capture_identity
+            mock_analyzer = MagicMock()
+            mock_analyzer.ticket_extractor.analyze_ticket_coverage.return_value = {}
+            mock_analyzer.ticket_extractor.calculate_developer_ticket_coverage.return_value = {}
+            MockAnalyzer.return_value = mock_analyzer
+            MockDora.return_value = MagicMock(calculate_dora_metrics=MagicMock(return_value={}))
+
+            run_report(cfg=cfg, weeks=4, output_dir=output_dir)
+
+        assert captured_kwargs, "DeveloperIdentityResolver was not constructed"
+        kwargs = captured_kwargs[0]
+        passed_suffixes = kwargs.get("strip_suffixes") or []
+        assert (
+            "-dev" in passed_suffixes
+        ), f"Expected '-dev' in strip_suffixes passed to DeveloperIdentityResolver, got: {passed_suffixes}"
+        assert "-contractor" in passed_suffixes
+
+
+# ---------------------------------------------------------------------------
 # CLI command wiring tests (smoke-test via Click's test runner)
 # ---------------------------------------------------------------------------
 

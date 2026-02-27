@@ -24,6 +24,7 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
         db_path: str,
         similarity_threshold: float = 0.85,
         manual_mappings: Optional[list[dict[str, Any]]] = None,
+        strip_suffixes: Optional[list[str]] = None,
     ) -> None:
         """
         Initialize with database for persistence.
@@ -35,9 +36,14 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
             db_path: Path to the SQLite database file
             similarity_threshold: Threshold for fuzzy matching (0.0-1.0)
             manual_mappings: Optional manual identity mappings from configuration
+            strip_suffixes: Optional list of suffixes to strip from email local-parts
+                before fuzzy matching.  Mirrors the ``analysis.identity.strip_suffixes``
+                config key so the same normalisation applied by ``LLMIdentityAnalyzer``
+                is also used during report-time identity resolution.
         """
         self.similarity_threshold = similarity_threshold
         self.db_path = Path(db_path)  # Convert string to Path
+        self._strip_suffixes: list[str] = list(strip_suffixes) if strip_suffixes else []
         self._cache: dict[str, str] = {}  # In-memory cache for performance
 
         # Initialize database with error handling
@@ -450,13 +456,35 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
         self._cache[cache_key] = canonical_id
         return canonical_id
 
+    def _normalize_email_local(self, local_part: str) -> str:
+        """Strip configured suffixes from an email local-part for fuzzy comparison.
+
+        WHY: Developers sometimes use suffixed email variants (e.g. ``john-dev``
+        vs ``john``) in different environments.  Stripping the known suffixes
+        before comparing increases the chance that the fuzzy matcher treats them
+        as the same person, mirroring the behaviour of ``LLMIdentityAnalyzer``.
+
+        Args:
+            local_part: The portion of an email address before the ``@``.
+
+        Returns:
+            The local-part with all configured suffixes removed.
+        """
+        result = local_part
+        for suffix in self._strip_suffixes:
+            result = result.replace(suffix, "")
+        return result
+
     def _find_best_match(self, name: str, email: str) -> Optional[tuple[str, float]]:
         """Find the best matching existing developer."""
         best_score = 0.0
         best_canonical_id = None
 
         name_lower = name.lower().strip()
+        email_local = email.split("@")[0] if "@" in email else email
         email_domain = email.split("@")[1] if "@" in email else ""
+        # Normalised local-part for suffix-stripped comparison
+        norm_local = self._normalize_email_local(email_local)
 
         with self.get_session() as session:
             # Get all identities for comparison
@@ -477,6 +505,17 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
                 )
                 if email_domain and email_domain == identity_domain:
                     score += 0.3
+                    # Additional bonus when the suffix-stripped local-parts match,
+                    # e.g. john-dev@co.com vs john@co.com both normalise to "john".
+                    if self._strip_suffixes:
+                        identity_local = (
+                            identity.primary_email.split("@")[0]
+                            if "@" in identity.primary_email
+                            else identity.primary_email
+                        )
+                        norm_identity_local = self._normalize_email_local(identity_local)
+                        if norm_local and norm_local == norm_identity_local:
+                            score += 0.1
 
                 # Check aliases (30% weight)
                 aliases = (
@@ -494,6 +533,15 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
                     # Bonus for same email domain in aliases
                     alias_domain = alias.email.split("@")[1] if "@" in alias.email else ""
                     domain_bonus = 0.2 if alias_domain == email_domain else 0.0
+
+                    # Suffix-stripped local-part bonus for aliases
+                    if self._strip_suffixes and alias_domain == email_domain:
+                        alias_local = (
+                            alias.email.split("@")[0] if "@" in alias.email else alias.email
+                        )
+                        norm_alias_local = self._normalize_email_local(alias_local)
+                        if norm_local and norm_local == norm_alias_local:
+                            domain_bonus += 0.1
 
                     alias_score = alias_name_sim + domain_bonus
                     best_alias_score = max(best_alias_score, alias_score)

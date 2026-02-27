@@ -69,6 +69,7 @@ def run_report(
     from sqlalchemy import and_
 
     from .models.database import CachedCommit
+    from .models.database_metrics_models import QualitativeCommitData
 
     _emit("Loading classified commits from database...")
 
@@ -87,7 +88,11 @@ def run_report(
             .all()
         )
 
+        # Build commit dicts and track the DB row id so we can join qualitative data.
         all_commits: list[dict[str, Any]] = []
+        # Map from cached_commit.id → index in all_commits for the merge step below.
+        _id_to_index: dict[int, int] = {}
+
         for cached_commit in cached_commits_rows:
             commit_dict = cache._commit_to_dict(cached_commit)
             if "project_key" not in commit_dict:
@@ -99,16 +104,42 @@ def run_report(
                 else:
                     commit_dict["project_key"] = repo_path_obj.name
             commit_dict["canonical_id"] = cached_commit.author_email or "unknown"
+            _id_to_index[cached_commit.id] = len(all_commits)
             all_commits.append(commit_dict)
+
+        # Merge qualitative classifications (change_type, complexity, etc.) stored in
+        # the qualitative_commits table.  Not all commits have qualitative data; the
+        # join is left-optional so missing rows are silently skipped.
+        if _id_to_index:
+            qual_rows = (
+                session.query(QualitativeCommitData)
+                .filter(QualitativeCommitData.commit_id.in_(list(_id_to_index.keys())))
+                .all()
+            )
+            for qual in qual_rows:
+                idx = _id_to_index.get(qual.commit_id)
+                if idx is None:
+                    continue
+                all_commits[idx]["change_type"] = qual.change_type
+                all_commits[idx]["change_type_confidence"] = qual.change_type_confidence
+                all_commits[idx]["complexity"] = qual.complexity
+                all_commits[idx]["processing_method"] = qual.processing_method
+            logger.debug(
+                "Merged qualitative data: %d/%d commits have classifications",
+                len(qual_rows),
+                len(all_commits),
+            )
 
     _emit(f"Loaded {len(all_commits)} commits")
 
     _emit("Resolving developer identities...")
     identity_db_path = cfg.cache.directory / "identities.db"
+    _strip_suffixes = list(getattr(cfg.analysis.identity, "strip_suffixes", []))
     identity_resolver = DeveloperIdentityResolver(
         identity_db_path,
         similarity_threshold=cfg.analysis.similarity_threshold,
         manual_mappings=cfg.analysis.manual_identity_mappings,
+        strip_suffixes=_strip_suffixes or None,
     )
     identity_resolver.update_commit_stats(all_commits)
 
