@@ -76,8 +76,13 @@ llm = [
     "tiktoken>=0.7.0",
 ]
 
+# AWS Bedrock LLM provider
+bedrock = [
+    "boto3>=1.34.0",
+]
+
 all = [
-    "gitflow-analytics[github,ml,llm]",
+    "gitflow-analytics[github,ml,llm,bedrock]",
 ]
 
 [project.scripts]
