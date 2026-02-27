@@ -37,6 +37,9 @@ class ClassificationResult:
     alternatives: list[dict[str, Any]]  # Alternative classifications with scores
     processing_time_ms: float
     batch_id: Optional[str] = None
+    # Complexity rating (1-5): engineering sophistication judged by LLM.
+    # None for rule-based classifications that do not emit a complexity score.
+    complexity: Optional[int] = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary format for serialization."""
@@ -48,6 +51,7 @@ class ClassificationResult:
             "model": self.model,
             "alternatives": self.alternatives,
             "processing_time_ms": self.processing_time_ms,
+            "complexity": self.complexity,
         }
         if self.batch_id:
             result["batch_id"] = self.batch_id

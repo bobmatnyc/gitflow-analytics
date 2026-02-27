@@ -18,7 +18,12 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ..core.progress import get_progress_service
-from ..models.database import CachedCommit, DailyCommitBatch, DetailedTicketData, QualitativeCommitData
+from ..models.database import (
+    CachedCommit,
+    DailyCommitBatch,
+    DetailedTicketData,
+    QualitativeCommitData,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +74,7 @@ class BatchClassifierImplMixin:
             for detached_batch in weekly_batches:
                 live_batch = live_by_id.get(detached_batch.id)
                 if live_batch is None:
-                    logger.warning(
-                        f"Batch id={detached_batch.id} not found in re-fetch; skipping"
-                    )
+                    logger.warning(f"Batch id={detached_batch.id} not found in re-fetch; skipping")
                     continue
 
                 # Mark batch as processing (on the live, attached object)
@@ -135,6 +138,8 @@ class BatchClassifierImplMixin:
                                         "confidence": 0.2,
                                         "method": "timeout_fallback",
                                         "error": "Classification timeout",
+                                        # Timeout fallback: no complexity rating
+                                        "complexity": None,
                                     }
                                 )
                             break
@@ -335,6 +340,8 @@ class BatchClassifierImplMixin:
                         "method": "fallback_only",
                         "error": "LLM not configured",
                         "batch_id": batch_id,
+                        # Rule-based path: no complexity rating
+                        "complexity": None,
                     }
                 )
             return fallback_results
@@ -357,6 +364,8 @@ class BatchClassifierImplMixin:
                         "method": "circuit_breaker_fallback",
                         "error": "Circuit breaker open - API repeatedly failing",
                         "batch_id": batch_id,
+                        # Rule-based path: no complexity rating
+                        "complexity": None,
                     }
                 )
             return fallback_results
@@ -400,6 +409,8 @@ class BatchClassifierImplMixin:
                             "llm_category": predicted_category,
                             "llm_confidence": confidence,
                             "batch_id": batch_id,
+                            # Fallback path does not produce a complexity rating
+                            "complexity": None,
                         }
                     )
                 else:
@@ -410,6 +421,7 @@ class BatchClassifierImplMixin:
                             "confidence": confidence,
                             "method": "llm",
                             "batch_id": batch_id,
+                            "complexity": llm_result.get("complexity"),
                         }
                     )
 
@@ -467,6 +479,8 @@ class BatchClassifierImplMixin:
                             "method": "fallback_only",
                             "error": str(e),
                             "batch_id": batch_id,
+                            # Rule-based path: no complexity rating
+                            "complexity": None,
                         }
                     )
 
@@ -534,6 +548,7 @@ class BatchClassifierImplMixin:
                 qualitative.confidence_score = confidence
                 qualitative.processing_method = method
                 qualitative.analyzed_at = datetime.now(timezone.utc)
+                qualitative.complexity = classification_result.get("complexity")
             else:
                 # Create new classification record
                 qualitative = QualitativeCommitData(
@@ -556,6 +571,7 @@ class BatchClassifierImplMixin:
                     processing_method=method,
                     processing_time_ms=0.0,
                     confidence_score=confidence,
+                    complexity=classification_result.get("complexity"),
                 )
                 session.add(qualitative)
 

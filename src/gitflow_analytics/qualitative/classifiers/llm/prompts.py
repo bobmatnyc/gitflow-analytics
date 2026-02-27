@@ -125,6 +125,13 @@ to make accurate classifications.""",
 Categories (choose ONE):
 {categories_desc}
 
+Complexity (1-5):
+1: Trivial (config change, version bump, typo fix)
+2: Simple (single-file bugfix, dependency update)
+3: Moderate (multi-file feature, integration work)
+4: Complex (cross-module feature, architecture change)
+5: Highly complex (system design, major refactor, novel algorithm)
+
 Commit Details:
 Message: "{message}"
 {context_info}
@@ -135,12 +142,13 @@ Classification Rules:
 3. If multiple categories apply, choose the most significant one
 4. Be confident in clear cases, conservative when ambiguous
 
-Format: CATEGORY confidence reasoning
+Format: CATEGORY confidence complexity reasoning
+Example: bugfix 0.90 2 fixes null pointer in login handler
 Response:""",
         ),
         PromptVersion.V4_FEWSHOT: PromptTemplate(
             version=PromptVersion.V4_FEWSHOT,
-            system_prompt="""You are an expert commit classifier. Classify commits based on 
+            system_prompt="""You are an expert commit classifier. Classify commits based on
 the examples provided and return results in the exact format shown.""",
             user_prompt_template="""Learn from these examples, then classify the new commit.
 

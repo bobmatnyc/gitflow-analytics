@@ -598,6 +598,12 @@ class Database:
                 # They are added here without touching existing rows.
                 self._migrate_pull_request_cache_v4(conn)
 
+                # --- Complexity column (v5.0 migration) ---
+                # WHY: complexity was added to qualitative_commits to capture engineering
+                # sophistication ratings (1-5) from LLM classification.  Existing rows get
+                # NULL, which is the correct default for rule-based classifications.
+                self._migrate_qualitative_commits_v5(conn)
+
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
             logger.debug(
@@ -719,3 +725,35 @@ class Database:
                 "Applied pull_request_cache v4.0 migration: added columns %s",
                 ", ".join(added),
             )
+
+    def _migrate_qualitative_commits_v5(self, conn) -> None:
+        """Add complexity column to qualitative_commits (v5.0 migration).
+
+        WHY: The complexity field (1-5 sophistication rating) was introduced to
+        capture engineering complexity as judged by LLM classification.  Existing
+        rows and rule-based classifications use NULL, which means "not rated".
+        SQLite does not support adding multiple columns in one statement, so each
+        column is added individually inside its own try/except to be idempotent.
+
+        Columns added:
+            complexity  - INTEGER (1-5): engineering sophistication rating; NULL for
+                          rule-based classifications or pre-existing rows.
+        """
+        try:
+            result = conn.execute(text("PRAGMA table_info(qualitative_commits)"))
+            existing_columns = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read qualitative_commits schema for v5 migration: {e}")
+            return
+
+        if "complexity" not in existing_columns:
+            try:
+                conn.execute(text("ALTER TABLE qualitative_commits ADD COLUMN complexity INTEGER"))
+                conn.commit()
+                logger.info("Applied qualitative_commits v5.0 migration: added complexity column")
+            except Exception as e:
+                # Column may already exist in a concurrent scenario or read-only DB.
+                logger.debug(
+                    f"Could not add qualitative_commits.complexity "
+                    f"(may already exist or DB is readonly): {e}"
+                )

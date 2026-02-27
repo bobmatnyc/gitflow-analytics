@@ -222,7 +222,7 @@ class BedrockClassifier(BaseLLMClassifier):
                     user_prompt=user_prompt,
                 )
 
-                category, confidence, reasoning = self.response_parser.parse_response(
+                category, confidence, complexity, reasoning = self.response_parser.parse_response(
                     response_text, self.prompt_generator.CATEGORIES
                 )
 
@@ -240,6 +240,7 @@ class BedrockClassifier(BaseLLMClassifier):
                     model=self.config.bedrock_model_id,
                     alternatives=[],
                     processing_time_ms=(time.time() - start_time) * 1000,
+                    complexity=complexity,
                 )
 
             except Exception as exc:
@@ -337,14 +338,21 @@ class BedrockClassifier(BaseLLMClassifier):
 
     # Batch system prompt — instructs the model to return a JSON array.
     _BATCH_SYSTEM_PROMPT: str = (
-        "You are a git commit classifier. For each commit, classify it into exactly one category.\n\n"
+        "You are a git commit classifier. For each commit, classify it into exactly one category"
+        " and rate its complexity.\n\n"
         "Categories: feature, bugfix, maintenance, integration, content, media, localization\n\n"
+        "Complexity (1-5):\n"
+        "1: Trivial (config change, version bump, typo fix)\n"
+        "2: Simple (single-file bugfix, dependency update)\n"
+        "3: Moderate (multi-file feature, integration work)\n"
+        "4: Complex (cross-module feature, architecture change)\n"
+        "5: Highly complex (system design, major refactor, novel algorithm)\n\n"
         "Respond with a JSON array where each element has: "
-        "category, confidence (0.0-1.0), reasoning (max 10 words).\n\n"
+        "category, confidence (0.0-1.0), complexity (1-5), reasoning (max 10 words).\n\n"
         "Example response for 3 commits:\n"
-        '[{"category":"bugfix","confidence":0.95,"reasoning":"fixes crash in login flow"},'
-        '{"category":"feature","confidence":0.90,"reasoning":"adds new authentication system"},'
-        '{"category":"maintenance","confidence":0.85,"reasoning":"updates dependency versions"}]\n\n'
+        '[{"category":"bugfix","confidence":0.95,"complexity":2,"reasoning":"fixes crash in login flow"},'
+        '{"category":"feature","confidence":0.90,"complexity":4,"reasoning":"adds new authentication system"},'
+        '{"category":"maintenance","confidence":0.85,"complexity":1,"reasoning":"updates dependency versions"}]\n\n'
         "IMPORTANT: Return ONLY the JSON array. No other text."
     )
 
@@ -374,8 +382,9 @@ class BedrockClassifier(BaseLLMClassifier):
         )
         user_prompt = f"Classify these {n} commits:\n{messages_text}"
 
-        # max_tokens scales with batch size; each JSON element is ~60-80 tokens
-        batch_max_tokens = min(4096, n * 80)
+        # max_tokens scales with batch size; each JSON element is ~80-100 tokens
+        # (increased from 80 to accommodate the extra complexity field)
+        batch_max_tokens = min(4096, n * 100)
 
         self._apply_rate_limiting()
 
@@ -464,14 +473,15 @@ class BedrockClassifier(BaseLLMClassifier):
         """Validate and normalise parsed JSON items.
 
         Ensures each element has the required fields (category, confidence,
-        reasoning).  Invalid elements are replaced with a maintenance fallback
-        so downstream code always receives a complete list.
+        reasoning, complexity).  Invalid elements are replaced with a maintenance
+        fallback so downstream code always receives a complete list.
 
         Args:
             items: Raw parsed list from JSON
 
         Returns:
-            Normalised list of classification dicts
+            Normalised list of classification dicts (always includes 'complexity' key,
+            which is None when absent or invalid in the model response)
         """
         valid_categories = set(self.prompt_generator.CATEGORIES.keys())
         normalised: list[dict[str, Any]] = []
@@ -479,7 +489,12 @@ class BedrockClassifier(BaseLLMClassifier):
         for item in items:
             if not isinstance(item, dict):
                 normalised.append(
-                    {"category": "maintenance", "confidence": 0.1, "reasoning": "invalid json item"}
+                    {
+                        "category": "maintenance",
+                        "confidence": 0.1,
+                        "reasoning": "invalid json item",
+                        "complexity": None,
+                    }
                 )
                 continue
 
@@ -495,8 +510,23 @@ class BedrockClassifier(BaseLLMClassifier):
 
             reasoning = str(item.get("reasoning", ""))[:100]
 
+            # Extract complexity (1-5) — default None if missing or non-integer
+            complexity: Optional[int] = None
+            raw_complexity = item.get("complexity")
+            if raw_complexity is not None:
+                try:
+                    clamped = max(1, min(5, int(raw_complexity)))
+                    complexity = clamped
+                except (TypeError, ValueError):
+                    complexity = None
+
             normalised.append(
-                {"category": category, "confidence": confidence, "reasoning": reasoning}
+                {
+                    "category": category,
+                    "confidence": confidence,
+                    "reasoning": reasoning,
+                    "complexity": complexity,
+                }
             )
 
         return normalised
@@ -537,6 +567,7 @@ class BedrockClassifier(BaseLLMClassifier):
                     alternatives=[],
                     processing_time_ms=(ts - ts) * 1000,  # negligible per-commit time
                     batch_id=batch_id,
+                    complexity=item.get("complexity"),
                 )
             else:
                 # Parsed array shorter than expected — fallback for this commit

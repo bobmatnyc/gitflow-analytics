@@ -30,8 +30,15 @@ class ResponseParser:
 
     def __init__(self):
         """Initialize response parser."""
-        # Regex patterns for different response formats
+        # Regex patterns for different response formats.
+        # The "standard_with_complexity" pattern matches the V3 format:
+        #   CATEGORY confidence complexity reasoning
+        # The legacy "standard" pattern matches the original three-field format:
+        #   CATEGORY confidence reasoning
         self.patterns = {
+            "standard_with_complexity": re.compile(
+                r"^(\w+)\s+([\d.]+)\s+([1-5])\s+(.*)$", re.IGNORECASE
+            ),
             "standard": re.compile(r"^(\w+)\s+([\d.]+)\s+(.*)$", re.IGNORECASE),
             "colon_separated": re.compile(r"^(\w+):\s*([\d.]+)[,\s]+(.*)$", re.IGNORECASE),
             "json_like": re.compile(
@@ -43,15 +50,22 @@ class ResponseParser:
 
     def parse_response(
         self, response: str, valid_categories: dict[str, str]
-    ) -> tuple[str, float, str]:
+    ) -> tuple[str, float, Optional[int], str]:
         """Parse LLM response to extract classification components.
+
+        Supports two single-commit response formats:
+        - New (V3+): ``CATEGORY confidence complexity reasoning``
+          e.g. ``bugfix 0.90 2 fixes null pointer in login handler``
+        - Legacy:    ``CATEGORY confidence reasoning``
+          e.g. ``bugfix 0.90 fixes null pointer``
 
         Args:
             response: Raw LLM response text
             valid_categories: Dictionary of valid category names
 
         Returns:
-            Tuple of (category, confidence, reasoning)
+            Tuple of (category, confidence, complexity, reasoning).
+            ``complexity`` is None when the response does not include it.
         """
         if not response:
             logger.warning("Empty response from LLM")
@@ -70,7 +84,7 @@ class ResponseParser:
         category = self._extract_category_fuzzy(response, valid_categories)
         if category:
             logger.debug(f"Fuzzy matched category: {category} from response: {response}")
-            return category, 0.5, "Fuzzy match from response"
+            return category, 0.5, None, "Fuzzy match from response"
 
         # Complete fallback
         logger.warning(f"Could not parse response: {response}")
@@ -78,7 +92,7 @@ class ResponseParser:
 
     def _process_match(
         self, match: re.Match, pattern_name: str, valid_categories: dict[str, str]
-    ) -> tuple[str, float, str]:
+    ) -> tuple[str, float, Optional[int], str]:
         """Process a regex match to extract classification components.
 
         Args:
@@ -87,7 +101,8 @@ class ResponseParser:
             valid_categories: Dictionary of valid categories
 
         Returns:
-            Tuple of (category, confidence, reasoning)
+            Tuple of (category, confidence, complexity, reasoning).
+            complexity is None for patterns that do not include it.
         """
         groups = match.groups()
 
@@ -111,16 +126,25 @@ class ResponseParser:
             except (ValueError, TypeError):
                 logger.debug(f"Could not parse confidence: {groups[1]}")
 
-        # Extract reasoning
+        # Extract complexity and reasoning depending on pattern shape.
+        # "standard_with_complexity" has 4 groups: category, confidence, complexity, reasoning.
+        # All other patterns have 3 groups (or fewer): category, confidence, reasoning.
+        complexity: Optional[int] = None
         reasoning = "No reasoning provided"
-        if len(groups) > 2 and groups[2]:
-            reasoning = groups[2].strip()
-            # Clean up reasoning
-            reasoning = self._clean_reasoning(reasoning)
+
+        if pattern_name == "standard_with_complexity" and len(groups) >= 4:
+            try:
+                complexity = max(1, min(5, int(groups[2])))
+            except (TypeError, ValueError):
+                complexity = None
+            if groups[3]:
+                reasoning = self._clean_reasoning(groups[3].strip())
         elif pattern_name == "simple":
             reasoning = f"Classified as {category}"
+        elif len(groups) > 2 and groups[2]:
+            reasoning = self._clean_reasoning(groups[2].strip())
 
-        return category, confidence, reasoning
+        return category, confidence, complexity, reasoning
 
     def _extract_category_fuzzy(
         self, response: str, valid_categories: dict[str, str]
@@ -238,16 +262,17 @@ class ResponseParser:
 
         return reasoning
 
-    def _fallback_result(self, error_context: str) -> tuple[str, float, str]:
+    def _fallback_result(self, error_context: str) -> tuple[str, float, Optional[int], str]:
         """Generate a fallback result when parsing fails.
 
         Args:
             error_context: Context about the parsing failure
 
         Returns:
-            Tuple of (category, confidence, reasoning)
+            Tuple of (category, confidence, complexity, reasoning).
+            complexity is always None for fallback results.
         """
-        return "maintenance", 0.1, f"Parse error: {error_context}"
+        return "maintenance", 0.1, None, f"Parse error: {error_context}"
 
     def validate_classification(
         self, category: str, confidence: float, valid_categories: dict[str, str]

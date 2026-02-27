@@ -179,7 +179,7 @@ class OpenAIClassifier(BaseLLMClassifier):
                 response_text, tokens_used = self._make_api_request(system_prompt, user_prompt)
 
                 # Parse response
-                category, confidence, reasoning = self.response_parser.parse_response(
+                category, confidence, complexity, reasoning = self.response_parser.parse_response(
                     response_text, self.prompt_generator.CATEGORIES
                 )
 
@@ -203,6 +203,7 @@ class OpenAIClassifier(BaseLLMClassifier):
                     model=self.config.model,
                     alternatives=[],
                     processing_time_ms=(time.time() - start_time) * 1000,
+                    complexity=complexity,
                 )
 
             except Exception as e:

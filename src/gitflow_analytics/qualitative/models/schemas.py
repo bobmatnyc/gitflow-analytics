@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 
 @dataclass
@@ -39,6 +39,10 @@ class QualitativeCommitData:
     processing_time_ms: float
     confidence_score: float  # Overall confidence in analysis
 
+    # Engineering sophistication rating (1-5); None for rule-based classifications
+    # 1: Trivial  2: Simple  3: Moderate  4: Complex  5: Highly complex
+    complexity: Optional[int] = None
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -62,6 +66,7 @@ class QualitativeCommitData:
             "processing_method": self.processing_method,
             "processing_time_ms": self.processing_time_ms,
             "confidence_score": self.confidence_score,
+            "complexity": self.complexity,
         }
 
 

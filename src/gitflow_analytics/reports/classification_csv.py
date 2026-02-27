@@ -9,7 +9,7 @@ import csv
 import logging
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class ClassificationCsvMixin:
         raise NotImplementedError
 
     def generate_detailed_csv_report(
-        self, classified_commits: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None
+        self, classified_commits: list[dict[str, Any]], metadata: Optional[dict[str, Any]] = None
     ) -> str:
         """Generate detailed CSV report with all commit information.
 
@@ -56,6 +56,7 @@ class ClassificationCsvMixin:
                 "repository",
                 "predicted_class",
                 "confidence",
+                "complexity",
                 "is_reliable",
                 "message_preview",
                 "files_changed",
@@ -84,6 +85,7 @@ class ClassificationCsvMixin:
                     commit.get("repository", ""),
                     commit.get("predicted_class", ""),
                     f"{commit.get('classification_confidence', 0):.3f}",
+                    commit.get("complexity", ""),  # blank when None (rule-based)
                     commit.get("is_reliable_prediction", False),
                     commit.get("message", "")[:100].replace("\n", " "),
                     commit.get("files_changed", 0),
@@ -103,7 +105,7 @@ class ClassificationCsvMixin:
         return str(output_path)
 
     def generate_developer_breakdown_report(
-        self, classified_commits: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None
+        self, classified_commits: list[dict[str, Any]], metadata: Optional[dict[str, Any]] = None
     ) -> str:
         """Generate per-developer classification breakdown CSV."""
         output_path = (
@@ -178,7 +180,10 @@ class ClassificationCsvMixin:
             writer.writerow(["Developer Classification Analysis"])
             writer.writerow(["Total Developers:", len(developer_stats)])
             writer.writerow(
-                [f"Developers with \u2265{self.min_commits_for_analysis} commits:", len(filtered_developers)]
+                [
+                    f"Developers with \u2265{self.min_commits_for_analysis} commits:",
+                    len(filtered_developers),
+                ]
             )
             writer.writerow([])
 
@@ -241,7 +246,7 @@ class ClassificationCsvMixin:
         return str(output_path)
 
     def generate_repository_analysis_report(
-        self, classified_commits: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None
+        self, classified_commits: list[dict[str, Any]], metadata: Optional[dict[str, Any]] = None
     ) -> str:
         """Generate per-repository classification analysis CSV."""
         output_path = (
@@ -348,7 +353,7 @@ class ClassificationCsvMixin:
         return str(output_path)
 
     def generate_confidence_analysis_report(
-        self, classified_commits: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None
+        self, classified_commits: list[dict[str, Any]], metadata: Optional[dict[str, Any]] = None
     ) -> str:
         """Generate confidence score analysis CSV."""
         output_path = (
@@ -358,7 +363,7 @@ class ClassificationCsvMixin:
 
         confidence_scores = [c.get("classification_confidence", 0) for c in classified_commits]
 
-        confidence_by_class: Dict[str, list] = defaultdict(list)
+        confidence_by_class: dict[str, list] = defaultdict(list)
         for commit in classified_commits:
             class_type = commit.get("predicted_class", "unknown")
             confidence = commit.get("classification_confidence", 0)
@@ -387,7 +392,9 @@ class ClassificationCsvMixin:
                 very_low = sum(1 for s in confidence_scores if s < 0.4)
                 n = len(confidence_scores)
 
-                writer.writerow(["Very High (\u22650.9)", f"{very_high} ({(very_high/n)*100:.1f}%)"])
+                writer.writerow(
+                    ["Very High (\u22650.9)", f"{very_high} ({(very_high/n)*100:.1f}%)"]
+                )
                 writer.writerow(["High (0.8-0.9)", f"{high} ({(high/n)*100:.1f}%)"])
                 writer.writerow(["Medium (0.6-0.8)", f"{medium} ({(medium/n)*100:.1f}%)"])
                 writer.writerow(["Low (0.4-0.6)", f"{low} ({(low/n)*100:.1f}%)"])
@@ -419,7 +426,7 @@ class ClassificationCsvMixin:
         return str(output_path)
 
     def generate_temporal_patterns_report(
-        self, classified_commits: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None
+        self, classified_commits: list[dict[str, Any]], metadata: Optional[dict[str, Any]] = None
     ) -> str:
         """Generate temporal patterns analysis CSV."""
         output_path = (
@@ -486,16 +493,16 @@ class ClassificationCsvMixin:
         return str(output_path)
 
     def generate_classification_matrix_report(
-        self, classified_commits: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None
+        self, classified_commits: list[dict[str, Any]], metadata: Optional[dict[str, Any]] = None
     ) -> str:
         """Generate classification distribution matrix CSV."""
         output_path = self.output_directory / f"classification_matrix_{self._get_timestamp()}.csv"
 
         class_counts = Counter(c.get("predicted_class", "unknown") for c in classified_commits)
 
-        dev_class_matrix: Dict[str, Counter] = defaultdict(Counter)
-        repo_class_matrix: Dict[str, Counter] = defaultdict(Counter)
-        lang_class_matrix: Dict[str, Counter] = defaultdict(Counter)
+        dev_class_matrix: dict[str, Counter] = defaultdict(Counter)
+        repo_class_matrix: dict[str, Counter] = defaultdict(Counter)
+        lang_class_matrix: dict[str, Counter] = defaultdict(Counter)
 
         for commit in classified_commits:
             class_type = commit.get("predicted_class", "unknown")

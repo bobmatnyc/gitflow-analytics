@@ -165,6 +165,10 @@ class QualitativeCommitData(Base):
     collaboration_patterns = Column(JSON)  # Team interaction patterns
     technical_context = Column(JSON)  # Technical context information
 
+    # Complexity rating (1-5 scale, LLM-only — None for rule-based classifications)
+    # 1: Trivial  2: Simple  3: Moderate  4: Complex  5: Highly complex
+    complexity = Column(Integer, nullable=True)  # 1-5 sophistication rating
+
     # Processing metadata
     processing_method = Column(String, nullable=False)  # 'nlp' or 'llm'
     processing_time_ms = Column(Float)
