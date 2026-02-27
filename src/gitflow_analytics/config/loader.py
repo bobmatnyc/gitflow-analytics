@@ -28,6 +28,7 @@ from .schema import (
     CommitClassificationConfig,
     Config,
     GitHubConfig,
+    IdentityConfig,
     LLMClassificationConfig,
     MLCategorization,
     RepositoryConfig,
@@ -687,11 +688,12 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
         )
 
         # Process aliases file and manual identity mappings
-        manual_mappings = list(analysis_data.get("identity", {}).get("manual_mappings", []))
+        identity_raw = analysis_data.get("identity", {})
+        manual_mappings = list(identity_raw.get("manual_mappings", []))
         aliases_file_path = None
 
         # Load aliases from external file if specified
-        aliases_file = analysis_data.get("identity", {}).get("aliases_file")
+        aliases_file = identity_raw.get("aliases_file")
         if aliases_file:
             aliases_path = Path(aliases_file).expanduser()
             # Make relative paths relative to config file directory
@@ -716,6 +718,17 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             else:
                 logger.warning(f"Aliases file not found: {aliases_path}")
 
+        # Build structured IdentityConfig from the identity sub-section
+        # strip_suffixes from config are ADDED to the hardcoded defaults in the
+        # analyzer; they do not replace them.
+        identity_config = IdentityConfig(
+            similarity_threshold=identity_raw.get("similarity_threshold", 0.85),
+            manual_mappings=manual_mappings,
+            aliases_file=aliases_file_path,
+            auto_analysis=identity_raw.get("auto_analysis", True),
+            strip_suffixes=list(identity_raw.get("strip_suffixes", [])),
+        )
+
         return AnalysisConfig(
             story_point_patterns=analysis_data.get(
                 "story_point_patterns",
@@ -731,15 +744,13 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             exclude_message_patterns=analysis_data.get("exclude", {}).get("message_patterns", []),
             exclude_paths=exclude_paths,
             exclude_merge_commits=analysis_data.get("exclude_merge_commits", False),
-            similarity_threshold=analysis_data.get("identity", {}).get(
-                "similarity_threshold", 0.85
-            ),
+            similarity_threshold=identity_raw.get("similarity_threshold", 0.85),
             manual_identity_mappings=manual_mappings,
             aliases_file=aliases_file_path,
             default_ticket_platform=analysis_data.get("default_ticket_platform"),
             branch_mapping_rules=analysis_data.get("branch_mapping_rules", {}),
             ticket_platforms=analysis_data.get("ticket_platforms"),
-            auto_identity_analysis=analysis_data.get("identity", {}).get("auto_analysis", True),
+            auto_identity_analysis=identity_raw.get("auto_analysis", True),
             branch_patterns=analysis_data.get("branch_patterns"),
             branch_analysis=branch_analysis_config,
             ml_categorization=ml_categorization_config,
@@ -747,4 +758,5 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             llm_classification=llm_classification_config,
             security=analysis_data.get("security", {}),
             qualitative=qualitative_config,
+            identity=identity_config,
         )

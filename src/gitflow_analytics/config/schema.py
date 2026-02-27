@@ -313,6 +313,32 @@ class BranchAnalysisConfig:
 
 
 @dataclass
+class IdentityConfig:
+    """Configuration for developer identity resolution and alias generation.
+
+    WHY: Previously identity settings were scattered as loose fields on
+    AnalysisConfig.  Grouping them here makes the YAML structure cleaner
+    (``analysis.identity.*``) and allows adding new identity-related settings
+    without cluttering the top-level analysis namespace.
+    """
+
+    similarity_threshold: float = 0.85
+    manual_mappings: list[dict[str, Any]] = field(default_factory=list)
+    aliases_file: Optional[Path] = None
+    auto_analysis: bool = True
+
+    # Suffixes stripped from email local-parts during heuristic matching.
+    # User-configured values are ADDED to the built-in defaults; they do not
+    # replace them.  Example YAML:
+    #   analysis:
+    #     identity:
+    #       strip_suffixes:
+    #         - "-mycompany"
+    #         - "-staging"
+    strip_suffixes: list[str] = field(default_factory=list)
+
+
+@dataclass
 class AnalysisConfig:
     """Analysis-specific configuration."""
 
@@ -339,6 +365,8 @@ class AnalysisConfig:
     llm_classification: LLMClassificationConfig = field(default_factory=LLMClassificationConfig)
     security: Optional[dict[str, Any]] = field(default_factory=dict)  # Security configuration
     qualitative: Optional["QualitativeConfig"] = None  # Nested qualitative config support
+    # Structured identity sub-config (populated by loader from analysis.identity.*)
+    identity: IdentityConfig = field(default_factory=IdentityConfig)
 
 
 @dataclass

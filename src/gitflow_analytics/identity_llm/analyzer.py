@@ -12,27 +12,144 @@ from .models import DeveloperAlias, DeveloperCluster, IdentityAnalysisResult
 
 logger = logging.getLogger(__name__)
 
+# Built-in suffixes stripped from email local-parts during heuristic matching.
+# User-configured suffixes (from analysis.identity.strip_suffixes) are ADDED
+# to this list, not substituted.
+_DEFAULT_STRIP_SUFFIXES: list[str] = ["-ewtn", "-zaelot", "dev", "developer", "zaelot"]
+
 
 class LLMIdentityAnalyzer:
-    """Analyzes developer identities using LLM for intelligent aliasing."""
+    """Analyzes developer identities using LLM for intelligent aliasing.
+
+    Supports two LLM back-ends:
+    - **OpenRouter** (default): supply ``api_key`` and optionally ``model``.
+    - **AWS Bedrock**: set ``provider="bedrock"``; authentication is handled by
+      the boto3 credential chain (no explicit API key needed).
+
+    When neither back-end is configured the analyzer falls back to heuristic
+    clustering only.
+    """
+
+    #: Valid provider names accepted by the ``provider`` parameter.
+    PROVIDER_OPENROUTER = "openrouter"
+    PROVIDER_BEDROCK = "bedrock"
+    PROVIDER_HEURISTIC = "heuristic"
 
     def __init__(
         self,
         api_key: Optional[str] = None,
         model: str = "openai/gpt-4o-mini",
         confidence_threshold: float = 0.9,
+        provider: str = "auto",
+        aws_region: str = "us-east-1",
+        aws_profile: Optional[str] = None,
+        bedrock_model_id: str = "anthropic.claude-3-haiku-20240307-v1:0",
+        extra_strip_suffixes: Optional[list[str]] = None,
     ):
         """Initialize the LLM identity analyzer.
 
         Args:
-            api_key: OpenRouter API key for LLM-based analysis
-            model: LLM model to use (default: openai/gpt-4o-mini)
-            confidence_threshold: Minimum confidence for identity matches (default: 0.9 = 90%)
+            api_key: OpenRouter API key (required when provider is "openrouter"
+                or "auto" and no Bedrock config is present).
+            model: LLM model identifier for OpenRouter (default: openai/gpt-4o-mini).
+            confidence_threshold: Minimum confidence for identity matches (0–1,
+                default 0.9 = 90%).
+            provider: LLM provider to use.  One of:
+                - ``"auto"``       – use Bedrock if ``aws_region`` is set,
+                  else OpenRouter if ``api_key`` is set, else heuristic only.
+                - ``"openrouter"`` – force OpenRouter (requires ``api_key``).
+                - ``"bedrock"``    – force AWS Bedrock (uses boto3 credentials).
+                - ``"heuristic"``  – disable LLM, use heuristics only.
+            aws_region: AWS region for Bedrock calls (default: us-east-1).
+            aws_profile: Named AWS profile (``None`` = default credential chain).
+            bedrock_model_id: Bedrock model identifier.
+            extra_strip_suffixes: Additional suffixes to strip from email
+                local-parts during heuristic matching.  These are ADDED to the
+                built-in defaults; they do not replace them.
         """
         self.api_key = api_key
         self.model = model
         self.confidence_threshold = confidence_threshold
-        self._has_openrouter = api_key is not None
+        self.aws_region = aws_region
+        self.aws_profile = aws_profile
+        self.bedrock_model_id = bedrock_model_id
+
+        # Build the effective suffix list: built-in defaults + caller extras.
+        self._strip_suffixes: list[str] = list(_DEFAULT_STRIP_SUFFIXES)
+        if extra_strip_suffixes:
+            for suffix in extra_strip_suffixes:
+                if suffix not in self._strip_suffixes:
+                    self._strip_suffixes.append(suffix)
+
+        # Resolve effective provider.
+        self._provider = self._resolve_provider(provider)
+
+        logger.debug(
+            "LLMIdentityAnalyzer initialised: provider=%s model=%s strip_suffixes=%s",
+            self._provider,
+            self.bedrock_model_id if self._provider == self.PROVIDER_BEDROCK else self.model,
+            self._strip_suffixes,
+        )
+
+    # ------------------------------------------------------------------
+    # Provider resolution
+    # ------------------------------------------------------------------
+
+    def _resolve_provider(self, requested: str) -> str:
+        """Determine the effective provider from the requested setting.
+
+        Args:
+            requested: Value of the ``provider`` constructor argument.
+
+        Returns:
+            One of the ``PROVIDER_*`` constants.
+        """
+        if requested == self.PROVIDER_OPENROUTER:
+            if not self.api_key:
+                logger.warning(
+                    "provider='openrouter' requested but no api_key supplied; "
+                    "falling back to heuristic-only analysis"
+                )
+                return self.PROVIDER_HEURISTIC
+            return self.PROVIDER_OPENROUTER
+
+        if requested == self.PROVIDER_BEDROCK:
+            if not self._bedrock_available():
+                logger.warning(
+                    "provider='bedrock' requested but boto3 is not installed or "
+                    "credentials are unavailable; falling back to heuristic-only analysis"
+                )
+                return self.PROVIDER_HEURISTIC
+            return self.PROVIDER_BEDROCK
+
+        if requested == self.PROVIDER_HEURISTIC:
+            return self.PROVIDER_HEURISTIC
+
+        # "auto" (or any unknown value) → prefer Bedrock over OpenRouter
+        if self.aws_region and self._bedrock_available():
+            return self.PROVIDER_BEDROCK
+        if self.api_key:
+            return self.PROVIDER_OPENROUTER
+        return self.PROVIDER_HEURISTIC
+
+    @staticmethod
+    def _bedrock_available() -> bool:
+        """Return True if boto3 can be imported (Bedrock dependency check)."""
+        try:
+            import boto3  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    @property
+    def _has_openrouter(self) -> bool:
+        """Backward-compat property used in existing tests."""
+        return self._provider == self.PROVIDER_OPENROUTER
 
     def analyze_identities(
         self,
@@ -46,15 +163,17 @@ class LLMIdentityAnalyzer:
         # Pre-cluster using heuristics
         pre_clusters = self._pre_cluster_identities(identities)
 
-        # Analyze with LLM if available
-        if self._has_openrouter and self.api_key:
+        # Analyze with the configured LLM provider, or fall back to heuristics
+        if self._provider == self.PROVIDER_BEDROCK:
+            clusters = self._analyze_with_bedrock(pre_clusters, identities)
+        elif self._provider == self.PROVIDER_OPENROUTER:
             clusters = self._analyze_with_llm(pre_clusters, identities)
         else:
-            # Fall back to heuristic-only clustering
+            # Heuristic-only clustering
             clusters = self._finalize_heuristic_clusters(pre_clusters, identities)
 
         # Identify unresolved identities
-        clustered_emails = set()
+        clustered_emails: set[str] = set()
         for cluster in clusters:
             clustered_emails.update(cluster.all_emails)
 
@@ -62,15 +181,23 @@ class LLMIdentityAnalyzer:
             identity for identity in identities.values() if identity.email not in clustered_emails
         ]
 
+        analysis_method = (
+            self._provider if self._provider != self.PROVIDER_HEURISTIC else "heuristic"
+        )
+
         return IdentityAnalysisResult(
             clusters=clusters,
             unresolved_identities=unresolved,
             analysis_metadata={
                 "total_identities": len(identities),
                 "total_clusters": len(clusters),
-                "analysis_method": "llm" if self._has_openrouter else "heuristic",
+                "analysis_method": analysis_method,
             },
         )
+
+    # ------------------------------------------------------------------
+    # Identity extraction
+    # ------------------------------------------------------------------
 
     def _extract_identities(self, commits: list[dict[str, Any]]) -> dict[str, DeveloperAlias]:
         """Extract unique developer identities from commits."""
@@ -99,6 +226,10 @@ class LLMIdentityAnalyzer:
                 identity.repositories.add(commit["repository"])
 
         return identities
+
+    # ------------------------------------------------------------------
+    # Heuristic clustering
+    # ------------------------------------------------------------------
 
     def _pre_cluster_identities(self, identities: dict[str, DeveloperAlias]) -> list[set[str]]:
         """Pre-cluster identities using heuristic rules."""
@@ -177,10 +308,10 @@ class LLMIdentityAnalyzer:
         local1 = id1.email.split("@")[0].lower()
         local2 = id2.email.split("@")[0].lower()
 
-        # Remove common suffixes/prefixes for comparison
+        # Remove configured + default suffixes/prefixes for comparison
         clean_local1 = local1
         clean_local2 = local2
-        for suffix in ["-ewtn", "-zaelot", "dev", "developer", "zaelot"]:
+        for suffix in self._strip_suffixes:
             clean_local1 = clean_local1.replace(suffix, "")
             clean_local2 = clean_local2.replace(suffix, "")
 
@@ -259,10 +390,14 @@ class LLMIdentityAnalyzer:
 
         return clusters
 
+    # ------------------------------------------------------------------
+    # OpenRouter LLM analysis
+    # ------------------------------------------------------------------
+
     def _analyze_with_llm(
         self, pre_clusters: list[set[str]], identities: dict[str, DeveloperAlias]
     ) -> list[DeveloperCluster]:
-        """Analyze pre-clusters with LLM for intelligent grouping."""
+        """Analyze pre-clusters with OpenRouter LLM for intelligent grouping."""
         try:
             import openai
 
@@ -316,7 +451,7 @@ class LLMIdentityAnalyzer:
                     clusters.append(cluster)
 
             # Also analyze unclustered identities
-            clustered_emails = set()
+            clustered_emails: set[str] = set()
             for cluster in clusters:
                 clustered_emails.update(cluster.all_emails)
 
@@ -334,8 +469,262 @@ class LLMIdentityAnalyzer:
             return clusters
 
         except Exception as e:
-            logger.warning(f"LLM analysis failed, falling back to heuristics: {e}")
+            logger.warning("OpenRouter LLM analysis failed, falling back to heuristics: %s", e)
             return self._finalize_heuristic_clusters(pre_clusters, identities)
+
+    def _analyze_unclustered_with_llm(
+        self, unclustered: list[DeveloperAlias], client: Any
+    ) -> list[DeveloperCluster]:
+        """Analyze unclustered identities with OpenRouter LLM."""
+        clusters = []
+
+        # Group by similar names for analysis
+        name_groups: dict[str, list[DeveloperAlias]] = defaultdict(list)
+        for identity in unclustered:
+            # Get simplified name for grouping
+            name_key = "".join(identity.name.lower().split())[:5]
+            name_groups[name_key].append(identity)
+
+        for group in name_groups.values():
+            if len(group) < 2:
+                continue
+
+            # Prepare data for LLM
+            identity_data = []
+            for identity in group:
+                identity_data.append(
+                    {
+                        "name": identity.name,
+                        "email": identity.email,
+                        "commit_count": identity.commit_count,
+                        "repositories": list(identity.repositories),
+                    }
+                )
+
+            prompt = self._create_analysis_prompt(identity_data)
+
+            try:
+                response = client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert at analyzing developer identities.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.3,
+                    max_tokens=500,
+                )
+
+                cluster = self._parse_llm_response(response.choices[0].message.content, group, {})
+                if cluster:
+                    clusters.append(cluster)
+
+            except Exception as e:
+                logger.warning("Failed to analyze group with LLM: %s", e)
+                continue
+
+        return clusters
+
+    # ------------------------------------------------------------------
+    # AWS Bedrock LLM analysis
+    # ------------------------------------------------------------------
+
+    def _analyze_with_bedrock(
+        self, pre_clusters: list[set[str]], identities: dict[str, DeveloperAlias]
+    ) -> list[DeveloperCluster]:
+        """Analyze pre-clusters with AWS Bedrock (Claude) for intelligent grouping.
+
+        Uses the boto3 credential chain for authentication — no API key is
+        required.  The prompt and response format are identical to the
+        OpenRouter path so both paths share ``_create_analysis_prompt`` and
+        ``_parse_llm_response``.
+
+        Args:
+            pre_clusters: Heuristic pre-clustered email sets.
+            identities: All extracted developer identities.
+
+        Returns:
+            List of ``DeveloperCluster`` objects.
+        """
+        try:
+            import boto3
+            from botocore.config import Config as BotoConfig
+
+            if self.aws_profile:
+                session = boto3.Session(
+                    profile_name=self.aws_profile,
+                    region_name=self.aws_region,
+                )
+            else:
+                session = boto3.Session(region_name=self.aws_region)
+
+            boto_cfg = BotoConfig(
+                read_timeout=35,
+                connect_timeout=10,
+                retries={"max_attempts": 2},
+            )
+            bedrock_client = session.client("bedrock-runtime", config=boto_cfg)
+
+            logger.info(
+                "LLMIdentityAnalyzer: using Bedrock model=%s region=%s profile=%s",
+                self.bedrock_model_id,
+                self.aws_region,
+                self.aws_profile or "default",
+            )
+
+            clusters: list[DeveloperCluster] = []
+
+            # Analyze each pre-cluster
+            for email_set in pre_clusters:
+                cluster_identities = [
+                    identity for identity in identities.values() if identity.email in email_set
+                ]
+
+                if len(cluster_identities) < 2:
+                    continue
+
+                identity_data = [
+                    {
+                        "name": identity.name,
+                        "email": identity.email,
+                        "commit_count": identity.commit_count,
+                        "repositories": list(identity.repositories),
+                    }
+                    for identity in cluster_identities
+                ]
+
+                prompt = self._create_analysis_prompt(identity_data)
+
+                try:
+                    response_text = self._call_bedrock(bedrock_client, prompt)
+                    cluster = self._parse_llm_response(
+                        response_text, cluster_identities, identities
+                    )
+                    if cluster:
+                        clusters.append(cluster)
+                except Exception as exc:
+                    logger.warning("Bedrock call failed for cluster %s: %s", email_set, exc)
+
+            # Also analyze unclustered identities
+            clustered_emails: set[str] = set()
+            for cluster in clusters:
+                clustered_emails.update(cluster.all_emails)
+
+            unclustered = [
+                identity
+                for identity in identities.values()
+                if identity.email not in clustered_emails
+            ]
+
+            if unclustered:
+                additional = self._analyze_unclustered_with_bedrock(unclustered, bedrock_client)
+                clusters.extend(additional)
+
+            return clusters
+
+        except Exception as e:
+            logger.warning("Bedrock identity analysis failed, falling back to heuristics: %s", e)
+            return self._finalize_heuristic_clusters(pre_clusters, identities)
+
+    def _analyze_unclustered_with_bedrock(
+        self,
+        unclustered: list[DeveloperAlias],
+        bedrock_client: Any,
+    ) -> list[DeveloperCluster]:
+        """Analyze unclustered identities with AWS Bedrock.
+
+        Args:
+            unclustered: Identities not yet placed into a cluster.
+            bedrock_client: An already-configured boto3 bedrock-runtime client.
+
+        Returns:
+            Additional ``DeveloperCluster`` objects found.
+        """
+        clusters: list[DeveloperCluster] = []
+
+        name_groups: dict[str, list[DeveloperAlias]] = defaultdict(list)
+        for identity in unclustered:
+            name_key = "".join(identity.name.lower().split())[:5]
+            name_groups[name_key].append(identity)
+
+        for group in name_groups.values():
+            if len(group) < 2:
+                continue
+
+            identity_data = [
+                {
+                    "name": identity.name,
+                    "email": identity.email,
+                    "commit_count": identity.commit_count,
+                    "repositories": list(identity.repositories),
+                }
+                for identity in group
+            ]
+
+            prompt = self._create_analysis_prompt(identity_data)
+
+            try:
+                response_text = self._call_bedrock(bedrock_client, prompt)
+                cluster = self._parse_llm_response(response_text, group, {})
+                if cluster:
+                    clusters.append(cluster)
+            except Exception as exc:
+                logger.warning("Bedrock unclustered-group call failed: %s", exc)
+
+        return clusters
+
+    def _call_bedrock(self, bedrock_client: Any, user_prompt: str) -> str:
+        """Send a single prompt to Bedrock and return the raw text response.
+
+        Uses the Messages API format required by Claude models on Bedrock.
+        Maximum 500 output tokens — sufficient for the JSON identity response.
+
+        Args:
+            bedrock_client: Configured boto3 bedrock-runtime client.
+            user_prompt: The user-turn prompt text.
+
+        Returns:
+            Raw response text from the model.
+
+        Raises:
+            Exception: Propagated from boto3 on network or API errors.
+        """
+        system_prompt = (
+            "You are an expert at analyzing developer identities and determining "
+            "if different email/name combinations belong to the same person."
+        )
+
+        body = json.dumps(
+            {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 500,
+                "temperature": 0.3,
+                "system": system_prompt,
+                "messages": [
+                    {"role": "user", "content": user_prompt},
+                ],
+            }
+        )
+
+        response = bedrock_client.invoke_model(
+            modelId=self.bedrock_model_id,
+            body=body,
+            contentType="application/json",
+            accept="application/json",
+        )
+
+        result = json.loads(response["body"].read())
+
+        if not result.get("content"):
+            raise ValueError(f"Unexpected Bedrock response structure: {result}")
+
+        return result["content"][0]["text"].strip()
+
+    # ------------------------------------------------------------------
+    # Shared prompt + response helpers
+    # ------------------------------------------------------------------
 
     def _create_analysis_prompt(self, identity_data: list[dict[str, Any]]) -> str:
         """Create prompt for LLM analysis."""
@@ -380,8 +769,10 @@ Respond with a JSON object:
                 # Log why this cluster was rejected
                 cluster_emails = [id.email for id in cluster_identities]
                 logger.info(
-                    f"Rejected identity cluster: {', '.join(cluster_emails)} "
-                    f"(confidence {confidence:.1%} < threshold {self.confidence_threshold:.1%})"
+                    "Rejected identity cluster: %s " "(confidence %.1f%% < threshold %.1f%%)",
+                    ", ".join(cluster_emails),
+                    confidence * 100,
+                    self.confidence_threshold * 100,
                 )
                 return None
 
@@ -417,60 +808,5 @@ Respond with a JSON object:
             )
 
         except Exception as e:
-            logger.warning(f"Failed to parse LLM response: {e}")
+            logger.warning("Failed to parse LLM response: %s", e)
             return None
-
-    def _analyze_unclustered_with_llm(
-        self, unclustered: list[DeveloperAlias], client
-    ) -> list[DeveloperCluster]:
-        """Analyze unclustered identities with LLM."""
-        clusters = []
-
-        # Group by similar names for analysis
-        name_groups = defaultdict(list)
-        for identity in unclustered:
-            # Get simplified name for grouping
-            name_key = "".join(identity.name.lower().split())[:5]
-            name_groups[name_key].append(identity)
-
-        for group in name_groups.values():
-            if len(group) < 2:
-                continue
-
-            # Prepare data for LLM
-            identity_data = []
-            for identity in group:
-                identity_data.append(
-                    {
-                        "name": identity.name,
-                        "email": identity.email,
-                        "commit_count": identity.commit_count,
-                        "repositories": list(identity.repositories),
-                    }
-                )
-
-            prompt = self._create_analysis_prompt(identity_data)
-
-            try:
-                response = client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are an expert at analyzing developer identities.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=0.3,
-                    max_tokens=500,
-                )
-
-                cluster = self._parse_llm_response(response.choices[0].message.content, group, {})
-                if cluster:
-                    clusters.append(cluster)
-
-            except Exception as e:
-                logger.warning(f"Failed to analyze group with LLM: {e}")
-                continue
-
-        return clusters

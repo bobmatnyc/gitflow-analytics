@@ -6,11 +6,9 @@ Extracted from narrative_writer.py to keep file sizes manageable.
 import logging
 from datetime import datetime, timedelta, timezone
 from io import StringIO
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
 
 
 class NarrativeAnalysisMixin:
@@ -100,7 +98,22 @@ class NarrativeAnalysisMixin:
 
         # --- Overview ---
         report.write("### Overview\n\n")
-        report.write(f"- **Total PRs Merged**: {total_prs}\n")
+
+        # Count merged vs closed-without-merge from the PR list when available.
+        # This is a richer signal than the aggregate total_prs count alone.
+        merged_count = sum(1 for pr in prs if pr.get("pr_state") == "merged" or pr.get("is_merged"))
+        closed_count = sum(
+            1 for pr in prs if pr.get("pr_state") == "closed" and not pr.get("is_merged")
+        )
+
+        report.write(f"- **Total PRs**: {total_prs}\n")
+        if merged_count > 0 or closed_count > 0:
+            report.write(f"- **Merged PRs**: {merged_count}\n")
+            if closed_count > 0:
+                report.write(f"- **Closed Without Merge (Rejected)**: {closed_count}\n")
+        else:
+            # Fallback when state data is not present in PR list
+            report.write(f"- **Total PRs Merged**: {total_prs}\n")
         report.write(f"- **Average PR Size**: {pr_metrics.get('avg_pr_size', 0):.0f} lines\n")
 
         if "avg_files_per_pr" in pr_metrics:
@@ -120,6 +133,61 @@ class NarrativeAnalysisMixin:
                 f"- **Story Point Coverage**: {pr_metrics['story_point_coverage']:.1f}%"
                 f" ({prs_with_sp} of {total_prs} PRs)\n"
             )
+
+        # --- Rejection Metrics ---
+        # Only emit when we have at least one closed (rejected) PR to report on.
+        total_closed_prs = merged_count + closed_count
+        if closed_count > 0 and total_closed_prs > 0:
+            report.write("\n### Rejection Metrics\n\n")
+
+            rejection_rate = closed_count / total_closed_prs * 100
+            report.write(
+                f"- **Rejection Rate**: {rejection_rate:.1f}%"
+                f" ({closed_count} of {total_closed_prs} closed PRs)\n"
+            )
+
+            # Changes requested count sourced from pr_metrics aggregation
+            avg_cr = pr_metrics.get("avg_change_requests_per_pr")
+            if avg_cr is not None and avg_cr > 0:
+                report.write(f"- **Average Change Requests per PR**: {avg_cr:.2f}\n")
+
+            # Average revision count split by outcome when per-PR data is available
+            if prs:
+                merged_prs_list = [
+                    pr for pr in prs if pr.get("pr_state") == "merged" or pr.get("is_merged")
+                ]
+                rejected_prs_list = [
+                    pr for pr in prs if pr.get("pr_state") == "closed" and not pr.get("is_merged")
+                ]
+
+                if merged_prs_list:
+                    avg_rev_merged = sum(
+                        pr.get("revision_count", 0) or 0 for pr in merged_prs_list
+                    ) / len(merged_prs_list)
+                    report.write(f"- **Avg Revisions (Merged PRs)**: {avg_rev_merged:.2f}\n")
+
+                if rejected_prs_list:
+                    avg_rev_rejected = sum(
+                        pr.get("revision_count", 0) or 0 for pr in rejected_prs_list
+                    ) / len(rejected_prs_list)
+                    report.write(f"- **Avg Revisions (Rejected PRs)**: {avg_rev_rejected:.2f}\n")
+
+            # Qualitative interpretation
+            if rejection_rate > 30:
+                report.write(
+                    "- **Assessment**: High rejection rate — consider improving PR review"
+                    " process or clarifying requirements earlier.\n"
+                )
+            elif rejection_rate > 15:
+                report.write(
+                    "- **Assessment**: Moderate rejection rate — some churn expected"
+                    " in an active review process.\n"
+                )
+            else:
+                report.write(
+                    "- **Assessment**: Low rejection rate — team shows strong"
+                    " pre-merge quality control.\n"
+                )
 
         # --- Review Metrics (only when review data was collected) ---
         # Use the explicit ``review_data_collected`` flag set by
@@ -553,4 +621,3 @@ class NarrativeAnalysisMixin:
 
         for rec in recommendations:
             report.write(f"{rec}\n\n")
-

@@ -6,26 +6,15 @@ This module re-exports all models from sub-modules for backward compatibility.
 import logging
 import os
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from sqlalchemy import (
-    JSON,
-    Boolean,
-    Column,
-    DateTime,
-    Float,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    UniqueConstraint,
     create_engine,
     text,
 )
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -60,14 +49,29 @@ from .database_metrics_models import (  # noqa: E402
 
 # Re-export everything for backward compatibility
 __all__ = [
-    "Base", "utcnow_tz_aware",
-    "CachedCommit", "DeveloperIdentity", "DeveloperAlias",
-    "PullRequestCache", "IssueCache", "QualitativeCommitData",
-    "PatternCache", "LLMUsageStats", "TrainingData",
-    "RepositoryAnalysisStatus", "TrainingSession", "ClassificationModel",
-    "DailyCommitBatch", "DetailedTicketData", "CommitClassificationBatch",
-    "CommitTicketCorrelation", "DailyMetrics", "WeeklyTrends",
-    "CICDPipelineCache", "WeeklyFetchStatus", "SchemaVersion",
+    "Base",
+    "utcnow_tz_aware",
+    "CachedCommit",
+    "DeveloperIdentity",
+    "DeveloperAlias",
+    "PullRequestCache",
+    "IssueCache",
+    "QualitativeCommitData",
+    "PatternCache",
+    "LLMUsageStats",
+    "TrainingData",
+    "RepositoryAnalysisStatus",
+    "TrainingSession",
+    "ClassificationModel",
+    "DailyCommitBatch",
+    "DetailedTicketData",
+    "CommitClassificationBatch",
+    "CommitTicketCorrelation",
+    "DailyMetrics",
+    "WeeklyTrends",
+    "CICDPipelineCache",
+    "WeeklyFetchStatus",
+    "SchemaVersion",
     "Database",
 ]
 
@@ -589,6 +593,11 @@ class Database:
                 # cached PR data. New columns default to NULL/0 for existing rows.
                 self._migrate_pull_request_cache_v3(conn)
 
+                # --- PR state columns (v4.0 migration) ---
+                # WHY: pr_state / closed_at / is_merged were not present in older databases.
+                # They are added here without touching existing rows.
+                self._migrate_pull_request_cache_v4(conn)
+
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
             logger.debug(
@@ -658,5 +667,55 @@ class Database:
         if added:
             logger.info(
                 "Applied pull_request_cache v3.0 migration: added columns %s",
+                ", ".join(added),
+            )
+
+    def _migrate_pull_request_cache_v4(self, conn) -> None:
+        """Add PR state columns to pull_request_cache (v4.0 migration).
+
+        WHY: pr_state, closed_at, and is_merged were added in v4.0 to enable
+        rejection-rate reporting.  Existing databases will not have these columns,
+        so we use ALTER TABLE to add them without touching existing rows.  SQLite
+        does not support adding multiple columns in one statement, so each column
+        is added individually inside its own try/except to be idempotent.
+
+        Columns added:
+            pr_state   - TEXT: "open", "closed" (rejected), or "merged"
+            closed_at  - DATETIME: when the PR was closed (merge or rejection)
+            is_merged  - INTEGER (BOOLEAN): 1 if merged, 0 if closed without merge
+        """
+        try:
+            result = conn.execute(text("PRAGMA table_info(pull_request_cache)"))
+            existing_columns = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read pull_request_cache schema for v4 migration: {e}")
+            return
+
+        # Map of column_name -> DDL fragment (type + default).
+        # All nullable so existing rows remain valid after the migration.
+        new_columns: list[tuple[str, str]] = [
+            ("pr_state", "TEXT"),
+            ("closed_at", "DATETIME"),
+            ("is_merged", "INTEGER"),  # SQLite stores booleans as INTEGER
+        ]
+
+        added: list[str] = []
+        for col_name, col_type in new_columns:
+            if col_name not in existing_columns:
+                try:
+                    conn.execute(
+                        text(f"ALTER TABLE pull_request_cache ADD COLUMN {col_name} {col_type}")
+                    )
+                    conn.commit()
+                    added.append(col_name)
+                except Exception as e:
+                    logger.debug(
+                        f"Could not add pull_request_cache.{col_name} "
+                        f"(may already exist or DB is readonly): {e}"
+                    )
+
+        if added:
+            logger.info(
+                "Applied pull_request_cache v4.0 migration: added columns %s",
                 ", ".join(added),
             )

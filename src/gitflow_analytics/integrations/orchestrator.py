@@ -32,6 +32,7 @@ class IntegrationOrchestrator:
                 config.github.max_retries,
                 config.github.backoff_factor,
                 allowed_ticket_platforms=getattr(config.analysis, "ticket_platforms", None),
+                fetch_pr_reviews=getattr(config.github, "fetch_pr_reviews", False),
             )
 
         # Initialize JIRA integration if configured

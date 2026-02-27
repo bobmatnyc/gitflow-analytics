@@ -390,7 +390,18 @@ def aliases_command(
 
         click.echo("Running LLM identity analysis...\n")
 
-        api_key = None
+        # ------------------------------------------------------------------
+        # Determine LLM provider and build the analyzer.
+        #
+        # Priority order:
+        #   1. Bedrock — if analysis.llm_classification.provider == "bedrock"
+        #   2. OpenRouter — if cfg.chatgpt.api_key is set
+        #   3. Heuristic-only fallback
+        # ------------------------------------------------------------------
+        llm_cfg = cfg.analysis.llm_classification
+
+        # Resolve OpenRouter API key (support ${ENV_VAR} syntax)
+        api_key: Optional[str] = None
         if cfg.chatgpt and cfg.chatgpt.api_key:
             api_key_value = cfg.chatgpt.api_key
             if api_key_value.startswith("${") and api_key_value.endswith("}"):
@@ -399,14 +410,39 @@ def aliases_command(
             else:
                 api_key = api_key_value
 
-        if not api_key:
+        # Also accept an OpenRouter key directly from llm_classification config
+        if not api_key and llm_cfg.api_key:
+            api_key = llm_cfg.api_key
+
+        # Detect requested provider from llm_classification config
+        requested_provider = llm_cfg.provider  # "auto" | "bedrock" | "openrouter" | "heuristic"
+
+        # Map the llm_classification Bedrock settings for the identity analyzer
+        bedrock_region = llm_cfg.aws_region or "us-east-1"
+        bedrock_profile = llm_cfg.aws_profile
+        bedrock_model_id = llm_cfg.bedrock_model_id
+
+        # Collect user-configured strip suffixes (if any)
+        extra_strip_suffixes = list(getattr(cfg.analysis.identity, "strip_suffixes", []))
+
+        if requested_provider == "bedrock":
+            click.echo("LLM provider: AWS Bedrock", err=True)
+        elif api_key:
+            click.echo("LLM provider: OpenRouter", err=True)
+        else:
             click.echo(
-                "Warning: No OpenRouter API key configured - using heuristic analysis only",
+                "Warning: No LLM provider configured - using heuristic analysis only",
                 err=True,
             )
 
         llm_analyzer = LLMIdentityAnalyzer(
-            api_key=api_key, confidence_threshold=confidence_threshold
+            api_key=api_key,
+            confidence_threshold=confidence_threshold,
+            provider=requested_provider,
+            aws_region=bedrock_region,
+            aws_profile=bedrock_profile,
+            bedrock_model_id=bedrock_model_id,
+            extra_strip_suffixes=extra_strip_suffixes,
         )
 
         result = llm_analyzer.analyze_identities(all_commits)

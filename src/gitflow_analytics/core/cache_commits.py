@@ -1,27 +1,17 @@
 """Commit, PR, and issue caching mixin for GitAnalysisCache."""
 
-import hashlib
-import json
 import logging
-from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Optional, Union
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 import git
 from sqlalchemy import and_
 
-from ..constants import BatchSizes, CacheTTL, Thresholds
 from ..models.database import (
     CachedCommit,
-    Database,
     IssueCache,
     PullRequestCache,
-    RepositoryAnalysisStatus,
-    WeeklyFetchStatus,
 )
-from ..utils.commit_utils import extract_co_authors as _extract_co_authors_from_message
-from ..utils.debug import is_debug_mode
 
 logger = logging.getLogger(__name__)
 
@@ -289,6 +279,14 @@ class CommitCacheMixin:
                 existing.story_points = pr_data.get("story_points")
                 existing.labels = pr_data.get("labels", [])
                 existing.commit_hashes = pr_data.get("commit_hashes", [])
+                # PR state fields (v4.0) - only update when present in payload
+                # to avoid overwriting good data with None from a partial fetch.
+                if "pr_state" in pr_data:
+                    existing.pr_state = pr_data.get("pr_state")
+                if "closed_at" in pr_data:
+                    existing.closed_at = pr_data.get("closed_at")
+                if "is_merged" in pr_data:
+                    existing.is_merged = pr_data.get("is_merged")
                 # Enhanced PR tracking fields (v3.0) - only update when present in payload
                 # to avoid accidentally zeroing out data already stored from a richer fetch.
                 if "review_comments" in pr_data:
@@ -328,6 +326,10 @@ class CommitCacheMixin:
                     story_points=pr_data.get("story_points"),
                     labels=pr_data.get("labels", []),
                     commit_hashes=pr_data.get("commit_hashes", []),
+                    # PR state fields (v4.0)
+                    pr_state=pr_data.get("pr_state"),
+                    closed_at=pr_data.get("closed_at"),
+                    is_merged=pr_data.get("is_merged"),
                     # Enhanced PR tracking fields (v3.0)
                     review_comments_count=pr_data.get("review_comments", 0),
                     pr_comments_count=pr_data.get("pr_comments_count", 0),
@@ -408,7 +410,6 @@ class CommitCacheMixin:
                 for issue in issues
                 if not self._is_stale(issue.cached_at)
             ]
-
 
     def bulk_store_commits(self, repo_path: str, commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Store multiple commits using SQLAlchemy bulk operations for maximum performance.

@@ -1,15 +1,12 @@
 """Caching layer for Git analysis with SQLite backend."""
 
-import hashlib
-import json
 import logging
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 import git
-from sqlalchemy import and_
 
 from ..constants import BatchSizes, CacheTTL, Thresholds
 from ..models.database import (
@@ -22,12 +19,11 @@ from ..models.database import (
 )
 from ..utils.commit_utils import extract_co_authors as _extract_co_authors_from_message
 from ..utils.debug import is_debug_mode
+from .cache_commits import CommitCacheMixin
+from .cache_weekly import WeeklyCacheMixin
 
 logger = logging.getLogger(__name__)
 
-
-from .cache_commits import CommitCacheMixin
-from .cache_weekly import WeeklyCacheMixin
 
 class GitAnalysisCache(CommitCacheMixin, WeeklyCacheMixin):
     """Cache for Git analysis results."""
@@ -618,10 +614,21 @@ class GitAnalysisCache(CommitCacheMixin, WeeklyCacheMixin):
     def _pr_to_dict(self, pr: PullRequestCache) -> dict[str, Any]:
         """Convert PullRequestCache to dictionary.
 
-        WHY: Uses getattr with defaults for the v3.0 enhanced fields so that
-        this method works correctly against older database rows that pre-date the
-        migration (columns will be None after ALTER TABLE adds them).
+        WHY: Uses getattr with defaults for the v3.0 and v4.0 enhanced fields so
+        that this method works correctly against older database rows that pre-date
+        the migrations (columns will be None after ALTER TABLE adds them).
         """
+        # Reconstruct pr_state / is_merged for rows cached before v4.0 migration.
+        # After migration the columns exist but may be NULL for rows written by an
+        # older version of the code; derive sensible defaults from merged_at.
+        raw_pr_state = getattr(pr, "pr_state", None)
+        raw_is_merged = getattr(pr, "is_merged", None)
+
+        if raw_pr_state is None:
+            # Derive from merged_at for backward-compat with pre-v4.0 rows
+            raw_is_merged = pr.merged_at is not None
+            raw_pr_state = "merged" if raw_is_merged else "closed"
+
         return {
             "number": pr.pr_number,
             "title": pr.title,
@@ -629,6 +636,10 @@ class GitAnalysisCache(CommitCacheMixin, WeeklyCacheMixin):
             "author": pr.author,
             "created_at": pr.created_at,
             "merged_at": pr.merged_at,
+            # PR state fields (v4.0)
+            "pr_state": raw_pr_state,
+            "closed_at": getattr(pr, "closed_at", None),
+            "is_merged": raw_is_merged,
             "story_points": pr.story_points,
             "labels": pr.labels or [],
             "commit_hashes": pr.commit_hashes or [],
@@ -663,4 +674,3 @@ class GitAnalysisCache(CommitCacheMixin, WeeklyCacheMixin):
             "labels": issue.labels or [],
             "platform_data": issue.platform_data or {},
         }
-

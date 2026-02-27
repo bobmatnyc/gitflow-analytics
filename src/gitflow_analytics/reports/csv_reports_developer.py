@@ -14,8 +14,6 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from ..metrics.activity_scoring import ActivityScorer
-
 logger = logging.getLogger(__name__)
 
 
@@ -399,6 +397,10 @@ class CSVDeveloperReportsMixin:
                 except Exception:
                     lifetime_hours = ""
 
+            closed_at = pr.get("closed_at")
+            is_merged_val = pr.get("is_merged")
+            pr_state_val = pr.get("pr_state", "")
+
             row: dict[str, Any] = {
                 "pr_number": pr.get("number", ""),
                 "title": pr.get("title", ""),
@@ -410,6 +412,14 @@ class CSVDeveloperReportsMixin:
                 ),
                 "merged_at": (
                     self._safe_datetime_format(merged_at, "%Y-%m-%d %H:%M:%S") if merged_at else ""
+                ),
+                # v4.0 state columns
+                "pr_state": pr_state_val or "",
+                "closed_at": (
+                    self._safe_datetime_format(closed_at, "%Y-%m-%d %H:%M:%S") if closed_at else ""
+                ),
+                "is_merged": (
+                    str(bool(is_merged_val)).lower() if is_merged_val is not None else ""
                 ),
                 "lifetime_hours": lifetime_hours,
                 # Size
@@ -457,6 +467,10 @@ class CSVDeveloperReportsMixin:
             "author",
             "created_at",
             "merged_at",
+            # v4.0 state columns
+            "pr_state",
+            "closed_at",
+            "is_merged",
             "lifetime_hours",
             "additions",
             "deletions",
@@ -738,4 +752,3 @@ class CSVDeveloperReportsMixin:
                 writer.writeheader()
 
         return output_path
-

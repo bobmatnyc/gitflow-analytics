@@ -1,7 +1,6 @@
 """Metrics, PR, issue, training, and CI/CD database models for GitFlow Analytics."""
 
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime
 
 from sqlalchemy import (
     JSON,
@@ -13,10 +12,10 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
-    UniqueConstraint,
 )
 
 from .database_base import Base, utcnow_tz_aware
+
 
 class PullRequestCache(Base):
     """Cached pull request data.
@@ -25,6 +24,7 @@ class PullRequestCache(Base):
     - v1.0: Initial schema (title, description, author, dates, story_points, labels, commit_hashes)
     - v2.0: Timezone-aware timestamps
     - v3.0: Enhanced PR tracking (review counts, approvals, file stats, revision tracking)
+    - v4.0: PR state tracking (pr_state, closed_at, is_merged)
     """
 
     __tablename__ = "pull_request_cache"
@@ -46,6 +46,22 @@ class PullRequestCache(Base):
 
     # Associated commits
     commit_hashes = Column(JSON)  # List of commit hashes
+
+    # --- PR state fields (v4.0) ---
+
+    # WHY: Storing the explicit state avoids recomputing it from merged_at on every
+    # read.  "merged" / "closed" (rejected) / "open" maps directly to GitHub's PR
+    # lifecycle, making rejection-rate reporting straightforward.
+    pr_state = Column(String, nullable=True)  # "open", "closed", "merged"
+
+    # WHY: closed_at is distinct from merged_at — it is populated for both merged
+    # and closed-without-merge PRs so that we can compute PR lifetime accurately
+    # for rejected PRs too, not just merged ones.
+    closed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # WHY: An explicit boolean is cleaner than `merged_at IS NOT NULL` checks
+    # scattered across reporting code and avoids ambiguity when merged_at is absent.
+    is_merged = Column(Boolean, nullable=True)
 
     # --- Enhanced PR tracking fields (v3.0) ---
 
@@ -86,7 +102,6 @@ class PullRequestCache(Base):
     __table_args__ = (Index("idx_repo_pr", "repo_path", "pr_number", unique=True),)
 
 
-
 class IssueCache(Base):
     """Cached issue data from various platforms."""
 
@@ -122,7 +137,6 @@ class IssueCache(Base):
         Index("idx_platform_issue", "platform", "issue_id", unique=True),
         Index("idx_project_key", "project_key"),
     )
-
 
 
 class QualitativeCommitData(Base):
@@ -171,7 +185,6 @@ class QualitativeCommitData(Base):
     )
 
 
-
 class LLMUsageStats(Base):
     """Track LLM usage statistics for cost monitoring and optimization.
 
@@ -213,7 +226,6 @@ class LLMUsageStats(Base):
         Index("idx_llm_batch_id", "batch_id"),
         Index("idx_success", "success"),
     )
-
 
 
 class TrainingData(Base):
@@ -265,7 +277,6 @@ class TrainingData(Base):
         Index("idx_training_validated", "validated"),
         Index("idx_commit_repo", "commit_hash", "repo_path", unique=True),
     )
-
 
 
 class TrainingSession(Base):
@@ -327,7 +338,6 @@ class TrainingSession(Base):
     )
 
 
-
 class ClassificationModel(Base):
     """Versioned storage for trained classification models.
 
@@ -379,7 +389,6 @@ class ClassificationModel(Base):
         Index("idx_model_accuracy", "validation_accuracy"),
         Index("idx_model_created", "created_at"),
     )
-
 
 
 class CICDPipelineCache(Base):
@@ -445,6 +454,3 @@ class CICDPipelineCache(Base):
             f"status='{self.status}', "
             f"repo='{self.repo_path}')>"
         )
-
-
-

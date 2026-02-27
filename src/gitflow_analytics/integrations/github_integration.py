@@ -22,6 +22,7 @@ class GitHubIntegration:
         backoff_factor: int = 2,
         allowed_ticket_platforms: Optional[list[str]] = None,
         fetch_pr_reviews: bool = False,
+        stale_open_pr_refresh_cap: int = 50,
     ):
         """Initialize GitHub integration.
 
@@ -34,6 +35,9 @@ class GitHubIntegration:
             fetch_pr_reviews: When True, fetch review data (approvals, change requests,
                 time-to-first-review) via additional API calls per PR.  Disabled by
                 default to protect existing users from unexpected rate-limit increases.
+            stale_open_pr_refresh_cap: Maximum number of cached "open" PRs to re-fetch
+                per run.  Caps GitHub API usage when many open PRs have since been
+                merged or closed.  Defaults to 50.
         """
         self.github = Github(token)
         self.cache = cache
@@ -41,6 +45,7 @@ class GitHubIntegration:
         self.backoff_factor = backoff_factor
         self.allowed_ticket_platforms = allowed_ticket_platforms
         self.fetch_pr_reviews = fetch_pr_reviews
+        self.stale_open_pr_refresh_cap = stale_open_pr_refresh_cap
 
         # Initialize schema version manager for incremental API data fetching
         self.schema_manager = create_schema_manager(cache.cache_dir)
@@ -151,6 +156,24 @@ class GitHubIntegration:
             self._cache_prs_bulk(repo_name, new_pr_data)
             print(f"   💾 Cached {len(new_pr_data)} new GitHub PRs")
 
+        # Refresh cached PRs that are still marked "open" — they may have since been
+        # merged or closed.  This is done after fetching new PRs so that the cap is
+        # not consumed by PRs we already know about from the GitHub API response.
+        refreshed_pr_data = self._refresh_stale_open_prs(
+            repo,
+            repo_name,
+            cached_prs_data,
+            already_fetched_numbers={pr.number for pr in new_prs},
+        )
+
+        # Merge refreshed data back — replace the original cached entry for each PR
+        if refreshed_pr_data:
+            refreshed_numbers = {pr["number"] for pr in refreshed_pr_data}
+            cached_prs_data = [
+                pr for pr in cached_prs_data if pr["number"] not in refreshed_numbers
+            ] + refreshed_pr_data
+            print(f"   🔄 Refreshed state for {len(refreshed_pr_data)} previously-open PR(s)")
+
         # Combine cached and new PR data
         all_pr_data = cached_prs_data + new_pr_data
 
@@ -180,6 +203,89 @@ class GitHubIntegration:
                     enriched_prs.append(pr_data)
 
         return enriched_prs
+
+    def _refresh_stale_open_prs(
+        self,
+        repo,
+        repo_name: str,
+        cached_prs: list[dict[str, Any]],
+        already_fetched_numbers: set[int],
+    ) -> list[dict[str, Any]]:
+        """Re-fetch cached PRs that are still marked as "open" to update their state.
+
+        WHY: Open PRs cached from a previous run may have since been merged or closed.
+        Without a refresh they would remain as "open" indefinitely in the cache,
+        causing incorrect rejection-rate and merge-rate metrics.
+
+        To control API rate-limit usage the number of PRs refreshed per run is
+        capped at ``self.stale_open_pr_refresh_cap`` (default 50).  PRs whose
+        number appears in ``already_fetched_numbers`` (i.e. those already returned
+        by the incremental ``get_pulls`` call in the same run) are skipped to avoid
+        double-counting API quota.
+
+        Args:
+            repo: PyGitHub Repository object.
+            repo_name: Repository name string (for cache writes).
+            cached_prs: The list of PR dicts loaded from cache this run.
+            already_fetched_numbers: Set of PR numbers already refreshed via the
+                main incremental fetch path — these are skipped here.
+
+        Returns:
+            List of PR data dicts for successfully re-fetched PRs (may be empty).
+        """
+        # Identify open PRs from cache that we have not already re-fetched
+        stale_open = [
+            pr
+            for pr in cached_prs
+            if pr.get("pr_state") == "open" and pr["number"] not in already_fetched_numbers
+        ]
+
+        if not stale_open:
+            return []
+
+        # Apply the per-run cap
+        to_refresh = stale_open[: self.stale_open_pr_refresh_cap]
+        if len(stale_open) > self.stale_open_pr_refresh_cap:
+            print(
+                f"   ℹ️  {len(stale_open)} open PRs in cache; refreshing "
+                f"{self.stale_open_pr_refresh_cap} (cap)"
+            )
+
+        refreshed: list[dict[str, Any]] = []
+        for cached_pr in to_refresh:
+            pr_number = cached_pr["number"]
+            for attempt in range(self.rate_limit_retries):
+                try:
+                    gh_pr = repo.get_pull(pr_number)
+                    pr_data = self._extract_pr_data(gh_pr, fetch_reviews=self.fetch_pr_reviews)
+                    self.cache.cache_pr(repo_name, pr_data)
+                    refreshed.append(pr_data)
+                    break  # success — move to next PR
+
+                except RateLimitExceededException:
+                    if attempt < self.rate_limit_retries - 1:
+                        wait_time = self.backoff_factor**attempt
+                        print(
+                            f"   ⏳ Rate limit hit refreshing PR #{pr_number}, "
+                            f"waiting {wait_time}s..."
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        print(
+                            f"   ❌ Rate limit exceeded refreshing open PRs — "
+                            f"stopping after {len(refreshed)} refresh(es)"
+                        )
+                        return refreshed
+
+                except UnknownObjectException:
+                    # PR was deleted or is inaccessible — skip silently
+                    break
+
+                except Exception as exc:
+                    print(f"   ⚠️  Could not refresh PR #{pr_number}: {exc}")
+                    break
+
+        return refreshed
 
     def _get_cached_prs_bulk(self, repo_name: str, since: datetime) -> list[dict[str, Any]]:
         """Get cached PRs for a repository from the given date onwards.
@@ -221,10 +327,19 @@ class GitHubIntegration:
             for cached_pr in cached_results:
                 if not self._is_pr_stale(cached_pr.cached_at):
                     merged_at = cached_pr.merged_at
-                    is_merged = merged_at is not None
 
-                    # Gap 2: reconstruct pr_state from cached fields
-                    pr_state = "merged" if is_merged else "closed"
+                    # Read v4.0 state columns when available; fall back to derivation
+                    # for rows cached before the v4.0 migration ran.
+                    stored_pr_state = getattr(cached_pr, "pr_state", None)
+                    stored_is_merged = getattr(cached_pr, "is_merged", None)
+
+                    if stored_pr_state is not None:
+                        pr_state = stored_pr_state
+                        is_merged = bool(stored_is_merged)
+                    else:
+                        # Backward-compat: derive from merged_at
+                        is_merged = merged_at is not None
+                        pr_state = "merged" if is_merged else "closed"
 
                     pr_data = {
                         "number": cached_pr.pr_number,
@@ -234,8 +349,8 @@ class GitHubIntegration:
                         "author": (cached_pr.author or "").lower(),
                         "created_at": cached_pr.created_at,
                         "merged_at": merged_at,
+                        # v4.0 state fields
                         "closed_at": getattr(cached_pr, "closed_at", None),
-                        # Gap 2: state fields
                         "pr_state": pr_state,
                         "is_merged": is_merged,
                         "story_points": cached_pr.story_points or 0,
