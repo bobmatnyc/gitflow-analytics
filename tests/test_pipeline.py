@@ -672,6 +672,432 @@ class TestRunReport:
 
 
 # ---------------------------------------------------------------------------
+# Stage 3 PR cache loading tests
+# ---------------------------------------------------------------------------
+
+
+class TestRunReportPRCacheLoading:
+    """Verify that run_report loads cached PR data from PullRequestCache.
+
+    These tests exercise the PR-loading path added to fix the gap where
+    ``all_prs`` was always an empty list regardless of cached data.
+    """
+
+    _REPORT_PATCH_PATHS = {
+        "cache": "gitflow_analytics.core.cache.GitAnalysisCache",
+        "identity": "gitflow_analytics.core.identity.DeveloperIdentityResolver",
+        "analyzer": "gitflow_analytics.core.analyzer.GitAnalyzer",
+        "csv_writer": "gitflow_analytics.reports.csv_writer.CSVReportGenerator",
+        "analytics_writer": "gitflow_analytics.reports.analytics_writer.AnalyticsReportGenerator",
+        "narrative_writer": "gitflow_analytics.reports.narrative_writer.NarrativeReportGenerator",
+        "trends_writer": "gitflow_analytics.reports.weekly_trends_writer.WeeklyTrendsWriter",
+        "json_exporter": "gitflow_analytics.reports.json_exporter.ComprehensiveJSONExporter",
+        "dora": "gitflow_analytics.metrics.dora.DORAMetricsCalculator",
+    }
+
+    def _make_pr_dict(self, number: int = 1) -> dict[str, Any]:
+        """Return a minimal PR dict matching the _pr_to_dict() output format."""
+        return {
+            "number": number,
+            "title": f"PR #{number}",
+            "description": "desc",
+            "author": "alice",
+            "created_at": datetime(2025, 1, 10, tzinfo=timezone.utc),
+            "merged_at": datetime(2025, 1, 11, tzinfo=timezone.utc),
+            "pr_state": "merged",
+            "closed_at": datetime(2025, 1, 11, tzinfo=timezone.utc),
+            "is_merged": True,
+            "story_points": None,
+            "labels": [],
+            "commit_hashes": [],
+            "review_comments": 0,
+            "pr_comments_count": 0,
+            "approvals_count": 0,
+            "change_requests_count": 0,
+            "reviewers": [],
+            "approved_by": [],
+            "time_to_first_review_hours": None,
+            "revision_count": 0,
+            "changed_files": 2,
+            "additions": 10,
+            "deletions": 3,
+        }
+
+    def _make_cache_mock(self, prs: list[dict[str, Any]]) -> MagicMock:
+        """Return a GitAnalysisCache mock pre-loaded with given PR dicts."""
+        mock_cache = MagicMock()
+
+        # Session mock used for the CachedCommit query (commit loading path)
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.all.return_value = []
+        mock_session.query.return_value = mock_query
+        mock_cache.get_session.return_value = mock_session
+        mock_cache._commit_to_dict.return_value = {}
+
+        # The new PR loading method
+        mock_cache.get_cached_prs_for_report.return_value = prs
+        return mock_cache
+
+    def _make_identity_mock(self) -> MagicMock:
+        mock_identity = MagicMock()
+        mock_identity.get_developer_stats.return_value = {}
+        return mock_identity
+
+    def _make_analyzer_mock(self) -> MagicMock:
+        mock_analyzer = MagicMock()
+        mock_analyzer.ticket_extractor.analyze_ticket_coverage.return_value = {}
+        mock_analyzer.ticket_extractor.calculate_developer_ticket_coverage.return_value = {}
+        return mock_analyzer
+
+    def _run_with_pr_mocks(
+        self,
+        cfg: Any,
+        output_dir: Path,
+        prs: list[dict[str, Any]],
+    ) -> ReportResult:
+        """Run run_report with a cache mock that returns the given PRs."""
+        with (
+            patch(self._REPORT_PATCH_PATHS["cache"]) as MockCache,
+            patch(self._REPORT_PATCH_PATHS["identity"]) as MockIdentity,
+            patch(self._REPORT_PATCH_PATHS["analyzer"]) as MockAnalyzer,
+            patch(self._REPORT_PATCH_PATHS["csv_writer"]),
+            patch(self._REPORT_PATCH_PATHS["analytics_writer"]),
+            patch(self._REPORT_PATCH_PATHS["narrative_writer"]),
+            patch(self._REPORT_PATCH_PATHS["trends_writer"]),
+            patch(self._REPORT_PATCH_PATHS["json_exporter"]),
+            patch(self._REPORT_PATCH_PATHS["dora"]) as MockDora,
+        ):
+            MockCache.return_value = self._make_cache_mock(prs)
+            MockIdentity.return_value = self._make_identity_mock()
+            MockAnalyzer.return_value = self._make_analyzer_mock()
+
+            mock_dora = MagicMock()
+            mock_dora.calculate_dora_metrics.return_value = {}
+            MockDora.return_value = mock_dora
+
+            return run_report(cfg=cfg, weeks=4, output_dir=output_dir)
+
+    def test_get_cached_prs_for_report_called_with_github_repos(self, tmp_path: Path) -> None:
+        """run_report calls get_cached_prs_for_report with the repo's github_repo slug."""
+
+        cfg_text = _MINIMAL_CONFIG_TEMPLATE.format(
+            cache_dir=str(tmp_path / ".cache"),
+            repo_path=str(tmp_path / "repo"),
+            output_dir=str(tmp_path / "reports"),
+        )
+        # Inject a github_repo field so the PR loading path is exercised
+        cfg_dict = yaml.safe_load(cfg_text)
+        cfg_dict["repositories"][0]["github_repo"] = "myorg/myrepo"
+        config_file = tmp_path / "config_with_github.yaml"
+        config_file.write_text(yaml.dump(cfg_dict))
+
+        from gitflow_analytics.config import ConfigLoader
+
+        cfg = ConfigLoader.load(config_file)
+        output_dir = tmp_path / "reports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        prs = [self._make_pr_dict(1), self._make_pr_dict(2)]
+
+        with (
+            patch(self._REPORT_PATCH_PATHS["cache"]) as MockCache,
+            patch(self._REPORT_PATCH_PATHS["identity"]) as MockIdentity,
+            patch(self._REPORT_PATCH_PATHS["analyzer"]) as MockAnalyzer,
+            patch(self._REPORT_PATCH_PATHS["csv_writer"]),
+            patch(self._REPORT_PATCH_PATHS["analytics_writer"]),
+            patch(self._REPORT_PATCH_PATHS["narrative_writer"]),
+            patch(self._REPORT_PATCH_PATHS["trends_writer"]),
+            patch(self._REPORT_PATCH_PATHS["json_exporter"]),
+            patch(self._REPORT_PATCH_PATHS["dora"]) as MockDora,
+        ):
+            mock_cache = self._make_cache_mock(prs)
+            MockCache.return_value = mock_cache
+            MockIdentity.return_value = self._make_identity_mock()
+            MockAnalyzer.return_value = self._make_analyzer_mock()
+            MockDora.return_value = MagicMock(calculate_dora_metrics=MagicMock(return_value={}))
+
+            run_report(cfg=cfg, weeks=4, output_dir=output_dir)
+
+        # Confirm the new method was called with the correct slug
+        mock_cache.get_cached_prs_for_report.assert_called_once()
+        call_args = mock_cache.get_cached_prs_for_report.call_args
+        repo_paths_arg = call_args[0][0]  # first positional argument
+        assert "myorg/myrepo" in repo_paths_arg
+
+    def test_no_github_repo_skips_pr_load(self, tmp_path: Path) -> None:
+        """When no repository has github_repo set, get_cached_prs_for_report is not called."""
+        cfg = _make_config(tmp_path)
+        # _make_config produces a repo without github_repo
+        assert all(getattr(r, "github_repo", None) is None for r in cfg.repositories)
+
+        output_dir = tmp_path / "reports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        with (
+            patch(self._REPORT_PATCH_PATHS["cache"]) as MockCache,
+            patch(self._REPORT_PATCH_PATHS["identity"]) as MockIdentity,
+            patch(self._REPORT_PATCH_PATHS["analyzer"]) as MockAnalyzer,
+            patch(self._REPORT_PATCH_PATHS["csv_writer"]),
+            patch(self._REPORT_PATCH_PATHS["analytics_writer"]),
+            patch(self._REPORT_PATCH_PATHS["narrative_writer"]),
+            patch(self._REPORT_PATCH_PATHS["trends_writer"]),
+            patch(self._REPORT_PATCH_PATHS["json_exporter"]),
+            patch(self._REPORT_PATCH_PATHS["dora"]) as MockDora,
+        ):
+            mock_cache = self._make_cache_mock([])
+            MockCache.return_value = mock_cache
+            MockIdentity.return_value = self._make_identity_mock()
+            MockAnalyzer.return_value = self._make_analyzer_mock()
+            MockDora.return_value = MagicMock(calculate_dora_metrics=MagicMock(return_value={}))
+
+            run_report(cfg=cfg, weeks=4, output_dir=output_dir)
+
+        mock_cache.get_cached_prs_for_report.assert_not_called()
+
+    def test_prs_passed_to_dora_calculator(self, tmp_path: Path) -> None:
+        """Loaded PRs are forwarded to DORAMetricsCalculator.calculate_dora_metrics."""
+
+        cfg_dict = yaml.safe_load(
+            _MINIMAL_CONFIG_TEMPLATE.format(
+                cache_dir=str(tmp_path / ".cache"),
+                repo_path=str(tmp_path / "repo"),
+                output_dir=str(tmp_path / "reports"),
+            )
+        )
+        cfg_dict["repositories"][0]["github_repo"] = "org/repo"
+        config_file = tmp_path / "cfg.yaml"
+        config_file.write_text(yaml.dump(cfg_dict))
+
+        from gitflow_analytics.config import ConfigLoader
+
+        cfg = ConfigLoader.load(config_file)
+        output_dir = tmp_path / "reports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        prs = [self._make_pr_dict(10)]
+
+        with (
+            patch(self._REPORT_PATCH_PATHS["cache"]) as MockCache,
+            patch(self._REPORT_PATCH_PATHS["identity"]) as MockIdentity,
+            patch(self._REPORT_PATCH_PATHS["analyzer"]) as MockAnalyzer,
+            patch(self._REPORT_PATCH_PATHS["csv_writer"]),
+            patch(self._REPORT_PATCH_PATHS["analytics_writer"]),
+            patch(self._REPORT_PATCH_PATHS["narrative_writer"]),
+            patch(self._REPORT_PATCH_PATHS["trends_writer"]),
+            patch(self._REPORT_PATCH_PATHS["json_exporter"]),
+            patch(self._REPORT_PATCH_PATHS["dora"]) as MockDora,
+        ):
+            MockCache.return_value = self._make_cache_mock(prs)
+            MockIdentity.return_value = self._make_identity_mock()
+            MockAnalyzer.return_value = self._make_analyzer_mock()
+            mock_dora_instance = MagicMock()
+            mock_dora_instance.calculate_dora_metrics.return_value = {}
+            MockDora.return_value = mock_dora_instance
+
+            run_report(cfg=cfg, weeks=4, output_dir=output_dir)
+
+        # Verify PRs were passed to the DORA calculator
+        mock_dora_instance.calculate_dora_metrics.assert_called_once()
+        call_kwargs = mock_dora_instance.calculate_dora_metrics.call_args
+        # Second positional argument is all_prs
+        passed_prs = call_kwargs[0][1]
+        assert passed_prs == prs
+
+    def test_empty_pr_cache_produces_no_errors(self, tmp_path: Path) -> None:
+        """When PRs are cached but the result set is empty, run_report completes cleanly."""
+
+        cfg_dict = yaml.safe_load(
+            _MINIMAL_CONFIG_TEMPLATE.format(
+                cache_dir=str(tmp_path / ".cache"),
+                repo_path=str(tmp_path / "repo"),
+                output_dir=str(tmp_path / "reports"),
+            )
+        )
+        cfg_dict["repositories"][0]["github_repo"] = "org/repo"
+        config_file = tmp_path / "cfg.yaml"
+        config_file.write_text(yaml.dump(cfg_dict))
+
+        from gitflow_analytics.config import ConfigLoader
+
+        cfg = ConfigLoader.load(config_file)
+        output_dir = tmp_path / "reports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        result = self._run_with_pr_mocks(cfg, output_dir, prs=[])
+
+        # run_report should complete (return a ReportResult) without raising.
+        # PR-loading itself must not inject errors — only unrelated report
+        # generation issues (CSV file not found from mocked writers) may appear.
+        assert isinstance(result, ReportResult)
+        pr_load_errors = [
+            e for e in result.errors if "pr cache" in e.lower() or "get_cached_prs" in e.lower()
+        ]
+        assert pr_load_errors == [], f"Unexpected PR cache load errors: {pr_load_errors}"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for get_cached_prs_for_report method
+# ---------------------------------------------------------------------------
+
+
+class TestGetCachedPrsForReport:
+    """Unit tests for GitAnalysisCache.get_cached_prs_for_report.
+
+    Tests run against a real in-memory SQLite database via GitAnalysisCache
+    to validate the query logic without mocking the internals.
+    """
+
+    def _make_cache(self, tmp_path: Path) -> Any:
+        from gitflow_analytics.core.cache import GitAnalysisCache
+
+        cache_dir = tmp_path / ".gitflow-cache"
+        return GitAnalysisCache(cache_dir, ttl_hours=24)
+
+    def _seed_pr(
+        self,
+        cache: Any,
+        repo: str,
+        number: int,
+        created_at: datetime,
+        merged_at: datetime | None = None,
+    ) -> None:
+        cache.cache_pr(
+            repo,
+            {
+                "number": number,
+                "title": f"PR {number}",
+                "description": "",
+                "author": "dev",
+                "created_at": created_at,
+                "merged_at": merged_at,
+                "story_points": None,
+                "labels": [],
+                "commit_hashes": [],
+            },
+        )
+
+    def test_returns_prs_within_date_range(self, tmp_path: Path) -> None:
+        """PRs whose created_at falls inside the window are returned."""
+        cache = self._make_cache(tmp_path)
+        repo = "org/repo"
+        inside = datetime(2025, 2, 5, tzinfo=timezone.utc)
+        self._seed_pr(cache, repo, 1, inside)
+
+        start = datetime(2025, 2, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 2, 28, tzinfo=timezone.utc)
+        result = cache.get_cached_prs_for_report([repo], start, end)
+
+        assert len(result) == 1
+        assert result[0]["number"] == 1
+
+    def test_excludes_prs_outside_date_range(self, tmp_path: Path) -> None:
+        """PRs outside the date window are not returned."""
+        cache = self._make_cache(tmp_path)
+        repo = "org/repo"
+        outside = datetime(2025, 3, 15, tzinfo=timezone.utc)
+        self._seed_pr(cache, repo, 99, outside)
+
+        start = datetime(2025, 2, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 2, 28, tzinfo=timezone.utc)
+        result = cache.get_cached_prs_for_report([repo], start, end)
+
+        assert result == []
+
+    def test_returns_prs_from_multiple_repos(self, tmp_path: Path) -> None:
+        """PRs from all listed repos are returned."""
+        cache = self._make_cache(tmp_path)
+        ts = datetime(2025, 2, 10, tzinfo=timezone.utc)
+        self._seed_pr(cache, "org/alpha", 1, ts)
+        self._seed_pr(cache, "org/beta", 2, ts)
+
+        start = datetime(2025, 2, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 2, 28, tzinfo=timezone.utc)
+        result = cache.get_cached_prs_for_report(["org/alpha", "org/beta"], start, end)
+
+        numbers = {pr["number"] for pr in result}
+        assert numbers == {1, 2}
+
+    def test_filters_by_repo_path(self, tmp_path: Path) -> None:
+        """PRs from repos not in the list are excluded."""
+        cache = self._make_cache(tmp_path)
+        ts = datetime(2025, 2, 10, tzinfo=timezone.utc)
+        self._seed_pr(cache, "org/wanted", 1, ts)
+        self._seed_pr(cache, "org/unwanted", 2, ts)
+
+        start = datetime(2025, 2, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 2, 28, tzinfo=timezone.utc)
+        result = cache.get_cached_prs_for_report(["org/wanted"], start, end)
+
+        assert len(result) == 1
+        assert result[0]["number"] == 1
+
+    def test_empty_repo_list_returns_empty(self, tmp_path: Path) -> None:
+        """An empty repo_paths list returns an empty result without querying."""
+        cache = self._make_cache(tmp_path)
+        ts = datetime(2025, 2, 10, tzinfo=timezone.utc)
+        self._seed_pr(cache, "org/repo", 1, ts)
+
+        start = datetime(2025, 2, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 2, 28, tzinfo=timezone.utc)
+        result = cache.get_cached_prs_for_report([], start, end)
+
+        assert result == []
+
+    def test_returns_correct_pr_dict_fields(self, tmp_path: Path) -> None:
+        """Returned dicts include all standard _pr_to_dict fields."""
+        cache = self._make_cache(tmp_path)
+        ts = datetime(2025, 2, 5, tzinfo=timezone.utc)
+        merged = datetime(2025, 2, 6, tzinfo=timezone.utc)
+        self._seed_pr(cache, "org/repo", 7, ts, merged)
+
+        start = datetime(2025, 2, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 2, 28, tzinfo=timezone.utc)
+        result = cache.get_cached_prs_for_report(["org/repo"], start, end)
+
+        assert len(result) == 1
+        pr = result[0]
+        for key in (
+            "number",
+            "title",
+            "author",
+            "created_at",
+            "merged_at",
+            "labels",
+            "commit_hashes",
+        ):
+            assert key in pr, f"Expected key '{key}' in PR dict"
+
+    def test_boundary_dates_are_inclusive(self, tmp_path: Path) -> None:
+        """PRs created exactly on start_date or end_date are included."""
+        cache = self._make_cache(tmp_path)
+        start = datetime(2025, 2, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 2, 28, tzinfo=timezone.utc)
+
+        self._seed_pr(cache, "org/repo", 1, start)  # on start boundary
+        self._seed_pr(cache, "org/repo", 2, end)  # on end boundary
+
+        result = cache.get_cached_prs_for_report(["org/repo"], start, end)
+        numbers = {pr["number"] for pr in result}
+        assert 1 in numbers
+        assert 2 in numbers
+
+    def test_no_cached_prs_returns_empty_list(self, tmp_path: Path) -> None:
+        """When no PRs are cached for the repos/date range, an empty list is returned."""
+        cache = self._make_cache(tmp_path)
+
+        start = datetime(2025, 2, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 2, 28, tzinfo=timezone.utc)
+        result = cache.get_cached_prs_for_report(["org/repo"], start, end)
+
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
 # CLI command wiring tests (smoke-test via Click's test runner)
 # ---------------------------------------------------------------------------
 

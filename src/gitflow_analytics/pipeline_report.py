@@ -39,7 +39,6 @@ def run_report(
     Returns:
         A :class:`ReportResult` with the list of generated file names.
     """
-    from .utils.date_utils import get_week_end, get_week_start
     from .core.cache import GitAnalysisCache
     from .core.identity import DeveloperIdentityResolver
     from .metrics.dora import DORAMetricsCalculator
@@ -48,6 +47,7 @@ def run_report(
     from .reports.json_exporter import ComprehensiveJSONExporter
     from .reports.narrative_writer import NarrativeReportGenerator
     from .reports.weekly_trends_writer import WeeklyTrendsWriter
+    from .utils.date_utils import get_week_end, get_week_start
 
     def _emit(msg: str) -> None:
         if progress_callback:
@@ -163,8 +163,18 @@ def run_report(
         exclude_merge_commits=cfg.analysis.exclude_merge_commits,
     )
 
+    _emit("Loading cached PRs from database...")
+    github_repo_paths = [r.github_repo for r in cfg.repositories if getattr(r, "github_repo", None)]
+    if github_repo_paths:
+        all_prs: list[Any] = cache.get_cached_prs_for_report(
+            github_repo_paths, start_date, end_date
+        )
+        _emit(f"Loaded {len(all_prs)} cached PRs")
+    else:
+        all_prs = []
+        logger.debug("No github_repo configured for any repository; skipping PR cache load")
+
     _emit("Analyzing ticket references...")
-    all_prs: list[Any] = []
     ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(all_commits, all_prs, None)
     developer_ticket_coverage = analyzer.ticket_extractor.calculate_developer_ticket_coverage(
         all_commits

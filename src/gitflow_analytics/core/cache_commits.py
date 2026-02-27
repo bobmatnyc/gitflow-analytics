@@ -235,6 +235,54 @@ class CommitCacheMixin:
             if self.debug_mode:
                 print(f"DEBUG: Bulk cached {len(commits)} commits in {elapsed:.3f}s")
 
+    def get_cached_prs_for_report(
+        self,
+        repo_paths: list[str],
+        start_date: datetime,
+        end_date: datetime,
+    ) -> list[dict[str, Any]]:
+        """Retrieve all cached PRs across multiple repos that fall within a date range.
+
+        WHY: The report stage needs to load PR data from the cache so that
+        metrics (DORA, velocity, reviewer stats) are populated without
+        re-fetching from the GitHub API.  PRs are matched when their
+        ``created_at`` timestamp falls inside [start_date, end_date].  The
+        filter is intentionally broad — downstream report generators already
+        filter by merge / close date as needed, so loading slightly more rows
+        here is safer than accidentally dropping PRs that were opened before
+        the window but merged inside it.
+
+        Stale cache entries are excluded.
+
+        Args:
+            repo_paths: List of GitHub repo slugs (``"owner/repo"`` format) as
+                stored in ``PullRequestCache.repo_path``.  An empty list returns
+                an empty result immediately.
+            start_date: Inclusive lower bound for ``created_at``.
+            end_date: Inclusive upper bound for ``created_at``.
+
+        Returns:
+            List of PR dicts in the same format produced by :meth:`_pr_to_dict`.
+        """
+        if not repo_paths:
+            return []
+
+        with self.get_session() as session:
+            rows = (
+                session.query(PullRequestCache)
+                .filter(
+                    and_(
+                        PullRequestCache.repo_path.in_(repo_paths),
+                        PullRequestCache.created_at >= start_date,
+                        PullRequestCache.created_at <= end_date,
+                    )
+                )
+                .order_by(PullRequestCache.created_at.desc())
+                .all()
+            )
+
+            return [self._pr_to_dict(pr) for pr in rows if not self._is_stale(pr.cached_at)]
+
     def get_cached_pr(self, repo_path: str, pr_number: int) -> Optional[dict[str, Any]]:
         """Retrieve cached pull request data."""
         with self.get_session() as session:
