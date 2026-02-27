@@ -62,8 +62,12 @@ gitflow-analytics -c config.yaml --weeks 8
 ✅ **Good Process**: 73% ticket coverage shows strong tracking
 ```
 
-## ✨ Latest Features (v3.13.14+)
+## ✨ Latest Features (v3.13.17+)
 
+- **🔀 PR Status Tracking**: Full pull request lifecycle captured — open, closed, merged states with `pr_state`, `closed_at`, and `is_merged` columns; rejection metrics in narrative reports and CSV output
+- **🤖 Bedrock-Powered Alias Generation**: `gfa aliases` now supports AWS Bedrock (auto-detected from config); configurable `strip_suffixes` in YAML; provider priority: Bedrock > OpenRouter > heuristic-only
+- **📊 PR Data in Reports**: `gfa report` loads cached PR data from the database; DORA metrics, velocity, and narrative reports now reflect real PR lifecycle data
+- **⚡ PR Enrichment for Cached Repos**: `gfa collect` enriches already-cached repos with PR data via `github_repo` config — no need to re-collect commits
 - **🔄 Pipeline Architecture**: Independent `collect`, `classify`, and `report` stages — collect once, report many times
 - **📦 Week-Based Incremental Caching**: Data stored in Monday-aligned weekly increments; only missing weeks are fetched
 - **⚡ `-f/--force` Flag**: Force re-fetch of cached weeks when you need fresh data
@@ -153,6 +157,7 @@ version: "1.0"
 github:
   token: "${GITHUB_TOKEN}"
   organization: "your-org"  # Auto-discovers all repositories
+  fetch_pr_reviews: true    # Enable pull request review data collection
 
 analysis:
   ml_categorization:
@@ -162,15 +167,15 @@ analysis:
 
 ### Option 2: Specific Repositories
 ```yaml
-# config.yaml  
+# config.yaml
 version: "1.0"
 github:
   token: "${GITHUB_TOKEN}"
-  
+
 repositories:
   - name: "my-app"
     path: "~/code/my-app"
-    github_repo: "myorg/my-app"
+    github_repo: "myorg/my-app"  # Required for PR data enrichment
     project_key: "APP"
 ```
 
@@ -196,12 +201,14 @@ For organizations with many repositories (50+), use the three-stage pipeline for
 ```bash
 # Stage 1: Collect raw commits into weekly cache
 # Only fetches missing weeks — cached weeks are skipped automatically
+# Also enriches already-cached repos with PR data if github_repo is configured
 gfa collect -c config.yaml --weeks 4
 
 # Stage 2: Classify collected commits
 gfa classify -c config.yaml
 
 # Stage 3: Generate reports (instant — no git operations)
+# Loads cached PR data from the database automatically
 gfa report -c config.yaml --weeks 4 --generate-csv
 
 # Force re-fetch all weeks (bypass cache)
@@ -213,6 +220,7 @@ gfa collect -c config.yaml --weeks 4 -f
 - **Re-classify without re-fetching** — tweak classification, rerun just stage 2
 - **Incremental by default** — historical weeks never change, so they're cached permanently
 - **Massive speedup** — subsequent runs of 146+ repos complete in seconds instead of minutes
+- **PR data included** — `gfa report` automatically incorporates cached PR lifecycle data (open/merged/closed) into DORA metrics and narratives
 
 > 💡 **Need more configuration options?** See the [Complete Configuration Guide](docs/guides/configuration.md) for advanced features, integrations, and customization.
 
@@ -408,7 +416,8 @@ version: "1.0"
 # GitHub configuration with organization discovery
 github:
   token: "${GITHUB_TOKEN}"
-  organization: "${GITHUB_ORG}"
+  organization: "${GITHUB_ORG}"       # Required for PR data collection
+  fetch_pr_reviews: true              # Enable PR review data (default: false)
 
 # Multi-platform PM integration
 pm:
@@ -455,6 +464,10 @@ analysis:
   # Developer identity consolidation
   identity:
     similarity_threshold: 0.85
+    # Suffixes stripped from display names during alias generation (Bedrock/OpenRouter)
+    strip_suffixes:
+      - "-company"
+      - ".contractor"
     manual_mappings:
       - name: "John Doe"
         primary_email: "john.doe@company.com"
@@ -487,6 +500,7 @@ The tool generates comprehensive CSV reports and markdown summaries:
    - Efficiency trends and velocity patterns
    - PR-based vs commit-based story points breakdown
    - Team velocity benchmarking and week-over-week trends
+   - PR rejection rate and merge/close metrics (when PR data is available)
 
 3. **Summary Statistics** (`summary_YYYYMMDD.csv`)
    - Overall project statistics
@@ -535,7 +549,7 @@ The untracked commits report provides deep insights into work that bypasses tick
    - **Team Composition**: Developer profiles with project percentages and work patterns
    - **Project Activity**: Detailed breakdown by project with contributor percentages and **commit classifications**
    - **Development Patterns**: Key insights from productivity and collaboration analysis
-   - **Pull Request Analysis**: PR metrics including size, lifetime, and review activity
+   - **Pull Request Analysis**: PR metrics including size, lifetime, review activity, merge rate, and **rejection metrics** (closed-without-merge)
    - **Weekly Trends** (v1.1.0+): Week-over-week changes in classification patterns
 
 6. **Database-Backed Qualitative Report** (`database_qualitative_report_YYYYMMDD.md`) (v1.1.0+)
@@ -972,6 +986,81 @@ analysis:
   identity:
     auto_analysis: false
 ```
+
+## PR Status Tracking
+
+GitFlow Analytics captures the full pull request lifecycle from GitHub, including open, merged, and rejected (closed-without-merge) states.
+
+### Schema
+
+The `PullRequestCache` table (v4 schema) includes:
+
+| Column | Description |
+|--------|-------------|
+| `pr_state` | Current state: `open`, `closed`, or `merged` |
+| `closed_at` | Timestamp when the PR was closed or merged |
+| `is_merged` | Boolean — `true` if the PR was merged into the target branch |
+
+A PR with `pr_state = "closed"` and `is_merged = false` represents a rejected/abandoned PR.
+
+### Configuration
+
+```yaml
+github:
+  token: "${GITHUB_TOKEN}"
+  organization: "your-org"      # Required for org-wide PR collection
+  fetch_pr_reviews: true        # Enable review data (approvals, change requests)
+```
+
+Repositories listed explicitly must include `github_repo` to enable PR enrichment:
+
+```yaml
+repositories:
+  - name: "my-app"
+    path: "~/code/my-app"
+    github_repo: "myorg/my-app"  # Enables PR data for this repo
+    project_key: "APP"
+```
+
+### Incremental Stale-PR Refresh
+
+Open PRs can change state at any time. Each `gfa collect` run refreshes up to 50 stale open PRs per run to keep the cache current without hammering the GitHub API.
+
+### Rejection Metrics
+
+When PR data is available, the narrative summary and CSV output include:
+- **Merge rate**: Percentage of closed PRs that were merged
+- **Rejection rate**: Percentage of closed PRs that were closed without merging
+- **Rejection by author**: Which developers have the highest abandoned-PR rate
+
+## Bedrock-Powered Alias Generation
+
+The `gfa aliases` command uses an LLM to cluster developer identities and suggest canonical names. AWS Bedrock is now supported as a provider alongside OpenRouter.
+
+### Provider Priority
+
+1. **AWS Bedrock** — Used when `bedrock` provider is configured in your YAML
+2. **OpenRouter** — Used when `openrouter` provider is configured
+3. **Heuristic-only** — Fallback when no LLM provider is available
+
+### Configuration
+
+```yaml
+analysis:
+  qualitative:
+    provider: bedrock          # or "openrouter"
+    bedrock:
+      model_id: "anthropic.claude-3-haiku-20240307-v1:0"
+      region: "us-east-1"
+
+  identity:
+    # Strip these suffixes from display names when generating aliases
+    strip_suffixes:
+      - "-contractor"
+      - ".ext"
+```
+
+The `strip_suffixes` list removes common suffixes from email local parts before clustering (e.g., `john-contractor` and `john` are treated as the same person).
 
 ## ML-Enhanced Commit Categorization
 

@@ -5,6 +5,25 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.13.17] - 2026-02-27
+
+### Added
+- PR status tracking: `pr_state`, `closed_at`, and `is_merged` columns in `PullRequestCache` (v4 schema migration)
+- Incremental stale-open-PR refresh: up to 50 stale open PRs updated per `gfa collect` run
+- Rejection metrics in narrative reports and CSV output (merge rate, rejection rate, per-author breakdown)
+- `gfa aliases` now supports AWS Bedrock as an LLM provider; auto-detected from config
+- Configurable `strip_suffixes` list under `analysis.identity.strip_suffixes` for alias generation
+- `gfa report` loads cached PR data from the database via new `get_cached_prs_for_report()` method
+- DORA metrics, velocity, and narrative reports now incorporate real PR lifecycle data
+- `gfa collect` enriches already-cached repos with PR data when `github_repo` is set — no re-collect needed
+
+### Fixed
+- `fetch_pr_reviews` config option now correctly wired through to the GitHub fetch layer (was a no-op)
+
+### Changed
+- Alias generation provider priority: Bedrock > OpenRouter > heuristic-only
+- `github.organization` field is now the recommended way to scope PR collection to an org
+
 ## [3.13.4] - 2025-12-08
 
 ### Added
