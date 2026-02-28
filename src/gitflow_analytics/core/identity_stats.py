@@ -3,7 +3,6 @@
 import logging
 import uuid
 from collections import defaultdict
-from datetime import datetime
 from typing import Any, Optional
 
 from ..models.database import DeveloperAlias, DeveloperIdentity
@@ -105,8 +104,12 @@ class IdentityStatsMixin:
         on the commit dict so downstream reports can surface the full
         contributor list.
         """
-        # Aggregate stats by canonical ID
-        stats_by_dev = defaultdict(lambda: {"commits": 0, "story_points": 0})
+        # Aggregate stats by canonical ID.
+        # Use sets to track unique commits per developer so idempotent calls
+        # (e.g. multiple report runs over the same commit set) produce stable counts.
+        stats_by_dev: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {"commits": 0, "story_points": 0, "first_seen": None, "last_seen": None}
+        )
 
         for commit in commits:
             # Debug: check if commit is actually a dictionary
@@ -123,6 +126,15 @@ class IdentityStatsMixin:
             stats_by_dev[canonical_id]["commits"] += 1
             stats_by_dev[canonical_id]["story_points"] += commit.get("story_points", 0) or 0
 
+            # Track the earliest and latest commit timestamps for first_seen / last_seen.
+            commit_ts = commit.get("timestamp")
+            if commit_ts is not None:
+                dev_stats = stats_by_dev[canonical_id]
+                if dev_stats["first_seen"] is None or commit_ts < dev_stats["first_seen"]:
+                    dev_stats["first_seen"] = commit_ts
+                if dev_stats["last_seen"] is None or commit_ts > dev_stats["last_seen"]:
+                    dev_stats["last_seen"] = commit_ts
+
             # Gap 4: Credit co-authors found in Co-authored-by trailers.
             co_author_ids: list[str] = []
             for co_author in commit.get("co_authors", []):
@@ -137,13 +149,23 @@ class IdentityStatsMixin:
                 co_author_ids.append(co_id)
                 # Co-author gets commit credit (not story points to avoid double-counting)
                 stats_by_dev[co_id]["commits"] += 1
+                # Propagate timestamp to co-author's first_seen / last_seen as well
+                if commit_ts is not None:
+                    co_stats = stats_by_dev[co_id]
+                    if co_stats["first_seen"] is None or commit_ts < co_stats["first_seen"]:
+                        co_stats["first_seen"] = commit_ts
+                    if co_stats["last_seen"] is None or commit_ts > co_stats["last_seen"]:
+                        co_stats["last_seen"] = commit_ts
                 logger.debug(
                     f"Attributed co-authored commit {commit.get('hash', '')[:8]} "
                     f"to co-author {co_name} <{co_email}>"
                 )
             commit["co_author_ids"] = co_author_ids
 
-        # Update database
+        # Update database using absolute values (not increments) so that running
+        # the report multiple times over the same commit set does not accumulate
+        # inflated counts.  The counts computed above already reflect the full
+        # batch, so we simply overwrite the stored values.
         with self.get_session() as session:
             for canonical_id, stats in stats_by_dev.items():
                 identity = (
@@ -153,9 +175,19 @@ class IdentityStatsMixin:
                 )
 
                 if identity:
-                    identity.total_commits += stats["commits"]
-                    identity.total_story_points += stats["story_points"]
-                    identity.last_seen = datetime.utcnow()
+                    # Set absolute counts — do NOT use += here.
+                    identity.total_commits = stats["commits"]
+                    identity.total_story_points = stats["story_points"]
+                    # Set first_seen / last_seen directly from the commit timestamps
+                    # in this batch.  This is consistent with the absolute-value
+                    # approach: each run reflects exactly what the batch contains.
+                    # We only update if the batch actually has timestamps; if not
+                    # (e.g. commits have no "timestamp" field), the columns keep
+                    # whatever value they already hold.
+                    if stats["first_seen"] is not None:
+                        identity.first_seen = stats["first_seen"]
+                    if stats["last_seen"] is not None:
+                        identity.last_seen = stats["last_seen"]
 
         # Apply manual mappings after all identities are created
         if self.manual_mappings:

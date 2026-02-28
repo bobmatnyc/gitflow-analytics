@@ -5,6 +5,8 @@ These tests verify developer identity consolidation, email mapping,
 and fuzzy matching functionality.
 """
 
+from datetime import datetime, timezone
+
 from gitflow_analytics.core.identity import DeveloperIdentityResolver
 
 
@@ -584,3 +586,153 @@ class TestLoaderPrimaryEmailHardening:
         assert (
             primary == "chung.kim@company.com"
         ), f"Expected 'chung.kim@company.com' but got {primary!r}"
+
+
+class TestUpdateCommitStatsIdempotency:
+    """Regression tests for the accumulation bug in update_commit_stats().
+
+    Before the fix, calling update_commit_stats() with the same commits
+    multiple times would keep incrementing total_commits / total_story_points
+    (e.g. 18 real commits showed 146 after ~8 report runs).
+
+    After the fix the method sets absolute values, so repeated calls over the
+    same commit set produce the same numbers each time.
+    """
+
+    def _make_commits(self) -> list[dict]:
+        ts_early = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        ts_late = datetime(2024, 6, 1, tzinfo=timezone.utc)
+        return [
+            {
+                "author_name": "Alice",
+                "author_email": "alice@example.com",
+                "story_points": 3,
+                "timestamp": ts_early,
+            },
+            {
+                "author_name": "Alice",
+                "author_email": "alice@example.com",
+                "story_points": 5,
+                "timestamp": ts_late,
+            },
+            {
+                "author_name": "Bob",
+                "author_email": "bob@example.com",
+                "story_points": 2,
+                "timestamp": ts_early,
+            },
+        ]
+
+    def test_calling_twice_does_not_double_total_commits(self, temp_dir):
+        """total_commits must equal the commit count, not 2x after two calls."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commits = self._make_commits()
+        resolver.update_commit_stats(commits)
+        # Second call simulates a second report run over the same data.
+        resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats()
+        alice = next(s for s in stats if s["primary_email"] == "alice@example.com")
+        bob = next(s for s in stats if s["primary_email"] == "bob@example.com")
+
+        assert alice["total_commits"] == 2, (
+            f"Alice should have 2 commits, got {alice['total_commits']} "
+            "(accumulation bug: total_commits is being incremented instead of set)"
+        )
+        assert bob["total_commits"] == 1, f"Bob should have 1 commit, got {bob['total_commits']}"
+
+    def test_calling_eight_times_does_not_multiply_counts(self, temp_dir):
+        """Simulates ~8 report runs — the original bug scenario."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commits = self._make_commits()
+        for _ in range(8):
+            resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats()
+        alice = next(s for s in stats if s["primary_email"] == "alice@example.com")
+
+        assert alice["total_commits"] == 2, (
+            f"Alice should have 2 commits after 8 runs, got {alice['total_commits']}. "
+            "The counter is accumulating instead of being reset each run."
+        )
+
+    def test_story_points_not_accumulated(self, temp_dir):
+        """total_story_points must also reflect the batch total, not a running sum."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commits = self._make_commits()
+        resolver.update_commit_stats(commits)
+        resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats()
+        alice = next(s for s in stats if s["primary_email"] == "alice@example.com")
+
+        # Alice has story_points 3 + 5 = 8 across two commits.
+        assert (
+            alice["total_story_points"] == 8
+        ), f"Alice should have 8 story points, got {alice['total_story_points']}"
+
+    def test_first_seen_is_earliest_commit_timestamp(self, temp_dir):
+        """first_seen should be the earliest commit timestamp in the batch."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commits = self._make_commits()
+        resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats()
+        alice = next(s for s in stats if s["primary_email"] == "alice@example.com")
+
+        expected_first = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        assert alice["first_seen"] is not None, "first_seen should not be None"
+        # Normalise to UTC for comparison regardless of tzinfo representation.
+        actual = alice["first_seen"]
+        if actual.tzinfo is None:
+            actual = actual.replace(tzinfo=timezone.utc)
+        assert actual == expected_first, f"first_seen should be {expected_first}, got {actual}"
+
+    def test_last_seen_is_latest_commit_timestamp(self, temp_dir):
+        """last_seen should be the latest commit timestamp in the batch."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commits = self._make_commits()
+        resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats()
+        alice = next(s for s in stats if s["primary_email"] == "alice@example.com")
+
+        expected_last = datetime(2024, 6, 1, tzinfo=timezone.utc)
+        assert alice["last_seen"] is not None, "last_seen should not be None"
+        actual = alice["last_seen"]
+        if actual.tzinfo is None:
+            actual = actual.replace(tzinfo=timezone.utc)
+        assert actual == expected_last, f"last_seen should be {expected_last}, got {actual}"
+
+    def test_co_author_counts_not_accumulated(self, temp_dir):
+        """Co-author commit credit must also use absolute values across runs."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        commits = [
+            {
+                "author_name": "Lead",
+                "author_email": "lead@example.com",
+                "story_points": 1,
+                "co_authors": [{"name": "Helper", "email": "helper@example.com"}],
+            }
+        ]
+        resolver.update_commit_stats(commits)
+        resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats()
+        helper = next(s for s in stats if s["primary_email"] == "helper@example.com")
+
+        assert (
+            helper["total_commits"] == 1
+        ), f"Co-author Helper should have 1 commit, got {helper['total_commits']}"
