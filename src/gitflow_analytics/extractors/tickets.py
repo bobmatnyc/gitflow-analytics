@@ -149,6 +149,11 @@ class TicketExtractor(TicketAnalysisMixin):
         )
         self._compiled_excludes: list[re.Pattern[str]] = [re.compile(p) for p in raw_excludes]
 
+        # Repository names to exclude from ticket compliance metrics.
+        self._exclude_repos: set[str] = (
+            set(ticket_detection_config.exclude_repos) if ticket_detection_config else set()
+        )
+
         # If config supplies custom per-platform patterns, use them; otherwise fall back
         # to the built-in defaults.  The config patterns dict maps platform -> single
         # pattern string; the built-in defaults use lists.
@@ -202,7 +207,7 @@ class TicketExtractor(TicketAnalysisMixin):
         # Commit categorization patterns
         self.category_patterns = {
             "bug_fix": [
-                r"^fix(\([^)]*\))?:",  # Conventional commits: fix: or fix(scope):
+                r"^fix(\([^)]+\))?:",  # Conventional commits: fix: or fix(scope):
                 r"\b(fix|bug|error|issue|problem|crash|exception|failure)\b",
                 r"\b(resolve|solve|repair|correct|corrected|address)\b",
                 r"\b(hotfix|bugfix|patch|quickfix)\b",
@@ -217,9 +222,10 @@ class TicketExtractor(TicketAnalysisMixin):
                 r"\bfixed?\s+(issue|problem|bug|error)\b",
                 r"\bresolve[ds]?\s+(issue|problem|bug)\b",
                 r"\brepair\b",
+                r"\b(incorrect|wrong|invalid)\b",
             ],
             "feature": [
-                r"^(feat|feature)(\([^)]*\))?:",  # Conventional commits: feat: or feat(scope):
+                r"^(feat|feature)(\([^)]+\))?:",  # Conventional commits: feat: or feat(scope):
                 r"\b(add|new|feature|implement|create|build)\b",
                 r"\b(introduce|enhance|extend|expand)\b",
                 r"\b(functionality|capability|support|enable)\b",
@@ -233,9 +239,11 @@ class TicketExtractor(TicketAnalysisMixin):
                 r"\b(episode|episodes|audio|video)\s+(feature|support|implementation)\b",
                 r"\b(beacon)\s+(implementation|for|tracking)\b",
                 r"\b(localization)\s+(data|structure)\b",
+                r"\b(extract|harness|scaffold|bootstrap|wire|hook)\b",
+                r"\b(disable|toggle|flag)\b",
             ],
             "refactor": [
-                r"^refactor(\([^)]*\))?:",  # Conventional commits: refactor: or refactor(scope):
+                r"^refactor(\([^)]+\))?:",  # Conventional commits: refactor: or refactor(scope):
                 r"\b(refactor|restructure|reorganize|cleanup|clean up)\b",
                 r"\b(optimize|improve|simplify|streamline)\b",
                 r"\b(rename|move|extract|consolidate)\b",
@@ -268,7 +276,7 @@ class TicketExtractor(TicketAnalysisMixin):
                 r"\b(doc|readme|changelog|docstring)\b.*\bcomments?\b",
             ],
             "deployment": [
-                r"^deploy:",
+                r"^deploy(\([^)]+\))?:",
                 r"\b(deploy|deployment|publish|rollout)\b",
                 r"\b(production|prod|staging|live)\b",
                 r"\b(go\s+live|launch|ship)\b",
@@ -290,6 +298,9 @@ class TicketExtractor(TicketAnalysisMixin):
                 r"\b(schema)\b(?!.*\b(test|spec)\b)",  # Schema but not test schemas
                 r"\bsanity\s+schema\b",
                 r"changing\s+(some)?\s*(user|role)\s+(roles?|permissions?)\b",
+                r"\b(npmrc|\.npmrc)\b",
+                r"\b(ECR)\b",
+                r"\b(GitHub\s+Actions|workflow)\b(?!.*\b(run|test)\b)",
             ],
             "content": [
                 r"\b(content|copy|text|wording|messaging)\b",
@@ -337,7 +348,7 @@ class TicketExtractor(TicketAnalysisMixin):
                 r"\b(improve|better)\s+(load|performance|speed)\b",
             ],
             "chore": [
-                r"^chore:",
+                r"^chore(\([^)]+\))?:",
                 r"\b(chore|cleanup|housekeeping|maintenance)\b",
                 r"\b(routine|regular|scheduled)\b",
                 r"\b(lint|linting|format|formatting|prettier)\b",
@@ -346,12 +357,17 @@ class TicketExtractor(TicketAnalysisMixin):
                 r"\b(sync|auto-sync)\b",
                 r"\b(script\s+update|merge\s+main)\b",
                 r"removes?\s+(console|debug|log)\b",
+                # PR / code review response patterns
+                r"^PR\s+comments?\s*$",
+                r"(?:address|respond|applied?)\s+(?:PR|review|feedback|comments?)",
+                r"suggestion\s+from\s+@?copilot",
+                r"^apply\s+suggestion\b",
             ],
             "wip": [
                 r"\b(wip|work\s+in\s+progress|temp|temporary|tmp)\b",
                 r"\b(draft|unfinished|partial|incomplete)\b",
                 r"\b(placeholder|todo|fixme)\b",
-                r"^wip:",
+                r"^wip(\([^)]+\))?:",
                 r"\b(experiment|experimental|poc|proof\s+of\s+concept)\b",
                 r"\b(temporary|temp)\s+(fix|solution|workaround)\b",
             ],
@@ -359,11 +375,11 @@ class TicketExtractor(TicketAnalysisMixin):
                 r"\b(version|bump|tag)\b",
                 r"\b(v\d+\.\d+|version\s+\d+|\d+\.\d+\.\d+)\b",
                 r"\b(major|minor|patch)\s+(version|release|bump)\b",
-                r"^(version|bump):",
+                r"^(version|bump)(\([^)]+\))?:",
                 r"\b(prepare\s+for\s+release|pre-release)\b",
             ],
             "maintenance": [
-                r"^chore(\([^)]*\))?:",  # Conventional commits: chore: or chore(scope):
+                r"^chore(\([^)]+\))?:",  # Conventional commits: chore: or chore(scope):
                 r"\b(update|upgrade|bump|maintenance|maint)\b",
                 r"\b(dependency|dependencies|package|packages)\b",
                 r"\b(npm\s+update|pip\s+install|yarn\s+upgrade)\b",
@@ -374,9 +390,13 @@ class TicketExtractor(TicketAnalysisMixin):
                 r"\b(test|testing)\s+(change|update|fix)\b",
                 r"\b(more|only)\s+(combo|beacon)\s+(hacking|fires?)\b",
                 r"adds?\s+(console|debug|log)\b",
+                # Revert commits
+                r"^revert\b",
+                r"\breverting\b",
+                r"\breverted?\s",
             ],
             "test": [
-                r"^test:",
+                r"^test(\([^)]+\))?:",
                 r"\b(test|testing|spec|unit\s+test|integration\s+test)\b",
                 r"\b(junit|pytest|mocha|jest|cypress|selenium)\b",
                 r"\b(mock|stub|fixture|factory)\b",
@@ -389,14 +409,14 @@ class TicketExtractor(TicketAnalysisMixin):
                 r"\btest\s+fix\b",
             ],
             "style": [
-                r"^style:",
+                r"^style(\([^)]+\))?:",
                 r"\b(format|formatting|style|lint|linting)\b",
                 r"\b(prettier|eslint|black|autopep8|rubocop)\b",
                 r"\b(whitespace|indentation|spacing|tabs)\b",
                 r"\b(code\s+style|consistent|standardize)\b",
             ],
             "build": [
-                r"^build:",
+                r"^build(\([^)]+\))?:",
                 r"\b(build|compile|bundle|webpack|rollup)\b",
                 r"\b(ci|cd|pipeline|workflow|github\s+actions)\b",
                 r"\b(docker|dockerfile|makefile|npm\s+scripts)\b",
@@ -591,22 +611,35 @@ class TicketExtractor(TicketAnalysisMixin):
             "maintenance",  # General maintenance terms
         ]
 
-        # First, check for conventional commit patterns (^prefix:) which have absolute priority
-        conventional_patterns = {
-            "chore": r"^chore:",
-            "style": r"^style:",
-            "bug_fix": r"^fix:",
-            "feature": r"^(feat|feature):",
-            "test": r"^test:",
-            "build": r"^build:",
-            "deployment": r"^deploy:",
-            "wip": r"^wip:",
-            "version": r"^(version|bump):",
-        }
+        # First, check for conventional commit patterns (^prefix: or ^prefix(scope):)
+        # which have absolute priority.  The optional scope group handles
+        # messages like "fix(searchlight): ..." or "feat(agents): ...".
+        # Use a list of tuples to avoid duplicate key issues (build vs ci)
+        conventional_patterns = [
+            ("chore", r"^chore(\([^)]+\))?:"),
+            ("style", r"^style(\([^)]+\))?:"),
+            ("bug_fix", r"^fix(\([^)]+\))?:"),
+            ("feature", r"^(feat|feature)(\([^)]+\))?:"),
+            ("test", r"^test(\([^)]+\))?:"),
+            ("build", r"^build(\([^)]+\))?:"),
+            ("build", r"^ci(\([^)]+\))?:"),
+            ("deployment", r"^deploy(\([^)]+\))?:"),
+            ("wip", r"^wip(\([^)]+\))?:"),
+            ("version", r"^(version|bump)(\([^)]+\))?:"),
+            ("documentation", r"^docs(\([^)]+\))?:"),
+            ("refactor", r"^refactor(\([^)]+\))?:"),
+            ("performance", r"^perf(\([^)]+\))?:"),
+        ]
 
-        for category, pattern in conventional_patterns.items():
+        for category, pattern in conventional_patterns:
             if re.match(pattern, message_lower):
                 return category
+
+        # Check for revert commits early — before general body patterns, because
+        # revert messages often contain words that match other categories
+        # (e.g. "Revert incorrect ..." would match bug_fix's "incorrect" keyword).
+        if re.match(r"^revert\b", message_lower):
+            return "maintenance"
 
         # Then check categories in priority order for non-conventional patterns
         for category in priority_order:

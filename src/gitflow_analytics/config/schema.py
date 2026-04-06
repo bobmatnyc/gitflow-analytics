@@ -360,6 +360,8 @@ class TicketDetectionConfig:
               - "CVE-\\d+"
               - "CWE-\\d+"
               - "\\d{8,}"
+            exclude_repos:
+              - "APEX"          # knowledge base — exclude from ticket compliance
     """
 
     # Which commits to scan.
@@ -396,6 +398,13 @@ class TicketDetectionConfig:
             r"\d{8,}",  # long digit strings (dates, IDs)
         ]
     )
+
+    # Repository names to exclude from ticket compliance metrics.
+    # Commits from these repos are still included in activity reporting
+    # (commit counts, line counts, developer stats) but are excluded from
+    # ticket coverage rate calculations.  Useful for knowledge-base or
+    # documentation repos where JIRA tickets are not expected.
+    exclude_repos: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -740,6 +740,7 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             position=_td_raw.get("position", _td_defaults.position),
             patterns=dict(_td_raw.get("patterns", _td_defaults.patterns)),
             exclude_patterns=list(_td_raw.get("exclude_patterns", _td_defaults.exclude_patterns)),
+            exclude_repos=list(_td_raw.get("exclude_repos", _td_defaults.exclude_repos)),
         )
 
         return AnalysisConfig(

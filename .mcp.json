@@ -8,7 +8,7 @@
       ],
       "env": {
         "KUZU_MEMORY_PROJECT_ROOT": "/Users/masa/Projects/gitflow-analytics",
-        "KUZU_MEMORY_DB": "/Users/masa/Projects/gitflow-analytics/kuzu-memories"
+        "KUZU_MEMORY_DB": "/Users/masa/Projects/gitflow-analytics/.kuzu-memory"
       }
     },
     "mcp-vector-search": {

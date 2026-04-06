@@ -11,7 +11,6 @@ and on instance methods:
 """
 
 import logging
-import re
 from collections import defaultdict
 from datetime import timezone
 from typing import Any, cast
@@ -57,6 +56,27 @@ class TicketAnalysisMixin:
         untracked_commits: list[dict[str, Any]] = []
         ticket_summary: defaultdict[str, set[str]] = defaultdict(set)
 
+        # Filter out commits from repos excluded from ticket compliance metrics.
+        # These repos still appear in activity reporting but do not affect the
+        # ticket coverage denominator/numerator.
+        exclude_repos: set[str] = getattr(self, "_exclude_repos", set())
+        excluded_repo_commits = 0
+        if exclude_repos:
+            filtered_commits = []
+            for c in commits:
+                repo = (c.get("project_key") or "") if isinstance(c, dict) else ""
+                if repo in exclude_repos:
+                    excluded_repo_commits += 1
+                else:
+                    filtered_commits.append(c)
+            if excluded_repo_commits:
+                logger.info(
+                    "Excluded %d commits from ticket compliance (repos: %s)",
+                    excluded_repo_commits,
+                    ", ".join(sorted(exclude_repos)),
+                )
+            commits = filtered_commits
+
         results = {
             "total_commits": len(commits),
             "total_prs": len(prs),
@@ -65,6 +85,7 @@ class TicketAnalysisMixin:
             "ticket_platforms": ticket_platforms,
             "untracked_commits": untracked_commits,
             "ticket_summary": ticket_summary,
+            "excluded_repo_commits": excluded_repo_commits,
         }
 
         commits_analyzed = 0
@@ -234,6 +255,11 @@ class TicketAnalysisMixin:
         if not commits:
             return {}
 
+        # Filter out commits from repos excluded from ticket compliance.
+        exclude_repos: set[str] = getattr(self, "_exclude_repos", set())
+        if exclude_repos:
+            commits = [c for c in commits if (c.get("project_key") or "") not in exclude_repos]
+
         developer_commits: dict[str, int] = {}
         developer_with_tickets: dict[str, int] = {}
 
@@ -263,9 +289,9 @@ class TicketAnalysisMixin:
         for developer_id in developer_commits:
             total = developer_commits[developer_id]
             with_tickets = developer_with_tickets[developer_id]
-            coverage_by_developer[developer_id] = round(
-                (with_tickets / total) * 100, 1
-            ) if total > 0 else 0.0
+            coverage_by_developer[developer_id] = (
+                round((with_tickets / total) * 100, 1) if total > 0 else 0.0
+            )
 
         logger.debug(f"Calculated ticket coverage for {len(coverage_by_developer)} developers")
         return coverage_by_developer
