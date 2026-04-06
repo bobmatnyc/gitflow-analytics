@@ -6,41 +6,33 @@ without performing any LLM-based classification.
 """
 
 import logging
-import os
-import subprocess
 import threading
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-import git
-from sqlalchemy import case, func
-from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from ..constants import BatchSizes, Timeouts
 from ..integrations.jira_integration import JIRAIntegration
 from ..models.database import (
-    CachedCommit,
-    CommitTicketCorrelation,
     DailyCommitBatch,
-    DetailedTicketData,
 )
-from ..types import CommitStats
-from ..utils.commit_utils import is_merge_commit
-from ..utils.glob_matcher import match_recursive_pattern as _match_recursive_pattern_fn
-from ..utils.glob_matcher import matches_glob_pattern as _matches_glob_pattern_fn
-from ..utils.glob_matcher import should_exclude_file as _should_exclude_file_fn
 from .analysis_components import (
     build_branch_mapper,
     build_story_point_extractor,
     build_ticket_extractor,
 )
 from .cache import GitAnalysisCache
-from .git_timeout_wrapper import GitOperationTimeout, GitTimeoutWrapper, HeartbeatLogger
+from .data_fetcher_git import GitFetcherMixin
+from .data_fetcher_parallel import ParallelFetcherMixin
+from .data_fetcher_processing import ProcessingMixin
+from .git_timeout_wrapper import GitTimeoutWrapper
 from .identity import DeveloperIdentityResolver
 from .progress import get_progress_service
+
+if TYPE_CHECKING:
+    from ..config.schema import TicketDetectionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +40,6 @@ logger = logging.getLogger(__name__)
 # Each thread gets its own isolated storage to prevent thread-safety issues
 # when GitDataFetcher is called from ThreadPoolExecutor
 _thread_local = threading.local()
-
-
-from .data_fetcher_git import GitFetcherMixin
-from .data_fetcher_processing import ProcessingMixin
-from .data_fetcher_parallel import ParallelFetcherMixin
 
 
 class GitDataFetcher(GitFetcherMixin, ProcessingMixin, ParallelFetcherMixin):
@@ -74,6 +61,7 @@ class GitDataFetcher(GitFetcherMixin, ProcessingMixin, ParallelFetcherMixin):
         exclude_paths: Optional[list[str]] = None,
         skip_remote_fetch: bool = False,
         exclude_merge_commits: bool = False,
+        ticket_detection_config: Optional["TicketDetectionConfig"] = None,
     ) -> None:
         """Initialize the data fetcher.
 
@@ -84,6 +72,7 @@ class GitDataFetcher(GitFetcherMixin, ProcessingMixin, ParallelFetcherMixin):
             exclude_paths: List of file paths to exclude from analysis
             skip_remote_fetch: If True, skip git fetch/pull operations
             exclude_merge_commits: Exclude merge commits from filtered line count calculations
+            ticket_detection_config: Optional configurable ticket detection settings.
         """
         self.cache = cache
         self.skip_remote_fetch = skip_remote_fetch
@@ -92,7 +81,10 @@ class GitDataFetcher(GitFetcherMixin, ProcessingMixin, ParallelFetcherMixin):
         # CRITICAL FIX: Use the same database instance as the cache to avoid session conflicts
         self.database = cache.db
         self.story_point_extractor = build_story_point_extractor()
-        self.ticket_extractor = build_ticket_extractor(allowed_platforms=allowed_ticket_platforms)
+        self.ticket_extractor = build_ticket_extractor(
+            allowed_platforms=allowed_ticket_platforms,
+            ticket_detection_config=ticket_detection_config,
+        )
         self.branch_mapper = build_branch_mapper(branch_mapping_rules)
         self.exclude_paths = exclude_paths or []
 
@@ -485,4 +477,3 @@ class GitDataFetcher(GitFetcherMixin, ProcessingMixin, ParallelFetcherMixin):
             return 0
         finally:
             session.close()
-

@@ -15,11 +15,10 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +96,7 @@ class QualitativeResult:
     """Output of the qualitative-analysis stage."""
 
     results: list[Any]
-    cost_stats: Optional[dict[str, Any]]
+    cost_stats: dict[str, Any] | None
     commits_for_qual: list[dict[str, Any]]  # kept for JSON export
 
 
@@ -106,7 +105,7 @@ class ReportResult:
     """Output of the report-generation stage."""
 
     generated_reports: list[str]
-    dora_metrics: Optional[dict[str, Any]]
+    dora_metrics: dict[str, Any] | None
     pr_metrics: dict[str, Any]
 
 
@@ -228,7 +227,7 @@ def calculate_date_range(weeks: int) -> DateRangeResult:
 def discover_repositories(
     cfg: Any,
     config_path: Path,
-    progress_callback: Optional[Callable[[str, int], None]] = None,
+    progress_callback: Callable[[str, int], None] | None = None,
 ) -> list[Any]:
     """Discover repositories from a GitHub organisation if configured.
 
@@ -262,8 +261,8 @@ def fetch_repositories_batch(
     weeks: int,
     config_hash: str,
     force_fetch: bool,
-    progress_callback: Optional[Callable[[str], None]] = None,
-    repo_progress_callback: Optional[Callable[[str, str, dict[str, Any]], None]] = None,
+    progress_callback: Callable[[str], None] | None = None,
+    repo_progress_callback: Callable[[str, str, dict[str, Any]], None] | None = None,
 ) -> FetchResult:
     """Fetch raw git data for all repositories that need analysis.
 
@@ -281,6 +280,7 @@ def fetch_repositories_batch(
         ),
         exclude_paths=getattr(cfg.analysis, "exclude_paths", None),
         exclude_merge_commits=cfg.analysis.exclude_merge_commits,
+        ticket_detection_config=getattr(cfg.analysis, "ticket_detection", None),
     )
 
     orchestrator = IntegrationOrchestrator(cfg, cache)
@@ -335,7 +335,7 @@ def fetch_repositories_batch(
                     logger.warning("Repository not found: %s", repo_path)
                     continue
 
-            branch_patterns: Optional[list[str]] = None
+            branch_patterns: list[str] | None = None
             if hasattr(cfg.analysis, "branch_patterns"):
                 branch_patterns = cfg.analysis.branch_patterns
             elif cfg.github.organization:
@@ -538,9 +538,7 @@ def classify_commits_batch(
         fallback_enabled=True,
     )
 
-    project_keys = [
-        repo.project_key or repo.name for repo in repositories
-    ]
+    project_keys = [repo.project_key or repo.name for repo in repositories]
 
     result = batch_classifier.classify_date_range(
         start_date=start_date,
@@ -578,9 +576,7 @@ def load_commits_from_db(
                 and_(
                     CachedCommit.timestamp >= start_date,
                     CachedCommit.timestamp <= end_date,
-                    CachedCommit.repo_path.in_(
-                        [str(Path(repo.path)) for repo in repositories]
-                    ),
+                    CachedCommit.repo_path.in_([str(Path(repo.path)) for repo in repositories]),
                 )
             )
             .order_by(CachedCommit.timestamp.desc())
@@ -594,9 +590,7 @@ def load_commits_from_db(
                 repo_path = Path(cc.repo_path)
                 for repo_config in repositories:
                     if repo_config.path == repo_path:
-                        commit_dict["project_key"] = (
-                            repo_config.project_key or repo_config.name
-                        )
+                        commit_dict["project_key"] = repo_config.project_key or repo_config.name
                         break
                 else:
                     commit_dict["project_key"] = repo_path.name
@@ -623,9 +617,7 @@ def resolve_developer_identities(
 ) -> IdentityResult:
     """Update identity resolver with commit stats and compute developer stats."""
     identity_resolver.update_commit_stats(all_commits)
-    developer_ticket_coverage = ticket_extractor.calculate_developer_ticket_coverage(
-        all_commits
-    )
+    developer_ticket_coverage = ticket_extractor.calculate_developer_ticket_coverage(all_commits)
     developer_stats = identity_resolver.get_developer_stats(
         ticket_coverage=developer_ticket_coverage
     )
@@ -693,9 +685,7 @@ def analyze_tickets_and_store_metrics(
                 elif isinstance(commit_date, str):
                     from datetime import datetime as dt
 
-                    commit_date = dt.fromisoformat(
-                        commit_date.replace("Z", "+00:00")
-                    ).date()
+                    commit_date = dt.fromisoformat(commit_date.replace("Z", "+00:00")).date()
                 daily_commits.setdefault(commit_date, []).append(commit)
 
         total_records = 0
@@ -721,7 +711,6 @@ def analyze_tickets_and_store_metrics(
 # ---------------------------------------------------------------------------
 
 
-
 # Backward-compatible re-exports from reports sub-module
 from .analyze_pipeline_reports import (  # noqa: E402
     aggregate_pm_data,
@@ -730,12 +719,26 @@ from .analyze_pipeline_reports import (  # noqa: E402
 )
 
 __all__ = [
-    "load_and_validate_config", "check_github_auth", "calculate_date_range",
-    "discover_repositories", "fetch_repositories_batch", "validate_batch_state",
-    "classify_commits_batch", "load_commits_from_db", "resolve_developer_identities",
-    "analyze_tickets_and_store_metrics", "run_qualitative_analysis",
-    "aggregate_pm_data", "generate_all_reports",
-    "ConfigResult", "DateRangeResult", "FetchResult", "ClassificationResult",
-    "CommitLoadResult", "IdentityResult", "TicketResult",
-    "QualitativeResult", "ReportResult",
+    "load_and_validate_config",
+    "check_github_auth",
+    "calculate_date_range",
+    "discover_repositories",
+    "fetch_repositories_batch",
+    "validate_batch_state",
+    "classify_commits_batch",
+    "load_commits_from_db",
+    "resolve_developer_identities",
+    "analyze_tickets_and_store_metrics",
+    "run_qualitative_analysis",
+    "aggregate_pm_data",
+    "generate_all_reports",
+    "ConfigResult",
+    "DateRangeResult",
+    "FetchResult",
+    "ClassificationResult",
+    "CommitLoadResult",
+    "IdentityResult",
+    "TicketResult",
+    "QualitativeResult",
+    "ReportResult",
 ]

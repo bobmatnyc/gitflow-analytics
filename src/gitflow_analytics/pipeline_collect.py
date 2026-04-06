@@ -67,6 +67,7 @@ def run_collect(
         ),
         exclude_paths=getattr(cfg.analysis, "exclude_paths", None),
         exclude_merge_commits=cfg.analysis.exclude_merge_commits,
+        ticket_detection_config=getattr(cfg.analysis, "ticket_detection", None),
     )
     orchestrator = IntegrationOrchestrator(cfg, cache)
     jira_integration = orchestrator.integrations.get("jira")

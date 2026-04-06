@@ -32,6 +32,7 @@ from .schema import (
     LLMClassificationConfig,
     MLCategorization,
     RepositoryConfig,
+    TicketDetectionConfig,
 )
 from .validator import ConfigValidator
 
@@ -730,6 +731,17 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             strip_suffixes=list(identity_raw.get("strip_suffixes", [])),
         )
 
+        # Build TicketDetectionConfig from optional analysis.ticket_detection sub-section.
+        _td_raw: dict[str, Any] = analysis_data.get("ticket_detection") or {}
+        _td_defaults = TicketDetectionConfig()
+        ticket_detection_config = TicketDetectionConfig(
+            commit_filter=_td_raw.get("commit_filter", _td_defaults.commit_filter),
+            target_branches=list(_td_raw.get("target_branches", _td_defaults.target_branches)),
+            position=_td_raw.get("position", _td_defaults.position),
+            patterns=dict(_td_raw.get("patterns", _td_defaults.patterns)),
+            exclude_patterns=list(_td_raw.get("exclude_patterns", _td_defaults.exclude_patterns)),
+        )
+
         return AnalysisConfig(
             story_point_patterns=analysis_data.get(
                 "story_point_patterns",
@@ -751,6 +763,7 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             default_ticket_platform=analysis_data.get("default_ticket_platform"),
             branch_mapping_rules=analysis_data.get("branch_mapping_rules", {}),
             ticket_platforms=analysis_data.get("ticket_platforms"),
+            ticket_detection=ticket_detection_config,
             auto_identity_analysis=identity_raw.get("auto_analysis", True),
             branch_patterns=analysis_data.get("branch_patterns"),
             branch_analysis=branch_analysis_config,

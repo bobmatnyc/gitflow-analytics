@@ -13,11 +13,14 @@ receive fully-constructed objects and can substitute mocks or subclasses.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..extractors.story_points import StoryPointExtractor
 from ..extractors.tickets import TicketExtractor
 from .branch_mapper import BranchToProjectMapper
+
+if TYPE_CHECKING:
+    from ..config.schema import TicketDetectionConfig
 
 # Import ML extractor with graceful fallback
 try:
@@ -50,6 +53,7 @@ def build_ticket_extractor(
     ml_config: dict[str, Any] | None = None,
     llm_config: dict[str, Any] | None = None,
     cache_dir: Any | None = None,
+    ticket_detection_config: TicketDetectionConfig | None = None,
 ) -> TicketExtractor:
     """Create the appropriate TicketExtractor based on configuration.
 
@@ -64,6 +68,9 @@ def build_ticket_extractor(
                    is returned.
         llm_config: LLM classification configuration dict.
         cache_dir: Cache directory for ML prediction persistence.
+        ticket_detection_config: Optional :class:`~gitflow_analytics.config.schema.TicketDetectionConfig`
+                                 controlling commit filtering, position anchoring, custom
+                                 patterns, and exclude-pattern post-filtering.
 
     Returns:
         TicketExtractor (or MLTicketExtractor subclass) instance.
@@ -80,6 +87,7 @@ def build_ticket_extractor(
             cache_dir=cache_dir,
             enable_ml=True,
             enable_llm=enable_llm,
+            ticket_detection_config=ticket_detection_config,
         )
 
     # Log why ML is not used
@@ -94,7 +102,10 @@ def build_ticket_extractor(
     else:
         logger.debug("Using standard ticket extractor")
 
-    return TicketExtractor(allowed_platforms=allowed_platforms)
+    return TicketExtractor(
+        allowed_platforms=allowed_platforms,
+        ticket_detection_config=ticket_detection_config,
+    )
 
 
 def build_branch_mapper(

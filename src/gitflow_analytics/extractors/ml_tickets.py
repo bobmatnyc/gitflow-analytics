@@ -23,7 +23,6 @@ PERFORMANCE: Designed to handle large repositories efficiently with:
 
 import logging
 import time
-from collections import defaultdict
 from pathlib import Path
 from typing import Any, Optional
 
@@ -78,6 +77,7 @@ class MLTicketExtractor(MLTicketAnalysisMixin, TicketExtractor):
         cache_dir: Optional[Path] = None,
         enable_ml: bool = True,
         enable_llm: bool = False,
+        ticket_detection_config: Optional[Any] = None,
     ) -> None:
         """Initialize ML-enhanced ticket extractor.
 
@@ -89,9 +89,12 @@ class MLTicketExtractor(MLTicketAnalysisMixin, TicketExtractor):
             cache_dir: Directory for caching ML predictions
             enable_ml: Whether to enable ML features (fallback to rule-based if False)
             enable_llm: Whether to enable LLM classification (fallback to ML/rules if False)
+            ticket_detection_config: Optional TicketDetectionConfig passed through to
+                                    the base TicketExtractor for commit filtering,
+                                    position anchoring, and exclude-pattern filtering.
         """
-        # Initialize parent class
-        super().__init__(allowed_platforms, untracked_file_threshold)
+        # Initialize parent class (passes ticket_detection_config through)
+        super().__init__(allowed_platforms, untracked_file_threshold, ticket_detection_config)
 
         self.enable_ml = enable_ml and SPACY_AVAILABLE
         self.enable_llm = enable_llm
@@ -672,4 +675,3 @@ class MLTicketExtractor(MLTicketAnalysisMixin, TicketExtractor):
         }
 
         return mapping.get(ml_category, "other")
-

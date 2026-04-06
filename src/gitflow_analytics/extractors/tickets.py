@@ -4,9 +4,15 @@ Core extraction and categorization live here.  Coverage analysis and untracked-
 commit pattern analysis live in tickets_analysis.py (TicketAnalysisMixin).
 """
 
+from __future__ import annotations
+
 import logging
 import re
-from typing import Any, Optional
+from collections import defaultdict
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ..config.schema import TicketDetectionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +107,10 @@ class TicketExtractor(TicketAnalysisMixin):
     """
 
     def __init__(
-        self, allowed_platforms: Optional[list[str]] = None, untracked_file_threshold: int = 1
+        self,
+        allowed_platforms: list[str] | None = None,
+        untracked_file_threshold: int = 1,
+        ticket_detection_config: TicketDetectionConfig | None = None,
     ) -> None:
         """Initialize with patterns for different platforms.
 
@@ -111,10 +120,46 @@ class TicketExtractor(TicketAnalysisMixin):
             untracked_file_threshold: Minimum number of files changed to consider
                                     a commit as 'significant' for untracked analysis.
                                     Default is 1 (all commits), previously was 3.
+            ticket_detection_config: Optional configurable detection settings.
+                                    When None the extractor uses backward-compatible
+                                    defaults (all commits, full-message scan, no excludes).
         """
         self.allowed_platforms = allowed_platforms
         self.untracked_file_threshold = untracked_file_threshold
-        self.patterns = {
+
+        # Store detection config (may be None – all code below handles that gracefully)
+        self._detection_config = ticket_detection_config
+
+        # Build commit_filter / target_branches / position from config or defaults
+        self._commit_filter: str = (
+            ticket_detection_config.commit_filter if ticket_detection_config else "all"
+        )
+        self._target_branches: list[str] = (
+            list(ticket_detection_config.target_branches)
+            if ticket_detection_config
+            else ["develop", "main", "master"]
+        )
+        self._position: str = (
+            ticket_detection_config.position if ticket_detection_config else "anywhere"
+        )
+
+        # Compile exclude patterns (post-extraction filter)
+        raw_excludes: list[str] = (
+            list(ticket_detection_config.exclude_patterns) if ticket_detection_config else []
+        )
+        self._compiled_excludes: list[re.Pattern[str]] = [re.compile(p) for p in raw_excludes]
+
+        # If config supplies custom per-platform patterns, use them; otherwise fall back
+        # to the built-in defaults.  The config patterns dict maps platform -> single
+        # pattern string; the built-in defaults use lists.
+        config_patterns: dict[str, str] = (
+            dict(ticket_detection_config.patterns)
+            if ticket_detection_config and ticket_detection_config.patterns
+            else {}
+        )
+
+        # Built-in defaults (always present as fallback)
+        default_patterns: dict[str, list[str]] = {
             "jira": [
                 r"([A-Z]{2,10}-\d+)",  # Standard JIRA format: PROJ-123
             ],
@@ -133,16 +178,26 @@ class TicketExtractor(TicketAnalysisMixin):
             ],
         }
 
+        # Merge: config patterns override defaults for their platform
+        self.patterns: dict[str, list[str]] = {}
+        for platform, patterns in default_patterns.items():
+            if platform in config_patterns:
+                # Config supplies a single pattern string; wrap in a list
+                self.patterns[platform] = [config_patterns[platform]]
+            else:
+                self.patterns[platform] = list(patterns)
+
         # Compile patterns only for allowed platforms
-        self.compiled_patterns = {}
+        self.compiled_patterns: dict[str, list[re.Pattern[str]]] = {}
         for platform, patterns in self.patterns.items():
             # Skip platforms not in allowed list
             if self.allowed_platforms and platform not in self.allowed_platforms:
                 continue
-            self.compiled_patterns[platform] = [
-                re.compile(pattern, re.IGNORECASE if platform != "jira" else 0)
-                for pattern in patterns
-            ]
+            compiled: list[re.Pattern[str]] = []
+            for pattern in patterns:
+                anchored = f"^{pattern}" if self._position == "start" else pattern
+                compiled.append(re.compile(anchored, re.IGNORECASE if platform != "jira" else 0))
+            self.compiled_patterns[platform] = compiled
 
         # Commit categorization patterns
         self.category_patterns = {
@@ -368,8 +423,72 @@ class TicketExtractor(TicketAnalysisMixin):
                 re.compile(pattern, re.IGNORECASE) for pattern in patterns
             ]
 
+    def should_skip_commit(self, commit: Any) -> bool:
+        """Decide whether a commit should be skipped during ticket extraction.
+
+        Uses the ``commit_filter`` setting from :class:`TicketDetectionConfig`.
+
+        * ``"all"`` – never skip (backward-compatible default).
+        * ``"squash_merges_only"`` – skip commits that are NOT squash merges.
+          Heuristic: a squash merge has exactly one parent AND is on a target
+          branch (or its branch metadata indicates so).
+        * ``"merge_commits"`` – skip commits that do NOT have >1 parent.
+
+        The *commit* argument is expected to be a dict with at least:
+        ``{"parents": [...], "branch": str}`` or a ``git.Commit`` object with
+        ``.parents`` and optionally a ``.branch`` attribute.  If the commit
+        object does not expose branch information the filter degrades gracefully.
+
+        Args:
+            commit: A dict or object representing a single commit.
+
+        Returns:
+            True when the commit should be skipped, False when it should be
+            processed normally.
+        """
+        if self._commit_filter == "all":
+            return False
+
+        # Normalise: support both dict and object access
+        if isinstance(commit, dict):
+            parents = commit.get("parents", [])
+            branch = commit.get("branch", "")
+        else:
+            parents = getattr(commit, "parents", [])
+            branch = getattr(commit, "branch", "")
+
+        parent_count = len(parents)
+
+        if self._commit_filter == "squash_merges_only":
+            # A squash merge is a single-parent commit on an integration branch.
+            on_target = any(
+                branch == tb or (branch or "").endswith(f"/{tb}") for tb in self._target_branches
+            )
+            is_squash = parent_count == 1 and on_target
+            return not is_squash
+
+        if self._commit_filter == "merge_commits":
+            return parent_count <= 1
+
+        # Unknown filter value – default to not skipping
+        return False
+
+    def _is_excluded(self, ticket_id: str) -> bool:
+        """Return True if *ticket_id* matches any configured exclude pattern.
+
+        Args:
+            ticket_id: The raw ticket identifier string (e.g. ``"CVE-2026-1234"``).
+
+        Returns:
+            True when the ticket should be discarded.
+        """
+        return any(pattern.fullmatch(ticket_id) for pattern in self._compiled_excludes)
+
     def extract_from_text(self, text: str) -> list[dict[str, str]]:
-        """Extract all ticket references from text."""
+        """Extract all ticket references from text.
+
+        Applies exclude-pattern filtering before returning results.
+        """
         if not text:
             return []
 
@@ -385,6 +504,11 @@ class TicketExtractor(TicketAnalysisMixin):
                     # Normalize ticket ID
                     if platform == "jira" or platform == "linear":
                         ticket_id = ticket_id.upper()
+
+                    # Post-extraction exclude-pattern filter
+                    if self._is_excluded(ticket_id):
+                        logger.debug("Discarding ticket %r: matches an exclude pattern", ticket_id)
+                        continue
 
                     # Create unique key
                     key = f"{platform}:{ticket_id}"

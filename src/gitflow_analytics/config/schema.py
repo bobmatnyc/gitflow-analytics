@@ -339,6 +339,66 @@ class IdentityConfig:
 
 
 @dataclass
+class TicketDetectionConfig:
+    """Configurable ticket detection settings.
+
+    Controls which commits are scanned for ticket references, how pattern
+    matching is anchored, which patterns are used, and which matches to
+    exclude post-extraction.
+
+    YAML example::
+
+        analysis:
+          ticket_detection:
+            commit_filter: "squash_merges_only"
+            target_branches: ["develop", "main"]
+            position: "start"
+            patterns:
+              jira: "([A-Z]{2,10}-\\d+)"
+              github: "(?:closes|fixes|resolves)\\s+#(\\d+)"
+            exclude_patterns:
+              - "CVE-\\d+"
+              - "CWE-\\d+"
+              - "\\d{8,}"
+    """
+
+    # Which commits to scan.
+    # "all"               – every commit (current/default behaviour)
+    # "squash_merges_only"– only single-parent commits on target_branches
+    # "merge_commits"     – only commits with >1 parent
+    commit_filter: str = "all"
+
+    # Branches considered as "integration" branches for squash-merge detection.
+    target_branches: list[str] = field(default_factory=lambda: ["develop", "main", "master"])
+
+    # Where in the commit message to match ticket patterns.
+    # "anywhere" – search the whole message (current behaviour)
+    # "start"    – anchor patterns with ^ (match only at message start)
+    position: str = "anywhere"
+
+    # Regex patterns keyed by platform name.  These REPLACE the built-in
+    # defaults when non-empty; when empty the extractor falls back to its
+    # hard-coded patterns.
+    patterns: dict[str, str] = field(
+        default_factory=lambda: {
+            "jira": r"([A-Z]{2,10}-\d+)",
+            "github": r"(?:closes|fixes|resolves)\s+#(\d+)",
+        }
+    )
+
+    # Regex patterns whose matches should be removed after extraction.
+    # Any extracted ticket ID that fully matches one of these patterns is
+    # discarded (e.g. CVE numbers, date-like strings).
+    exclude_patterns: list[str] = field(
+        default_factory=lambda: [
+            r"CVE-\d+",
+            r"CWE-\d+",
+            r"\d{8,}",  # long digit strings (dates, IDs)
+        ]
+    )
+
+
+@dataclass
 class AnalysisConfig:
     """Analysis-specific configuration."""
 
@@ -353,6 +413,7 @@ class AnalysisConfig:
     default_ticket_platform: Optional[str] = None
     branch_mapping_rules: dict[str, list[str]] = field(default_factory=dict)
     ticket_platforms: Optional[list[str]] = None
+    ticket_detection: TicketDetectionConfig = field(default_factory=TicketDetectionConfig)
     auto_identity_analysis: bool = True  # Enable automatic identity analysis by default
     branch_patterns: Optional[list[str]] = (
         None  # Branch patterns to analyze (e.g., ["*"] for all branches)
