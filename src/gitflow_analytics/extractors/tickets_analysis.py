@@ -77,6 +77,27 @@ class TicketAnalysisMixin:
                 )
             commits = filtered_commits
 
+        # Filter out commits from authors excluded from ticket compliance metrics.
+        # These authors still appear in activity reporting but do not affect the
+        # ticket coverage denominator/numerator.
+        exclude_authors: list[str] = getattr(self, "_exclude_authors", [])
+        excluded_author_commits = 0
+        if exclude_authors:
+            filtered_commits = []
+            for c in commits:
+                author = (c.get("author_name") or "").lower()
+                if any(pattern in author for pattern in exclude_authors):
+                    excluded_author_commits += 1
+                else:
+                    filtered_commits.append(c)
+            if excluded_author_commits:
+                logger.info(
+                    "Excluded %d commits from ticket compliance (authors: %s)",
+                    excluded_author_commits,
+                    ", ".join(exclude_authors),
+                )
+            commits = filtered_commits
+
         results = {
             "total_commits": len(commits),
             "total_prs": len(prs),
@@ -86,6 +107,7 @@ class TicketAnalysisMixin:
             "untracked_commits": untracked_commits,
             "ticket_summary": ticket_summary,
             "excluded_repo_commits": excluded_repo_commits,
+            "excluded_author_commits": excluded_author_commits,
         }
 
         commits_analyzed = 0
@@ -259,6 +281,17 @@ class TicketAnalysisMixin:
         exclude_repos: set[str] = getattr(self, "_exclude_repos", set())
         if exclude_repos:
             commits = [c for c in commits if (c.get("project_key") or "") not in exclude_repos]
+
+        # Filter out commits from authors excluded from ticket compliance.
+        exclude_authors: list[str] = getattr(self, "_exclude_authors", [])
+        if exclude_authors:
+            commits = [
+                c
+                for c in commits
+                if not any(
+                    pattern in (c.get("author_name") or "").lower() for pattern in exclude_authors
+                )
+            ]
 
         developer_commits: dict[str, int] = {}
         developer_with_tickets: dict[str, int] = {}

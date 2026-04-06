@@ -154,6 +154,14 @@ class TicketExtractor(TicketAnalysisMixin):
             set(ticket_detection_config.exclude_repos) if ticket_detection_config else set()
         )
 
+        # Author names to exclude from ticket compliance metrics.
+        # Stored as lowercase for case-insensitive substring matching.
+        self._exclude_authors: list[str] = (
+            [a.lower() for a in ticket_detection_config.exclude_authors]
+            if ticket_detection_config
+            else []
+        )
+
         # If config supplies custom per-platform patterns, use them; otherwise fall back
         # to the built-in defaults.  The config patterns dict maps platform -> single
         # pattern string; the built-in defaults use lists.

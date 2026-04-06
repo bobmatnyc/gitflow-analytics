@@ -362,6 +362,8 @@ class TicketDetectionConfig:
               - "\\d{8,}"
             exclude_repos:
               - "APEX"          # knowledge base — exclude from ticket compliance
+            exclude_authors:
+              - "Bob Matsuoka"  # CTO — tooling/analysis, different workflow
     """
 
     # Which commits to scan.
@@ -405,6 +407,15 @@ class TicketDetectionConfig:
     # ticket coverage rate calculations.  Useful for knowledge-base or
     # documentation repos where JIRA tickets are not expected.
     exclude_repos: list[str] = field(default_factory=list)
+
+    # Author names to exclude from ticket compliance metrics.
+    # Commits from these authors are still included in activity reporting
+    # but are excluded from ticket coverage rate calculations.  Useful for
+    # CTO/leadership roles doing tooling/analysis work where JIRA tickets
+    # are not expected.  Matching is case-insensitive substring against
+    # the commit's author_name (so "Bob Matsuoka" matches
+    # "Bob Matsuoka via Claude").
+    exclude_authors: list[str] = field(default_factory=list)
 
 
 @dataclass
