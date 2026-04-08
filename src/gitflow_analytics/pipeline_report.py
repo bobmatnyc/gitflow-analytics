@@ -513,6 +513,25 @@ def run_report(
             logger.error(msg, exc_info=True)
             result.errors.append(msg)
 
+    # --- Native quality report (Issue #26) ---
+    quality_cfg = getattr(cfg, "quality_report", None)
+    if quality_cfg is None or getattr(quality_cfg, "enabled", True):
+        try:
+            from .reports.quality_report import QualityReportGenerator
+
+            qual_gen = QualityReportGenerator(quality_cfg)
+            # qualitative_data is already merged into all_commits above; pass []
+            # here because the generator accepts a separate qualitative list only
+            # for the commit_hash join — the pipeline already embedded risk_level
+            # and complexity directly on each commit dict via the qual_rows loop.
+            # A future enhancement can extract and pass the raw qual rows instead.
+            qual_gen.generate(all_commits, [], all_prs, output_dir)
+            generated.append("quality_summary.json")
+        except Exception as exc:
+            msg = f"Quality report failed: {exc}"
+            logger.error(msg, exc_info=True)
+            result.errors.append(msg)
+
     if "json" in cfg.output.formats:
         try:
             json_report = output_dir / f"comprehensive_export_{date_suffix}.json"

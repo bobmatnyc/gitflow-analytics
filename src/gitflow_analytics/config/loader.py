@@ -315,6 +315,10 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
         teams_data = data.get("teams")
         teams_config = cls._process_teams_config(teams_data)
 
+        # Quality report config (top-level key "quality_report")
+        quality_report_data = data.get("quality_report", {})
+        quality_report_config = cls._process_quality_report_config(quality_report_data)
+
         # Create configuration object
         config = Config(
             repositories=repositories,
@@ -329,6 +333,7 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             qualitative=qualitative_config,
             velocity=velocity_config,
             teams=teams_config,
+            quality_report=quality_report_config,
         )
 
         # Validate configuration

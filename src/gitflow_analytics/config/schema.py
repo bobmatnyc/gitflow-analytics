@@ -534,6 +534,22 @@ class VelocityConfig:
 
 
 @dataclass
+class QualityReportConfig:
+    """Configuration for the native quality report (Issue #26).
+
+    Controls which quality signals are computed and emitted to
+    quality_summary.json.  All sub-sections default to enabled so
+    that a minimal config (``quality_report: {}``) produces a full report.
+    """
+
+    enabled: bool = True
+    revert_detection_patterns: bool = True  # pattern-match reverts in commit messages
+    risk_profile: bool = True  # aggregate risk_level from qualitative_commits
+    code_review_signals: bool = True  # revision_count / change_requests from PRs
+    quality_score: bool = True  # composite 0–1 score
+
+
+@dataclass
 class TeamMemberConfig:
     """A single member of a team or pod."""
 
@@ -584,6 +600,7 @@ class Config:
     qualitative: Optional["QualitativeConfig"] = None
     velocity: VelocityConfig = field(default_factory=VelocityConfig)
     teams: TeamsConfig = field(default_factory=TeamsConfig)
+    quality_report: QualityReportConfig = field(default_factory=QualityReportConfig)
     launcher: Optional[LauncherPreferences] = None
 
     def discover_organization_repositories(

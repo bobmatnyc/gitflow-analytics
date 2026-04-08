@@ -22,6 +22,7 @@ from .schema import (
     PMIntegrationConfig,
     PMPlatformConfig,
     PodConfig,
+    QualityReportConfig,
     TeamConfig,
     TeamMemberConfig,
     TeamsConfig,
@@ -279,6 +280,26 @@ class ConfigLoaderSectionsMixin:
                 velocity_data.get("cycle_time_outlier_max_hrs", 720.0)
             ),
             top_n=int(velocity_data.get("top_n", 5)),
+        )
+
+    @classmethod
+    def _process_quality_report_config(cls, quality_data: dict[str, Any]) -> QualityReportConfig:
+        """Process quality report configuration section.
+
+        Args:
+            quality_data: Quality report configuration data from YAML.
+
+        Returns:
+            QualityReportConfig instance with defaults for any missing keys.
+        """
+        if not quality_data:
+            return QualityReportConfig()
+        return QualityReportConfig(
+            enabled=quality_data.get("enabled", True),
+            revert_detection_patterns=quality_data.get("revert_detection_patterns", True),
+            risk_profile=quality_data.get("risk_profile", True),
+            code_review_signals=quality_data.get("code_review_signals", True),
+            quality_score=quality_data.get("quality_score", True),
         )
 
     @classmethod
