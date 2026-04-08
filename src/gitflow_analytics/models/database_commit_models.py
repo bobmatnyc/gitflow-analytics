@@ -453,6 +453,13 @@ class WeeklyTrends(Base):
     # churn_rate_14d: fraction of this week's added lines deleted in the next 14 days
     churn_rate_14d = Column(Float, default=0.0)
 
+    # Velocity metrics (v8.0) — aggregated from pull_request_cache for the week
+    prs_merged = Column(Integer, default=0)
+    avg_cycle_time_hrs = Column(Float, default=0.0)
+    median_cycle_time_hrs = Column(Float, default=0.0)
+    avg_revision_count = Column(Float, default=0.0)
+    story_points_delivered = Column(Integer, default=0)
+
     # Metadata
     calculated_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
 

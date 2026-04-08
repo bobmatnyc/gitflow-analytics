@@ -10,6 +10,9 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+import click
+
+from .errors import EnvironmentVariableError
 from .schema import (
     CacheConfig,
     Config,
@@ -18,6 +21,7 @@ from .schema import (
     OutputConfig,
     PMIntegrationConfig,
     PMPlatformConfig,
+    VelocityConfig,
 )
 from .validator import ConfigValidator
 
@@ -251,6 +255,27 @@ class ConfigLoaderSectionsMixin:
         except Exception as e:
             click.echo(f"Warning: Error parsing qualitative configuration: {e}", err=True)
             return None
+
+    @classmethod
+    def _process_velocity_config(cls, velocity_data: dict[str, Any]) -> VelocityConfig:
+        """Process velocity report configuration section.
+
+        Args:
+            velocity_data: Velocity configuration data from YAML.
+
+        Returns:
+            VelocityConfig instance with defaults for any missing keys.
+        """
+        if not velocity_data:
+            return VelocityConfig()
+        return VelocityConfig(
+            enabled=velocity_data.get("enabled", True),
+            cycle_time_outlier_min_hrs=float(velocity_data.get("cycle_time_outlier_min_hrs", 0.5)),
+            cycle_time_outlier_max_hrs=float(
+                velocity_data.get("cycle_time_outlier_max_hrs", 720.0)
+            ),
+            top_n=int(velocity_data.get("top_n", 5)),
+        )
 
     @classmethod
     def _process_pm_config(cls, pm_data: dict[str, Any]) -> Optional[Any]:

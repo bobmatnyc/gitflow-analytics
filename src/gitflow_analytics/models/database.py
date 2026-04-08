@@ -617,6 +617,13 @@ class Database:
                 # higher rework, and is especially relevant for AI-assisted code.
                 self._migrate_weekly_trends_churn_column(conn)  # type: ignore[attr-defined]
 
+                # --- Velocity columns (v8.0 migration) ---
+                # WHY: PR cycle time, throughput, revision rate, and story points
+                # delivered are aggregated per-week onto weekly_trends so that
+                # the velocity report can be generated without re-querying
+                # pull_request_cache at report time.
+                self._migrate_weekly_trends_velocity_columns(conn)  # type: ignore[attr-defined]
+
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
             logger.debug(
@@ -853,3 +860,55 @@ class Database:
                     f"Could not add weekly_trends.churn_rate_14d "
                     f"(may already exist or DB is readonly): {e}"
                 )
+
+    def _migrate_weekly_trends_velocity_columns(self, conn) -> None:
+        """Add velocity columns to weekly_trends (v8.0 migration).
+
+        WHY: PR cycle time, throughput, revision rate, and story points delivered
+        are now pre-aggregated per-week on weekly_trends to support the native
+        velocity report (Issue #25).  Added as separate columns so existing rows
+        remain valid with their DEFAULT values.  Each ALTER TABLE is inside its
+        own try/except to be idempotent.
+
+        Columns added:
+            prs_merged             - INTEGER: merged PRs in the week
+            avg_cycle_time_hrs     - REAL: mean PR open→merge hours (excl. outliers)
+            median_cycle_time_hrs  - REAL: median PR open→merge hours (excl. outliers)
+            avg_revision_count     - REAL: mean commit pushes after PR open
+            story_points_delivered - INTEGER: sum of story points on merged PRs
+        """
+        try:
+            result = conn.execute(text("PRAGMA table_info(weekly_trends)"))
+            existing_columns = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read weekly_trends schema for v8 migration: {e}")
+            return
+
+        new_columns: list[tuple[str, str]] = [
+            ("prs_merged", "INTEGER DEFAULT 0"),
+            ("avg_cycle_time_hrs", "REAL DEFAULT 0.0"),
+            ("median_cycle_time_hrs", "REAL DEFAULT 0.0"),
+            ("avg_revision_count", "REAL DEFAULT 0.0"),
+            ("story_points_delivered", "INTEGER DEFAULT 0"),
+        ]
+
+        added: list[str] = []
+        for col_name, col_type in new_columns:
+            if col_name not in existing_columns:
+                try:
+                    conn.execute(
+                        text(f"ALTER TABLE weekly_trends ADD COLUMN {col_name} {col_type}")
+                    )
+                    conn.commit()
+                    added.append(col_name)
+                except Exception as e:
+                    logger.debug(
+                        f"Could not add weekly_trends.{col_name} "
+                        f"(may already exist or DB is readonly): {e}"
+                    )
+
+        if added:
+            logger.info(
+                "Applied weekly_trends v8.0 migration: added columns %s",
+                ", ".join(added),
+            )

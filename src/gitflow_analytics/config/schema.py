@@ -524,6 +524,16 @@ class LauncherPreferences:
 
 
 @dataclass
+class VelocityConfig:
+    """Configuration for the native velocity report."""
+
+    enabled: bool = True
+    cycle_time_outlier_min_hrs: float = 0.5
+    cycle_time_outlier_max_hrs: float = 720.0  # 30 days
+    top_n: int = 5
+
+
+@dataclass
 class Config:
     """Main configuration container."""
 
@@ -537,6 +547,7 @@ class Config:
     pm: Optional[Any] = None  # Modern PM framework config
     pm_integration: Optional[PMIntegrationConfig] = None
     qualitative: Optional["QualitativeConfig"] = None
+    velocity: VelocityConfig = field(default_factory=VelocityConfig)
     launcher: Optional[LauncherPreferences] = None
 
     def discover_organization_repositories(

@@ -451,6 +451,25 @@ def run_report(
         except Exception as exc:
             logger.warning(f"Database qualitative report failed: {exc}")
 
+    # --- Native velocity report (Issue #25) ---
+    velocity_cfg = getattr(cfg, "velocity", None)
+    if velocity_cfg is None or getattr(velocity_cfg, "enabled", True):
+        try:
+            from .reports.velocity_report import VelocityReportGenerator
+
+            vel_gen = VelocityReportGenerator(velocity_cfg)
+            vel_gen.generate(
+                all_prs,
+                output_dir,
+                start_date=start_date.date() if hasattr(start_date, "date") else start_date,
+                end_date=end_date.date() if hasattr(end_date, "date") else end_date,
+            )
+            generated.append("velocity_summary.json")
+        except Exception as exc:
+            msg = f"Velocity report failed: {exc}"
+            logger.error(msg, exc_info=True)
+            result.errors.append(msg)
+
     if "json" in cfg.output.formats:
         try:
             json_report = output_dir / f"comprehensive_export_{date_suffix}.json"

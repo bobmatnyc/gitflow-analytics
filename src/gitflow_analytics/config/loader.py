@@ -307,6 +307,10 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
         pm_config = cls._process_pm_config(data.get("pm", {}))
         pm_integration_config = cls._process_pm_integration_config(data.get("pm_integration", {}))
 
+        # Velocity report config (top-level key "velocity")
+        velocity_data = data.get("velocity", {})
+        velocity_config = cls._process_velocity_config(velocity_data)
+
         # Create configuration object
         config = Config(
             repositories=repositories,
@@ -319,6 +323,7 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             pm=pm_config,
             pm_integration=pm_integration_config,
             qualitative=qualitative_config,
+            velocity=velocity_config,
         )
 
         # Validate configuration
