@@ -524,6 +524,19 @@ class LauncherPreferences:
 
 
 @dataclass
+class AIDetectionConfig:
+    """Configuration for AI tool detection in commit analysis.
+
+    Controls heuristic and pattern-based AI detection on commit messages.
+    Phase 1 uses regex patterns and NLP heuristics only (no external LLM calls).
+    """
+
+    pattern_matching: bool = True  # existing regex detection (always on)
+    nlp_message_scoring: bool = True  # heuristic NLP scoring on message
+    confidence_threshold: float = 0.7  # threshold above which we classify as AI
+
+
+@dataclass
 class VelocityConfig:
     """Configuration for the native velocity report."""
 
@@ -601,6 +614,7 @@ class Config:
     velocity: VelocityConfig = field(default_factory=VelocityConfig)
     teams: TeamsConfig = field(default_factory=TeamsConfig)
     quality_report: QualityReportConfig = field(default_factory=QualityReportConfig)
+    ai_detection: AIDetectionConfig = field(default_factory=AIDetectionConfig)
     launcher: Optional[LauncherPreferences] = None
 
     def discover_organization_repositories(

@@ -624,6 +624,12 @@ class Database:
                 # pull_request_cache at report time.
                 self._migrate_weekly_trends_velocity_columns(conn)  # type: ignore[attr-defined]
 
+                # --- AI confidence scoring columns (v9.0 migration) ---
+                # WHY: NLP-based heuristic scoring of commit messages for AI-generation
+                # probability is stored per-commit to power reporting and trending.
+                # Existing rows receive NULL / empty string defaults.
+                self._migrate_cached_commits_ai_columns(conn)
+
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
             logger.debug(
@@ -912,3 +918,34 @@ class Database:
                 "Applied weekly_trends v8.0 migration: added columns %s",
                 ", ".join(added),
             )
+
+    def _migrate_cached_commits_ai_columns(self, conn) -> None:
+        """Add ai_confidence_score and ai_detection_method to cached_commits (v9.0 migration).
+
+        WHY: NLP-based heuristic scoring of commit messages for AI-generation probability
+        is stored per-commit so that per-developer and per-project AI adoption trends can
+        be computed without re-analysing raw Git data.  Existing rows receive NULL /
+        empty-string defaults which are handled gracefully in reporting.
+
+        Columns added:
+            ai_confidence_score  - REAL: heuristic confidence 0.0-1.0 (NULL = not scored)
+            ai_detection_method  - VARCHAR: 'pattern', 'nlp_heuristic', 'none', or ''
+        """
+        try:
+            result = conn.execute(text("PRAGMA table_info(cached_commits)"))
+            existing = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read cached_commits schema for v9 migration: {e}")
+            return
+
+        for col, col_type in [
+            ("ai_confidence_score", "REAL"),
+            ("ai_detection_method", "VARCHAR DEFAULT ''"),
+        ]:
+            if col not in existing:
+                try:
+                    conn.execute(text(f"ALTER TABLE cached_commits ADD COLUMN {col} {col_type}"))
+                    conn.commit()
+                    logger.info(f"Applied cached_commits v9.0 migration: added {col}")
+                except Exception as e:
+                    logger.debug(f"Could not add cached_commits.{col}: {e}")

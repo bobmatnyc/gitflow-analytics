@@ -319,6 +319,10 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
         quality_report_data = data.get("quality_report", {})
         quality_report_config = cls._process_quality_report_config(quality_report_data)
 
+        # AI detection config (top-level key "ai_detection")
+        ai_detection_data = data.get("ai_detection", {})
+        ai_detection_config = cls._process_ai_detection_config(ai_detection_data)
+
         # Create configuration object
         config = Config(
             repositories=repositories,
@@ -334,6 +338,7 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             velocity=velocity_config,
             teams=teams_config,
             quality_report=quality_report_config,
+            ai_detection=ai_detection_config,
         )
 
         # Validate configuration

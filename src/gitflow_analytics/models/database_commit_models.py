@@ -50,6 +50,10 @@ class CachedCommit(Base):
     story_points = Column(Integer, nullable=True)
     ticket_references = Column(JSON)  # List of ticket IDs
 
+    # AI detection (v9.0)
+    ai_confidence_score = Column(Float, nullable=True)  # NLP confidence 0-1, NULL if not scored
+    ai_detection_method = Column(String, default="")  # 'pattern', 'nlp_heuristic', 'none', ''
+
     # Cache metadata
     cached_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
     cache_version = Column(String, default="1.0")

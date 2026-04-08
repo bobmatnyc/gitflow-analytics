@@ -14,6 +14,7 @@ import click
 
 from .errors import EnvironmentVariableError
 from .schema import (
+    AIDetectionConfig,
     CacheConfig,
     Config,
     JIRAConfig,
@@ -300,6 +301,24 @@ class ConfigLoaderSectionsMixin:
             risk_profile=quality_data.get("risk_profile", True),
             code_review_signals=quality_data.get("code_review_signals", True),
             quality_score=quality_data.get("quality_score", True),
+        )
+
+    @classmethod
+    def _process_ai_detection_config(cls, ai_data: dict[str, Any]) -> AIDetectionConfig:
+        """Process AI detection configuration section.
+
+        Args:
+            ai_data: AI detection configuration data from YAML.
+
+        Returns:
+            AIDetectionConfig instance with defaults for any missing keys.
+        """
+        if not ai_data:
+            return AIDetectionConfig()
+        return AIDetectionConfig(
+            pattern_matching=ai_data.get("pattern_matching", True),
+            nlp_message_scoring=ai_data.get("nlp_message_scoring", True),
+            confidence_threshold=float(ai_data.get("confidence_threshold", 0.7)),
         )
 
     @classmethod
