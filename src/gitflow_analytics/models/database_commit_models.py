@@ -449,6 +449,10 @@ class WeeklyTrends(Base):
     days_active = Column(Integer, default=0)  # Number of days with commits
     avg_commits_per_day = Column(Float, default=0.0)
 
+    # 14-day code churn rate (proxy for code quality / AI rework signal)
+    # churn_rate_14d: fraction of this week's added lines deleted in the next 14 days
+    churn_rate_14d = Column(Float, default=0.0)
+
     # Metadata
     calculated_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
 

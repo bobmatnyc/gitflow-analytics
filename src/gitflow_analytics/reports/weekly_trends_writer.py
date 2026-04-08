@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 
 import pandas as pd
 
+from gitflow_analytics.core.churn_calculator import calculate_churn_rate_14d
 from gitflow_analytics.utils.ai_detection import detect_ai_tool
 
 logger = logging.getLogger(__name__)
@@ -172,6 +173,31 @@ class WeeklyTrendsWriter:
         # Weeks are keyed by their Monday date to ensure stable, calendar-aligned keys.
         latest_week_start = self._get_week_start(latest_date_obj)
 
+        # Build a daily_metrics-compatible list from commits for churn calculation.
+        # Each entry has developer_id, date, lines_added, lines_deleted so we can
+        # reuse calculate_churn_rate_14d() without a separate DB query.
+        commit_daily_metrics: list[dict[str, Any]] = []
+        for commit in sorted_commits:
+            ts = commit.get("timestamp")
+            if not ts:
+                continue
+            commit_date_obj: date = ts.date() if hasattr(ts, "date") else ts
+            developer = (
+                commit.get("canonical_id")
+                or commit.get("author_email")
+                or commit.get("author_name", "Unknown")
+            )
+            lines_added = int(commit.get("filtered_insertions", commit.get("insertions", 0)) or 0)
+            lines_deleted = int(commit.get("filtered_deletions", commit.get("deletions", 0)) or 0)
+            commit_daily_metrics.append(
+                {
+                    "developer_id": developer,
+                    "date": commit_date_obj,
+                    "lines_added": lines_added,
+                    "lines_deleted": lines_deleted,
+                }
+            )
+
         # Track AI data per developer per week:
         # developer_ai_weeks[developer][week_num] = {"assisted": int, "tools": Counter}
         developer_ai_weeks: dict[str, dict[int, dict[str, Any]]] = defaultdict(
@@ -277,6 +303,11 @@ class WeeklyTrendsWriter:
                 tools_counter: Counter = ai_week.get("tools", Counter())
                 row["primary_ai_tool"] = tools_counter.most_common(1)[0][0] if tools_counter else ""
 
+                # 14-day churn rate: fraction of this week's lines deleted in the next 14 days
+                row["churn_rate_14d"] = round(
+                    calculate_churn_rate_14d(developer, week_start, commit_daily_metrics), 4
+                )
+
                 rows.append(row)
 
         # Create DataFrame and sort by developer and week
@@ -337,6 +368,26 @@ class WeeklyTrendsWriter:
             latest_date_obj = latest_timestamp
 
         latest_week_start = self._get_week_start(latest_date_obj)
+
+        # Build a daily_metrics-compatible list keyed by project for churn calculation.
+        # developer_id is set to project so calculate_churn_rate_14d() can filter by it.
+        project_daily_metrics: list[dict[str, Any]] = []
+        for commit in sorted_commits:
+            ts = commit.get("timestamp")
+            if not ts:
+                continue
+            commit_date_obj_p: date = ts.date() if hasattr(ts, "date") else ts
+            project_key_p = commit.get("project_key", "UNKNOWN")
+            lines_added_p = int(commit.get("filtered_insertions", commit.get("insertions", 0)) or 0)
+            lines_deleted_p = int(commit.get("filtered_deletions", commit.get("deletions", 0)) or 0)
+            project_daily_metrics.append(
+                {
+                    "developer_id": project_key_p,  # reuse field for project key
+                    "date": commit_date_obj_p,
+                    "lines_added": lines_added_p,
+                    "lines_deleted": lines_deleted_p,
+                }
+            )
 
         # Track AI data per project per week
         project_ai_weeks: dict[str, dict[int, dict[str, Any]]] = defaultdict(
@@ -431,6 +482,11 @@ class WeeklyTrendsWriter:
                 )
                 tools_counter: Counter = ai_week.get("tools", Counter())
                 row["primary_ai_tool"] = tools_counter.most_common(1)[0][0] if tools_counter else ""
+
+                # 14-day churn rate for the project-week
+                row["churn_rate_14d"] = round(
+                    calculate_churn_rate_14d(project, week_start, project_daily_metrics), 4
+                )
 
                 rows.append(row)
 
@@ -532,6 +588,9 @@ class WeeklyTrendsWriter:
         # AI adoption columns
         columns.extend(["ai_assisted_commits", "ai_assisted_pct", "primary_ai_tool"])
 
+        # Churn rate column
+        columns.append("churn_rate_14d")
+
         empty_df = pd.DataFrame(columns=columns)
         empty_df.to_csv(output_path, index=False)
         logger.info(f"Generated empty developer weekly trends CSV: {output_path}")
@@ -550,6 +609,9 @@ class WeeklyTrendsWriter:
 
         # AI adoption columns
         columns.extend(["ai_assisted_commits", "ai_assisted_pct", "primary_ai_tool"])
+
+        # Churn rate column
+        columns.append("churn_rate_14d")
 
         empty_df = pd.DataFrame(columns=columns)
         empty_df.to_csv(output_path, index=False)

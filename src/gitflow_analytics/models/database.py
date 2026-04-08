@@ -610,6 +610,13 @@ class Database:
                 # Existing rows receive default values (0 / empty string).
                 self._migrate_daily_metrics_ai_columns(conn)
 
+                # --- 14-day churn rate column (v7.0 migration) ---
+                # WHY: churn_rate_14d on weekly_trends provides a code quality proxy
+                # metric showing how much of a week's added lines were deleted within
+                # the following 14 days. Higher churn correlates with lower quality /
+                # higher rework, and is especially relevant for AI-assisted code.
+                self._migrate_weekly_trends_churn_column(conn)  # type: ignore[attr-defined]
+
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
             logger.debug(
@@ -815,3 +822,34 @@ class Database:
                 "Applied daily_metrics v6.0 migration: added columns %s",
                 ", ".join(added),
             )
+
+    def _migrate_weekly_trends_churn_column(self, conn) -> None:
+        """Add 14-day churn rate column to weekly_trends (v7.0 migration).
+
+        WHY: churn_rate_14d captures the fraction of a week's added lines that
+        are subsequently deleted within 14 days — a proxy for code quality and
+        AI-assisted rework. Added as a nullable REAL column so existing rows
+        remain valid with the SQLite DEFAULT 0.0 sentinel.
+
+        Columns added:
+            churn_rate_14d  - REAL: fraction of week's lines deleted in next 14 days
+        """
+        try:
+            result = conn.execute(text("PRAGMA table_info(weekly_trends)"))
+            existing_columns = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read weekly_trends schema for v7 migration: {e}")
+            return
+
+        if "churn_rate_14d" not in existing_columns:
+            try:
+                conn.execute(
+                    text("ALTER TABLE weekly_trends ADD COLUMN churn_rate_14d REAL DEFAULT 0.0")
+                )
+                conn.commit()
+                logger.info("Applied weekly_trends v7.0 migration: added churn_rate_14d column")
+            except Exception as e:
+                logger.debug(
+                    f"Could not add weekly_trends.churn_rate_14d "
+                    f"(may already exist or DB is readonly): {e}"
+                )
