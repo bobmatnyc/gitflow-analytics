@@ -8,11 +8,10 @@ cli_analysis_helpers.
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import click
 
-from ._version import __version__
 from .cli_formatting import ImprovedErrorHandler
 from .cli_utils import setup_logging
 from .config.errors import ConfigurationError
@@ -52,28 +51,26 @@ def analyze(
 
     # Lazy imports: Only load heavy dependencies when actually running analysis
     # This improves CLI startup time from ~2s to <100ms for commands like --help
-    from .core.analyzer import GitAnalyzer
-    from .core.cache import GitAnalysisCache
-    from .core.identity import DeveloperIdentityResolver
-    from .core.progress import get_progress_service
-
     # Pipeline stage functions (extracted from this function)
     from .core.analyze_pipeline import (
-        ClassificationResult,
-        CommitLoadResult,
         QualitativeResult,
+        aggregate_pm_data,
         analyze_tickets_and_store_metrics,
         calculate_date_range,
         discover_repositories,
         generate_all_reports,
         load_and_validate_config,
         run_qualitative_analysis,
-        aggregate_pm_data,
     )
     from .core.analyze_pipeline_helpers import get_qualitative_config, is_qualitative_enabled
+    from .core.analyzer import GitAnalyzer
+    from .core.cache import GitAnalysisCache
+    from .core.identity import DeveloperIdentityResolver
+    from .core.progress import get_progress_service
 
     try:
         from ._version import __version__
+
         version = __version__
     except ImportError:
         version = "1.3.11"
@@ -294,9 +291,7 @@ def analyze(
                 for warning in validation_result.get("warnings", []):
                     display.print_status(f"  Warning: {warning}", "warning")
                 stats = validation_result["stats"]
-                display.print_status(
-                    f"Cache contains {stats['total_commits']} commits", "info"
-                )
+                display.print_status(f"Cache contains {stats['total_commits']} commits", "info")
                 if stats.get("duplicates", 0) > 0:
                     display.print_status(
                         f"Found {stats['duplicates']} duplicate entries", "warning"
@@ -343,6 +338,7 @@ def analyze(
         # ------------------------------------------------------------------
         if security_only:
             from .cli_analysis_helpers import run_security_only_analysis
+
             run_security_only_analysis(
                 cfg=cfg,
                 cache=cache,
@@ -467,17 +463,14 @@ def analyze(
             display.update_progress_task(
                 "main",
                 description=(
-                    f"🔍 Discovering repositories from organization: "
-                    f"{cfg.github.organization}"
+                    f"🔍 Discovering repositories from organization: {cfg.github.organization}"
                     if cfg.github.organization
                     else "Preparing analysis"
                 ),
                 completed=15,
             )
         elif cfg.github.organization and not cfg.repositories:
-            click.echo(
-                f"🔍 Discovering repositories from organization: {cfg.github.organization}"
-            )
+            click.echo(f"🔍 Discovering repositories from organization: {cfg.github.organization}")
 
         try:
             repositories_to_analyze = discover_repositories(cfg, config, _discovery_progress)
@@ -518,8 +511,7 @@ def analyze(
 
         if not (display and display._live):
             click.echo(
-                f"   Period: {start_date.strftime('%Y-%m-%d')} to "
-                f"{end_date.strftime('%Y-%m-%d')}"
+                f"   Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
             )
 
         # Generate config hash for cache validation
@@ -585,9 +577,7 @@ def analyze(
         # STAGE 11 – Store daily metrics
         # ------------------------------------------------------------------
         if display:
-            display.print_status(
-                "Storing daily metrics for database-backed reporting...", "info"
-            )
+            display.print_status("Storing daily metrics for database-backed reporting...", "info")
         else:
             click.echo("\n💾 Storing daily metrics for database-backed reporting...")
 
@@ -607,10 +597,10 @@ def analyze(
         # ------------------------------------------------------------------
         # STAGE 12 – Qualitative analysis
         # ------------------------------------------------------------------
-        qualitative_result = QualitativeResult(
-            results=[], cost_stats=None, commits_for_qual=[]
-        )
-        if (enable_qualitative or qualitative_only or is_qualitative_enabled(cfg)) and get_qualitative_config(cfg):
+        qualitative_result = QualitativeResult(results=[], cost_stats=None, commits_for_qual=[])
+        if (
+            enable_qualitative or qualitative_only or is_qualitative_enabled(cfg)
+        ) and get_qualitative_config(cfg):
             if display:
                 display.print_status("Performing qualitative analysis...", "info")
             else:
@@ -631,9 +621,7 @@ def analyze(
                     display=display,
                 )
                 if display:
-                    display.complete_progress_task(
-                        "qualitative", "Qualitative analysis complete"
-                    )
+                    display.complete_progress_task("qualitative", "Qualitative analysis complete")
                     display.stop_live_display()
                     display.print_status(
                         f"Analyzed {len(qualitative_result.results)} commits with qualitative insights",
@@ -688,8 +676,9 @@ def analyze(
         # ------------------------------------------------------------------
         if display:
             display.print_status(
-                "Generating reports..." if generate_csv else
-                "Generating narrative report (CSV generation disabled)...",
+                "Generating reports..."
+                if generate_csv
+                else "Generating narrative report (CSV generation disabled)...",
                 "info",
             )
         else:
@@ -724,6 +713,7 @@ def analyze(
         # ------------------------------------------------------------------
         try:
             from .cli_analysis_helpers import show_final_summary
+
             show_final_summary(
                 all_commits=all_commits,
                 all_prs=all_prs,

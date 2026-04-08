@@ -1,26 +1,13 @@
 """Rich display rendering mixin - panel creation and layout rendering."""
 
-"""
-Rich-based progress display for GitFlow Analytics.
-
-This module provides a sophisticated progress meter using the Rich library
-for beautiful terminal output with live updates and statistics.
-"""
-
 import logging
-import threading
 import time
-from contextlib import contextmanager
-from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import Enum
-from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# Try to import psutil, but make it optional
 try:
-    import psutil
+    import psutil as _psutil  # noqa: F401
 
     PSUTIL_AVAILABLE = True
 except ImportError:
@@ -28,17 +15,8 @@ except ImportError:
 
 try:
     from rich import box
-    from rich.console import Console, Group
-    from rich.live import Live
+    from rich.console import Group
     from rich.panel import Panel
-    from rich.progress import (
-        BarColumn,
-        MofNCompleteColumn,
-        Progress,
-        SpinnerColumn,
-        TextColumn,
-        TimeRemainingColumn,
-    )
     from rich.table import Table
     from rich.text import Text
 
@@ -46,7 +24,7 @@ try:
 except ImportError:
     RICH_AVAILABLE = False
 
-
+from .progress_display_types import RepositoryStatus  # noqa: E402
 
 
 class RichDisplayRenderMixin:
@@ -499,4 +477,3 @@ class RichDisplayRenderMixin:
             self._layout.renderable = new_content
             # Rich's auto_refresh handles the updates automatically
             self._update_counter += 1
-

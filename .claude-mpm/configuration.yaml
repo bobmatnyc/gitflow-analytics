@@ -210,17 +210,21 @@ use_ai_trackdown_tools: false
 verbose: false
 skills:
   agent_referenced:
-  - mpm-agent-update-workflow
-  - mpm-bug-reporting
-  - mpm-circuit-breaker-enforcement
-  - mpm-delegation-patterns
-  - mpm-git-file-tracking
-  - mpm-pr-workflow
-  - mpm-session-management
-  - mpm-teaching-mode
-  - mpm-ticketing-integration
-  - mpm-tool-usage-guide
-  - mpm-verification-protocols
+  - brainstorming
+  - condition-based-waiting
+  - dispatching-parallel-agents
+  - docker
+  - git-workflow
+  - internal-comms
+  - json-data-handling
+  - playwright
+  - requesting-code-review
+  - root-cause-tracing
+  - screenshot-verification
+  - security-scanning
+  - software-patterns
+  - systematic-debugging
+  - test-driven-development
   - toolchains-nextjs-api-validated-handler
   - toolchains-python-data-sqlalchemy
   - toolchains-python-validation-pydantic
@@ -231,7 +235,6 @@ skills:
   - toolchains-universal-infrastructure-github-actions
   - toolchains-universal-security-api-review
   - universal-data-database-migration
-  - universal-debugging-systematic-debugging
   - universal-debugging-verification-before-completion
   - universal-operations-emergency-release
   - universal-testing-test-quality-inspector
@@ -239,5 +242,8 @@ skills:
   - universal-verification-bug-fix
   - universal-verification-pre-merge
   - universal-verification-screenshot
+  - verification-before-completion
+  - webapp-testing
+  - writing-plans
   user_defined: []
 active_profile: gitflow-analytics

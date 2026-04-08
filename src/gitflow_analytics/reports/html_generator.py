@@ -21,7 +21,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from .html_sections import HTMLSectionsMixin
 
@@ -45,7 +45,7 @@ class HTMLReportGenerator(HTMLSectionsMixin):
         pass
 
     def generate_report(
-        self, json_data: Dict[str, Any], output_path: Path, title: Optional[str] = None
+        self, json_data: dict[str, Any], output_path: Path, title: Optional[str] = None
     ) -> Path:
         """Generate an interactive HTML report from JSON data.
 
@@ -72,7 +72,7 @@ class HTMLReportGenerator(HTMLSectionsMixin):
         logger.info(f"Interactive HTML report generated: {output_path}")
         return output_path
 
-    def _generate_complete_html(self, json_data: Dict[str, Any], title: str) -> str:
+    def _generate_complete_html(self, json_data: dict[str, Any], title: str) -> str:
         """Generate complete HTML document with embedded dependencies."""
 
         # Embed all dependencies and generate sections
@@ -152,7 +152,7 @@ class HTMLReportGenerator(HTMLSectionsMixin):
 
         return html_template
 
-    def _generate_report_title(self, json_data: Dict[str, Any]) -> str:
+    def _generate_report_title(self, json_data: dict[str, Any]) -> str:
         """Generate a report title from the JSON data."""
         metadata = json_data.get("metadata", {})
         data_summary = metadata.get("data_summary", {})
@@ -317,15 +317,15 @@ class HTMLReportGenerator(HTMLSectionsMixin):
         }
         """
 
-    def _generate_executive_summary_html(self, json_data: Dict[str, Any]) -> str:
+    def _generate_executive_summary_html(self, json_data: dict[str, Any]) -> str:
         """Generate executive summary HTML section."""
         exec_summary = json_data.get("executive_summary", {})
         key_metrics = exec_summary.get("key_metrics", {})
-        performance_indicators = exec_summary.get("performance_indicators", {})
+        exec_summary.get("performance_indicators", {})
         health_score = exec_summary.get("health_score", {})
 
         # Get trends for display
-        trends = exec_summary.get("trends", {})
+        exec_summary.get("trends", {})
         wins = exec_summary.get("wins", [])
         concerns = exec_summary.get("concerns", [])
 
@@ -340,10 +340,10 @@ class HTMLReportGenerator(HTMLSectionsMixin):
                     <div class="card metric-card">
                         <div class="card-body text-center">
                             <h5 class="card-title">Total Commits</h5>
-                            <div class="h2 text-primary">{key_metrics.get('commits', {}).get('total', 0)}</div>
+                            <div class="h2 text-primary">{key_metrics.get("commits", {}).get("total", 0)}</div>
                             <small class="text-muted">
-                                <span class="trend-{key_metrics.get('commits', {}).get('trend_direction', 'stable')}">
-                                    {key_metrics.get('commits', {}).get('trend_percent', 0):+.1f}%
+                                <span class="trend-{key_metrics.get("commits", {}).get("trend_direction", "stable")}">
+                                    {key_metrics.get("commits", {}).get("trend_percent", 0):+.1f}%
                                 </span>
                             </small>
                         </div>
@@ -353,10 +353,10 @@ class HTMLReportGenerator(HTMLSectionsMixin):
                     <div class="card metric-card">
                         <div class="card-body text-center">
                             <h5 class="card-title">Lines Changed</h5>
-                            <div class="h2 text-info">{key_metrics.get('lines_changed', {}).get('total', 0):,}</div>
+                            <div class="h2 text-info">{key_metrics.get("lines_changed", {}).get("total", 0):,}</div>
                             <small class="text-muted">
-                                <span class="trend-{key_metrics.get('lines_changed', {}).get('trend_direction', 'stable')}">
-                                    {key_metrics.get('lines_changed', {}).get('trend_percent', 0):+.1f}%
+                                <span class="trend-{key_metrics.get("lines_changed", {}).get("trend_direction", "stable")}">
+                                    {key_metrics.get("lines_changed", {}).get("trend_percent", 0):+.1f}%
                                 </span>
                             </small>
                         </div>
@@ -366,10 +366,10 @@ class HTMLReportGenerator(HTMLSectionsMixin):
                     <div class="card metric-card">
                         <div class="card-body text-center">
                             <h5 class="card-title">Story Points</h5>
-                            <div class="h2 text-success">{key_metrics.get('story_points', {}).get('total', 0)}</div>
+                            <div class="h2 text-success">{key_metrics.get("story_points", {}).get("total", 0)}</div>
                             <small class="text-muted">
-                                <span class="trend-{key_metrics.get('story_points', {}).get('trend_direction', 'stable')}">
-                                    {key_metrics.get('story_points', {}).get('trend_percent', 0):+.1f}%
+                                <span class="trend-{key_metrics.get("story_points", {}).get("trend_direction", "stable")}">
+                                    {key_metrics.get("story_points", {}).get("trend_percent", 0):+.1f}%
                                 </span>
                             </small>
                         </div>
@@ -379,9 +379,9 @@ class HTMLReportGenerator(HTMLSectionsMixin):
                     <div class="card metric-card">
                         <div class="card-body text-center">
                             <h5 class="card-title">Active Developers</h5>
-                            <div class="h2 text-warning">{key_metrics.get('developers', {}).get('total', 0)}</div>
+                            <div class="h2 text-warning">{key_metrics.get("developers", {}).get("total", 0)}</div>
                             <small class="text-muted">
-                                {key_metrics.get('developers', {}).get('active_percentage', 0):.1f}% active
+                                {key_metrics.get("developers", {}).get("active_percentage", 0):.1f}% active
                             </small>
                         </div>
                     </div>
@@ -394,10 +394,10 @@ class HTMLReportGenerator(HTMLSectionsMixin):
                     <div class="card">
                         <div class="card-body text-center">
                             <h5 class="card-title">Team Health Score</h5>
-                            <div class="health-score health-{health_score.get('rating', 'fair')}">
-                                {health_score.get('overall', 0):.1f}
+                            <div class="health-score health-{health_score.get("rating", "fair")}">
+                                {health_score.get("overall", 0):.1f}
                             </div>
-                            <p class="text-muted text-capitalize">{health_score.get('rating', 'fair').replace('_', ' ')}</p>
+                            <p class="text-muted text-capitalize">{health_score.get("rating", "fair").replace("_", " ")}</p>
                         </div>
                     </div>
                 </div>
@@ -460,7 +460,7 @@ class HTMLReportGenerator(HTMLSectionsMixin):
 
         return html
 
-    def _generate_projects_html(self, json_data: Dict[str, Any]) -> str:
+    def _generate_projects_html(self, json_data: dict[str, Any]) -> str:
         """Generate projects HTML section."""
         projects = json_data.get("projects", {})
 
@@ -492,22 +492,22 @@ class HTMLReportGenerator(HTMLSectionsMixin):
                 <div class="card h-100">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h6 class="mb-0">{project_key}</h6>
-                        <span class="badge bg-{self._get_health_badge_color(health_score.get('rating', 'fair'))}">
-                            {health_score.get('overall', 0):.1f}
+                        <span class="badge bg-{self._get_health_badge_color(health_score.get("rating", "fair"))}">
+                            {health_score.get("overall", 0):.1f}
                         </span>
                     </div>
                     <div class="card-body">
                         <div class="row text-center mb-3">
                             <div class="col-4">
-                                <div class="h5 text-primary">{summary.get('total_commits', 0)}</div>
+                                <div class="h5 text-primary">{summary.get("total_commits", 0)}</div>
                                 <small class="text-muted">Commits</small>
                             </div>
                             <div class="col-4">
-                                <div class="h5 text-info">{summary.get('total_contributors', 0)}</div>
+                                <div class="h5 text-info">{summary.get("total_contributors", 0)}</div>
                                 <small class="text-muted">Contributors</small>
                             </div>
                             <div class="col-4">
-                                <div class="h5 text-success">{summary.get('story_points', 0)}</div>
+                                <div class="h5 text-success">{summary.get("story_points", 0)}</div>
                                 <small class="text-muted">Story Points</small>
                             </div>
                         </div>
@@ -522,14 +522,14 @@ class HTMLReportGenerator(HTMLSectionsMixin):
         <section id="projects" class="mb-5">
             <h2 class="mb-4">Projects</h2>
             <div class="row">
-                {''.join(project_cards)}
+                {"".join(project_cards)}
             </div>
         </section>
         """
 
         return html
 
-    def _generate_developers_html(self, json_data: Dict[str, Any]) -> str:
+    def _generate_developers_html(self, json_data: dict[str, Any]) -> str:
         """Generate developers HTML section."""
         developers = json_data.get("developers", {})
 
@@ -538,7 +538,7 @@ class HTMLReportGenerator(HTMLSectionsMixin):
 
         # Create table rows for developers
         developer_rows = []
-        for dev_id, dev_data in developers.items():
+        for _dev_id, dev_data in developers.items():
             identity = dev_data.get("identity", {})
             summary = dev_data.get("summary", {})
             health_score = dev_data.get("health_score", {})
@@ -563,16 +563,16 @@ class HTMLReportGenerator(HTMLSectionsMixin):
                         <span class="developer-avatar me-3">{initials}</span>
                         <div>
                             <div class="fw-bold">{name}</div>
-                            <small class="text-muted">{identity.get('primary_email', '')}</small>
+                            <small class="text-muted">{identity.get("primary_email", "")}</small>
                         </div>
                     </div>
                 </td>
-                <td class="text-center">{summary.get('total_commits', 0)}</td>
-                <td class="text-center">{summary.get('total_story_points', 0)}</td>
+                <td class="text-center">{summary.get("total_commits", 0)}</td>
+                <td class="text-center">{summary.get("total_story_points", 0)}</td>
                 <td class="text-center">{len(projects)}</td>
                 <td class="text-center">
-                    <span class="badge bg-{self._get_health_badge_color(health_score.get('rating', 'fair'))}">
-                        {health_score.get('overall', 0):.1f}
+                    <span class="badge bg-{self._get_health_badge_color(health_score.get("rating", "fair"))}">
+                        {health_score.get("overall", 0):.1f}
                     </span>
                 </td>
                 <td class="text-center">
@@ -601,7 +601,7 @@ class HTMLReportGenerator(HTMLSectionsMixin):
                                 </tr>
                             </thead>
                             <tbody>
-                                {''.join(developer_rows)}
+                                {"".join(developer_rows)}
                             </tbody>
                         </table>
                     </div>
@@ -613,7 +613,7 @@ class HTMLReportGenerator(HTMLSectionsMixin):
         return html
 
     def generate_html_report(
-        self, json_data: Dict[str, Any], output_path: Path, title: Optional[str] = None
+        self, json_data: dict[str, Any], output_path: Path, title: Optional[str] = None
     ) -> Path:
         """Generate an interactive HTML report from JSON data.
 

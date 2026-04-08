@@ -3,15 +3,11 @@
 Extracted from json_exporter.py to keep file sizes manageable.
 """
 
-import json
 import logging
 import statistics
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
-
-import numpy as np
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +17,11 @@ class JSONExportInsightsMixin:
 
     def _generate_weekly_time_series(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
         start_date: datetime,
         end_date: datetime,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Generate weekly time series data for charts."""
 
         weekly_data = []
@@ -94,11 +90,11 @@ class JSONExportInsightsMixin:
 
     def _generate_daily_time_series(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
         start_date: datetime,
         end_date: datetime,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Generate daily time series data for detailed analysis."""
 
         daily_data = []
@@ -133,8 +129,8 @@ class JSONExportInsightsMixin:
         return daily_data
 
     def _generate_quantitative_insights(
-        self, commits: List[Dict[str, Any]], developer_stats: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, commits: list[dict[str, Any]], developer_stats: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Generate quantitative insights from data analysis."""
 
         insights = []
@@ -223,8 +219,8 @@ class JSONExportInsightsMixin:
         return insights
 
     def _process_qualitative_insights(
-        self, qualitative_data: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, qualitative_data: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Process qualitative analysis results into insights."""
 
         insights = []
@@ -247,7 +243,7 @@ class JSONExportInsightsMixin:
 
         return insights
 
-    def _prioritize_insights(self, insights: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _prioritize_insights(self, insights: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Prioritize insights by importance and impact."""
 
         def get_priority_score(insight):
@@ -265,8 +261,8 @@ class JSONExportInsightsMixin:
         return prioritized[:10]  # Return top 10 insights
 
     def _categorize_insights(
-        self, insights: List[Dict[str, Any]]
-    ) -> Dict[str, List[Dict[str, Any]]]:
+        self, insights: list[dict[str, Any]]
+    ) -> dict[str, list[dict[str, Any]]]:
         """Categorize insights by category."""
 
         categories = defaultdict(list)
@@ -278,8 +274,8 @@ class JSONExportInsightsMixin:
         return dict(categories)
 
     def _build_untracked_analysis(
-        self, commits: List[Dict[str, Any]], project_metrics: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, commits: list[dict[str, Any]], project_metrics: dict[str, Any]
+    ) -> dict[str, Any]:
         """Build comprehensive untracked commit analysis for JSON export.
 
         WHY: Untracked work analysis is critical for understanding what development
@@ -485,12 +481,12 @@ class JSONExportInsightsMixin:
 
     def _generate_untracked_insights(
         self,
-        categories: Dict[str, Any],
-        contributors: Dict[str, Any],
-        projects: Dict[str, Any],
+        categories: dict[str, Any],
+        contributors: dict[str, Any],
+        projects: dict[str, Any],
         total_untracked: int,
         total_commits: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Generate insights from untracked commit analysis."""
         insights = []
 
@@ -505,8 +501,8 @@ class JSONExportInsightsMixin:
                     {
                         "type": "concern",
                         "category": "process",
-                        "title": f'High {category_name.replace("_", " ").title()} Untracked Rate',
-                        "description": f'{category_pct:.1f}% of untracked work is {category_name.replace("_", " ")} development',
+                        "title": f"High {category_name.replace('_', ' ').title()} Untracked Rate",
+                        "description": f"{category_pct:.1f}% of untracked work is {category_name.replace('_', ' ')} development",
                         "impact": "high",
                         "value": category_pct,
                     }
@@ -570,11 +566,11 @@ class JSONExportInsightsMixin:
 
     def _generate_untracked_recommendations_json(
         self,
-        categories: Dict[str, Any],
-        contributors: Dict[str, Any],
+        categories: dict[str, Any],
+        contributors: dict[str, Any],
         total_untracked: int,
         total_commits: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Generate JSON-formatted recommendations for untracked work."""
         recommendations = []
 
@@ -642,4 +638,3 @@ class JSONExportInsightsMixin:
                 )
 
         return recommendations
-

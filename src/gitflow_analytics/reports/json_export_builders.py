@@ -3,15 +3,11 @@
 Extracted from json_exporter.py to keep file sizes manageable.
 """
 
-import json
 import logging
 import statistics
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
-
-import numpy as np
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +17,12 @@ class JSONExportBuildersMixin:
 
     def _build_metadata(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
         start_date: datetime,
         end_date: datetime,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build metadata section with generation info and data summary."""
 
         # Get unique repositories and projects
@@ -63,12 +59,12 @@ class JSONExportBuildersMixin:
 
     def _build_executive_summary(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
-        project_metrics: Dict[str, Any],
-        dora_metrics: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
+        project_metrics: dict[str, Any],
+        dora_metrics: dict[str, Any],
+    ) -> dict[str, Any]:
         """Build executive summary with key metrics, trends, and insights."""
 
         # Core metrics
@@ -171,11 +167,11 @@ class JSONExportBuildersMixin:
 
     def _build_project_data(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
-        project_metrics: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
+        project_metrics: dict[str, Any],
+    ) -> dict[str, Any]:
         """Build project-level data with health scores and contributor details."""
 
         # Group data by project
@@ -271,8 +267,8 @@ class JSONExportBuildersMixin:
         return projects
 
     def _build_developer_profiles(
-        self, commits: List[Dict[str, Any]], developer_stats: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, commits: list[dict[str, Any]], developer_stats: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Build comprehensive developer profiles with contribution patterns."""
 
         profiles = {}
@@ -335,11 +331,11 @@ class JSONExportBuildersMixin:
 
     def _build_workflow_analysis(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
-        project_metrics: Dict[str, Any],
-        pm_data: Optional[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
+        project_metrics: dict[str, Any],
+        pm_data: Optional[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Build workflow analysis including Git-PM correlation."""
 
         # Analyze branching patterns
@@ -371,8 +367,8 @@ class JSONExportBuildersMixin:
         }
 
     def _build_time_series_data(
-        self, commits: List[Dict[str, Any]], prs: List[Dict[str, Any]], weeks: int
-    ) -> Dict[str, Any]:
+        self, commits: list[dict[str, Any]], prs: list[dict[str, Any]], weeks: int
+    ) -> dict[str, Any]:
         """Build time series data optimized for charting libraries."""
 
         # Calculate date range
@@ -428,10 +424,10 @@ class JSONExportBuildersMixin:
 
     def _build_insights_data(
         self,
-        commits: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
-        qualitative_data: Optional[List[Dict[str, Any]]],
-    ) -> Dict[str, Any]:
+        commits: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
+        qualitative_data: Optional[list[dict[str, Any]]],
+    ) -> dict[str, Any]:
         """Build insights data with qualitative and quantitative analysis."""
 
         # Generate quantitative insights
@@ -456,11 +452,11 @@ class JSONExportBuildersMixin:
 
     def _build_raw_data_summary(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
-        dora_metrics: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
+        dora_metrics: dict[str, Any],
+    ) -> dict[str, Any]:
         """Build summary of raw data for reference and validation."""
 
         return {
@@ -481,7 +477,7 @@ class JSONExportBuildersMixin:
             },
         }
 
-    def _build_pm_integration_data(self, pm_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_pm_integration_data(self, pm_data: dict[str, Any]) -> dict[str, Any]:
         """Build PM platform integration data summary."""
 
         metrics = pm_data.get("metrics", {})
@@ -506,7 +502,7 @@ class JSONExportBuildersMixin:
             },
         }
 
-    def _build_cicd_data(self, cicd_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_cicd_data(self, cicd_data: dict[str, Any]) -> dict[str, Any]:
         """Build CI/CD pipeline metrics data summary.
 
         WHY: CI/CD metrics provide visibility into build health, deployment velocity,
@@ -570,4 +566,3 @@ class JSONExportBuildersMixin:
         }
 
     # Helper methods for calculations and analysis
-

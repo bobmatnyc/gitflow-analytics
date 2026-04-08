@@ -22,12 +22,9 @@ with structured analysis results that can be consumed by dashboards and reports.
 """
 
 import logging
-import statistics
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-
-import numpy as np
 
 from .models.schemas import QualitativeCommitData
 from .utils.metrics import PerformanceMetrics
@@ -35,11 +32,10 @@ from .utils.metrics import PerformanceMetrics
 logger = logging.getLogger(__name__)
 
 
-
-from .enhanced_analyzer_executive import ExecutiveAnalysisMixin
-from .enhanced_analyzer_projects import ProjectAnalysisMixin
-from .enhanced_analyzer_developer import DeveloperAnalysisMixin
-from .enhanced_analyzer_workflow import WorkflowAnalysisMixin
+from .enhanced_analyzer_developer import DeveloperAnalysisMixin  # noqa: E402
+from .enhanced_analyzer_executive import ExecutiveAnalysisMixin  # noqa: E402
+from .enhanced_analyzer_projects import ProjectAnalysisMixin  # noqa: E402
+from .enhanced_analyzer_workflow import WorkflowAnalysisMixin  # noqa: E402
 
 
 class EnhancedQualitativeAnalyzer(
@@ -247,4 +243,3 @@ class EnhancedQualitativeAnalyzer(
                 health_assessment, velocity_trends, achievements, concerns
             ),
         }
-

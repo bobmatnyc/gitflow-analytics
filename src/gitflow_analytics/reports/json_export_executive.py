@@ -3,15 +3,11 @@
 Extracted from json_exporter.py to keep file sizes manageable.
 """
 
-import json
 import logging
 import statistics
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
-
-import numpy as np
+from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +16,8 @@ class JSONExportExecutiveMixin:
     """Mixin providing executive analytics (trends, anomalies, wins/concerns, health scores, project analysis) for ComprehensiveJSONExporter."""
 
     def _calculate_executive_trends(
-        self, commits: List[Dict[str, Any]], prs: List[Dict[str, Any]]
-    ) -> Dict[str, float]:
+        self, commits: list[dict[str, Any]], prs: list[dict[str, Any]]
+    ) -> dict[str, float]:
         """Calculate trends by comparing first half vs second half of data."""
 
         if not commits:
@@ -79,8 +75,8 @@ class JSONExportExecutiveMixin:
         return trends
 
     def _detect_executive_anomalies(
-        self, commits: List[Dict[str, Any]], developer_stats: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, commits: list[dict[str, Any]], developer_stats: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Detect anomalies in executive-level data."""
 
         anomalies = []
@@ -140,11 +136,11 @@ class JSONExportExecutiveMixin:
 
     def _identify_wins_and_concerns(
         self,
-        commits: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
-        project_metrics: Dict[str, Any],
-        dora_metrics: Dict[str, Any],
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        commits: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
+        project_metrics: dict[str, Any],
+        dora_metrics: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Identify key wins and concerns from the data."""
 
         wins = []
@@ -229,11 +225,11 @@ class JSONExportExecutiveMixin:
 
     def _calculate_overall_health_score(
         self,
-        commits: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
-        project_metrics: Dict[str, Any],
-        dora_metrics: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        commits: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
+        project_metrics: dict[str, Any],
+        dora_metrics: dict[str, Any],
+    ) -> dict[str, Any]:
         """Calculate overall project health score."""
 
         scores = {}
@@ -334,7 +330,7 @@ class JSONExportExecutiveMixin:
             return "poor"
 
     def _calculate_active_developer_percentage(
-        self, developer_stats: List[Dict[str, Any]]
+        self, developer_stats: list[dict[str, Any]]
     ) -> float:
         """Calculate percentage of developers with meaningful activity."""
         if not developer_stats:
@@ -347,7 +343,7 @@ class JSONExportExecutiveMixin:
         active_developers = sum(1 for dev in developer_stats if dev["total_commits"] >= threshold)
         return round((active_developers / len(developer_stats)) * 100, 1)
 
-    def _calculate_avg_developers_per_project(self, commits: List[Dict[str, Any]]) -> float:
+    def _calculate_avg_developers_per_project(self, commits: list[dict[str, Any]]) -> float:
         """Calculate average number of developers per project."""
         project_developers = defaultdict(set)
 
@@ -363,7 +359,7 @@ class JSONExportExecutiveMixin:
         return round(avg, 1)
 
     def _count_cross_project_contributors(
-        self, commits: List[Dict[str, Any]], developer_stats: List[Dict[str, Any]]
+        self, commits: list[dict[str, Any]], developer_stats: list[dict[str, Any]]
     ) -> int:
         """Count developers who contribute to multiple projects."""
         developer_projects = defaultdict(set)
@@ -376,8 +372,8 @@ class JSONExportExecutiveMixin:
         return sum(1 for projects in developer_projects.values() if len(projects) > 1)
 
     def _calculate_project_health_score(
-        self, commits: List[Dict[str, Any]], contributors: Set[str]
-    ) -> Dict[str, Any]:
+        self, commits: list[dict[str, Any]], contributors: set[str]
+    ) -> dict[str, Any]:
         """Calculate health score for a specific project."""
 
         if not commits:
@@ -426,8 +422,8 @@ class JSONExportExecutiveMixin:
         }
 
     def _get_project_contributor_details(
-        self, commits: List[Dict[str, Any]], developer_stats: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, commits: list[dict[str, Any]], developer_stats: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Get detailed contributor information for a project."""
 
         # Create developer lookup
@@ -482,7 +478,7 @@ class JSONExportExecutiveMixin:
         else:
             return "occasional"
 
-    def _calculate_project_trends(self, commits: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _calculate_project_trends(self, commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Calculate trends for a specific project."""
 
         if len(commits) < 4:  # Need sufficient data for trends
@@ -529,7 +525,7 @@ class JSONExportExecutiveMixin:
 
         return trends
 
-    def _detect_project_anomalies(self, commits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _detect_project_anomalies(self, commits: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Detect anomalies in project-specific data."""
 
         if len(commits) < 7:  # Need sufficient data
@@ -560,8 +556,8 @@ class JSONExportExecutiveMixin:
         return anomalies
 
     def _identify_primary_contributors(
-        self, commits: List[Dict[str, Any]], contributor_details: List[Dict[str, Any]]
-    ) -> List[str]:
+        self, commits: list[dict[str, Any]], contributor_details: list[dict[str, Any]]
+    ) -> list[str]:
         """Identify primary contributors (top 80% of activity)."""
 
         sorted_contributors = sorted(contributor_details, key=lambda x: x["commits"], reverse=True)
@@ -579,7 +575,7 @@ class JSONExportExecutiveMixin:
 
         return primary_contributors
 
-    def _calculate_contribution_distribution(self, commits: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _calculate_contribution_distribution(self, commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Calculate distribution metrics for contributions."""
 
         contributor_commits = defaultdict(int)
@@ -600,4 +596,3 @@ class JSONExportExecutiveMixin:
             "top_contributor_percentage": round((max(commit_counts) / sum(commit_counts)) * 100, 1),
             "contributor_count": len(commit_counts),
         }
-

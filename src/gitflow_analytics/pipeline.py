@@ -16,13 +16,14 @@ The implementations live in the three stage-specific modules and pipeline_types.
 
 from __future__ import annotations
 
-# Re-export dataclasses from pipeline_types (backward compat)
-from .pipeline_types import ClassifyResult, CollectResult, ReportResult  # noqa: F401
+from .pipeline_classify import run_classify  # noqa: F401
 
 # Re-export stage functions (backward compat)
 from .pipeline_collect import run_collect  # noqa: F401
-from .pipeline_classify import run_classify  # noqa: F401
 from .pipeline_report import run_report  # noqa: F401
+
+# Re-export dataclasses from pipeline_types (backward compat)
+from .pipeline_types import ClassifyResult, CollectResult, ReportResult  # noqa: F401
 
 __all__ = [
     "CollectResult",

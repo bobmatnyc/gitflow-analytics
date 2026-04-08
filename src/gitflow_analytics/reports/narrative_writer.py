@@ -1,18 +1,18 @@
 """Narrative report generation in Markdown format."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from typing import Any
 
 from ..core.progress import get_progress_service
 from ..metrics.activity_scoring import ActivityScorer
-from .narrative_executive import NarrativeExecutiveMixin
-from .narrative_classification import NarrativeClassificationMixin
-from .narrative_team import NarrativeTeamMixin
 from .narrative_analysis import NarrativeAnalysisMixin
+from .narrative_classification import NarrativeClassificationMixin
+from .narrative_executive import NarrativeExecutiveMixin
 from .narrative_recommendations import NarrativeRecommendationsMixin
+from .narrative_team import NarrativeTeamMixin
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
@@ -426,4 +426,3 @@ class NarrativeReportGenerator(
                 f.write(report.getvalue())
 
         return output_path
-

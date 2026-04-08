@@ -1,8 +1,6 @@
 """CSV report generation for GitFlow Analytics."""
 
-import csv
 import logging
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -17,12 +15,14 @@ from .interfaces import ReportFormat
 logger = logging.getLogger(__name__)
 
 
+from .csv_reports_developer import CSVDeveloperReportsMixin  # noqa: E402
+from .csv_reports_dora import CSVDoraReportsMixin  # noqa: E402
+from .csv_reports_weekly import CSVWeeklyReportsMixin  # noqa: E402
 
-from .csv_reports_weekly import CSVWeeklyReportsMixin
-from .csv_reports_developer import CSVDeveloperReportsMixin
-from .csv_reports_dora import CSVDoraReportsMixin
 
-class CSVReportGenerator(CSVWeeklyReportsMixin, CSVDeveloperReportsMixin, CSVDoraReportsMixin, BaseReportGenerator):
+class CSVReportGenerator(
+    CSVWeeklyReportsMixin, CSVDeveloperReportsMixin, CSVDoraReportsMixin, BaseReportGenerator
+):
     """Generate CSV reports with weekly metrics."""
 
     def __init__(
@@ -409,7 +409,6 @@ class CSVReportGenerator(CSVWeeklyReportsMixin, CSVDeveloperReportsMixin, CSVDor
             logger.error(f"Error formatting datetime {dt}: {e}")
             return str(dt)
 
-
     def _get_week_start(self, date: datetime) -> datetime:
         """Get Monday of the week for a given date."""
         logger.debug(
@@ -433,7 +432,6 @@ class CSVReportGenerator(CSVWeeklyReportsMixin, CSVDeveloperReportsMixin, CSVDor
 
         logger.debug(f"  Week start result: {result} (tzinfo: {result.tzinfo})")
         return result
-
 
     def _anonymize_value(self, value: str, field_type: str) -> str:
         """Anonymize a value if anonymization is enabled."""
@@ -462,4 +460,3 @@ class CSVReportGenerator(CSVWeeklyReportsMixin, CSVDeveloperReportsMixin, CSVDor
             self._anonymization_map[value] = anonymous
 
         return self._anonymization_map[value] + suffix
-

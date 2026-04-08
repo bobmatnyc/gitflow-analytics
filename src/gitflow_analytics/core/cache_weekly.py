@@ -3,25 +3,16 @@
 import hashlib
 import json
 import logging
-from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
-import git
 from sqlalchemy import and_
 
-from ..constants import BatchSizes, CacheTTL, Thresholds
 from ..models.database import (
     CachedCommit,
-    Database,
-    IssueCache,
-    PullRequestCache,
     RepositoryAnalysisStatus,
     WeeklyFetchStatus,
 )
-from ..utils.commit_utils import extract_co_authors as _extract_co_authors_from_message
-from ..utils.debug import is_debug_mode
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +22,6 @@ class WeeklyCacheMixin:
 
     Mixed into GitAnalysisCache. Uses self.db from the host class.
     """
-
 
     # ---------------------------------------------------------------------------
     # Week-granularity incremental fetch tracking

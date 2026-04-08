@@ -5,8 +5,9 @@ Contains workflow HTML, chart JS, interaction JS, qualitative analysis,
 insight formatters, and badge color helpers.
 """
 
+import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 class HTMLSectionsMixin:
     """Mixin providing section generators and helpers for HTMLReportGenerator."""
 
-    def _generate_workflow_html(self, json_data: Dict[str, Any]) -> str:
+    def _generate_workflow_html(self, json_data: dict[str, Any]) -> str:
         """Generate workflow analysis HTML section."""
         workflow = json_data.get("workflow_analysis", {})
 
@@ -37,10 +38,10 @@ class HTMLSectionsMixin:
                             <h6 class="mb-0">Branching Strategy</h6>
                         </div>
                         <div class="card-body">
-                            <p class="h5 text-capitalize">{branching.get('strategy', 'Unknown')}</p>
-                            <p class="text-muted">Merge Rate: {branching.get('merge_rate_percent', 0):.1f}%</p>
-                            <span class="badge bg-{self._get_complexity_badge_color(branching.get('complexity_rating', 'medium'))}">
-                                {branching.get('complexity_rating', 'Medium').title()}
+                            <p class="h5 text-capitalize">{branching.get("strategy", "Unknown")}</p>
+                            <p class="text-muted">Merge Rate: {branching.get("merge_rate_percent", 0):.1f}%</p>
+                            <span class="badge bg-{self._get_complexity_badge_color(branching.get("complexity_rating", "medium"))}">
+                                {branching.get("complexity_rating", "Medium").title()}
                             </span>
                         </div>
                     </div>
@@ -53,11 +54,11 @@ class HTMLSectionsMixin:
                             <h6 class="mb-0">Commit Patterns</h6>
                         </div>
                         <div class="card-body">
-                            <p><strong>Peak Hour:</strong> {commit_patterns.get('peak_hour', 'Unknown')}</p>
-                            <p><strong>Peak Day:</strong> {commit_patterns.get('peak_day', 'Unknown')}</p>
+                            <p><strong>Peak Hour:</strong> {commit_patterns.get("peak_hour", "Unknown")}</p>
+                            <p><strong>Peak Day:</strong> {commit_patterns.get("peak_day", "Unknown")}</p>
                             <small class="text-muted">
-                                Weekdays: {commit_patterns.get('weekday_pct', 0):.1f}%<br>
-                                Weekends: {commit_patterns.get('weekend_pct', 0):.1f}%
+                                Weekdays: {commit_patterns.get("weekday_pct", 0):.1f}%<br>
+                                Weekends: {commit_patterns.get("weekend_pct", 0):.1f}%
                             </small>
                         </div>
                     </div>
@@ -70,10 +71,10 @@ class HTMLSectionsMixin:
                             <h6 class="mb-0">Process Health</h6>
                         </div>
                         <div class="card-body">
-                            <p><strong>Ticket Linking:</strong> {process_health.get('ticket_linking_rate', 0):.1f}%</p>
-                            <p><strong>Merge Commits:</strong> {process_health.get('merge_commit_rate', 0):.1f}%</p>
-                            <span class="badge bg-{self._get_quality_badge_color(process_health.get('commit_message_quality', {}).get('overall_rating', 'fair'))}">
-                                {process_health.get('commit_message_quality', {}).get('overall_rating', 'Fair').title()}
+                            <p><strong>Ticket Linking:</strong> {process_health.get("ticket_linking_rate", 0):.1f}%</p>
+                            <p><strong>Merge Commits:</strong> {process_health.get("merge_commit_rate", 0):.1f}%</p>
+                            <span class="badge bg-{self._get_quality_badge_color(process_health.get("commit_message_quality", {}).get("overall_rating", "fair"))}">
+                                {process_health.get("commit_message_quality", {}).get("overall_rating", "Fair").title()}
                             </span>
                         </div>
                     </div>
@@ -84,7 +85,7 @@ class HTMLSectionsMixin:
 
         return html
 
-    def _generate_charts_js(self, json_data: Dict[str, Any]) -> str:
+    def _generate_charts_js(self, json_data: dict[str, Any]) -> str:
         """Generate Chart.js initialization JavaScript."""
 
         # Get data for charts
@@ -234,7 +235,7 @@ class HTMLSectionsMixin:
         });
         """
 
-    def _generate_qualitative_analysis_section(self, json_data: Dict[str, Any]) -> str:
+    def _generate_qualitative_analysis_section(self, json_data: dict[str, Any]) -> str:
         """Generate enhanced qualitative analysis section with executive narrative."""
 
         # Get enhanced qualitative analysis if available
@@ -259,21 +260,21 @@ class HTMLSectionsMixin:
                         <!-- Executive Summary Narrative -->
                         <div class="mb-4">
                             <h6 class="text-primary">Executive Summary</h6>
-                            <p class="lead">{exec_analysis.get('executive_summary', 'No executive summary available.')}</p>
+                            <p class="lead">{exec_analysis.get("executive_summary", "No executive summary available.")}</p>
                         </div>
 
                         <!-- Health Assessment -->
                         <div class="mb-4">
                             <h6 class="text-primary">Team Health Assessment</h6>
-                            <p>{exec_analysis.get('health_narrative', 'No health assessment available.')}</p>
+                            <p>{exec_analysis.get("health_narrative", "No health assessment available.")}</p>
                             <div class="d-flex align-items-center mb-2">
                                 <strong class="me-2">Confidence:</strong>
                                 <div class="progress flex-grow-1" style="height: 20px;">
                                     <div class="progress-bar" role="progressbar"
-                                         style="width: {exec_analysis.get('health_confidence', 0) * 100}%"
-                                         aria-valuenow="{exec_analysis.get('health_confidence', 0) * 100}"
+                                         style="width: {exec_analysis.get("health_confidence", 0) * 100}%"
+                                         aria-valuenow="{exec_analysis.get("health_confidence", 0) * 100}"
                                          aria-valuemin="0" aria-valuemax="100">
-                                        {exec_analysis.get('health_confidence', 0) * 100:.0f}%
+                                        {exec_analysis.get("health_confidence", 0) * 100:.0f}%
                                     </div>
                                 </div>
                             </div>
@@ -282,17 +283,17 @@ class HTMLSectionsMixin:
                         <!-- Velocity Trends -->
                         <div class="mb-4">
                             <h6 class="text-primary">Velocity Analysis</h6>
-                            <p>{exec_analysis.get('velocity_trends', {}).get('narrative', 'No velocity analysis available.')}</p>
+                            <p>{exec_analysis.get("velocity_trends", {}).get("narrative", "No velocity analysis available.")}</p>
                         </div>
 
                         <!-- Key Achievements -->
-                        {self._format_achievements_section(exec_analysis.get('key_achievements', []))}
+                        {self._format_achievements_section(exec_analysis.get("key_achievements", []))}
 
                         <!-- Major Concerns with Recommendations -->
-                        {self._format_concerns_section(exec_analysis.get('major_concerns', []))}
+                        {self._format_concerns_section(exec_analysis.get("major_concerns", []))}
 
                         <!-- Cross-Dimensional Insights -->
-                        {self._format_cross_insights_section(enhanced_analysis.get('cross_insights', []))}
+                        {self._format_cross_insights_section(enhanced_analysis.get("cross_insights", []))}
                     </div>
                 </div>
             </div>
@@ -301,7 +302,7 @@ class HTMLSectionsMixin:
 
         return html
 
-    def _format_achievements_section(self, achievements: List[Dict[str, Any]]) -> str:
+    def _format_achievements_section(self, achievements: list[dict[str, Any]]) -> str:
         """Format achievements section with details."""
         if not achievements:
             return ""
@@ -318,11 +319,11 @@ class HTMLSectionsMixin:
             item = f"""
             <div class="achievement-item mb-2">
                 <div class="d-flex align-items-start">
-                    <span class="badge bg-{badge_color} me-2">{achievement.get('impact', 'notable').title()}</span>
+                    <span class="badge bg-{badge_color} me-2">{achievement.get("impact", "notable").title()}</span>
                     <div>
-                        <strong>{achievement.get('title', 'Achievement')}</strong>
-                        <p class="mb-1 text-muted small">{achievement.get('description', '')}</p>
-                        {f'<small class="text-success">{achievement.get("recommendation", "")}</small>' if achievement.get('recommendation') else ''}
+                        <strong>{achievement.get("title", "Achievement")}</strong>
+                        <p class="mb-1 text-muted small">{achievement.get("description", "")}</p>
+                        {f'<small class="text-success">{achievement.get("recommendation", "")}</small>' if achievement.get("recommendation") else ""}
                     </div>
                 </div>
             </div>
@@ -332,11 +333,11 @@ class HTMLSectionsMixin:
         return f"""
         <div class="mb-4">
             <h6 class="text-success">Key Achievements</h6>
-            {''.join(items_html)}
+            {"".join(items_html)}
         </div>
         """
 
-    def _format_concerns_section(self, concerns: List[Dict[str, Any]]) -> str:
+    def _format_concerns_section(self, concerns: list[dict[str, Any]]) -> str:
         """Format concerns section with recommendations."""
         if not concerns:
             return ""
@@ -353,11 +354,11 @@ class HTMLSectionsMixin:
             item = f"""
             <div class="concern-item mb-2">
                 <div class="d-flex align-items-start">
-                    <span class="badge bg-{severity_color} me-2">{concern.get('severity', 'medium').title()}</span>
+                    <span class="badge bg-{severity_color} me-2">{concern.get("severity", "medium").title()}</span>
                     <div>
-                        <strong>{concern.get('title', 'Concern')}</strong>
-                        <p class="mb-1 text-muted small">{concern.get('description', '')}</p>
-                        {f'<small class="text-primary"><strong>Recommendation:</strong> {concern.get("recommendation", "")}</small>' if concern.get('recommendation') else ''}
+                        <strong>{concern.get("title", "Concern")}</strong>
+                        <p class="mb-1 text-muted small">{concern.get("description", "")}</p>
+                        {f'<small class="text-primary"><strong>Recommendation:</strong> {concern.get("recommendation", "")}</small>' if concern.get("recommendation") else ""}
                     </div>
                 </div>
             </div>
@@ -367,11 +368,11 @@ class HTMLSectionsMixin:
         return f"""
         <div class="mb-4">
             <h6 class="text-warning">Areas Requiring Attention</h6>
-            {''.join(items_html)}
+            {"".join(items_html)}
         </div>
         """
 
-    def _format_cross_insights_section(self, insights: List[Dict[str, Any]]) -> str:
+    def _format_cross_insights_section(self, insights: list[dict[str, Any]]) -> str:
         """Format cross-dimensional insights."""
         if not insights:
             return ""
@@ -398,12 +399,12 @@ class HTMLSectionsMixin:
             item = f"""
             <div class="insight-item mb-3 p-3 border rounded">
                 <div class="d-flex justify-content-between align-items-start mb-2">
-                    <h6 class="mb-0">{insight.get('title', 'Insight')}</h6>
-                    <span class="badge bg-{priority_color}">{insight.get('priority', 'medium').title()} Priority</span>
+                    <h6 class="mb-0">{insight.get("title", "Insight")}</h6>
+                    <span class="badge bg-{priority_color}">{insight.get("priority", "medium").title()} Priority</span>
                 </div>
-                <p class="mb-2 text-muted">{insight.get('description', '')}</p>
+                <p class="mb-2 text-muted">{insight.get("description", "")}</p>
                 <div class="mb-2">{dimensions_badges}</div>
-                {f'<div class="alert alert-info mb-0"><strong>Action:</strong> {insight.get("action_required", "")}</div>' if insight.get('action_required') else ''}
+                {f'<div class="alert alert-info mb-0"><strong>Action:</strong> {insight.get("action_required", "")}</div>' if insight.get("action_required") else ""}
             </div>
             """
             items_html.append(item)
@@ -412,11 +413,11 @@ class HTMLSectionsMixin:
         <div class="mb-4">
             <h6 class="text-info">Strategic Insights</h6>
             <p class="text-muted small">Cross-dimensional patterns requiring leadership attention</p>
-            {''.join(items_html)}
+            {"".join(items_html)}
         </div>
         """
 
-    def _format_insights_list(self, insights: List[Dict[str, Any]]) -> str:
+    def _format_insights_list(self, insights: list[dict[str, Any]]) -> str:
         """Format a list of insights as HTML."""
         if not insights:
             return '<p class="text-muted">No insights available.</p>'

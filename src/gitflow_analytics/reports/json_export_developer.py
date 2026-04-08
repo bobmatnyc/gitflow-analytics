@@ -3,15 +3,11 @@
 Extracted from json_exporter.py to keep file sizes manageable.
 """
 
-import json
 import logging
 import statistics
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
-
-import numpy as np
+from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +15,7 @@ logger = logging.getLogger(__name__)
 class JSONExportDeveloperMixin:
     """Mixin providing developer analysis (projects, contributions, patterns, metrics, timeline) for ComprehensiveJSONExporter."""
 
-    def _get_developer_projects(self, commits: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    def _get_developer_projects(self, commits: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         """Get projects a developer has worked on with contribution details."""
 
         project_contributions = defaultdict(
@@ -71,8 +67,8 @@ class JSONExportDeveloperMixin:
         return projects
 
     def _analyze_developer_contribution_patterns(
-        self, commits: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, commits: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Analyze a developer's contribution patterns."""
 
         if not commits:
@@ -131,7 +127,7 @@ class JSONExportDeveloperMixin:
 
         return patterns
 
-    def _get_time_distribution_pattern(self, hours: List[int]) -> str:
+    def _get_time_distribution_pattern(self, hours: list[int]) -> str:
         """Determine time distribution pattern from commit hours."""
         avg_hour = statistics.mean(hours)
 
@@ -149,10 +145,10 @@ class JSONExportDeveloperMixin:
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         return days[day_index] if 0 <= day_index < 7 else "Unknown"
 
-    def _get_work_pattern(self, days: List[int]) -> str:
+    def _get_work_pattern(self, days: list[int]) -> str:
         """Determine work pattern from commit days."""
         weekday_commits = sum(1 for day in days if day < 5)  # Mon-Fri
-        weekend_commits = sum(1 for day in days if day >= 5)  # Sat-Sun
+        sum(1 for day in days if day >= 5)  # Sat-Sun
 
         total = len(days)
         weekday_pct = (weekday_commits / total) * 100 if total > 0 else 0
@@ -167,8 +163,8 @@ class JSONExportDeveloperMixin:
             return "weekend_warrior"
 
     def _calculate_developer_collaboration_metrics(
-        self, commits: List[Dict[str, Any]], all_developer_stats: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, commits: list[dict[str, Any]], all_developer_stats: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Calculate collaboration metrics for a developer."""
 
         # Get projects this developer worked on
@@ -195,8 +191,8 @@ class JSONExportDeveloperMixin:
         }
 
     def _calculate_developer_health_score(
-        self, commits: List[Dict[str, Any]], dev_stats: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, commits: list[dict[str, Any]], dev_stats: dict[str, Any]
+    ) -> dict[str, Any]:
         """Calculate health score for a specific developer."""
 
         if not commits:
@@ -241,8 +237,8 @@ class JSONExportDeveloperMixin:
         }
 
     def _identify_developer_achievements(
-        self, commits: List[Dict[str, Any]], dev_stats: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, commits: list[dict[str, Any]], dev_stats: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Identify achievements for a developer."""
 
         achievements = []
@@ -289,8 +285,8 @@ class JSONExportDeveloperMixin:
         return achievements
 
     def _identify_improvement_areas(
-        self, commits: List[Dict[str, Any]], dev_stats: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, commits: list[dict[str, Any]], dev_stats: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Identify areas for improvement for a developer."""
 
         improvements = []
@@ -334,8 +330,8 @@ class JSONExportDeveloperMixin:
         return improvements
 
     def _build_developer_activity_timeline(
-        self, commits: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, commits: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Build activity timeline for a developer."""
 
         if not commits:
@@ -372,7 +368,7 @@ class JSONExportDeveloperMixin:
 
         return timeline
 
-    def _analyze_branching_patterns(self, commits: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _analyze_branching_patterns(self, commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Analyze branching and merge patterns."""
 
         merge_commits = sum(1 for c in commits if c.get("is_merge"))
@@ -401,7 +397,7 @@ class JSONExportDeveloperMixin:
             else "high",
         }
 
-    def _analyze_commit_timing_patterns(self, commits: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _analyze_commit_timing_patterns(self, commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Analyze when commits typically happen."""
 
         if not commits:
@@ -467,7 +463,7 @@ class JSONExportDeveloperMixin:
 
         return patterns
 
-    def _analyze_pr_workflow(self, prs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _analyze_pr_workflow(self, prs: list[dict[str, Any]]) -> dict[str, Any]:
         """Analyze pull request workflow patterns."""
 
         if not prs:
@@ -519,8 +515,8 @@ class JSONExportDeveloperMixin:
         return workflow
 
     def _analyze_git_pm_correlation(
-        self, commits: List[Dict[str, Any]], pm_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, commits: list[dict[str, Any]], pm_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Analyze correlation between Git activity and PM platform data."""
 
         correlations = pm_data.get("correlations", [])
@@ -562,7 +558,7 @@ class JSONExportDeveloperMixin:
             "platforms": list(metrics.get("platform_coverage", {}).keys()),
         }
 
-    def _calculate_merge_commit_rate(self, commits: List[Dict[str, Any]]) -> float:
+    def _calculate_merge_commit_rate(self, commits: list[dict[str, Any]]) -> float:
         """Calculate percentage of merge commits."""
         if not commits:
             return 0
@@ -570,7 +566,7 @@ class JSONExportDeveloperMixin:
         merge_commits = sum(1 for c in commits if c.get("is_merge"))
         return round((merge_commits / len(commits)) * 100, 1)
 
-    def _analyze_commit_message_quality(self, commits: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _analyze_commit_message_quality(self, commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Analyze commit message quality patterns."""
 
         if not commits:
@@ -630,4 +626,3 @@ class JSONExportDeveloperMixin:
             quality["overall_rating"] = "needs_improvement"
 
         return quality
-

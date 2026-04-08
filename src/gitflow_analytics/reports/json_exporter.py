@@ -22,19 +22,14 @@ DESIGN DECISIONS:
 
 import json
 import logging
-import statistics
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Optional
 
-import numpy as np
-
-from .base import BaseReportGenerator, ReportData, ReportOutput
-from .interfaces import ReportFormat
+from .base import BaseReportGenerator
 from .json_export_builders import JSONExportBuildersMixin
-from .json_export_executive import JSONExportExecutiveMixin
 from .json_export_developer import JSONExportDeveloperMixin
+from .json_export_executive import JSONExportExecutiveMixin
 from .json_export_insights import JSONExportInsightsMixin
 from .json_export_utils import JSONExportUtilsMixin
 
@@ -92,17 +87,17 @@ class ComprehensiveJSONExporter(
 
     def export_comprehensive_data(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
-        project_metrics: Dict[str, Any],
-        dora_metrics: Dict[str, Any],
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
+        project_metrics: dict[str, Any],
+        dora_metrics: dict[str, Any],
         output_path: Path,
         weeks: int = 12,
-        pm_data: Optional[Dict[str, Any]] = None,
-        qualitative_data: Optional[List[Dict[str, Any]]] = None,
-        enhanced_qualitative_analysis: Optional[Dict[str, Any]] = None,
-        cicd_data: Optional[Dict[str, Any]] = None,
+        pm_data: Optional[dict[str, Any]] = None,
+        qualitative_data: Optional[list[dict[str, Any]]] = None,
+        enhanced_qualitative_analysis: Optional[dict[str, Any]] = None,
+        cicd_data: Optional[dict[str, Any]] = None,
     ) -> Path:
         """Export comprehensive analytics data to JSON format.
 
@@ -168,13 +163,13 @@ class ComprehensiveJSONExporter(
 
     def create_enhanced_qualitative_analysis(
         self,
-        commits: List[Dict[str, Any]],
-        qualitative_data: Optional[List[Any]] = None,
-        developer_stats: Optional[List[Dict[str, Any]]] = None,
-        project_metrics: Optional[Dict[str, Any]] = None,
-        pm_data: Optional[Dict[str, Any]] = None,
+        commits: list[dict[str, Any]],
+        qualitative_data: Optional[list[Any]] = None,
+        developer_stats: Optional[list[dict[str, Any]]] = None,
+        project_metrics: Optional[dict[str, Any]] = None,
+        pm_data: Optional[dict[str, Any]] = None,
         weeks_analyzed: int = 12,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[dict[str, Any]]:
         """Create enhanced qualitative analysis using the EnhancedQualitativeAnalyzer.
 
         This method integrates with the enhanced analyzer to generate comprehensive
@@ -217,4 +212,3 @@ class ComprehensiveJSONExporter(
         except Exception as e:
             logger.error(f"Enhanced qualitative analysis failed: {e}")
             return None
-

@@ -2,39 +2,18 @@
 
 import logging
 import os
-import subprocess
 import threading
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 import git
-from sqlalchemy import case, func
-from sqlalchemy.orm import Session
 
 from ..constants import BatchSizes, Timeouts
-from ..integrations.jira_integration import JIRAIntegration
-from ..models.database import (
-    CachedCommit,
-    CommitTicketCorrelation,
-    DailyCommitBatch,
-    DetailedTicketData,
-)
-from ..types import CommitStats
-from ..utils.commit_utils import is_merge_commit
 from ..utils.glob_matcher import match_recursive_pattern as _match_recursive_pattern_fn
 from ..utils.glob_matcher import matches_glob_pattern as _matches_glob_pattern_fn
 from ..utils.glob_matcher import should_exclude_file as _should_exclude_file_fn
-from .analysis_components import (
-    build_branch_mapper,
-    build_story_point_extractor,
-    build_ticket_extractor,
-)
-from .cache import GitAnalysisCache
-from .git_timeout_wrapper import GitOperationTimeout, GitTimeoutWrapper, HeartbeatLogger
-from .identity import DeveloperIdentityResolver
+from .git_timeout_wrapper import GitOperationTimeout
 from .progress import get_progress_service
 
 logger = logging.getLogger(__name__)
@@ -758,4 +737,3 @@ class GitFetcherMixin:
             logger.warning(f"Could not update repository: {e}")
             # Continue with analysis using local state
             return False
-

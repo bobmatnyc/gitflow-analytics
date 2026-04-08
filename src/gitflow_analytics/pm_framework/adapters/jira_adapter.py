@@ -11,7 +11,7 @@ Conversion/mapping methods live in jira_adapter_converters.py (JIRAAdapterConver
 import base64
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -23,19 +23,16 @@ from urllib3.util.retry import Retry
 from ...utils.debug import is_debug_mode
 from ..base import BasePlatformAdapter, PlatformCapabilities
 from ..models import (
-    IssueStatus,
     IssueType,
     UnifiedIssue,
     UnifiedProject,
     UnifiedSprint,
-    UnifiedUser,
 )
 from .jira_adapter_converters import JIRAAdapterConvertersMixin
 from .jira_cache import JiraTicketCache  # noqa: F401 (re-exported for backward compat)
 
 # Configure logger for JIRA adapter
 logger = logging.getLogger(__name__)
-
 
 
 class JIRAAdapter(JIRAAdapterConvertersMixin, BasePlatformAdapter):

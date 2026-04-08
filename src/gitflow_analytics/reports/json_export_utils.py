@@ -9,11 +9,11 @@ import statistics
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Optional
 
 import numpy as np
 
-from .base import BaseReportGenerator, ReportData, ReportOutput
+from .base import ReportData, ReportOutput
 from .interfaces import ReportFormat
 
 logger = logging.getLogger(__name__)
@@ -23,8 +23,8 @@ class JSONExportUtilsMixin:
     """Mixin providing recommendations, utility helpers, and BaseReportGenerator integration for ComprehensiveJSONExporter."""
 
     def _calculate_untracked_quality_scores(
-        self, categories: Dict[str, Any], total_untracked: int, total_commits: int
-    ) -> Dict[str, Any]:
+        self, categories: dict[str, Any], total_untracked: int, total_commits: int
+    ) -> dict[str, Any]:
         """Calculate quality scores for untracked work patterns."""
         scores = {}
 
@@ -74,8 +74,8 @@ class JSONExportUtilsMixin:
         return scores
 
     def _generate_actionable_recommendations(
-        self, insights: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, insights: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Generate actionable recommendations from insights."""
 
         recommendations = []
@@ -98,7 +98,7 @@ class JSONExportUtilsMixin:
 
         return recommendations[:5]  # Return top 5 recommendations
 
-    def _estimate_recommendation_impact(self, insight: Dict[str, Any]) -> str:
+    def _estimate_recommendation_impact(self, insight: dict[str, Any]) -> str:
         """Estimate the impact of implementing a recommendation."""
 
         category = insight.get("category", "")
@@ -112,7 +112,7 @@ class JSONExportUtilsMixin:
             return "low"
 
     def _add_general_recommendations(
-        self, recommendations: List[Dict[str, Any]], insights: List[Dict[str, Any]]
+        self, recommendations: list[dict[str, Any]], insights: list[dict[str, Any]]
     ) -> None:
         """Add general recommendations based on insight patterns."""
 
@@ -129,7 +129,7 @@ class JSONExportUtilsMixin:
                 }
             )
 
-    def _calculate_simple_trend(self, values: List[float]) -> str:
+    def _calculate_simple_trend(self, values: list[float]) -> str:
         """Calculate simple trend direction from a list of values."""
 
         if len(values) < 2:
@@ -155,7 +155,7 @@ class JSONExportUtilsMixin:
         else:
             return "decreasing"
 
-    def _get_weekly_commit_counts(self, commits: List[Dict[str, Any]]) -> List[int]:
+    def _get_weekly_commit_counts(self, commits: list[dict[str, Any]]) -> list[int]:
         """Get commit counts grouped by week."""
 
         if not commits:
@@ -173,7 +173,7 @@ class JSONExportUtilsMixin:
         sorted_weeks = sorted(weekly_counts.keys())
         return [weekly_counts[week] for week in sorted_weeks]
 
-    def _get_daily_commit_counts(self, commits: List[Dict[str, Any]]) -> List[int]:
+    def _get_daily_commit_counts(self, commits: list[dict[str, Any]]) -> list[int]:
         """Get commit counts grouped by day."""
 
         if not commits:
@@ -190,7 +190,7 @@ class JSONExportUtilsMixin:
         sorted_days = sorted(daily_counts.keys())
         return [daily_counts[day] for day in sorted_days]
 
-    def _calculate_weekly_commits(self, commits: List[Dict[str, Any]]) -> float:
+    def _calculate_weekly_commits(self, commits: list[dict[str, Any]]) -> float:
         """Calculate average commits per week."""
 
         weekly_counts = self._get_weekly_commit_counts(commits)
@@ -199,7 +199,7 @@ class JSONExportUtilsMixin:
 
         return round(statistics.mean(weekly_counts), 1)
 
-    def _find_peak_activity_day(self, commits: List[Dict[str, Any]]) -> str:
+    def _find_peak_activity_day(self, commits: list[dict[str, Any]]) -> str:
         """Find the day of week with most commits."""
 
         if not commits:
@@ -218,7 +218,7 @@ class JSONExportUtilsMixin:
         peak_day_index = max(day_counts, key=day_counts.get)
         return self._get_day_name(peak_day_index)
 
-    def _analyze_commit_size_distribution(self, commits: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _analyze_commit_size_distribution(self, commits: list[dict[str, Any]]) -> dict[str, Any]:
         """Analyze distribution of commit sizes."""
 
         if not commits:
@@ -259,7 +259,7 @@ class JSONExportUtilsMixin:
         monday = date - timedelta(days=days_since_monday)
         return monday.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    def _calculate_gini_coefficient(self, values: List[float]) -> float:
+    def _calculate_gini_coefficient(self, values: list[float]) -> float:
         """Calculate Gini coefficient for measuring inequality."""
 
         if not values or len(values) == 1:
@@ -404,7 +404,7 @@ class JSONExportUtilsMixin:
             logger.error(f"Error generating comprehensive JSON export: {e}")
             return ReportOutput(success=False, errors=[str(e)])
 
-    def get_required_fields(self) -> List[str]:
+    def get_required_fields(self) -> list[str]:
         """Get the list of required data fields for JSON export.
 
         Returns:

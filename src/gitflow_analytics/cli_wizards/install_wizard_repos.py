@@ -6,10 +6,8 @@ Methods: _clone_git_repository, _normalize_git_url, _get_git_progress,
 """
 
 import logging
+import re
 import shutil
-import stat
-import subprocess
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -322,4 +320,3 @@ class InstallWizardReposMixin:
         # Store repositories directly without GitHub section
         self.config_data["repositories"] = repositories
         return True
-

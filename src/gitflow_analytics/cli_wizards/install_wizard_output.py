@@ -10,11 +10,9 @@ import logging
 import os
 import stat
 import subprocess
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import click
 import requests

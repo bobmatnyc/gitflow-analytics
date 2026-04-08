@@ -4,13 +4,10 @@ Extracted from narrative_writer.py to keep file sizes manageable.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
 from io import StringIO
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
 
 
 class NarrativeRecommendationsMixin:

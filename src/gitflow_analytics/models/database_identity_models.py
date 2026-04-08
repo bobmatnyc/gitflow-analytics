@@ -1,21 +1,17 @@
 """Identity-related database models for GitFlow Analytics."""
 
-from datetime import datetime, timezone
-from typing import Any
-
 from sqlalchemy import (
-    Boolean,
+    JSON,
     Column,
     DateTime,
     Float,
-    ForeignKey,
     Index,
     Integer,
-    JSON,
     String,
 )
 
 from .database_base import Base, utcnow_tz_aware
+
 
 class DeveloperIdentity(Base):
     """Developer identity mappings."""
@@ -44,7 +40,6 @@ class DeveloperIdentity(Base):
     )
 
 
-
 class DeveloperAlias(Base):
     """Alternative names/emails for developers."""
 
@@ -60,7 +55,6 @@ class DeveloperAlias(Base):
         Index("idx_alias_canonical_id", "canonical_id"),
         Index("idx_name_email", "name", "email", unique=True),
     )
-
 
 
 class PatternCache(Base):
@@ -102,6 +96,3 @@ class PatternCache(Base):
         Index("idx_last_used", "last_used"),
         Index("idx_source_method", "source_method"),
     )
-
-
-

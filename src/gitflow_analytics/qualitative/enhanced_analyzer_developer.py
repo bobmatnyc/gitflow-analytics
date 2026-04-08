@@ -1,42 +1,11 @@
 """Developer analysis mixin for EnhancedQualitativeAnalyzer."""
 
-"""Enhanced qualitative analyzer for GitFlow Analytics.
-
-This module provides sophisticated qualitative analysis across four key dimensions:
-1. Executive Summary Analysis - High-level team health and strategic insights
-2. Project Analysis - Project-specific momentum and health assessment
-3. Developer Analysis - Individual contribution patterns and career development
-4. Workflow Analysis - Process effectiveness and Git-PM correlation analysis
-
-WHY: Traditional quantitative metrics only tell part of the story. This enhanced analyzer
-combines statistical analysis with pattern recognition to generate actionable insights
-for different stakeholder levels - from executives to individual developers.
-
-DESIGN DECISIONS:
-- Confidence-based scoring: All insights include confidence scores for reliability
-- Multi-dimensional analysis: Each section focuses on different aspects of team performance
-- Natural language generation: Produces human-readable insights and recommendations
-- Anomaly detection: Identifies unusual patterns that merit attention
-- Risk assessment: Flags potential issues before they become critical
-
-INTEGRATION: Works with existing qualitative pipeline and extends JSON export format
-with structured analysis results that can be consumed by dashboards and reports.
-"""
-
 import logging
 import statistics
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
-
-import numpy as np
-
-from .models.schemas import QualitativeCommitData
-from .utils.metrics import PerformanceMetrics
+from typing import Any
 
 logger = logging.getLogger(__name__)
-
-
 
 
 class DeveloperAnalysisMixin:
@@ -500,4 +469,3 @@ class DeveloperAnalysisMixin:
         return " ".join(narrative_parts)
 
     # Workflow Analysis Helper Methods
-

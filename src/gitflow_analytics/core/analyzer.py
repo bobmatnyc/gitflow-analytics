@@ -1,21 +1,13 @@
 """Git repository analyzer with batch processing support."""
 
 import logging
-import re
-from collections.abc import Generator
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-import git
 from git import Repo
 
-from ..types import FilteredCommitStats
-from ..utils.commit_utils import extract_co_authors, is_merge_commit
 from ..utils.debug import is_debug_mode
-from ..utils.glob_matcher import match_recursive_pattern as _match_recursive_pattern_fn
-from ..utils.glob_matcher import matches_glob_pattern as _matches_glob_pattern_fn
-from ..utils.glob_matcher import should_exclude_file as _should_exclude_file_fn
 from .analysis_components import (
     build_branch_mapper,
     build_story_point_extractor,
@@ -28,9 +20,8 @@ from .progress import get_progress_service
 logger = logging.getLogger(__name__)
 
 
-
-from .analyzer_git import GitAnalyzerMixin
-from .analyzer_commit import CommitAnalyzerMixin
+from .analyzer_commit import CommitAnalyzerMixin  # noqa: E402
+from .analyzer_git import GitAnalyzerMixin  # noqa: E402
 
 
 class GitAnalyzer(GitAnalyzerMixin, CommitAnalyzerMixin):
@@ -372,4 +363,3 @@ class GitAnalyzer(GitAnalyzerMixin, CommitAnalyzerMixin):
             logger.warning(f"Marked {repo_name} analysis as failed: {error_message}")
         except Exception as e:
             logger.error(f"Failed to mark analysis failure for {repo_name}: {e}")
-

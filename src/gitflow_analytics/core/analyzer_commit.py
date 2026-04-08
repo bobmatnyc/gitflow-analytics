@@ -1,34 +1,21 @@
 """Commit analysis mixin for GitAnalyzer."""
 
-"""Git repository analyzer with batch processing support."""
-
 import logging
-import re
-from collections.abc import Generator
-from datetime import datetime, timedelta, timezone
+from datetime import timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import git
 from git import Repo
 
 from ..types import FilteredCommitStats
 from ..utils.commit_utils import extract_co_authors, is_merge_commit
-from ..utils.debug import is_debug_mode
 from ..utils.glob_matcher import match_recursive_pattern as _match_recursive_pattern_fn
 from ..utils.glob_matcher import matches_glob_pattern as _matches_glob_pattern_fn
 from ..utils.glob_matcher import should_exclude_file as _should_exclude_file_fn
-from .analysis_components import (
-    build_branch_mapper,
-    build_story_point_extractor,
-    build_ticket_extractor,
-)
-from .cache import GitAnalysisCache
-from .progress import get_progress_service
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
-
 
 
 class CommitAnalyzerMixin:
@@ -43,7 +30,6 @@ class CommitAnalyzerMixin:
         )
 
         # Ensure timezone-aware timestamp in UTC
-        from datetime import timezone
 
         if commit_timestamp.tzinfo is None:
             # Convert naive datetime to UTC

@@ -9,7 +9,6 @@ from typing import Optional
 import click
 
 from ._version import __version__
-from .cli_formatting import handle_timezone_error
 from .cli_utils import setup_logging
 from .config import ConfigLoader
 from .ui.progress_display import create_progress_display

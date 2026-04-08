@@ -8,12 +8,13 @@ reporting infrastructure.
 Detailed CSV reports are implemented in classification_csv.ClassificationCsvMixin.
 """
 
+import csv
 import json
 import logging
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from .classification_csv import ClassificationCsvMixin
 
@@ -36,7 +37,7 @@ class ClassificationReportGenerator(ClassificationCsvMixin):
     - Export to multiple formats (CSV, JSON, Markdown)
     """
 
-    def __init__(self, output_directory: Path, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, output_directory: Path, config: Optional[dict[str, Any]] = None):
         """Initialize the classification report generator.
 
         Args:
@@ -60,8 +61,8 @@ class ClassificationReportGenerator(ClassificationCsvMixin):
         )
 
     def generate_comprehensive_report(
-        self, classified_commits: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, str]:
+        self, classified_commits: list[dict[str, Any]], metadata: Optional[dict[str, Any]] = None
+    ) -> dict[str, str]:
         """Generate all available classification reports.
 
         Args:
@@ -133,7 +134,7 @@ class ClassificationReportGenerator(ClassificationCsvMixin):
             return report_paths
 
     def generate_summary_report(
-        self, classified_commits: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None
+        self, classified_commits: list[dict[str, Any]], metadata: Optional[dict[str, Any]] = None
     ) -> str:
         """Generate high-level summary report.
 
@@ -192,7 +193,7 @@ class ClassificationReportGenerator(ClassificationCsvMixin):
             writer.writerow(
                 [
                     "High Confidence Predictions",
-                    f"{high_confidence_count} ({(high_confidence_count/total_commits)*100:.1f}%)",
+                    f"{high_confidence_count} ({(high_confidence_count / total_commits) * 100:.1f}%)",
                 ]
             )
             writer.writerow([])
@@ -211,7 +212,7 @@ class ClassificationReportGenerator(ClassificationCsvMixin):
     # generate_detailed_csv_report is in ClassificationCsvMixin (classification_csv.py)
 
     def generate_executive_summary_report(
-        self, classified_commits: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None
+        self, classified_commits: list[dict[str, Any]], metadata: Optional[dict[str, Any]] = None
     ) -> str:
         """Generate executive summary report for leadership.
 
@@ -249,10 +250,7 @@ class ClassificationReportGenerator(ClassificationCsvMixin):
 
         # Time span analysis
         commit_dates = [c["timestamp"] for c in classified_commits if c.get("timestamp")]
-        if commit_dates:
-            analysis_span = (max(commit_dates) - min(commit_dates)).days
-        else:
-            analysis_span = 0
+        analysis_span = (max(commit_dates) - min(commit_dates)).days if commit_dates else 0
 
         with open(output_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -387,7 +385,7 @@ class ClassificationReportGenerator(ClassificationCsvMixin):
         return str(output_path)
 
     def generate_json_export(
-        self, classified_commits: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None
+        self, classified_commits: list[dict[str, Any]], metadata: Optional[dict[str, Any]] = None
     ) -> str:
         """Generate comprehensive JSON export of all classification data.
 
@@ -422,7 +420,7 @@ class ClassificationReportGenerator(ClassificationCsvMixin):
         return str(output_path)
 
     def generate_markdown_summary(
-        self, classified_commits: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None
+        self, classified_commits: list[dict[str, Any]], metadata: Optional[dict[str, Any]] = None
     ) -> str:
         """Generate markdown summary report.
 
@@ -467,7 +465,7 @@ class ClassificationReportGenerator(ClassificationCsvMixin):
                 )
                 f.write(f"- **Average Confidence:** {avg_confidence:.1%}\n")
                 f.write(
-                    f"- **High Confidence Predictions:** {high_confidence_count:,} ({(high_confidence_count/total_commits)*100:.1f}%)\n"
+                    f"- **High Confidence Predictions:** {high_confidence_count:,} ({(high_confidence_count / total_commits) * 100:.1f}%)\n"
                 )
 
             f.write("\n## Classification Distribution\n\n")
@@ -492,8 +490,8 @@ class ClassificationReportGenerator(ClassificationCsvMixin):
         return str(output_path)
 
     def _calculate_summary_statistics(
-        self, classified_commits: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, classified_commits: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Calculate comprehensive summary statistics.
 
         Args:

@@ -1,20 +1,10 @@
 """Rich-based progress display - public API."""
 
-"""
-Rich-based progress display for GitFlow Analytics.
-
-This module provides a sophisticated progress meter using the Rich library
-for beautiful terminal output with live updates and statistics.
-"""
-
 import logging
 import threading
-import time
 from contextlib import contextmanager
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from enum import Enum
-from typing import Any, Optional
+from datetime import datetime
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +18,7 @@ except ImportError:
 
 try:
     from rich import box
-    from rich.console import Console, Group
+    from rich.console import Console
     from rich.live import Live
     from rich.panel import Panel
     from rich.progress import (
@@ -47,13 +37,16 @@ except ImportError:
     RICH_AVAILABLE = False
 
 
-
-from .progress_display_rich_render import RichDisplayRenderMixin
+from .progress_display_rich_render import RichDisplayRenderMixin  # noqa: E402
+from .progress_display_types import (  # noqa: E402
+    ProgressStatistics,
+    RepositoryInfo,
+    RepositoryStatus,
+)
 
 
 class RichProgressDisplay(RichDisplayRenderMixin):
     """Rich terminal progress display with live updates and statistics."""
-
 
     def __init__(self, version: str = "1.3.11", update_frequency: float = 0.25):
         """
@@ -615,5 +608,3 @@ class RichProgressDisplay(RichDisplayRenderMixin):
     def stop_live_display(self):
         """Stop live display - compatibility wrapper for stop()."""
         self.stop()
-
-

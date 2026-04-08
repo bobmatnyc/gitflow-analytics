@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import click
 
@@ -78,9 +78,7 @@ def run_batch_mode(
             completed=15,
         )
     else:
-        click.echo(
-            f"📥 Step 1: Fetching data for {len(repositories_to_analyze)} repositories..."
-        )
+        click.echo(f"📥 Step 1: Fetching data for {len(repositories_to_analyze)} repositories...")
 
     fetch_result = fetch_repositories_batch(
         cfg=cfg,
@@ -135,9 +133,7 @@ def run_batch_mode(
         result.developer_stats = identity_resolver.get_developer_stats(
             ticket_coverage=result.developer_ticket_coverage
         )
-        result.ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
-            [], [], display
-        )
+        result.ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage([], [], display)
         return result
 
     if validation_passed:
@@ -157,9 +153,7 @@ def run_batch_mode(
     if display:
         display.print_status("Step 2: Batch classification...", "info")
         display.start_live_display()
-        display.add_progress_task(
-            "repos", "Classifying batches", existing_batches or 1
-        )
+        display.add_progress_task("repos", "Classifying batches", existing_batches or 1)
     else:
         click.echo("🧠 Step 2: Batch classification...")
 
@@ -183,12 +177,8 @@ def run_batch_mode(
         )
     else:
         click.echo("   ✅ Batch classification completed:")
-        click.echo(
-            f"      - Processed batches: {classification_result.processed_batches}"
-        )
-        click.echo(
-            f"      - Total commits: {classification_result.total_commits}"
-        )
+        click.echo(f"      - Processed batches: {classification_result.processed_batches}")
+        click.echo(f"      - Total commits: {classification_result.total_commits}")
 
     # Load classified commits from DB
     if display:
@@ -288,9 +278,7 @@ def run_traditional_mode(
     result = AnalysisModeResult()
 
     if display and display._live:
-        display.add_progress_task(
-            "repos", "Processing repositories", len(repositories_to_analyze)
-        )
+        display.add_progress_task("repos", "Processing repositories", len(repositories_to_analyze))
 
     orchestrator = IntegrationOrchestrator(cfg, cache)
 
@@ -299,18 +287,17 @@ def run_traditional_mode(
             display.update_progress_task(
                 "repos",
                 description=(
-                    f"Analyzing {repo_config.name}... "
-                    f"({idx}/{len(repositories_to_analyze)})"
+                    f"Analyzing {repo_config.name}... ({idx}/{len(repositories_to_analyze)})"
                 ),
             )
         else:
             click.echo(
-                f"\n📁 Analyzing {repo_config.name}... "
-                f"({idx}/{len(repositories_to_analyze)})"
+                f"\n📁 Analyzing {repo_config.name}... ({idx}/{len(repositories_to_analyze)})"
             )
 
         if not repo_config.path.exists():
             if repo_config.github_repo and cfg.github.organization:
+
                 def _clone_p(msg: str) -> None:
                     if display:
                         display.print_status(f"   {msg}", "info")
@@ -330,17 +317,13 @@ def run_traditional_mode(
                     continue
             else:
                 if display:
-                    display.print_status(
-                        f"Repository path not found: {repo_config.path}", "error"
-                    )
+                    display.print_status(f"Repository path not found: {repo_config.path}", "error")
                 else:
                     click.echo(f"   ❌ Repository path not found: {repo_config.path}")
                 continue
 
         try:
-            commits = analyzer.analyze_repository(
-                repo_config.path, start_date, repo_config.branch
-            )
+            commits = analyzer.analyze_repository(repo_config.path, start_date, repo_config.branch)
             for commit in commits:
                 if repo_config.project_key and repo_config.project_key != "UNKNOWN":
                     commit["project_key"] = repo_config.project_key
@@ -364,16 +347,12 @@ def run_traditional_mode(
             )
             result.branch_health_metrics[repo_config.name] = branch_metrics
 
-            enrichment = orchestrator.enrich_repository_data(
-                repo_config, commits, start_date
-            )
+            enrichment = orchestrator.enrich_repository_data(repo_config, commits, start_date)
             result.all_enrichments[repo_config.name] = enrichment
             if enrichment["prs"]:
                 result.all_prs.extend(enrichment["prs"])
                 if display:
-                    display.print_status(
-                        f"Found {len(enrichment['prs'])} pull requests", "success"
-                    )
+                    display.print_status(f"Found {len(enrichment['prs'])} pull requests", "success")
                 else:
                     click.echo(f"   ✅ Found {len(enrichment['prs'])} pull requests")
         except Exception as e:
@@ -401,9 +380,7 @@ def run_traditional_mode(
             click.echo(f"\n   ℹ️  {empty_msg}")
         identity_resolver.update_commit_stats([])
         result.developer_stats = identity_resolver.get_developer_stats(ticket_coverage={})
-        result.ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage(
-            [], [], display
-        )
+        result.ticket_analysis = analyzer.ticket_extractor.analyze_ticket_coverage([], [], display)
         return result
 
     # Identity resolution
@@ -430,6 +407,7 @@ def run_traditional_mode(
     )
     if should_check_identities:
         from .cli_analysis_helpers import run_identity_analysis
+
         run_identity_analysis(
             config=config,
             cfg=cfg,
@@ -457,9 +435,7 @@ def run_traditional_mode(
     )
     for platform, count in result.ticket_analysis["ticket_summary"].items():
         if display:
-            display.print_status(
-                f"{platform.title()}: {count} unique tickets", "success"
-            )
+            display.print_status(f"{platform.title()}: {count} unique tickets", "success")
         else:
             click.echo(f"   - {platform.title()}: {count} unique tickets")
 

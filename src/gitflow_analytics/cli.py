@@ -103,7 +103,7 @@ def cli(ctx: click.Context) -> None:
 # Register commands from sub-modules
 # ---------------------------------------------------------------------------
 
-from .cli_analysis import analyze_subcommand, register_analysis_commands  # noqa: E402
+from .cli_analysis import register_analysis_commands  # noqa: E402
 from .cli_setup import register_setup_commands  # noqa: E402
 from .cli_training import register_training_commands  # noqa: E402
 
@@ -113,12 +113,6 @@ register_training_commands(cli)
 
 # Identity / alias commands from dedicated module
 from .cli_identity import (  # noqa: E402
-    alias_rename,
-    aliases_command,
-    create_alias_interactive,
-    identities,
-    list_developers,
-    merge_identity,
     register_identity_commands,
 )
 

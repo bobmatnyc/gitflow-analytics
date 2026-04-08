@@ -5,7 +5,6 @@ Extracted from jira_adapter.py for size management.
 
 import logging
 import sqlite3
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
@@ -494,4 +493,3 @@ class JiraTicketCache:
             print("   ⚠️  Consider adjusting TTL or clearing stale entries")
 
         print()
-

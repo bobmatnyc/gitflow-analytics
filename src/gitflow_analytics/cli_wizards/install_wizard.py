@@ -9,15 +9,16 @@ Method groups extracted to sibling modules via mixins:
 - install_wizard_output.py: AI/analysis/file generation (InstallWizardOutputMixin)
 """
 
+import getpass
 import logging
-import os
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
 import click
-import yaml
+import requests
 from github import Github
 from github.GithubException import GithubException
 
@@ -502,7 +503,6 @@ class InstallWizard(InstallWizardOutputMixin, InstallWizardPMMixin, InstallWizar
         Returns:
             Normalized Git URL if detected, None if it's a local path
         """
-        import re
 
         # HTTPS URL patterns
         https_pattern = r"^https?://[^/]+/[^/]+/[^/]+(?:\.git)?$"
@@ -518,4 +518,3 @@ class InstallWizard(InstallWizardOutputMixin, InstallWizardPMMixin, InstallWizar
             return input_str
 
         return None
-

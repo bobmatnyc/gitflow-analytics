@@ -7,12 +7,11 @@ Methods: _setup_jira, _setup_linear, _validate_linear, _setup_clickup,
 """
 
 import logging
-import os
+import time
 from typing import Optional
 
 import click
 import requests
-import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -489,4 +488,3 @@ class InstallWizardPMMixin:
             # Always restore logging levels
             urllib3_logger.setLevel(original_urllib3)
             requests_logger.setLevel(original_requests)
-

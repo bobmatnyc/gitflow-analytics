@@ -15,8 +15,6 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from ..metrics.activity_scoring import ActivityScorer
-
 logger = logging.getLogger(__name__)
 
 
@@ -706,4 +704,3 @@ class CSVWeeklyReportsMixin:
             result[key] = metrics
 
         return result
-
