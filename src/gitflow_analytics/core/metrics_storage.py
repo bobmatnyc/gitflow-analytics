@@ -10,14 +10,73 @@ from collections import defaultdict
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict, cast
 
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from ..models.database import DailyMetrics, Database
+from ..utils.ai_detection import detect_ai_tool, is_ai_generated
 
 logger = logging.getLogger(__name__)
+
+
+class _DayStats(TypedDict):
+    """Typed accumulator for one developer+project+day bucket.
+
+    WHY: Using TypedDict instead of a plain dict lets Pyright resolve each
+    field to its concrete type, eliminating the broad ``int | set | str``
+    union that otherwise blocks all arithmetic and set operations.
+    """
+
+    total_commits: int
+    feature_commits: int
+    bug_fix_commits: int
+    refactor_commits: int
+    documentation_commits: int
+    maintenance_commits: int
+    test_commits: int
+    style_commits: int
+    build_commits: int
+    other_commits: int
+    files_changed: int
+    lines_added: int
+    lines_deleted: int
+    story_points: int
+    tracked_commits: int
+    untracked_commits: int
+    unique_tickets: set[str]
+    merge_commits: int
+    complex_commits: int
+    developer_name: str
+    developer_email: str
+
+
+def _make_day_stats() -> _DayStats:
+    """Return a zeroed _DayStats bucket for use as defaultdict factory."""
+    return _DayStats(
+        total_commits=0,
+        feature_commits=0,
+        bug_fix_commits=0,
+        refactor_commits=0,
+        documentation_commits=0,
+        maintenance_commits=0,
+        test_commits=0,
+        style_commits=0,
+        build_commits=0,
+        other_commits=0,
+        files_changed=0,
+        lines_added=0,
+        lines_deleted=0,
+        story_points=0,
+        tracked_commits=0,
+        untracked_commits=0,
+        unique_tickets=set(),
+        merge_commits=0,
+        complex_commits=0,
+        developer_name="",
+        developer_email="",
+    )
 
 
 class DailyMetricsStorage:
@@ -234,7 +293,7 @@ class DailyMetricsStorage:
 
     def get_classification_summary(
         self, start_date: date, end_date: date
-    ) -> dict[str, dict[str, int]]:
+    ) -> dict[str, dict[str, dict[str, int]]]:
         """Get classification summary across all developers and projects.
 
         Args:
@@ -305,30 +364,20 @@ class DailyMetricsStorage:
         WHY: Groups commits by developer and project for the target date,
         calculating all relevant metrics for storage.
         """
-        # Group commits by developer and project for the target date
-        daily_groups = defaultdict(
+        # Group commits by developer and project for the target date.
+        # _make_day_stats() is used as the factory so Pyright can infer the
+        # concrete _DayStats type for each bucket instead of a broad union.
+        daily_groups: defaultdict[tuple[str, str], _DayStats] = defaultdict(_make_day_stats)
+
+        # Separate plain dict for AI tracking — avoids TypedDict set/int union
+        # complexity that Pyright cannot resolve cleanly inside _DayStats.
+        ai_data: dict[tuple[str, str], dict[str, Any]] = defaultdict(
             lambda: {
-                "total_commits": 0,
-                "feature_commits": 0,
-                "bug_fix_commits": 0,
-                "refactor_commits": 0,
-                "documentation_commits": 0,
-                "maintenance_commits": 0,
-                "test_commits": 0,
-                "style_commits": 0,
-                "build_commits": 0,
-                "other_commits": 0,
-                "files_changed": 0,
-                "lines_added": 0,
-                "lines_deleted": 0,
-                "story_points": 0,
-                "tracked_commits": 0,
-                "untracked_commits": 0,
-                "unique_tickets": set(),
-                "merge_commits": 0,
-                "complex_commits": 0,
-                "developer_name": "",
-                "developer_email": "",
+                "ai_assisted_commits": 0,
+                "ai_generated_commits": 0,
+                "ai_assisted_lines": 0,
+                "ai_generated_lines": 0,
+                "_ai_tools_used": set(),
             }
         )
 
@@ -356,16 +405,18 @@ class DailyMetricsStorage:
                 },
             )
 
-            dev_id = dev_identity.get("canonical_id", author_email)
-            project_key = commit.get("project_key", "default")
+            dev_id: str = str(dev_identity.get("canonical_id", author_email) or author_email)
+            project_key: str = str(commit.get("project_key", "default") or "default")
 
             metrics = daily_groups[(dev_id, project_key)]
 
             # Set developer info (will be overwritten with same values, that's OK)
-            metrics["developer_name"] = dev_identity.get(
-                "name", commit.get("author_name", "Unknown")
+            metrics["developer_name"] = str(
+                dev_identity.get("name", commit.get("author_name", "Unknown")) or "Unknown"
             )
-            metrics["developer_email"] = dev_identity.get("email", author_email)
+            metrics["developer_email"] = str(
+                dev_identity.get("email", author_email) or author_email
+            )
 
             # Aggregate basic metrics
             metrics["total_commits"] += 1
@@ -407,6 +458,22 @@ class DailyMetricsStorage:
             else:
                 metrics["untracked_commits"] += 1
 
+            # AI tool usage detection — accumulated in ai_data (plain dict) to
+            # avoid TypedDict set/int union issues that Pyright cannot resolve.
+            msg = str(commit.get("message", "") or "")
+            tool = detect_ai_tool(msg)
+            if tool is not None:
+                ai_bucket = ai_data[(dev_id, project_key)]
+                ai_bucket["ai_assisted_commits"] += 1
+                cast(set[str], ai_bucket["_ai_tools_used"]).add(tool)
+                lines_val = int(
+                    commit.get("filtered_insertions", 0) or commit.get("insertions", 0) or 0
+                )
+                ai_bucket["ai_assisted_lines"] += lines_val
+                if is_ai_generated(msg):
+                    ai_bucket["ai_generated_commits"] += 1
+                    ai_bucket["ai_generated_lines"] += lines_val
+
             # Work patterns
             if commit.get("is_merge", False):
                 metrics["merge_commits"] += 1
@@ -414,11 +481,36 @@ class DailyMetricsStorage:
             if commit.get("files_changed", 0) > 5:
                 metrics["complex_commits"] += 1
 
-        # Convert sets to counts
-        for metrics in daily_groups.values():
-            metrics["unique_tickets"] = len(metrics["unique_tickets"])
+        # Convert sets to scalar values and merge AI accumulator data.
+        # We cast to dict[str, Any] here because we're intentionally replacing
+        # set fields with their int/str summaries, which TypedDict can't express.
+        result: dict[tuple[str, str], dict[str, Any]] = {}
+        for key, day in daily_groups.items():
+            out: dict[str, Any] = dict(day)
+            out["unique_tickets"] = len(day["unique_tickets"])
+            # Merge AI metrics from the separate accumulator
+            if key in ai_data:
+                ai = ai_data[key]
+                tools_set: set[str] = cast(set[str], ai["_ai_tools_used"])
+                if len(tools_set) == 0:
+                    out["ai_tool_primary"] = ""
+                elif len(tools_set) == 1:
+                    out["ai_tool_primary"] = next(iter(tools_set))
+                else:
+                    out["ai_tool_primary"] = "mixed"
+                out["ai_assisted_commits"] = ai["ai_assisted_commits"]
+                out["ai_generated_commits"] = ai["ai_generated_commits"]
+                out["ai_assisted_lines"] = ai["ai_assisted_lines"]
+                out["ai_generated_lines"] = ai["ai_generated_lines"]
+            else:
+                out["ai_tool_primary"] = ""
+                out["ai_assisted_commits"] = 0
+                out["ai_generated_commits"] = 0
+                out["ai_assisted_lines"] = 0
+                out["ai_generated_lines"] = 0
+            result[key] = out
 
-        return dict(daily_groups)
+        return result
 
     def _update_metrics_record(self, record: DailyMetrics, metrics: dict[str, Any]) -> None:
         """Update an existing DailyMetrics record with new data."""
@@ -453,6 +545,11 @@ class DailyMetricsStorage:
             "unique_tickets": record.unique_tickets,
             "merge_commits": record.merge_commits,
             "complex_commits": record.complex_commits,
+            "ai_assisted_commits": record.ai_assisted_commits,
+            "ai_generated_commits": record.ai_generated_commits,
+            "ai_tool_primary": record.ai_tool_primary,
+            "ai_assisted_lines": record.ai_assisted_lines,
+            "ai_generated_lines": record.ai_generated_lines,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }

@@ -1,7 +1,6 @@
 """Commit-related database models for GitFlow Analytics."""
 
 from datetime import datetime, timezone
-from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -9,7 +8,6 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
-    ForeignKey,
     Index,
     Integer,
     String,
@@ -17,6 +15,7 @@ from sqlalchemy import (
 )
 
 from .database_base import Base, utcnow_tz_aware
+
 
 class CachedCommit(Base):
     """Cached commit analysis results."""
@@ -61,7 +60,6 @@ class CachedCommit(Base):
         Index("idx_timestamp", "timestamp"),
         Index("idx_cached_at", "cached_at"),
     )
-
 
 
 class RepositoryAnalysisStatus(Base):
@@ -134,7 +132,6 @@ class RepositoryAnalysisStatus(Base):
     )
 
 
-
 class DailyCommitBatch(Base):
     """Daily batches of commits organized for efficient data collection and retrieval.
 
@@ -180,7 +177,6 @@ class DailyCommitBatch(Base):
         Index("idx_batch_unique", "date", "project_key", "repo_path", unique=True),
         Index("idx_batch_date_range", "date", "project_key"),
     )
-
 
 
 class DetailedTicketData(Base):
@@ -249,7 +245,6 @@ class DetailedTicketData(Base):
     )
 
 
-
 class CommitClassificationBatch(Base):
     """Batch classification results with context and confidence tracking.
 
@@ -311,7 +306,6 @@ class CommitClassificationBatch(Base):
     )
 
 
-
 class CommitTicketCorrelation(Base):
     """Correlations between commits and tickets for context-aware classification.
 
@@ -352,7 +346,6 @@ class CommitTicketCorrelation(Base):
         Index("idx_corr_project", "project_key"),
         Index("idx_corr_unique", "commit_hash", "repo_path", "ticket_id", "platform", unique=True),
     )
-
 
 
 class DailyMetrics(Base):
@@ -402,6 +395,15 @@ class DailyMetrics(Base):
     merge_commits = Column(Integer, default=0)
     complex_commits = Column(Integer, default=0)  # Commits with >5 files changed
 
+    # AI tool usage tracking (per-developer, per-day)
+    ai_assisted_commits = Column(Integer, default=0)  # Commits with any AI tool marker
+    ai_generated_commits = Column(Integer, default=0)  # Commits that appear fully AI-generated
+    ai_tool_primary = Column(
+        String, default=""
+    )  # 'copilot', 'claude_code', 'cursor', 'mixed', or ''
+    ai_assisted_lines = Column(Integer, default=0)  # Lines added in AI-assisted commits
+    ai_generated_lines = Column(Integer, default=0)  # Lines added in AI-generated commits
+
     # Metadata
     created_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=utcnow_tz_aware)
@@ -414,7 +416,6 @@ class DailyMetrics(Base):
         Index("idx_daily_date_range", "date", "developer_id", "project_key"),
         Index("idx_daily_unique", "date", "developer_id", "project_key", unique=True),
     )
-
 
 
 class WeeklyTrends(Base):
@@ -459,7 +460,6 @@ class WeeklyTrends(Base):
     )
 
 
-
 class WeeklyFetchStatus(Base):
     """Track which Monday-aligned ISO weeks have been fetched per repository.
 
@@ -502,7 +502,6 @@ class WeeklyFetchStatus(Base):
     )
 
 
-
 class SchemaVersion(Base):
     """Track database schema versions for automatic migrations.
 
@@ -518,6 +517,3 @@ class SchemaVersion(Base):
     upgraded_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
     previous_version = Column(String, nullable=True)
     migration_notes = Column(String, nullable=True)
-
-
-

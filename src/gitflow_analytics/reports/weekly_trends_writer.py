@@ -1,12 +1,14 @@
 """Weekly classification trends CSV report generation."""
 
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 import pandas as pd
+
+from gitflow_analytics.utils.ai_detection import detect_ai_tool
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +172,12 @@ class WeeklyTrendsWriter:
         # Weeks are keyed by their Monday date to ensure stable, calendar-aligned keys.
         latest_week_start = self._get_week_start(latest_date_obj)
 
+        # Track AI data per developer per week:
+        # developer_ai_weeks[developer][week_num] = {"assisted": int, "tools": Counter}
+        developer_ai_weeks: dict[str, dict[int, dict[str, Any]]] = defaultdict(
+            lambda: defaultdict(lambda: {"assisted": 0, "tools": Counter()})
+        )
+
         # Group commits by developer, week (Monday date key), and classification
         for commit in sorted_commits:
             timestamp = commit.get("timestamp")
@@ -200,6 +208,13 @@ class WeeklyTrendsWriter:
 
             # Key by (week_num, week_start_date) so we can recover the date later
             developer_weeks[developer][week_num][classification] += 1
+
+            # Track AI tool usage for this developer-week
+            tool = detect_ai_tool(commit.get("message", ""))
+            if tool:
+                developer_ai_weeks[developer][week_num]["assisted"] += 1
+                tool_key = tool if tool != "mixed" else "mixed"
+                developer_ai_weeks[developer][week_num]["tools"][tool_key] += 1
 
         # Build a mapping from week_num → Monday date for display
         week_num_to_date: dict[int, date] = {
@@ -251,6 +266,16 @@ class WeeklyTrendsWriter:
                         pct_change = 0.0  # No previous data
 
                     row[f"{category}_pct_change"] = round(pct_change, 1)
+
+                # Add AI adoption columns for this developer-week
+                ai_week = developer_ai_weeks.get(developer, {}).get(week_num, {})
+                ai_assisted = ai_week.get("assisted", 0)
+                row["ai_assisted_commits"] = ai_assisted
+                row["ai_assisted_pct"] = (
+                    round(ai_assisted / total_commits * 100, 1) if total_commits > 0 else 0.0
+                )
+                tools_counter: Counter = ai_week.get("tools", Counter())
+                row["primary_ai_tool"] = tools_counter.most_common(1)[0][0] if tools_counter else ""
 
                 rows.append(row)
 
@@ -313,6 +338,11 @@ class WeeklyTrendsWriter:
 
         latest_week_start = self._get_week_start(latest_date_obj)
 
+        # Track AI data per project per week
+        project_ai_weeks: dict[str, dict[int, dict[str, Any]]] = defaultdict(
+            lambda: defaultdict(lambda: {"assisted": 0, "tools": Counter()})
+        )
+
         # Group commits by project, week (Monday date key), and classification
         for commit in sorted_commits:
             timestamp = commit.get("timestamp")
@@ -334,6 +364,13 @@ class WeeklyTrendsWriter:
             classification = self._get_commit_classification(commit, categorize_fn)
 
             project_weeks[project][week_num][classification] += 1
+
+            # Track AI tool usage for this project-week
+            tool = detect_ai_tool(commit.get("message", ""))
+            if tool:
+                project_ai_weeks[project][week_num]["assisted"] += 1
+                tool_key = tool if tool != "mixed" else "mixed"
+                project_ai_weeks[project][week_num]["tools"][tool_key] += 1
 
         # Build a mapping from week_num → Monday date for display
         week_num_to_date: dict[int, date] = {
@@ -384,6 +421,16 @@ class WeeklyTrendsWriter:
                         pct_change = 0.0  # No previous data
 
                     row[f"{category}_pct_change"] = round(pct_change, 1)
+
+                # Add AI adoption columns for this project-week
+                ai_week = project_ai_weeks.get(project, {}).get(week_num, {})
+                ai_assisted = ai_week.get("assisted", 0)
+                row["ai_assisted_commits"] = ai_assisted
+                row["ai_assisted_pct"] = (
+                    round(ai_assisted / total_commits * 100, 1) if total_commits > 0 else 0.0
+                )
+                tools_counter: Counter = ai_week.get("tools", Counter())
+                row["primary_ai_tool"] = tools_counter.most_common(1)[0][0] if tools_counter else ""
 
                 rows.append(row)
 
@@ -482,6 +529,9 @@ class WeeklyTrendsWriter:
         for category in self.classification_categories:
             columns.extend([f"{category}_count", f"{category}_pct_change"])
 
+        # AI adoption columns
+        columns.extend(["ai_assisted_commits", "ai_assisted_pct", "primary_ai_tool"])
+
         empty_df = pd.DataFrame(columns=columns)
         empty_df.to_csv(output_path, index=False)
         logger.info(f"Generated empty developer weekly trends CSV: {output_path}")
@@ -497,6 +547,9 @@ class WeeklyTrendsWriter:
         # Add count and percentage change columns for each category
         for category in self.classification_categories:
             columns.extend([f"{category}_count", f"{category}_pct_change"])
+
+        # AI adoption columns
+        columns.extend(["ai_assisted_commits", "ai_assisted_pct", "primary_ai_tool"])
 
         empty_df = pd.DataFrame(columns=columns)
         empty_df.to_csv(output_path, index=False)

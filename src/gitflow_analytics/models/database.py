@@ -604,6 +604,12 @@ class Database:
                 # NULL, which is the correct default for rule-based classifications.
                 self._migrate_qualitative_commits_v5(conn)
 
+                # --- AI tool tracking columns (v6.0 migration) ---
+                # WHY: Per-developer AI tool usage metrics were added to daily_metrics to
+                # enable tracking of Claude Code, Copilot, and Cursor adoption over time.
+                # Existing rows receive default values (0 / empty string).
+                self._migrate_daily_metrics_ai_columns(conn)
+
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
             logger.debug(
@@ -757,3 +763,55 @@ class Database:
                     f"Could not add qualitative_commits.complexity "
                     f"(may already exist or DB is readonly): {e}"
                 )
+
+    def _migrate_daily_metrics_ai_columns(self, conn) -> None:
+        """Add AI tool tracking columns to daily_metrics (v6.0 migration).
+
+        WHY: These five columns were introduced to track per-developer AI tool
+        usage (Claude Code, Copilot, Cursor) at commit level.  Existing databases
+        will not have them, so ALTER TABLE is used to add them without touching
+        existing rows.  Each column is added individually inside its own
+        try/except to be idempotent.
+
+        Columns added:
+            ai_assisted_commits  - INTEGER: commits with any AI tool marker
+            ai_generated_commits - INTEGER: commits that appear fully AI-generated
+            ai_tool_primary      - VARCHAR: dominant tool for the day
+            ai_assisted_lines    - INTEGER: lines added in AI-assisted commits
+            ai_generated_lines   - INTEGER: lines added in AI-generated commits
+        """
+        try:
+            result = conn.execute(text("PRAGMA table_info(daily_metrics)"))
+            existing_columns = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read daily_metrics schema for v6 migration: {e}")
+            return
+
+        new_columns: list[tuple[str, str]] = [
+            ("ai_assisted_commits", "INTEGER DEFAULT 0"),
+            ("ai_generated_commits", "INTEGER DEFAULT 0"),
+            ("ai_tool_primary", "VARCHAR DEFAULT ''"),
+            ("ai_assisted_lines", "INTEGER DEFAULT 0"),
+            ("ai_generated_lines", "INTEGER DEFAULT 0"),
+        ]
+
+        added: list[str] = []
+        for col_name, col_type in new_columns:
+            if col_name not in existing_columns:
+                try:
+                    conn.execute(
+                        text(f"ALTER TABLE daily_metrics ADD COLUMN {col_name} {col_type}")
+                    )
+                    conn.commit()
+                    added.append(col_name)
+                except Exception as e:
+                    logger.debug(
+                        f"Could not add daily_metrics.{col_name} "
+                        f"(may already exist or DB is readonly): {e}"
+                    )
+
+        if added:
+            logger.info(
+                "Applied daily_metrics v6.0 migration: added columns %s",
+                ", ".join(added),
+            )
