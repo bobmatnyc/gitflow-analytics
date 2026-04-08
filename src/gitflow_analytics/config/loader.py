@@ -311,6 +311,10 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
         velocity_data = data.get("velocity", {})
         velocity_config = cls._process_velocity_config(velocity_data)
 
+        # Teams/pods aggregation config (top-level key "teams")
+        teams_data = data.get("teams")
+        teams_config = cls._process_teams_config(teams_data)
+
         # Create configuration object
         config = Config(
             repositories=repositories,
@@ -324,6 +328,7 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             pm_integration=pm_integration_config,
             qualitative=qualitative_config,
             velocity=velocity_config,
+            teams=teams_config,
         )
 
         # Validate configuration

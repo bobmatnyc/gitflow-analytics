@@ -534,6 +534,41 @@ class VelocityConfig:
 
 
 @dataclass
+class TeamMemberConfig:
+    """A single member of a team or pod."""
+
+    email: Optional[str] = None
+    github: Optional[str] = None  # GitHub username
+    name: Optional[str] = None  # Display name match
+
+
+@dataclass
+class PodConfig:
+    """A sub-group (pod) within a team."""
+
+    name: str = ""
+    members: list[TeamMemberConfig] = field(default_factory=list)
+
+
+@dataclass
+class TeamConfig:
+    """A team with optional lead and pods."""
+
+    name: str = ""
+    lead: Optional[str] = None
+    members: list[TeamMemberConfig] = field(default_factory=list)
+    pods: list[PodConfig] = field(default_factory=list)
+
+
+@dataclass
+class TeamsConfig:
+    """Top-level teams/pods configuration."""
+
+    teams: list[TeamConfig] = field(default_factory=list)
+    enabled: bool = True
+
+
+@dataclass
 class Config:
     """Main configuration container."""
 
@@ -548,6 +583,7 @@ class Config:
     pm_integration: Optional[PMIntegrationConfig] = None
     qualitative: Optional["QualitativeConfig"] = None
     velocity: VelocityConfig = field(default_factory=VelocityConfig)
+    teams: TeamsConfig = field(default_factory=TeamsConfig)
     launcher: Optional[LauncherPreferences] = None
 
     def discover_organization_repositories(

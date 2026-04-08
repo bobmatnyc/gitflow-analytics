@@ -470,6 +470,49 @@ def run_report(
             logger.error(msg, exc_info=True)
             result.errors.append(msg)
 
+    # --- Team/pod aggregation report (Issue #23) ---
+    teams_cfg = getattr(cfg, "teams", None)
+    if teams_cfg is None or getattr(teams_cfg, "enabled", True):
+        try:
+            from .reports.team_aggregator import TeamAggregator
+
+            team_aggregator = TeamAggregator(teams_cfg)
+            # Build lightweight proxy dicts from all_commits so the aggregator
+            # can resolve team membership via author_email / developer fields.
+            # When a full daily_metrics DB integration is added in future, this
+            # can be replaced with a richer data source.
+            commit_proxy: list[dict[str, Any]] = [
+                {
+                    "developer_email": c.get("author_email") or c.get("canonical_id"),
+                    "developer_id": c.get("developer_id") or c.get("canonical_id"),
+                    "developer_name": c.get("author_name") or c.get("author"),
+                    "author_email": c.get("author_email"),
+                    "author": c.get("author"),
+                    "total_commits": 1,
+                    "feature_commits": 1 if c.get("commit_type") == "feature" else 0,
+                    "bug_fix_commits": 1 if c.get("commit_type") == "bug_fix" else 0,
+                    "refactor_commits": 1 if c.get("commit_type") == "refactor" else 0,
+                    "documentation_commits": 1 if c.get("commit_type") == "documentation" else 0,
+                    "maintenance_commits": 1 if c.get("commit_type") == "maintenance" else 0,
+                    "test_commits": 1 if c.get("commit_type") == "test" else 0,
+                    "lines_added": int(c.get("lines_added") or 0),
+                    "lines_deleted": int(c.get("lines_deleted") or 0),
+                    "story_points": int(c.get("story_points") or 0),
+                    "tracked_commits": 1 if c.get("ticket_reference") else 0,
+                    "untracked_commits": 0 if c.get("ticket_reference") else 1,
+                    "ai_assisted_commits": 1 if c.get("is_ai_assisted") else 0,
+                    "ai_generated_commits": 1 if c.get("is_ai_generated") else 0,
+                }
+                for c in all_commits
+            ]
+            summary = team_aggregator.generate(commit_proxy, output_dir)
+            if summary:
+                generated.append("weekly_summary.json")
+        except Exception as exc:
+            msg = f"Team aggregation report failed: {exc}"
+            logger.error(msg, exc_info=True)
+            result.errors.append(msg)
+
     if "json" in cfg.output.formats:
         try:
             json_report = output_dir / f"comprehensive_export_{date_suffix}.json"

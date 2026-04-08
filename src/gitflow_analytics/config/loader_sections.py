@@ -21,6 +21,10 @@ from .schema import (
     OutputConfig,
     PMIntegrationConfig,
     PMPlatformConfig,
+    PodConfig,
+    TeamConfig,
+    TeamMemberConfig,
+    TeamsConfig,
     VelocityConfig,
 )
 from .validator import ConfigValidator
@@ -276,6 +280,61 @@ class ConfigLoaderSectionsMixin:
             ),
             top_n=int(velocity_data.get("top_n", 5)),
         )
+
+    @classmethod
+    def _process_teams_config(cls, teams_data: dict | list | None) -> TeamsConfig:
+        """Process teams/pods configuration section.
+
+        Args:
+            teams_data: Teams configuration data — either a dict with a ``teams``
+                key, a bare list of team dicts, or None.
+
+        Returns:
+            TeamsConfig instance with defaults for any missing keys.
+        """
+        if not teams_data:
+            return TeamsConfig()
+
+        enabled = True
+        if isinstance(teams_data, list):
+            teams_list = teams_data
+        else:
+            teams_list = teams_data.get("teams", [])
+            enabled = teams_data.get("enabled", True)
+
+        def _parse_member(m: Any) -> TeamMemberConfig:
+            if isinstance(m, dict):
+                return TeamMemberConfig(
+                    email=m.get("email"),
+                    github=m.get("github"),
+                    name=m.get("name"),
+                )
+            # Plain string — treat as email/identifier
+            return TeamMemberConfig(email=str(m))
+
+        teams: list[TeamConfig] = []
+        for t in teams_list:
+            if not isinstance(t, dict):
+                continue
+            members = [_parse_member(m) for m in t.get("members", [])]
+            pods = [
+                PodConfig(
+                    name=p.get("name", ""),
+                    members=[_parse_member(m) for m in p.get("members", [])],
+                )
+                for p in t.get("pods", [])
+                if isinstance(p, dict)
+            ]
+            teams.append(
+                TeamConfig(
+                    name=t.get("name", ""),
+                    lead=t.get("lead"),
+                    members=members,
+                    pods=pods,
+                )
+            )
+
+        return TeamsConfig(teams=teams, enabled=enabled)
 
     @classmethod
     def _process_pm_config(cls, pm_data: dict[str, Any]) -> Optional[Any]:
