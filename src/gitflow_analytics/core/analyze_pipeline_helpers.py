@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
 def is_qualitative_enabled(cfg: Any) -> bool:
@@ -16,7 +16,7 @@ def is_qualitative_enabled(cfg: Any) -> bool:
     )
 
 
-def get_qualitative_config(cfg: Any) -> Optional[Any]:
+def get_qualitative_config(cfg: Any) -> Any | None:
     """Return the qualitative config object from whichever location it lives."""
     if cfg.qualitative:
         return cfg.qualitative
