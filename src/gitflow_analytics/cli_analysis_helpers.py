@@ -51,17 +51,13 @@ def show_final_summary(
         try:
             cache_stats = cache.get_cache_stats()
             display.print_status("📊 Cache Performance Summary", "info")
-            display.print_status(
-                f"  Total requests: {cache_stats['total_requests']}", "info"
-            )
+            display.print_status(f"  Total requests: {cache_stats['total_requests']}", "info")
             display.print_status(
                 f"  Cache hits: {cache_stats['cache_hits']} "
                 f"({cache_stats['hit_rate_percent']:.1f}%)",
                 "info",
             )
-            display.print_status(
-                f"  Cache misses: {cache_stats['cache_misses']}", "info"
-            )
+            display.print_status(f"  Cache misses: {cache_stats['cache_misses']}", "info")
             if cache_stats["time_saved_seconds"] > 0:
                 if cache_stats["time_saved_minutes"] >= 1:
                     display.print_status(
@@ -73,13 +69,9 @@ def show_final_summary(
                         f"  Time saved: {cache_stats['time_saved_seconds']:.1f} seconds",
                         "success",
                     )
-            display.print_status(
-                f"  Cached commits: {cache_stats['fresh_commits']}", "info"
-            )
+            display.print_status(f"  Cached commits: {cache_stats['fresh_commits']}", "info")
             if cache_stats.get("stale_commits", 0) > 0:
-                display.print_status(
-                    f"  Stale commits: {cache_stats['stale_commits']}", "warning"
-                )
+                display.print_status(f"  Stale commits: {cache_stats['stale_commits']}", "warning")
             display.print_status(
                 f"  Database size: {cache_stats['database_size_mb']:.1f} MB", "info"
             )
@@ -90,22 +82,16 @@ def show_final_summary(
         click.echo(f"   - Total commits: {len(all_commits)}")
         click.echo(f"   - Total PRs: {len(all_prs)}")
         click.echo(f"   - Active developers: {len(developer_stats)}")
-        click.echo(
-            f"   - Ticket coverage: {ticket_analysis.get('commit_coverage_pct', 0):.1f}%"
-        )
+        click.echo(f"   - Ticket coverage: {ticket_analysis.get('commit_coverage_pct', 0):.1f}%")
         click.echo(f"   - Total story points: {total_story_points}")
 
         if dora_metrics:
             click.echo("\n🎯 DORA Metrics:")
             click.echo(
-                f"   - Deployment frequency: "
-                f"{dora_metrics['deployment_frequency']['category']}"
+                f"   - Deployment frequency: {dora_metrics['deployment_frequency']['category']}"
             )
             click.echo(f"   - Lead time: {dora_metrics['lead_time_hours']:.1f} hours")
-            click.echo(
-                f"   - Change failure rate: "
-                f"{dora_metrics['change_failure_rate']:.1f}%"
-            )
+            click.echo(f"   - Change failure rate: {dora_metrics['change_failure_rate']:.1f}%")
             click.echo(f"   - MTTR: {dora_metrics['mttr_hours']:.1f} hours")
             click.echo(f"   - Performance level: {dora_metrics['performance_level']}")
 
@@ -138,19 +124,13 @@ def show_final_summary(
             click.echo(f"   - Cache misses: {cache_stats['cache_misses']}")
             if cache_stats["time_saved_seconds"] > 0:
                 if cache_stats["time_saved_minutes"] >= 1:
-                    click.echo(
-                        f"   - Time saved: {cache_stats['time_saved_minutes']:.1f} minutes"
-                    )
+                    click.echo(f"   - Time saved: {cache_stats['time_saved_minutes']:.1f} minutes")
                 else:
-                    click.echo(
-                        f"   - Time saved: {cache_stats['time_saved_seconds']:.1f} seconds"
-                    )
+                    click.echo(f"   - Time saved: {cache_stats['time_saved_seconds']:.1f} seconds")
             click.echo(f"   - Cached commits: {cache_stats['fresh_commits']}")
             if cache_stats.get("stale_commits", 0) > 0:
                 click.echo(f"   - Stale commits: {cache_stats['stale_commits']}")
-            click.echo(
-                f"   - Database size: {cache_stats['database_size_mb']:.1f} MB"
-            )
+            click.echo(f"   - Database size: {cache_stats['database_size_mb']:.1f} MB")
         except Exception as e:
             click.echo(f"   Warning: Could not display cache statistics: {e}")
 
@@ -240,9 +220,7 @@ def run_security_only_analysis(
 
     security_analyzer = SecurityAnalyzer(config=security_config)
     if display:
-        display.print_status(
-            f"Analyzing {len(all_commits)} commits for security issues...", "info"
-        )
+        display.print_status(f"Analyzing {len(all_commits)} commits for security issues...", "info")
     else:
         click.echo(f"\n🔍 Analyzing {len(all_commits)} commits for security issues...")
 
@@ -255,9 +233,7 @@ def run_security_only_analysis(
     click.echo(f"Total Commits Analyzed: {summary['total_commits']}")
     click.echo(f"Commits with Issues: {summary['commits_with_issues']}")
     click.echo(f"Total Security Findings: {summary['total_findings']}")
-    click.echo(
-        f"Risk Level: {summary['risk_level']} (Score: {summary['average_risk_score']:.1f})"
-    )
+    click.echo(f"Risk Level: {summary['risk_level']} (Score: {summary['average_risk_score']:.1f})")
 
     for severity, label in [("critical", "🔴"), ("high", "🟠"), ("medium", "🟡")]:
         count = summary["severity_distribution"].get(severity, 0)
@@ -299,9 +275,7 @@ def run_identity_analysis(
         last_prompt_file = cache_dir / ".identity_last_prompt"
         should_prompt = True
         if last_prompt_file.exists():
-            last_prompt_age = _dt.now() - _dt.fromtimestamp(
-                os.path.getmtime(last_prompt_file)
-            )
+            last_prompt_age = _dt.now() - _dt.fromtimestamp(os.path.getmtime(last_prompt_file))
             if last_prompt_age < timedelta(days=7):
                 should_prompt = False
 
@@ -337,9 +311,7 @@ def run_identity_analysis(
                 "warning",
             )
         else:
-            click.echo(
-                f"\n⚠️  Found {len(identity_result.clusters)} potential identity clusters:"
-            )
+            click.echo(f"\n⚠️  Found {len(identity_result.clusters)} potential identity clusters:")
 
         if suggested_config.get("analysis", {}).get("manual_identity_mappings"):
             click.echo("\n📋 Suggested identity mappings:")
@@ -360,32 +332,24 @@ def run_identity_analysis(
                 click.echo(f"   ... and {bot_count - 5} more")
 
         click.echo("\n" + "─" * 60)
-        if click.confirm(
-            "Apply these identity mappings to your configuration?", default=True
-        ):
+        if click.confirm("Apply these identity mappings to your configuration?", default=True):
             try:
                 with open(config) as f:
                     config_data = yaml.safe_load(f)
 
                 config_data.setdefault("analysis", {}).setdefault("identity", {})
-                existing_mappings = config_data["analysis"]["identity"].get(
-                    "manual_mappings", []
-                )
+                existing_mappings = config_data["analysis"]["identity"].get("manual_mappings", [])
                 new_mappings = suggested_config.get("analysis", {}).get(
                     "manual_identity_mappings", []
                 )
-                existing_emails = {
-                    m.get("canonical_email", "").lower() for m in existing_mappings
-                }
+                existing_emails = {m.get("canonical_email", "").lower() for m in existing_mappings}
                 for new_mapping in new_mappings:
                     if new_mapping["canonical_email"].lower() not in existing_emails:
                         existing_mappings.append(new_mapping)
                 config_data["analysis"]["identity"]["manual_mappings"] = existing_mappings
 
                 if suggested_config.get("exclude", {}).get("authors"):
-                    config_data["analysis"].setdefault("exclude", {}).setdefault(
-                        "authors", []
-                    )
+                    config_data["analysis"].setdefault("exclude", {}).setdefault("authors", [])
                     existing_excludes = set(config_data["analysis"]["exclude"]["authors"])
                     for bot in suggested_config["exclude"]["authors"]:
                         if bot not in existing_excludes:
@@ -395,9 +359,7 @@ def run_identity_analysis(
                     yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
 
                 if display:
-                    display.print_status(
-                        "Applied identity mappings to configuration", "success"
-                    )
+                    display.print_status("Applied identity mappings to configuration", "success")
                 else:
                     click.echo("✅ Applied identity mappings to configuration")
 

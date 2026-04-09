@@ -129,9 +129,9 @@ class TestPullRequestCacheModelColumns:
         ]
         for col_name in integer_cols:
             col = mapper.columns[col_name]
-            assert isinstance(
-                col.type, SAInteger
-            ), f"Column '{col_name}' should be Integer but is {type(col.type).__name__}"
+            assert isinstance(col.type, SAInteger), (
+                f"Column '{col_name}' should be Integer but is {type(col.type).__name__}"
+            )
 
     def test_time_to_first_review_is_float(self) -> None:
         """time_to_first_review_hours must be Float to store fractional hours."""
@@ -139,9 +139,9 @@ class TestPullRequestCacheModelColumns:
 
         mapper = inspect(PullRequestCache)
         col = mapper.columns["time_to_first_review_hours"]
-        assert isinstance(
-            col.type, SAFloat
-        ), f"time_to_first_review_hours should be Float but is {type(col.type).__name__}"
+        assert isinstance(col.type, SAFloat), (
+            f"time_to_first_review_hours should be Float but is {type(col.type).__name__}"
+        )
 
     def test_json_list_columns_are_nullable(self) -> None:
         """reviewers and approved_by are optional (PR may not have been reviewed)."""
@@ -230,9 +230,9 @@ class TestMigrationAppliesV3Columns:
             actual_columns = {row[1] for row in result}
 
         for col in PR_V3_COLUMNS:
-            assert (
-                col in actual_columns
-            ), f"Migration failed to add column '{col}' to legacy pull_request_cache"
+            assert col in actual_columns, (
+                f"Migration failed to add column '{col}' to legacy pull_request_cache"
+            )
 
     def test_migration_preserves_existing_rows(self, tmp_path: Path) -> None:
         """Existing PR rows must not be deleted during migration."""
@@ -394,9 +394,9 @@ class TestCachePrUpdate:
         result = cache.get_cached_pr(repo, 42)
         assert result is not None
         # v3.0 values from the first write must survive the partial update
-        assert (
-            result["review_comments"] == 5
-        ), "review_comments should not be zeroed by a payload that omits it"
+        assert result["review_comments"] == 5, (
+            "review_comments should not be zeroed by a payload that omits it"
+        )
         assert result["approvals_count"] == 2
         assert result["reviewers"] == ["bob", "carol"]
 

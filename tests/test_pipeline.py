@@ -1546,9 +1546,9 @@ class TestDeveloperIdentityResolverStripSuffixes:
         assert captured_kwargs, "DeveloperIdentityResolver was not constructed"
         kwargs = captured_kwargs[0]
         passed_suffixes = kwargs.get("strip_suffixes") or []
-        assert (
-            "-dev" in passed_suffixes
-        ), f"Expected '-dev' in strip_suffixes passed to DeveloperIdentityResolver, got: {passed_suffixes}"
+        assert "-dev" in passed_suffixes, (
+            f"Expected '-dev' in strip_suffixes passed to DeveloperIdentityResolver, got: {passed_suffixes}"
+        )
         assert "-contractor" in passed_suffixes
 
 

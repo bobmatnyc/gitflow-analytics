@@ -44,9 +44,9 @@ class TestWeeklyTrendsChurnColumnOnModel:
     def test_churn_column_is_float_type(self) -> None:
         mapper = inspect(WeeklyTrends)
         col = mapper.columns[CHURN_COLUMN]
-        assert isinstance(
-            col.type, Float
-        ), f"'{CHURN_COLUMN}' should be Float but is {type(col.type).__name__}"
+        assert isinstance(col.type, Float), (
+            f"'{CHURN_COLUMN}' should be Float but is {type(col.type).__name__}"
+        )
 
     def test_existing_columns_still_present(self) -> None:
         """churn addition must not remove any pre-existing WeeklyTrends columns."""
@@ -79,9 +79,9 @@ class TestFreshDatabaseIncludesChurnColumn:
             result = conn.execute(text("PRAGMA table_info(weekly_trends)"))
             actual_columns = {row[1] for row in result}
 
-        assert (
-            CHURN_COLUMN in actual_columns
-        ), f"Fresh DB missing column '{CHURN_COLUMN}' in weekly_trends"
+        assert CHURN_COLUMN in actual_columns, (
+            f"Fresh DB missing column '{CHURN_COLUMN}' in weekly_trends"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -145,9 +145,9 @@ class TestMigrationAddsChurnColumn:
             result = conn.execute(text("PRAGMA table_info(weekly_trends)"))
             actual_columns = {row[1] for row in result}
 
-        assert (
-            CHURN_COLUMN in actual_columns
-        ), f"v7.0 migration failed to add '{CHURN_COLUMN}' to legacy weekly_trends"
+        assert CHURN_COLUMN in actual_columns, (
+            f"v7.0 migration failed to add '{CHURN_COLUMN}' to legacy weekly_trends"
+        )
 
     def test_migration_preserves_existing_rows(self, tmp_path: Path) -> None:
         """Existing weekly_trends rows must not be deleted during v7.0 migration."""

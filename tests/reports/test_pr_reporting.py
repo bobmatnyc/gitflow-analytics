@@ -806,6 +806,6 @@ class TestComplianceMetricsRealApprovalRate:
             result = analyzer._calculate_compliance_metrics(
                 commits, {"pr_metrics": {"approval_rate": rate, "total_prs": 5}}, {}
             )
-            assert (
-                result["pr_approval_rate"]["status"] == expected_status
-            ), f"rate={rate} expected '{expected_status}' got '{result['pr_approval_rate']['status']}'"
+            assert result["pr_approval_rate"]["status"] == expected_status, (
+                f"rate={rate} expected '{expected_status}' got '{result['pr_approval_rate']['status']}'"
+            )

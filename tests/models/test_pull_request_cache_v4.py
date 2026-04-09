@@ -122,27 +122,27 @@ class TestPullRequestCacheModelColumnsV4:
 
         mapper = inspect(PullRequestCache)
         col = mapper.columns["pr_state"]
-        assert isinstance(
-            col.type, SAString
-        ), f"pr_state should be String but is {type(col.type).__name__}"
+        assert isinstance(col.type, SAString), (
+            f"pr_state should be String but is {type(col.type).__name__}"
+        )
 
     def test_closed_at_is_datetime(self) -> None:
         from sqlalchemy import DateTime as SADateTime
 
         mapper = inspect(PullRequestCache)
         col = mapper.columns["closed_at"]
-        assert isinstance(
-            col.type, SADateTime
-        ), f"closed_at should be DateTime but is {type(col.type).__name__}"
+        assert isinstance(col.type, SADateTime), (
+            f"closed_at should be DateTime but is {type(col.type).__name__}"
+        )
 
     def test_is_merged_is_boolean(self) -> None:
         from sqlalchemy import Boolean as SABoolean
 
         mapper = inspect(PullRequestCache)
         col = mapper.columns["is_merged"]
-        assert isinstance(
-            col.type, SABoolean
-        ), f"is_merged should be Boolean but is {type(col.type).__name__}"
+        assert isinstance(col.type, SABoolean), (
+            f"is_merged should be Boolean but is {type(col.type).__name__}"
+        )
 
     def test_all_v4_columns_are_nullable(self) -> None:
         """All three columns must be nullable for backward-compat with old rows."""
@@ -259,9 +259,9 @@ class TestMigrationAppliesV4Columns:
             actual_columns = {row[1] for row in result}
 
         for col in PR_V4_COLUMNS:
-            assert (
-                col in actual_columns
-            ), f"v4.0 migration failed to add column '{col}' to legacy pull_request_cache"
+            assert col in actual_columns, (
+                f"v4.0 migration failed to add column '{col}' to legacy pull_request_cache"
+            )
 
     def test_migration_preserves_existing_rows(self, tmp_path: Path) -> None:
         """Existing PR rows must not be deleted during v4.0 migration."""
@@ -415,9 +415,9 @@ class TestCachePrV4Update:
         result = cache.get_cached_pr(repo, 42)
         assert result is not None
         # pr_state from the first write must survive the partial update
-        assert (
-            result["pr_state"] == "merged"
-        ), "pr_state should not be overwritten by a payload that omits it"
+        assert result["pr_state"] == "merged", (
+            "pr_state should not be overwritten by a payload that omits it"
+        )
 
 
 # ---------------------------------------------------------------------------

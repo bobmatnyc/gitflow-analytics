@@ -29,11 +29,9 @@ from gitflow_analytics.utils.ai_detection import (
 # ---------------------------------------------------------------------------
 
 CLAUDE_TRAILER = (
-    "feat: add user authentication\n\n" "Co-Authored-By: Claude Sonnet 4 <noreply@anthropic.com>"
+    "feat: add user authentication\n\nCo-Authored-By: Claude Sonnet 4 <noreply@anthropic.com>"
 )
-COPILOT_TRAILER = (
-    "fix: resolve null pointer\n\n" "Co-authored-by: Copilot[bot] <copilot@github.com>"
-)
+COPILOT_TRAILER = "fix: resolve null pointer\n\nCo-authored-by: Copilot[bot] <copilot@github.com>"
 PLAIN_MESSAGE = "fix typo in README"
 SHORT_MESSAGE = "wip"
 

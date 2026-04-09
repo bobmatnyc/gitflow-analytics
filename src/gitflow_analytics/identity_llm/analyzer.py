@@ -769,7 +769,7 @@ Respond with a JSON object:
                 # Log why this cluster was rejected
                 cluster_emails = [id.email for id in cluster_identities]
                 logger.info(
-                    "Rejected identity cluster: %s " "(confidence %.1f%% < threshold %.1f%%)",
+                    "Rejected identity cluster: %s (confidence %.1f%% < threshold %.1f%%)",
                     ", ".join(cluster_emails),
                     confidence * 100,
                     self.confidence_threshold * 100,

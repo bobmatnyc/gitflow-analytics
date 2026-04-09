@@ -119,7 +119,7 @@ class BedrockClassifier(BaseLLMClassifier):
             import boto3  # noqa: F401 — existence check only
         except ImportError as exc:
             raise ImportError(
-                "boto3 is required for AWS Bedrock support. " "Install it with: pip install boto3"
+                "boto3 is required for AWS Bedrock support. Install it with: pip install boto3"
             ) from exc
 
         # Build the boto3 session with optional named profile

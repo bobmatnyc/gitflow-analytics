@@ -383,9 +383,9 @@ class TestGitHubNoReplyEmailResolution:
             "61434073+chungk-duetto@users.noreply.github.com",
         )
 
-        assert (
-            canonical_via_noreply == canonical_via_username
-        ), "GitHub noreply address should resolve to the same identity as the plain username alias"
+        assert canonical_via_noreply == canonical_via_username, (
+            "GitHub noreply address should resolve to the same identity as the plain username alias"
+        )
 
     def test_noreply_email_matches_primary_identity(self, temp_dir):
         """noreply email resolves to an identity whose primary_email is the bare username."""
@@ -510,9 +510,9 @@ class TestStaleCanonicalNameFix:
         resolver.update_commit_stats(commits)
 
         for i, commit in enumerate(commits):
-            assert (
-                commit.get("canonical_name") == "Jane Smith"
-            ), f"Commit {i} has canonical_name={commit.get('canonical_name')!r}, expected 'Jane Smith'"
+            assert commit.get("canonical_name") == "Jane Smith", (
+                f"Commit {i} has canonical_name={commit.get('canonical_name')!r}, expected 'Jane Smith'"
+            )
 
 
 class TestLoaderPrimaryEmailHardening:
@@ -529,9 +529,9 @@ class TestLoaderPrimaryEmailHardening:
 
         primary_email = next((e for e in emails if "@" in e), emails[0])
 
-        assert (
-            primary_email == "chung.kim@company.com"
-        ), f"Expected first real email but got {primary_email!r}"
+        assert primary_email == "chung.kim@company.com", (
+            f"Expected first real email but got {primary_email!r}"
+        )
 
     def test_loader_falls_back_to_first_entry_when_no_email(self):
         """When no entry contains '@', the first entry is still used as primary."""
@@ -583,9 +583,9 @@ class TestLoaderPrimaryEmailHardening:
         mapping = mappings[0]
         primary = mapping["primary_email"]
         assert "@" in primary, f"primary_email should be a real email address, got {primary!r}"
-        assert (
-            primary == "chung.kim@company.com"
-        ), f"Expected 'chung.kim@company.com' but got {primary!r}"
+        assert primary == "chung.kim@company.com", (
+            f"Expected 'chung.kim@company.com' but got {primary!r}"
+        )
 
 
 class TestUpdateCommitStatsIdempotency:
@@ -673,9 +673,9 @@ class TestUpdateCommitStatsIdempotency:
         alice = next(s for s in stats if s["primary_email"] == "alice@example.com")
 
         # Alice has story_points 3 + 5 = 8 across two commits.
-        assert (
-            alice["total_story_points"] == 8
-        ), f"Alice should have 8 story points, got {alice['total_story_points']}"
+        assert alice["total_story_points"] == 8, (
+            f"Alice should have 8 story points, got {alice['total_story_points']}"
+        )
 
     def test_first_seen_is_earliest_commit_timestamp(self, temp_dir):
         """first_seen should be the earliest commit timestamp in the batch."""
@@ -733,6 +733,6 @@ class TestUpdateCommitStatsIdempotency:
         stats = resolver.get_developer_stats()
         helper = next(s for s in stats if s["primary_email"] == "helper@example.com")
 
-        assert (
-            helper["total_commits"] == 1
-        ), f"Co-author Helper should have 1 commit, got {helper['total_commits']}"
+        assert helper["total_commits"] == 1, (
+            f"Co-author Helper should have 1 commit, got {helper['total_commits']}"
+        )

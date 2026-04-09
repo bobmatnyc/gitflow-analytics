@@ -58,16 +58,16 @@ class TestDailyMetricsAiColumnsOnModel:
         ]
         for col_name in integer_cols:
             col = mapper.columns[col_name]
-            assert isinstance(
-                col.type, Integer
-            ), f"Column '{col_name}' should be Integer but is {type(col.type).__name__}"
+            assert isinstance(col.type, Integer), (
+                f"Column '{col_name}' should be Integer but is {type(col.type).__name__}"
+            )
 
     def test_ai_tool_primary_is_string_type(self) -> None:
         mapper = inspect(DailyMetrics)
         col = mapper.columns["ai_tool_primary"]
-        assert isinstance(
-            col.type, String
-        ), f"ai_tool_primary should be String but is {type(col.type).__name__}"
+        assert isinstance(col.type, String), (
+            f"ai_tool_primary should be String but is {type(col.type).__name__}"
+        )
 
     def test_existing_columns_still_present(self) -> None:
         """AI additions must not remove any pre-existing DailyMetrics columns."""
@@ -176,9 +176,9 @@ class TestMigrationAddsAiColumns:
             actual_columns = {row[1] for row in result}
 
         for col in AI_COLUMNS:
-            assert (
-                col in actual_columns
-            ), f"v6.0 migration failed to add column '{col}' to legacy daily_metrics"
+            assert col in actual_columns, (
+                f"v6.0 migration failed to add column '{col}' to legacy daily_metrics"
+            )
 
     def test_migration_preserves_existing_rows(self, tmp_path: Path) -> None:
         """Existing daily_metrics rows must not be deleted during v6.0 migration."""

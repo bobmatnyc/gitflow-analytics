@@ -495,12 +495,12 @@ output:
 
             # The auth skip message must appear; the GitHub auth failure must NOT appear.
             combined = result.output
-            assert (
-                "local-only mode" in combined.lower()
-            ), f"Expected local-only mode message. Output:\n{combined}"
-            assert (
-                "github authentication failed" not in combined.lower()
-            ), f"GitHub auth should not be required. Output:\n{combined}"
+            assert "local-only mode" in combined.lower(), (
+                f"Expected local-only mode message. Output:\n{combined}"
+            )
+            assert "github authentication failed" not in combined.lower(), (
+                f"GitHub auth should not be required. Output:\n{combined}"
+            )
 
     def test_github_repo_config_triggers_auth_check(self):
         """Config with github_repo should trigger the GitHub auth preflight."""
@@ -517,9 +517,9 @@ output:
             assert "verifying github authentication" in combined.lower() or (
                 "github authentication failed" in combined.lower()
             ), f"Expected GitHub auth to be attempted. Output:\n{combined}"
-            assert (
-                "local-only mode" not in combined.lower()
-            ), f"Should not show local-only message. Output:\n{combined}"
+            assert "local-only mode" not in combined.lower(), (
+                f"Should not show local-only message. Output:\n{combined}"
+            )
 
     def test_github_org_config_triggers_auth_check(self):
         """Config with github.organization should trigger the GitHub auth preflight."""
@@ -535,6 +535,6 @@ output:
             assert "verifying github authentication" in combined.lower() or (
                 "github authentication failed" in combined.lower()
             ), f"Expected GitHub auth to be attempted. Output:\n{combined}"
-            assert (
-                "local-only mode" not in combined.lower()
-            ), f"Should not show local-only message. Output:\n{combined}"
+            assert "local-only mode" not in combined.lower(), (
+                f"Should not show local-only message. Output:\n{combined}"
+            )

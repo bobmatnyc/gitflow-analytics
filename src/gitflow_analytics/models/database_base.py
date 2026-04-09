@@ -19,4 +19,3 @@ def utcnow_tz_aware() -> datetime:
         Timezone-aware datetime in UTC
     """
     return datetime.now(timezone.utc)
-

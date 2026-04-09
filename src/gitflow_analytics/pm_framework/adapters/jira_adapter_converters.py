@@ -8,7 +8,7 @@ JIRAAdapter via multiple inheritance.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ..models import (

@@ -280,9 +280,9 @@ class TestClearAllCacheIncludesWeekly:
         result = cache.clear_all_cache()
 
         # The return dict must report how many weekly rows were cleared
-        assert (
-            "weekly_fetch_status" in result
-        ), "clear_all_cache() did not report weekly_fetch_status count"
+        assert "weekly_fetch_status" in result, (
+            "clear_all_cache() did not report weekly_fetch_status count"
+        )
         assert result["weekly_fetch_status"] == 1
 
         # The rows must actually be gone

@@ -6,12 +6,11 @@ PM data aggregation, and report generation stages.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from .analyze_pipeline import (
     QualitativeResult,
@@ -64,12 +63,8 @@ def run_qualitative_analysis(
                     "author_email": commit.get("author_email"),
                     "timestamp": commit.get("timestamp"),
                     "files_changed": commit.get("files_changed") or [],
-                    "insertions": commit.get(
-                        "filtered_insertions", commit.get("insertions", 0)
-                    ),
-                    "deletions": commit.get(
-                        "filtered_deletions", commit.get("deletions", 0)
-                    ),
+                    "insertions": commit.get("filtered_insertions", commit.get("insertions", 0)),
+                    "deletions": commit.get("filtered_deletions", commit.get("deletions", 0)),
                     "branch": commit.get("branch", "main"),
                 }
             )
@@ -88,9 +83,7 @@ def run_qualitative_analysis(
                 }
             )
 
-    qualitative_results = qual_processor.process_commits(
-        commits_for_qual, show_progress=True
-    )
+    qualitative_results = qual_processor.process_commits(commits_for_qual, show_progress=True)
 
     qual_stats = qual_processor.get_processing_statistics()
     cost_stats = None
@@ -172,7 +165,6 @@ def generate_all_reports(
     output file.  Errors in individual reports are logged but do not abort
     the whole stage unless the report is critical.
     """
-    import contextlib as _ctx
 
     from ..metrics.dora import DORAMetricsCalculator
     from ..reports.analytics_writer import AnalyticsReportGenerator
@@ -200,9 +192,7 @@ def generate_all_reports(
     if generate_csv:
         _gen_csv_report(
             "weekly_metrics",
-            lambda p: report_gen.generate_weekly_report(
-                all_commits, developer_stats, p, weeks
-            ),
+            lambda p: report_gen.generate_weekly_report(all_commits, developer_stats, p, weeks),
             output / f"weekly_metrics_{date_suffix}.csv",
             generated_reports,
         )
@@ -262,9 +252,7 @@ def generate_all_reports(
         if aggregated_pm_data:
             _gen_csv_report(
                 "pm_correlations",
-                lambda p: report_gen.generate_pm_correlations_report(
-                    aggregated_pm_data, p
-                ),
+                lambda p: report_gen.generate_pm_correlations_report(aggregated_pm_data, p),
                 output / f"pm_correlations_{date_suffix}.csv",
                 generated_reports,
             )
@@ -386,18 +374,14 @@ def generate_all_reports(
     if generate_csv:
         _gen_csv_report(
             "weekly_velocity",
-            lambda p: report_gen.generate_weekly_velocity_report(
-                all_commits, all_prs, p, weeks
-            ),
+            lambda p: report_gen.generate_weekly_velocity_report(all_commits, all_prs, p, weeks),
             output / f"weekly_velocity_{date_suffix}.csv",
             generated_reports,
             reraise=True,
         )
         _gen_csv_report(
             "weekly_dora_metrics",
-            lambda p: report_gen.generate_weekly_dora_report(
-                all_commits, all_prs, p, weeks
-            ),
+            lambda p: report_gen.generate_weekly_dora_report(all_commits, all_prs, p, weeks),
             output / f"weekly_dora_metrics_{date_suffix}.csv",
             generated_reports,
             reraise=True,
@@ -467,8 +451,13 @@ def generate_all_reports(
         try:
             json_report = output / f"comprehensive_export_{date_suffix}.json"
             enhanced_analysis = _try_enhanced_analysis(
-                qualitative_result, developer_stats, ticket_analysis, pr_metrics,
-                all_enrichments, aggregated_pm_data, weeks
+                qualitative_result,
+                developer_stats,
+                ticket_analysis,
+                pr_metrics,
+                all_enrichments,
+                aggregated_pm_data,
+                weeks,
             )
             ComprehensiveJSONExporter(anonymize=anonymize).export_comprehensive_data(
                 commits=all_commits,
@@ -574,9 +563,7 @@ def _try_chatgpt_summary(
             },
             "projects": {},
         }
-        return ChatGPTQualitativeAnalyzer(openai_key).generate_executive_summary(
-            comprehensive_data
-        )
+        return ChatGPTQualitativeAnalyzer(openai_key).generate_executive_summary(comprehensive_data)
     except Exception as e:
         logger.warning("ChatGPT summary generation failed: %s", e)
         return None

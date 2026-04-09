@@ -49,16 +49,16 @@ class TestCachedCommitAiColumnsOnModel:
     def test_ai_confidence_score_is_float_type(self) -> None:
         mapper = inspect(CachedCommit)
         col = mapper.columns["ai_confidence_score"]
-        assert isinstance(
-            col.type, Float
-        ), f"ai_confidence_score should be Float but is {type(col.type).__name__}"
+        assert isinstance(col.type, Float), (
+            f"ai_confidence_score should be Float but is {type(col.type).__name__}"
+        )
 
     def test_ai_detection_method_is_string_type(self) -> None:
         mapper = inspect(CachedCommit)
         col = mapper.columns["ai_detection_method"]
-        assert isinstance(
-            col.type, String
-        ), f"ai_detection_method should be String but is {type(col.type).__name__}"
+        assert isinstance(col.type, String), (
+            f"ai_detection_method should be String but is {type(col.type).__name__}"
+        )
 
     def test_existing_columns_still_present(self) -> None:
         """AI additions must not remove any pre-existing CachedCommit columns."""
@@ -188,9 +188,9 @@ class TestMigrationAddsAiColumns:
             actual_columns = {row[1] for row in result}
 
         for col in AI_COLUMNS:
-            assert (
-                col in actual_columns
-            ), f"v9.0 migration failed to add column '{col}' to legacy cached_commits"
+            assert col in actual_columns, (
+                f"v9.0 migration failed to add column '{col}' to legacy cached_commits"
+            )
 
     def test_migration_preserves_existing_rows(self, tmp_path: Path) -> None:
         """Existing cached_commits rows must not be deleted during v9.0 migration."""
