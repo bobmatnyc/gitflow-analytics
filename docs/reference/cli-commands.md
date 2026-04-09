@@ -190,6 +190,100 @@ gitflow-analytics alias-rename -c config.yaml \
 - Always test with `--dry-run` first to preview changes
 - See [Managing Aliases Guide](../guides/managing-aliases.md#renaming-developers) for detailed usage
 
+### add-alias
+Add alias mappings to a configuration file non-interactively. Suitable for scripting and CI pipelines where interactive prompts are not available.
+
+```bash
+gfa add-alias -c config.yaml \
+  --canonical "developer@example.com" \
+  --alias "dev@personal.com" \
+  --alias "Dev Name" \
+  [OPTIONS]
+```
+
+**Required Options**:
+- `-c, --config PATH` - Path to YAML configuration file
+
+**Mapping Options** (mutually exclusive — use one or the other):
+- `--canonical EMAIL` - Primary/canonical email for this developer identity; combine with one or more `--alias` flags
+- `--from-file PATH` - YAML or JSON file containing batch alias mappings (cannot be combined with `--canonical`)
+- `--alias EMAIL_OR_NAME` - Email address or display name to map to `--canonical`; repeatable
+
+**Behaviour Flags**:
+- `--dry-run` - Show what would be changed without writing to the config file
+- `--apply` - Trigger identity re-resolution after updating the config
+
+**Examples**:
+```bash
+# Map a personal email and display name to a canonical work email
+gfa add-alias -c config.yaml \
+  --canonical "alice@company.com" \
+  --alias "alice@gmail.com" \
+  --alias "Alice Smith"
+
+# Preview changes before writing
+gfa add-alias -c config.yaml \
+  --canonical "alice@company.com" \
+  --alias "alice@gmail.com" \
+  --dry-run
+
+# Load batch mappings from a YAML file and re-resolve identities
+gfa add-alias -c config.yaml \
+  --from-file aliases.yaml \
+  --apply
+
+# Load batch mappings from a JSON file
+gfa add-alias -c config.yaml \
+  --from-file aliases.json
+```
+
+**Supported `--from-file` Formats**:
+
+1. **GFA native YAML** — a config file with a `developer_aliases:` key:
+   ```yaml
+   developer_aliases:
+     - canonical: "alice@company.com"
+       aliases: ["alice@gmail.com", "Alice Smith"]
+   ```
+
+2. **Flat YAML list** — a list of `{canonical, aliases}` objects:
+   ```yaml
+   - canonical: "alice@company.com"
+     aliases:
+       - alice@gmail.com
+       - Alice Smith
+   - canonical: "bob@company.com"
+     aliases:
+       - bob@personal.com
+   ```
+
+3. **JSON array** — equivalent structure in JSON:
+   ```json
+   [
+     {"canonical": "alice@company.com", "aliases": ["alice@gmail.com", "Alice Smith"]},
+     {"canonical": "bob@company.com",   "aliases": ["bob@personal.com"]}
+   ]
+   ```
+
+**What It Does**:
+1. Reads the existing `analysis.identity.manual_mappings` (or `developer_aliases`) section in the config
+2. Merges new aliases into the matching canonical entry, or creates a new entry if the canonical is not yet present
+3. Skips duplicates — existing aliases are never written twice (idempotent)
+4. Writes the updated config back to disk (unless `--dry-run` is specified)
+5. Optionally triggers identity re-resolution via `--apply`
+
+**Use Cases**:
+- Onboarding automation: script alias setup as part of repo initialisation
+- CI pipelines: keep alias mappings in a separate file and apply them on deploy
+- Bulk imports: migrate alias lists from another tool's export format
+- Safe updates: use `--dry-run` to audit changes before committing them
+
+**Notes**:
+- `--from-file` and `--canonical` are mutually exclusive; combining them is an error
+- The operation is idempotent: running the same command twice produces the same config
+- Always verify with `--dry-run` before running in unattended automation
+- See [Managing Aliases Guide](../guides/managing-aliases.md) for detailed identity management guidance
+
 ## 📊 Output Formats
 
 ### CSV Format (`--format csv`)

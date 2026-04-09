@@ -635,19 +635,19 @@ def _load_alias_file(file_path: str) -> list[dict]:
     "-c",
     required=True,
     type=click.Path(exists=True),
-    help="Config YAML path",
+    help="Path to YAML configuration file",
 )
 @click.option(
     "--canonical",
     required=False,
     default=None,
-    help="Canonical email address",
+    help="Primary/canonical email for this developer identity",
 )
 @click.option(
     "--alias",
     "aliases",
     multiple=True,
-    help="Alias email or name (repeatable)",
+    help="Email or name to map to canonical (repeatable, e.g. --alias old@co.com --alias 'Jane Smith')",
 )
 @click.option(
     "--from-file",
@@ -655,19 +655,19 @@ def _load_alias_file(file_path: str) -> list[dict]:
     required=False,
     default=None,
     type=click.Path(exists=True),
-    help="YAML/JSON file with batch alias mappings",
+    help="YAML or JSON file with batch alias mappings (see format below)",
 )
 @click.option(
     "--apply",
     is_flag=True,
     default=False,
-    help="After writing config, rerun identity resolution to propagate to historical commits",
+    help="Trigger identity re-resolution after updating config (propagates to cached data)",
 )
 @click.option(
     "--dry-run",
     is_flag=True,
     default=False,
-    help="Print what would be done without making changes",
+    help="Show what would be changed without writing to config",
 )
 def add_alias_command(
     config: str,
@@ -677,18 +677,66 @@ def add_alias_command(
     apply: bool,
     dry_run: bool,
 ) -> None:
-    """Add known alias mappings to config non-interactively.
+    """Add alias mappings to config non-interactively.
 
-    Use --canonical + --alias for a single mapping, or --from-file for batch.
+    Maps one or more alias emails/names to a canonical developer identity
+    in analysis.identity.manual_mappings. Supports single mappings via
+    --canonical/--alias flags, or bulk import via --from-file.
 
     \b
-    Examples:
+    USAGE MODES:
 
-      # Single alias
-      gfa add-alias -c config.yaml --canonical john@work.com --alias john@gmail.com --alias "John Doe"
+      Single mapping (--canonical + --alias):
+        Adds or updates one developer's alias list. Multiple --alias
+        flags may be provided to add several aliases at once.
 
-      # Batch from YAML file
+      Batch import (--from-file):
+        Reads a YAML or JSON file containing multiple mappings.
+        Mutually exclusive with --canonical.
+
+    \b
+    FILE FORMATS (--from-file):
+
+      GFA native YAML (developer_aliases list):
+        developer_aliases:
+          - canonical: john@work.com
+            aliases:
+              - john@gmail.com
+              - "John Doe"
+          - canonical: jane@corp.com
+            aliases:
+              - jane@personal.com
+
+      Flat YAML list:
+        - canonical: john@work.com
+          aliases: [john@gmail.com]
+
+      JSON array:
+        [{"canonical": "john@work.com", "aliases": ["john@gmail.com"]}]
+
+    \b
+    EXAMPLES:
+
+      # Add single alias
+      gfa add-alias -c config.yaml --canonical john@work.com --alias john@gmail.com
+
+      # Add multiple aliases at once
+      gfa add-alias -c config.yaml --canonical john@work.com \\
+          --alias john@gmail.com --alias "John Doe"
+
+      # Preview without writing
+      gfa add-alias -c config.yaml --canonical john@work.com \\
+          --alias john@gmail.com --dry-run
+
+      # Batch import from file
       gfa add-alias -c config.yaml --from-file aliases.yaml
+
+    \b
+    NOTE:
+      Existing canonical entries are merged (not replaced). Duplicate
+      aliases are silently skipped. Use --dry-run to preview changes.
+      After updating config, run 'gfa identities --apply' to propagate
+      changes to cached data (or use --apply when that flag is wired).
     """
     # Validate args
     if not from_file and not canonical:

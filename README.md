@@ -75,6 +75,7 @@ gitflow-analytics -c config.yaml --weeks 8
 - **📊 DORA Metrics**: Deployment frequency, lead time, change failure rate, and MTTR
 - **💰 Cost Tracking**: Monitor LLM API usage with detailed token and cost reporting
 - **📈 Weekly Trends**: Track classification pattern changes over time with proper Monday-aligned weeks
+- **🏷️ Non-Interactive Alias Management**: `gfa add-alias` command for scripting alias mappings — single or batch via YAML/JSON file, with `--dry-run` support
 
 ## 🔥 Core Capabilities
 
