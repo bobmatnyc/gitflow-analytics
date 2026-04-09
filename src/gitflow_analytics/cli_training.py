@@ -125,7 +125,7 @@ def train(
     from .core.cache import GitAnalysisCache
     from .integrations.orchestrator import IntegrationOrchestrator
 
-    logger = setup_logging(log, __name__)
+    setup_logging(log, __name__)
 
     try:
         click.echo("GitFlow Analytics - Commit Classification Training")
