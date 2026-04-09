@@ -15,7 +15,11 @@ from pathlib import Path
 
 import click
 
-from .cli_identity_alias_ops import alias_rename, create_alias_interactive  # noqa: F401
+from .cli_identity_alias_ops import (  # noqa: F401
+    add_alias_command,
+    alias_rename,
+    create_alias_interactive,
+)
 from .cli_identity_commands import aliases_command, identities  # noqa: F401
 from .config import ConfigLoader
 
@@ -34,6 +38,7 @@ def register_identity_commands(cli_group: click.Group) -> None:
     cli_group.add_command(list_developers)
     cli_group.add_command(create_alias_interactive)
     cli_group.add_command(alias_rename)
+    cli_group.add_command(add_alias_command)
 
 
 @click.command()

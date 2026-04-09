@@ -146,9 +146,7 @@ def create_alias_interactive(config: Path, output: Optional[Path]) -> None:
 
                     if len(selected_indices) < 2:
                         click.echo(
-                            click.style(
-                                "You must select at least 2 developers to merge", fg="red"
-                            )
+                            click.style("You must select at least 2 developers to merge", fg="red")
                         )
                         continue
 
@@ -246,9 +244,7 @@ def create_alias_interactive(config: Path, output: Optional[Path]) -> None:
                                 )
                             )
 
-                    click.echo(
-                        click.style("Database updated with merged identities", fg="green")
-                    )
+                    click.echo(click.style("Database updated with merged identities", fg="green"))
 
                 except Exception as e:
                     click.echo(click.style(f"Error saving alias: {e}", fg="red"), err=True)
@@ -369,9 +365,7 @@ def alias_rename(
             sys.exit(1)
 
         if "manual_mappings" not in config_data["analysis"]["identity"]:
-            click.echo(
-                "Error: 'analysis.identity.manual_mappings' not found in config", err=True
-            )
+            click.echo("Error: 'analysis.identity.manual_mappings' not found in config", err=True)
             sys.exit(1)
 
         manual_mappings = config_data["analysis"]["identity"]["manual_mappings"]
@@ -573,3 +567,211 @@ def alias_rename(
         click.echo(f"Unexpected error: {e}", err=True)
 
         traceback.print_exc()
+
+
+def _load_alias_file(file_path: str) -> list[dict]:
+    """Load alias mappings from YAML or JSON file.
+
+    Accepts two formats:
+
+    Format A (GFA aliases.yaml format):
+      developer_aliases:
+        - primary_email: john@company.com
+          aliases: [john@gmail.com]
+          name: John Doe
+
+    Format B (flat list):
+      - canonical: john@company.com
+        aliases: [john@gmail.com]
+        name: John Doe
+    """
+    import json
+
+    path = Path(file_path)
+    with open(path) as f:
+        data = json.load(f) if path.suffix.lower() == ".json" else yaml.safe_load(f)
+
+    if isinstance(data, dict) and "developer_aliases" in data:
+        # GFA aliases.yaml format
+        entries = data["developer_aliases"]
+        result = []
+        for entry in entries if isinstance(entries, list) else []:
+            canonical = (
+                entry.get("primary_email")
+                or entry.get("canonical_email")
+                or entry.get("canonical", "")
+            )
+            if canonical:
+                result.append(
+                    {
+                        "canonical": canonical,
+                        "aliases": entry.get("aliases", []),
+                        "name": entry.get("name"),
+                    }
+                )
+        return result
+    elif isinstance(data, list):
+        # Flat list format
+        return [
+            {
+                "canonical": (
+                    e.get("canonical") or e.get("primary_email") or e.get("canonical_email", "")
+                ),
+                "aliases": e.get("aliases", []),
+                "name": e.get("name"),
+            }
+            for e in data
+            if isinstance(e, dict)
+        ]
+    else:
+        raise click.ClickException(
+            f"Unrecognised format in {file_path}. Expected 'developer_aliases' list or flat list."
+        )
+
+
+@click.command(name="add-alias")
+@click.option(
+    "--config",
+    "-c",
+    required=True,
+    type=click.Path(exists=True),
+    help="Config YAML path",
+)
+@click.option(
+    "--canonical",
+    required=False,
+    default=None,
+    help="Canonical email address",
+)
+@click.option(
+    "--alias",
+    "aliases",
+    multiple=True,
+    help="Alias email or name (repeatable)",
+)
+@click.option(
+    "--from-file",
+    "from_file",
+    required=False,
+    default=None,
+    type=click.Path(exists=True),
+    help="YAML/JSON file with batch alias mappings",
+)
+@click.option(
+    "--apply",
+    is_flag=True,
+    default=False,
+    help="After writing config, rerun identity resolution to propagate to historical commits",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print what would be done without making changes",
+)
+def add_alias_command(
+    config: str,
+    canonical: Optional[str],
+    aliases: tuple[str, ...],
+    from_file: Optional[str],
+    apply: bool,
+    dry_run: bool,
+) -> None:
+    """Add known alias mappings to config non-interactively.
+
+    Use --canonical + --alias for a single mapping, or --from-file for batch.
+
+    \b
+    Examples:
+
+      # Single alias
+      gfa add-alias -c config.yaml --canonical john@work.com --alias john@gmail.com --alias "John Doe"
+
+      # Batch from YAML file
+      gfa add-alias -c config.yaml --from-file aliases.yaml
+    """
+    # Validate args
+    if not from_file and not canonical:
+        raise click.UsageError("Either --canonical + --alias or --from-file is required")
+    if from_file and canonical:
+        raise click.UsageError("--from-file and --canonical are mutually exclusive")
+    if canonical and not aliases:
+        raise click.UsageError("--canonical requires at least one --alias")
+
+    # Build list of mappings to add
+    if from_file:
+        mappings_to_add = _load_alias_file(from_file)
+    else:
+        mappings_to_add = [{"canonical": canonical, "aliases": list(aliases)}]
+
+    # Load config YAML
+    with open(config) as f:
+        config_data = yaml.safe_load(f) or {}
+
+    # Ensure path exists
+    config_data.setdefault("analysis", {})
+    config_data["analysis"].setdefault("identity", {})
+    config_data["analysis"]["identity"].setdefault("manual_mappings", [])
+    current_mappings = config_data["analysis"]["identity"]["manual_mappings"]
+
+    added: list[tuple[str, list[str]]] = []
+    skipped: list[str] = []
+
+    for mapping in mappings_to_add:
+        canonical_email = mapping["canonical"].strip().lower()
+        alias_list = [a.strip() for a in mapping.get("aliases", []) if a.strip()]
+
+        # Find existing mapping for this canonical
+        existing = next(
+            (m for m in current_mappings if m.get("primary_email", "").lower() == canonical_email),
+            None,
+        )
+
+        if existing is None:
+            # Create new mapping
+            new_mapping: dict = {
+                "primary_email": canonical_email,
+                "aliases": alias_list,
+            }
+            if mapping.get("name"):
+                new_mapping["name"] = mapping["name"]
+            if not dry_run:
+                current_mappings.append(new_mapping)
+            added.append((canonical_email, alias_list))
+        else:
+            # Merge aliases into existing mapping (idempotent)
+            existing_aliases = [a.lower() for a in existing.get("aliases", [])]
+            new_aliases = [a for a in alias_list if a.lower() not in existing_aliases]
+            if new_aliases:
+                if not dry_run:
+                    existing.setdefault("aliases", []).extend(new_aliases)
+                added.append((canonical_email, new_aliases))
+            else:
+                skipped.append(canonical_email)
+
+    # Write back to config
+    if not dry_run and added:
+        with open(config, "w", encoding="utf-8") as f:
+            yaml.dump(
+                config_data,
+                f,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            )
+
+    # Report
+    for canonical_email, alias_list in added:
+        action = "[DRY RUN] Would add" if dry_run else "Added"
+        click.echo(f"{action}: {canonical_email} <- {', '.join(alias_list)}")
+    for c in skipped:
+        click.echo(f"Skipped (already exists): {c}")
+
+    if not added and not skipped:
+        click.echo("No changes made.")
+    elif not dry_run:
+        click.echo(f"\nConfig updated: {config}")
+        if apply:
+            click.echo("Running identity resolution to propagate changes...")
+            # TODO: wire into identity resolver apply flow
+            click.echo("   (--apply not yet wired; run 'gfa identities --apply' manually)")
