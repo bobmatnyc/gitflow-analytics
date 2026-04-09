@@ -10,7 +10,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from .analyze_pipeline import (
     QualitativeResult,
@@ -108,7 +108,7 @@ def aggregate_pm_data(
     cfg: Any,
     all_enrichments: dict[str, Any],
     disable_pm: bool,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Aggregate PM platform data from enrichments.
 
     Returns ``None`` when PM is disabled or no data is available.
@@ -154,7 +154,7 @@ def generate_all_reports(
     weeks: int,
     anonymize: bool,
     generate_csv: bool,
-    aggregated_pm_data: Optional[dict[str, Any]],
+    aggregated_pm_data: dict[str, Any] | None,
     qualitative_result: QualitativeResult,
     analyzer: Any,
     identity_resolver: Any,
@@ -353,7 +353,7 @@ def generate_all_reports(
                 generated_reports.append(extra.name)
 
     # ---- DORA metrics ----
-    dora_metrics: Optional[dict[str, Any]] = None
+    dora_metrics: dict[str, Any] | None = None
     try:
         dora_calculator = DORAMetricsCalculator()
         dora_metrics = dora_calculator.calculate_dora_metrics(
@@ -514,7 +514,7 @@ def _try_chatgpt_summary(
     developer_stats: list[dict[str, Any]],
     ticket_analysis: dict[str, Any],
     weeks: int,
-) -> Optional[Any]:
+) -> Any | None:
     """Attempt to generate a ChatGPT executive summary; returns None on failure."""
     openai_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not openai_key:
@@ -575,9 +575,9 @@ def _try_enhanced_analysis(
     ticket_analysis: dict[str, Any],
     pr_metrics: dict[str, Any],
     all_enrichments: dict[str, Any],
-    aggregated_pm_data: Optional[dict[str, Any]],
+    aggregated_pm_data: dict[str, Any] | None,
     weeks: int,
-) -> Optional[Any]:
+) -> Any | None:
     """Attempt enhanced qualitative analysis; returns None on failure."""
     if not qualitative_result.results:
         return None
