@@ -167,7 +167,7 @@ commit-version: ## Commit version bump files and push to main
 # Publishing to PyPI
 # ============================================================================
 
-publish-pypi: ## Publish to PyPI using uv (reads credentials from ~/.pypirc)
+publish-pypi: ## Publish to PyPI using uv (reads PYPI_TOKEN from .env.local, falls back to ~/.pypirc)
 	@echo "$(YELLOW)Publishing to PyPI...$(NC)"
 	@if [ -z "$(UV)" ]; then \
 		echo "$(RED)uv not found — cannot publish$(NC)"; \
@@ -179,7 +179,18 @@ publish-pypi: ## Publish to PyPI using uv (reads credentials from ~/.pypirc)
 		exit 1; \
 	fi
 	$(call confirm-prompt,Publish to PyPI?)
-	@$(UV) publish
+	@if [ -f ".env.local" ]; then \
+		TOKEN=$$(grep '^PYPI_TOKEN=' .env.local | cut -d= -f2- | tr -d '"' | tr -d "'"); \
+		if [ -n "$$TOKEN" ]; then \
+			echo "$(GREEN)Using PYPI_TOKEN from .env.local$(NC)"; \
+			UV_PUBLISH_TOKEN="$$TOKEN" $(UV) publish; \
+		else \
+			echo "$(YELLOW).env.local found but no PYPI_TOKEN — falling back to ~/.pypirc$(NC)"; \
+			$(UV) publish; \
+		fi \
+	else \
+		$(UV) publish; \
+	fi
 	@VERSION=$$($(PYTHON) $(VERSION_SCRIPT) get); \
 	echo "$(GREEN)Published version $$VERSION to PyPI$(NC)"; \
 	echo "$(BLUE)View at: https://pypi.org/project/gitflow-analytics/$$VERSION/$(NC)"

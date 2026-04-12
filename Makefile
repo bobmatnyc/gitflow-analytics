@@ -143,7 +143,7 @@ help-release: ## Show version and release targets
 	@echo "  $(CYAN)release-check$(NC)        Check prerequisites (git, uv, gh)"
 	@echo ""
 	@echo "$(GREEN)Publish Channels:$(NC)"
-	@echo "  $(CYAN)publish-pypi$(NC)         Publish to PyPI via uv (uses ~/.pypirc)"
+	@echo "  $(CYAN)publish-pypi$(NC)         Publish to PyPI via uv (uses PYPI_TOKEN from .env.local)"
 	@echo "  $(CYAN)publish$(NC)              Alias for publish-pypi"
 	@echo "  $(CYAN)gh-release$(NC)           Create GitHub release with auto-generated notes"
 	@echo "  $(CYAN)publish-gh$(NC)           Alias for gh-release"
