@@ -9,8 +9,9 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from gitflow_analytics.cli import alias_rename, cli, create_alias_interactive
-from gitflow_analytics.cli import analyze_subcommand as analyze
+from gitflow_analytics.cli import cli
+from gitflow_analytics.cli_analysis import analyze_subcommand as analyze
+from gitflow_analytics.cli_identity import alias_rename, create_alias_interactive
 
 
 class TestCLI:
@@ -440,6 +441,136 @@ analysis:
             assert "No manual mapping found" in result.output
             assert "Available names" in result.output
 
+    def test_alias_rename_legacy_developer_aliases(self):
+        """Bug #30: alias-rename must handle legacy top-level developer_aliases format.
+
+        The rest of the tool auto-converts the legacy key on load, but
+        alias-rename reads YAML directly and previously errored with
+        'analysis.identity.manual_mappings not found in config'.
+        """
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            legacy_config = """
+version: "1.0"
+github:
+  token: "test_token"
+  owner: "test_owner"
+repositories: []
+output:
+  directory: "output"
+developer_aliases:
+  "Emiliozzo Bianco":
+    - bianco-zaelot
+    - bianco@zaelot.com
+"""
+            Path("test-config.yaml").write_text(legacy_config)
+            result = runner.invoke(
+                alias_rename,
+                [
+                    "--config",
+                    "test-config.yaml",
+                    "--old-name",
+                    "Emiliozzo Bianco",
+                    "--new-name",
+                    "Emiliozzo B.",
+                ],
+            )
+
+            assert (
+                result.exit_code == 0
+            ), f"Expected success, got exit_code={result.exit_code}. Output:\n{result.output}"
+            # Command should announce the migration
+            assert "legacy" in result.output.lower()
+            # Manual-mappings error must NOT appear
+            assert "'analysis.identity.manual_mappings' not found" not in result.output
+
+            # Config should have been migrated to the new format
+            import yaml
+
+            with open("test-config.yaml") as f:
+                config_data = yaml.safe_load(f)
+
+            assert (
+                "developer_aliases" not in config_data
+            ), "Legacy key should be removed after migration"
+            mappings = config_data["analysis"]["identity"]["manual_mappings"]
+            assert len(mappings) == 1
+            assert mappings[0]["name"] == "Emiliozzo B."
+            assert mappings[0]["primary_email"] == "bianco@zaelot.com"
+            assert "bianco-zaelot" in mappings[0]["aliases"]
+
+    def test_alias_rename_legacy_developer_aliases_dry_run(self):
+        """Bug #30: dry-run on legacy config should preview migration without writing."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            legacy_config = """
+version: "1.0"
+github:
+  token: "test_token"
+  owner: "test_owner"
+repositories: []
+output:
+  directory: "output"
+developer_aliases:
+  "Old Name":
+    - old-handle
+    - user@example.com
+"""
+            Path("test-config.yaml").write_text(legacy_config)
+            original = Path("test-config.yaml").read_text()
+
+            result = runner.invoke(
+                alias_rename,
+                [
+                    "--config",
+                    "test-config.yaml",
+                    "--old-name",
+                    "Old Name",
+                    "--new-name",
+                    "New Name",
+                    "--dry-run",
+                ],
+            )
+
+            assert result.exit_code == 0
+            assert "DRY RUN" in result.output
+            # Original file should remain untouched
+            assert Path("test-config.yaml").read_text() == original
+
+    def test_alias_rename_legacy_name_not_found(self):
+        """Bug #30: legacy config + non-existent name should error gracefully."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            legacy_config = """
+version: "1.0"
+github:
+  token: "test_token"
+  owner: "test_owner"
+repositories: []
+output:
+  directory: "output"
+developer_aliases:
+  "Only Name":
+    - only@example.com
+"""
+            Path("test-config.yaml").write_text(legacy_config)
+            result = runner.invoke(
+                alias_rename,
+                [
+                    "--config",
+                    "test-config.yaml",
+                    "--old-name",
+                    "Nonexistent Name",
+                    "--new-name",
+                    "Whatever",
+                ],
+            )
+
+            assert result.exit_code != 0
+            assert "No manual mapping found" in result.output
+            # Available names should list the migrated entry
+            assert "Only Name" in result.output
+
 
 class TestGitHubAuthConditional:
     """Test that GitHub authentication is conditional on GitHub features being configured."""
@@ -495,12 +626,12 @@ output:
 
             # The auth skip message must appear; the GitHub auth failure must NOT appear.
             combined = result.output
-            assert "local-only mode" in combined.lower(), (
-                f"Expected local-only mode message. Output:\n{combined}"
-            )
-            assert "github authentication failed" not in combined.lower(), (
-                f"GitHub auth should not be required. Output:\n{combined}"
-            )
+            assert (
+                "local-only mode" in combined.lower()
+            ), f"Expected local-only mode message. Output:\n{combined}"
+            assert (
+                "github authentication failed" not in combined.lower()
+            ), f"GitHub auth should not be required. Output:\n{combined}"
 
     def test_github_repo_config_triggers_auth_check(self):
         """Config with github_repo should trigger the GitHub auth preflight."""
@@ -517,9 +648,9 @@ output:
             assert "verifying github authentication" in combined.lower() or (
                 "github authentication failed" in combined.lower()
             ), f"Expected GitHub auth to be attempted. Output:\n{combined}"
-            assert "local-only mode" not in combined.lower(), (
-                f"Should not show local-only message. Output:\n{combined}"
-            )
+            assert (
+                "local-only mode" not in combined.lower()
+            ), f"Should not show local-only message. Output:\n{combined}"
 
     def test_github_org_config_triggers_auth_check(self):
         """Config with github.organization should trigger the GitHub auth preflight."""
@@ -535,6 +666,6 @@ output:
             assert "verifying github authentication" in combined.lower() or (
                 "github authentication failed" in combined.lower()
             ), f"Expected GitHub auth to be attempted. Output:\n{combined}"
-            assert "local-only mode" not in combined.lower(), (
-                f"Should not show local-only message. Output:\n{combined}"
-            )
+            assert (
+                "local-only mode" not in combined.lower()
+            ), f"Should not show local-only message. Output:\n{combined}"

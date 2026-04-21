@@ -76,7 +76,7 @@ def create_alias_interactive(config: Path, output: Optional[Path]) -> None:
         if not output:
             output = config.parent / "aliases.yaml"
 
-        identity_resolver = DeveloperIdentityResolver(cfg.cache.directory / "identities.db")
+        identity_resolver = DeveloperIdentityResolver(str(cfg.cache.directory / "identities.db"))
         aliases_manager = AliasesManager(output if output.exists() else None)
 
         click.echo("\n" + "=" * 80)
@@ -356,6 +356,48 @@ def alias_rename(
             click.echo(f"Error loading config file: {e}", err=True)
             sys.exit(1)
 
+        # Bug #30 fix: Also support the legacy top-level 'developer_aliases' config key.
+        # The rest of the tool (see ConfigLoader) auto-migrates this on load, but
+        # alias-rename reads/writes YAML directly, so we need to handle the legacy
+        # format here as well.  When we detect it we convert it in-memory to the
+        # modern 'analysis.identity.manual_mappings' layout and, on save, the
+        # legacy key is removed — effectively migrating the user to the new format.
+        migrated_from_legacy = False
+        if (
+            "developer_aliases" in config_data
+            and isinstance(config_data.get("developer_aliases"), dict)
+            and (
+                "analysis" not in config_data
+                or "identity" not in (config_data.get("analysis") or {})
+                or "manual_mappings"
+                not in ((config_data.get("analysis") or {}).get("identity") or {})
+            )
+        ):
+            click.echo(
+                "Detected legacy 'developer_aliases' configuration — "
+                "migrating to 'analysis.identity.manual_mappings'."
+            )
+            legacy_aliases = config_data["developer_aliases"]
+
+            config_data.setdefault("analysis", {})
+            config_data["analysis"].setdefault("identity", {})
+            config_data["analysis"]["identity"].setdefault("manual_mappings", [])
+
+            # Mirror the conversion in ConfigLoader so behaviour is consistent.
+            for canonical_name, emails in legacy_aliases.items():
+                if isinstance(emails, list) and emails:
+                    primary_email = next((e for e in emails if "@" in e), emails[0])
+                    config_data["analysis"]["identity"]["manual_mappings"].append(
+                        {
+                            "name": canonical_name,
+                            "primary_email": primary_email,
+                            "aliases": list(emails),
+                        }
+                    )
+
+            del config_data["developer_aliases"]
+            migrated_from_legacy = True
+
         if "analysis" not in config_data:
             click.echo("Error: 'analysis' section not found in config", err=True)
             sys.exit(1)
@@ -473,11 +515,20 @@ def alias_rename(
                         sort_keys=False,
                     )
                 click.echo("Configuration file updated")
+                if migrated_from_legacy:
+                    click.echo(
+                        "Migrated legacy 'developer_aliases' to 'analysis.identity.manual_mappings'"
+                    )
             except Exception as e:
                 click.echo(f"Error writing config file: {e}", err=True)
                 sys.exit(1)
         else:
             click.echo(f"   [Would update config: {config}]")
+            if migrated_from_legacy:
+                click.echo(
+                    "   [Would migrate legacy 'developer_aliases' to "
+                    "'analysis.identity.manual_mappings']"
+                )
 
         if update_cache:
             click.echo("\nChecking database cache...")

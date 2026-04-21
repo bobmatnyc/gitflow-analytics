@@ -44,7 +44,11 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
         self.similarity_threshold = similarity_threshold
         self.db_path = Path(db_path)  # Convert string to Path
         self._strip_suffixes: list[str] = list(strip_suffixes) if strip_suffixes else []
-        self._cache: dict[str, str] = {}  # In-memory cache for performance
+        # Cache stores two kinds of values:
+        #   - cache_key ("email:name") -> canonical_id (str) for alias lookup
+        #   - canonical_id -> dict with primary_name/primary_email/github_username
+        # so the value type is a union (Any keeps mypy/pyright happy).
+        self._cache: dict[str, Any] = {}  # In-memory cache for performance
 
         # Initialize database with error handling
         try:
@@ -101,13 +105,13 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
         if not self._database_available or not self.db:
             # No-op context manager when database is not available
             class NoOpSession:
-                def query(self, *args, **kwargs):
+                def query(self, *_args, **_kwargs):
                     return NoOpQuery()
 
-                def add(self, *args, **kwargs):
+                def add(self, *_args, **_kwargs):
                     pass
 
-                def delete(self, *args, **kwargs):
+                def delete(self, *_args, **_kwargs):
                     pass
 
                 def commit(self):
@@ -118,6 +122,29 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
 
                 def expire_all(self):
                     pass
+
+                def execute(self, *_args, **_kwargs):
+                    """No-op stub for SQLAlchemy execute().
+
+                    Returns a NoOpResult so callers that chain `.scalar()` or
+                    iterate rows won't crash when the database is unavailable.
+                    """
+                    return NoOpResult()
+
+            class NoOpResult:
+                """No-op result object for disabled database sessions."""
+
+                def scalar(self):
+                    return 0
+
+                def fetchall(self):
+                    return []
+
+                def fetchone(self):
+                    return None
+
+                def __iter__(self):
+                    return iter([])
 
             class NoOpQuery:
                 def filter(self, *args, **kwargs):
@@ -196,8 +223,18 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
                 aliases = mapping.get("aliases", [])
                 preferred_name = mapping.get("name")  # Optional display name
 
-                if not canonical_email or not aliases:
-                    logger.warning(f"Skipping invalid manual mapping: {mapping}")
+                # Bug #29 fix: canonical_email is required but aliases can be empty
+                # when the mapping only intends to set/rename the primary_name.
+                # Without a canonical_email we cannot locate or create an identity.
+                # Without aliases AND without a preferred_name there is nothing to do.
+                if not canonical_email:
+                    logger.warning(f"Skipping invalid manual mapping (missing email): {mapping}")
+                    continue
+
+                if not aliases and not preferred_name:
+                    logger.warning(
+                        f"Skipping manual mapping (no aliases and no name to apply): {mapping}"
+                    )
                     continue
 
                 logger.info(
@@ -614,6 +651,11 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
 
     def merge_identities(self, canonical_id1: str, canonical_id2: str):
         """Merge two developer identities."""
+        # Initialize before the session to guarantee bindings even if the
+        # identity lookup returns None (in which case we'll raise below).
+        identity2_name: Optional[str] = None
+        identity2_email: Optional[str] = None
+
         # First, add the alias outside of the main merge transaction
         with self.get_session() as session:
             identity2 = (
@@ -624,6 +666,9 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
             if identity2:
                 identity2_name = identity2.primary_name
                 identity2_email = identity2.primary_email
+
+        if identity2_name is None or identity2_email is None:
+            raise ValueError(f"Identity {canonical_id2} not found")
 
         # Add identity2's primary as alias to identity1 first
         self._add_alias(canonical_id1, identity2_name, identity2_email)

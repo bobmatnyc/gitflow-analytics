@@ -383,9 +383,9 @@ class TestGitHubNoReplyEmailResolution:
             "61434073+chungk-duetto@users.noreply.github.com",
         )
 
-        assert canonical_via_noreply == canonical_via_username, (
-            "GitHub noreply address should resolve to the same identity as the plain username alias"
-        )
+        assert (
+            canonical_via_noreply == canonical_via_username
+        ), "GitHub noreply address should resolve to the same identity as the plain username alias"
 
     def test_noreply_email_matches_primary_identity(self, temp_dir):
         """noreply email resolves to an identity whose primary_email is the bare username."""
@@ -510,9 +510,146 @@ class TestStaleCanonicalNameFix:
         resolver.update_commit_stats(commits)
 
         for i, commit in enumerate(commits):
-            assert commit.get("canonical_name") == "Jane Smith", (
-                f"Commit {i} has canonical_name={commit.get('canonical_name')!r}, expected 'Jane Smith'"
-            )
+            assert (
+                commit.get("canonical_name") == "Jane Smith"
+            ), f"Commit {i} has canonical_name={commit.get('canonical_name')!r}, expected 'Jane Smith'"
+
+
+class TestCanonicalNameAppliedFromManualMappings:
+    """Bug #29: primary_name must reflect the canonical name from manual_mappings.
+
+    When a git commit creates a developer identity using the raw git handle
+    (e.g. ``bianco-zaelot``) and the config later declares a canonical display
+    name for that developer via ``analysis.identity.manual_mappings``, the
+    ``developer_identities.primary_name`` column must be updated to the
+    canonical name during identity resolution — not only when the user runs
+    ``alias-rename``.
+    """
+
+    def test_primary_name_updated_when_aliases_empty(self, temp_dir):
+        """Empty aliases must not block primary_name updates (Bug #29).
+
+        Prior to the fix, ``_apply_manual_mappings`` short-circuited when
+        ``aliases`` was empty, so a mapping that only supplied ``name`` and
+        ``primary_email`` silently skipped the identity rename.
+        """
+        db_path = temp_dir / "identities.db"
+
+        # Step 1: git creates identity with the raw handle as the name
+        resolver1 = DeveloperIdentityResolver(db_path)
+        resolver1.resolve_developer("John Handle", "john@work.com")
+
+        initial_stats = resolver1.get_developer_stats()
+        assert len(initial_stats) == 1
+        assert initial_stats[0]["primary_name"] == "John Handle"
+
+        # Step 2: load a new resolver with manual_mappings that only renames
+        manual_mappings = [
+            {
+                "name": "John Doe",
+                "primary_email": "john@work.com",
+                "aliases": [],  # intentionally empty — just a rename
+            }
+        ]
+        resolver2 = DeveloperIdentityResolver(db_path, manual_mappings=manual_mappings)
+
+        final_stats = resolver2.get_developer_stats()
+        assert len(final_stats) == 1
+        assert final_stats[0]["primary_name"] == "John Doe", (
+            f"Expected 'John Doe', got {final_stats[0]['primary_name']!r}. "
+            "Mapping with empty aliases should still update primary_name."
+        )
+        assert final_stats[0]["primary_email"] == "john@work.com"
+
+    def test_primary_name_updated_for_legacy_developer_aliases_equivalent(self, temp_dir):
+        """Bug #29: the shape produced by the legacy-aliases loader updates primary_name.
+
+        When ``developer_aliases`` only lists the raw git handle (no email),
+        the loader writes ``primary_email = <handle>`` and ``aliases = [<handle>]``.
+        Resolution must still rename the identity to the canonical name.
+        """
+        db_path = temp_dir / "identities.db"
+
+        # Step 1: git creates identity using only a plain handle
+        resolver1 = DeveloperIdentityResolver(db_path)
+        resolver1.resolve_developer("bianco-zaelot", "bianco-zaelot")
+
+        initial_stats = resolver1.get_developer_stats()
+        assert initial_stats[0]["primary_name"] == "bianco-zaelot"
+
+        # Step 2: apply the mapping produced by the legacy-aliases loader
+        manual_mappings = [
+            {
+                "name": "Emiliozzo Bianco",
+                "primary_email": "bianco-zaelot",
+                "aliases": ["bianco-zaelot"],
+            }
+        ]
+        resolver2 = DeveloperIdentityResolver(db_path, manual_mappings=manual_mappings)
+
+        final_stats = resolver2.get_developer_stats()
+        assert (
+            final_stats[0]["primary_name"] == "Emiliozzo Bianco"
+        ), f"Expected 'Emiliozzo Bianco', got {final_stats[0]['primary_name']!r}."
+
+    def test_skips_mapping_without_email_or_name(self, temp_dir):
+        """A mapping with neither aliases nor a preferred name is still skipped.
+
+        The fix for Bug #29 relaxed the short-circuit only when there is a
+        ``name`` to apply.  Genuinely empty mappings must still be ignored to
+        avoid creating placeholder identities.
+        """
+        db_path = temp_dir / "identities.db"
+
+        manual_mappings = [
+            {
+                "primary_email": "ghost@example.com",
+                "aliases": [],
+                # No 'name' key
+            }
+        ]
+        resolver = DeveloperIdentityResolver(db_path, manual_mappings=manual_mappings)
+
+        stats = resolver.get_developer_stats()
+        assert (
+            stats == []
+        ), "Mapping without aliases or a preferred name must not create an identity"
+
+    def test_primary_name_updated_through_update_commit_stats(self, temp_dir):
+        """After ``update_commit_stats`` re-applies mappings, primary_name is canonical."""
+        db_path = temp_dir / "identities.db"
+
+        # Start with a bare resolver — simulates a prior run that only saw the handle
+        resolver_first = DeveloperIdentityResolver(db_path)
+        resolver_first.resolve_developer("Git Handle", "handle@example.com")
+
+        manual_mappings = [
+            {
+                "name": "Canonical Display",
+                "primary_email": "handle@example.com",
+                "aliases": [],
+            }
+        ]
+        resolver = DeveloperIdentityResolver(db_path, manual_mappings=manual_mappings)
+
+        # Run another commit pass to exercise the full pipeline
+        commits = [
+            {
+                "author_name": "Git Handle",
+                "author_email": "handle@example.com",
+                "story_points": 2,
+                "timestamp": datetime(2024, 5, 1, tzinfo=timezone.utc),
+            }
+        ]
+        resolver.update_commit_stats(commits)
+
+        stats = resolver.get_developer_stats()
+        assert len(stats) == 1
+        assert (
+            stats[0]["primary_name"] == "Canonical Display"
+        ), f"Expected canonical display name but got {stats[0]['primary_name']!r}"
+        # commits should also carry the canonical name downstream
+        assert commits[0].get("canonical_name") == "Canonical Display"
 
 
 class TestLoaderPrimaryEmailHardening:
@@ -529,9 +666,9 @@ class TestLoaderPrimaryEmailHardening:
 
         primary_email = next((e for e in emails if "@" in e), emails[0])
 
-        assert primary_email == "chung.kim@company.com", (
-            f"Expected first real email but got {primary_email!r}"
-        )
+        assert (
+            primary_email == "chung.kim@company.com"
+        ), f"Expected first real email but got {primary_email!r}"
 
     def test_loader_falls_back_to_first_entry_when_no_email(self):
         """When no entry contains '@', the first entry is still used as primary."""
@@ -583,9 +720,9 @@ class TestLoaderPrimaryEmailHardening:
         mapping = mappings[0]
         primary = mapping["primary_email"]
         assert "@" in primary, f"primary_email should be a real email address, got {primary!r}"
-        assert primary == "chung.kim@company.com", (
-            f"Expected 'chung.kim@company.com' but got {primary!r}"
-        )
+        assert (
+            primary == "chung.kim@company.com"
+        ), f"Expected 'chung.kim@company.com' but got {primary!r}"
 
 
 class TestUpdateCommitStatsIdempotency:
@@ -673,9 +810,9 @@ class TestUpdateCommitStatsIdempotency:
         alice = next(s for s in stats if s["primary_email"] == "alice@example.com")
 
         # Alice has story_points 3 + 5 = 8 across two commits.
-        assert alice["total_story_points"] == 8, (
-            f"Alice should have 8 story points, got {alice['total_story_points']}"
-        )
+        assert (
+            alice["total_story_points"] == 8
+        ), f"Alice should have 8 story points, got {alice['total_story_points']}"
 
     def test_first_seen_is_earliest_commit_timestamp(self, temp_dir):
         """first_seen should be the earliest commit timestamp in the batch."""
@@ -733,6 +870,6 @@ class TestUpdateCommitStatsIdempotency:
         stats = resolver.get_developer_stats()
         helper = next(s for s in stats if s["primary_email"] == "helper@example.com")
 
-        assert helper["total_commits"] == 1, (
-            f"Co-author Helper should have 1 commit, got {helper['total_commits']}"
-        )
+        assert (
+            helper["total_commits"] == 1
+        ), f"Co-author Helper should have 1 commit, got {helper['total_commits']}"
