@@ -102,6 +102,63 @@ class ConfluenceIntegration:
         return session
 
     # ------------------------------------------------------------------
+    # Pre-flight credential check
+    # ------------------------------------------------------------------
+    def verify_credentials(self) -> None:
+        """Perform a lightweight authenticated probe against Confluence.
+
+        Issues a single ``GET {base_url}/rest/api/space?limit=1`` request and
+        raises :class:`RuntimeError` with a descriptive message on any
+        authentication failure.  This surfaces credential problems during
+        orchestrator initialization instead of during the first
+        ``fetch_all_spaces`` call, where failures would previously be
+        swallowed and silently produce an empty report (see issue #33).
+
+        Raises:
+            RuntimeError: If credentials appear invalid (missing creds, HTTP
+                401/403, or other request-level failure).
+        """
+        # Fail fast on obviously-missing credentials rather than issuing a
+        # guaranteed-401 request.
+        if not self.base_url:
+            raise RuntimeError(
+                "Confluence authentication failed: base_url is empty. "
+                "Check your config's 'confluence.base_url'."
+            )
+        if not self.username or not self.api_token:
+            raise RuntimeError(
+                "Confluence authentication failed: check base_url, username, "
+                "and api_token. The username or api_token resolved to an empty "
+                "string — most likely the ${CONFLUENCE_API_TOKEN} environment "
+                "variable is not set. Verify your .env / .env.local file is "
+                "loaded before `gfa analyze` runs."
+            )
+
+        url = f"{self.base_url}/rest/api/space"
+        try:
+            response = self._session.get(
+                url,
+                params={"limit": 1},
+                timeout=self.connection_timeout,
+            )
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                f"Confluence authentication failed: request error contacting "
+                f"{url}: {exc}. Check base_url and network connectivity."
+            ) from exc
+
+        if response.status_code in (401, 403):
+            raise RuntimeError(
+                "Confluence authentication failed: check base_url, username, "
+                f"and api_token (HTTP {response.status_code} from {url})."
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Confluence pre-flight check failed with HTTP "
+                f"{response.status_code} from {url}: {response.text[:200]}"
+            )
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def fetch_space_activity(self, space_key: str, since: datetime) -> list[dict[str, Any]]:

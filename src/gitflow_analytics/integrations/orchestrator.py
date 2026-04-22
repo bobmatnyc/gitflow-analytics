@@ -1,6 +1,7 @@
 """Integration orchestrator for multiple platforms."""
 
 import json
+import logging
 from datetime import datetime
 from typing import Any, Union
 
@@ -8,10 +9,12 @@ from ..core.cache import GitAnalysisCache
 from ..pm_framework.orchestrator import PMFrameworkOrchestrator
 from ..utils.debug import is_debug_mode
 from .cicd.github_actions import GitHubActionsIntegration
-from .confluence_integration import ConfluenceIntegration
+from .confluence_integration import ConfluenceIntegration  # type: ignore[import-untyped]
 from .github_integration import GitHubIntegration
 from .github_issues_integration import GitHubIssuesIntegration
 from .jira_integration import JIRAIntegration
+
+logger = logging.getLogger(__name__)
 
 
 class IntegrationOrchestrator:
@@ -106,7 +109,7 @@ class IntegrationOrchestrator:
             and getattr(confluence_cfg, "base_url", "")
         ):
             try:
-                self.integrations["confluence"] = ConfluenceIntegration(
+                confluence_integration = ConfluenceIntegration(
                     base_url=confluence_cfg.base_url,
                     username=confluence_cfg.username,
                     api_token=confluence_cfg.api_token,
@@ -118,9 +121,23 @@ class IntegrationOrchestrator:
                     max_retries=confluence_cfg.max_retries,
                     backoff_factor=confluence_cfg.backoff_factor,
                 )
-                if self.debug_mode:
-                    print("   ✅ Confluence integration initialized")
+
+                # Pre-flight credential verification (issue #33): catch 401s
+                # at init time so we can surface a clear error and disable
+                # the integration rather than silently producing empty
+                # reports later.
+                try:
+                    confluence_integration.verify_credentials()
+                except RuntimeError as auth_err:
+                    logger.warning("Disabling Confluence integration: %s", auth_err)
+                    if self.debug_mode:
+                        print(f"   ⚠️  Confluence disabled: {auth_err}")
+                else:
+                    self.integrations["confluence"] = confluence_integration
+                    if self.debug_mode:
+                        print("   ✅ Confluence integration initialized")
             except Exception as e:
+                logger.warning("Failed to initialize Confluence: %s", e)
                 if self.debug_mode:
                     print(f"   ⚠️  Failed to initialize Confluence: {e}")
 
@@ -302,7 +319,7 @@ class IntegrationOrchestrator:
             conf = self.integrations["confluence"]
             if isinstance(conf, ConfluenceIntegration):
                 try:
-                    conf.fetch_all_spaces(since)
+                    conf.fetch_all_spaces(since)  # type: ignore[union-attr]
                     self._confluence_fetched = True
                 except Exception as e:
                     if self.debug_mode:

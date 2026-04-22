@@ -466,3 +466,101 @@ def test_store_activity_events_persists(integration: ConfluenceIntegration) -> N
         )
         assert len(rows) == 1
         assert rows[0].actor == "alice"
+
+
+# ---------------------------------------------------------------------------
+# Issue #33: Env var expansion + pre-flight credential verification
+# ---------------------------------------------------------------------------
+
+
+def test_confluence_env_var_expansion_in_config(
+    tmp_cache: GitAnalysisCache, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``api_token: "${CONFLUENCE_API_TOKEN}"`` is expanded via ``os.environ``.
+
+    Regression test for issue #33: prior to the fix, a legitimate token in
+    ``.env.local`` would still propagate through the loader, but any failure
+    to pick it up would silently collapse to an empty string.  This test
+    exercises the ``_process_confluence_config`` -> ``_resolve_env_var`` path
+    directly.
+    """
+    from gitflow_analytics.config.loader_sections import ConfigLoaderSectionsMixin
+
+    monkeypatch.setenv("CONFLUENCE_API_TOKEN", "tok-from-env-abc123")
+    monkeypatch.setenv("CONFLUENCE_USER", "dev@example.com")
+
+    cfg = ConfigLoaderSectionsMixin._process_confluence_config(
+        {
+            "enabled": True,
+            "base_url": "https://example.atlassian.net/wiki",
+            "username": "${CONFLUENCE_USER}",
+            "api_token": "${CONFLUENCE_API_TOKEN}",
+            "spaces": ["ENG"],
+        }
+    )
+
+    assert cfg is not None
+    assert cfg.api_token == "tok-from-env-abc123"
+    assert cfg.username == "dev@example.com"
+    assert cfg.enabled is True
+
+
+def test_confluence_verify_credentials_raises_on_401(
+    integration: ConfluenceIntegration,
+) -> None:
+    """``verify_credentials`` raises a clear ``RuntimeError`` on HTTP 401."""
+    resp = Mock()
+    resp.status_code = 401
+    resp.text = "Unauthorized"
+
+    with (
+        patch.object(integration._session, "get", return_value=resp) as mock_get,
+        pytest.raises(RuntimeError) as excinfo,
+    ):
+        integration.verify_credentials()
+
+    # Called the space-list endpoint with limit=1
+    assert mock_get.called
+    args, kwargs = mock_get.call_args
+    assert args[0].endswith("/rest/api/space")
+    assert kwargs.get("params") == {"limit": 1}
+
+    msg = str(excinfo.value)
+    assert "Confluence authentication failed" in msg
+    assert "base_url" in msg
+    assert "api_token" in msg
+
+
+def test_confluence_verify_credentials_succeeds_on_200(
+    integration: ConfluenceIntegration,
+) -> None:
+    """``verify_credentials`` returns silently on a valid 200 response."""
+    resp = Mock()
+    resp.status_code = 200
+    resp.text = "{}"
+
+    with patch.object(integration._session, "get", return_value=resp):
+        # Should not raise
+        integration.verify_credentials()
+
+
+def test_confluence_verify_credentials_empty_token_raises(
+    tmp_cache: GitAnalysisCache,
+) -> None:
+    """Empty api_token triggers a pre-flight RuntimeError without HTTP call.
+
+    This is the exact failure mode described in issue #33: when
+    ``${CONFLUENCE_API_TOKEN}`` resolves to an empty string, the integration
+    must surface a clear error rather than issuing a guaranteed-401 request.
+    """
+    integ = ConfluenceIntegration(
+        base_url="https://example.atlassian.net/wiki",
+        username="user@x",
+        api_token="",  # simulates missing env var
+        cache=tmp_cache,
+    )
+    with patch.object(integ._session, "get") as mock_get, pytest.raises(RuntimeError) as excinfo:
+        integ.verify_credentials()
+    # No HTTP request should be issued when creds are missing.
+    mock_get.assert_not_called()
+    assert "Confluence authentication failed" in str(excinfo.value)

@@ -8,12 +8,12 @@ reporting with trend analysis capabilities.
 import logging
 from collections import defaultdict
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, TypedDict, cast
 
-from sqlalchemy import and_, func
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func  # type: ignore[import-not-found]
+from sqlalchemy.orm import Session  # type: ignore[import-not-found]
 
 from ..models.database import DailyMetrics, Database
 from ..utils.ai_detection import detect_ai_tool, is_ai_generated
@@ -152,7 +152,7 @@ class DailyMetricsStorage:
                     if existing:
                         # Update existing record
                         self._update_metrics_record(existing, metrics)
-                        existing.updated_at = datetime.utcnow()
+                        existing.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                         logger.debug(
                             f"Updated existing daily metrics for {dev_id} in {project_key} on {analysis_date}"
                         )
@@ -180,9 +180,15 @@ class DailyMetricsStorage:
                     records_processed += 1
 
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to store/update daily metrics for {dev_id} in {project_key} on {analysis_date}: {e}"
-                    )
+                    is_unique_violation = "UNIQUE constraint failed" in str(e)
+                    if is_unique_violation:
+                        logger.debug(
+                            f"UNIQUE constraint conflict for {dev_id} in {project_key} on {analysis_date}: {e}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Failed to store/update daily metrics for {dev_id} in {project_key} on {analysis_date}: {e}"
+                        )
                     session.rollback()
                     # Try to handle UNIQUE constraint violations by doing another lookup
                     try:
@@ -200,18 +206,19 @@ class DailyMetricsStorage:
                         if existing:
                             # Record was created by another process, just update it
                             self._update_metrics_record(existing, metrics)
-                            existing.updated_at = datetime.utcnow()
+                            existing.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                             session.commit()
                             records_processed += 1
                             logger.info(
                                 f"Updated metrics after constraint violation for {dev_id} in {project_key} on {analysis_date}"
                             )
                         else:
-                            logger.error(
+                            # UNIQUE violation but record gone — expected during re-classification
+                            logger.debug(
                                 f"Could not resolve constraint violation for {dev_id} in {project_key} on {analysis_date}"
                             )
                     except Exception as retry_e:
-                        logger.error(
+                        logger.warning(
                             f"Retry failed for {dev_id} in {project_key} on {analysis_date}: {retry_e}"
                         )
                         session.rollback()

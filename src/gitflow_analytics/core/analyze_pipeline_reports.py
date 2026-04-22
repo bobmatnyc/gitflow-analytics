@@ -25,7 +25,7 @@ def run_qualitative_analysis(
     all_commits: list[dict[str, Any]],
     enable_qualitative: bool,
     qualitative_only: bool,
-    display: Any,
+    _display: Any,
 ) -> QualitativeResult:
     """Run qualitative NLP/LLM analysis if enabled.
 
@@ -33,6 +33,7 @@ def run_qualitative_analysis(
     disabled.  Raises ImportError / Exception when qualitative_only=True
     and analysis cannot proceed.
     """
+    _ = _display  # passed by callers for progress output; not used in this layer
     from ..core.analyze_pipeline_helpers import (
         get_qualitative_config,
         is_qualitative_enabled,
@@ -390,7 +391,7 @@ def generate_all_reports(
     # ---- Narrative markdown ----
     if "markdown" in cfg.output.formats and generate_csv:
         try:
-            import pandas as pd
+            import pandas as pd  # type: ignore[import-not-found]
 
             activity_df = pd.read_csv(activity_report)
             focus_df = pd.read_csv(focus_report)
@@ -412,8 +413,8 @@ def generate_all_reports(
                 pr_metrics,
                 narrative_report,
                 weeks,
-                aggregated_pm_data,
-                chatgpt_summary,
+                aggregated_pm_data or {},
+                chatgpt_summary or "",
                 branch_health_metrics,
                 cfg.analysis.exclude_authors,
                 analysis_start_date=start_date,
@@ -445,6 +446,31 @@ def generate_all_reports(
             generated_reports.append(db_qualitative_report.name)
         except Exception as e:
             logger.error("Database qualitative report failed: %s", e)
+
+    # ---- Ticketing activity report (GitHub Issues + Confluence) ----
+    # Mirrors the guarded block in ``pipeline_report.py`` so that `gfa analyze`
+    # emits the same three JSON summaries (github_issues_summary.json,
+    # confluence_activity_summary.json, ticketing_activity_summary.json) that
+    # `gfa report` produces. Only runs when at least one upstream source is
+    # enabled in configuration.  See GitHub issue #32.
+    gh_issues_cfg = getattr(cfg, "github_issues", None)
+    confluence_cfg = getattr(cfg, "confluence", None)
+    if (gh_issues_cfg and getattr(gh_issues_cfg, "enabled", False)) or (
+        confluence_cfg and getattr(confluence_cfg, "enabled", False)
+    ):
+        try:
+            from ..reports.ticketing_activity_report import TicketingActivityReport
+
+            ticket_gen = TicketingActivityReport(
+                cache=analyzer.cache, identity_resolver=identity_resolver
+            )
+            written = ticket_gen.write_reports(output, start_date, end_date)
+            for path_str in written:
+                name = Path(path_str).name
+                if name not in generated_reports:
+                    generated_reports.append(name)
+        except Exception as e:
+            logger.error("Ticketing activity report failed: %s", e)
 
     # ---- Comprehensive JSON export ----
     if "json" in cfg.output.formats:
@@ -494,7 +520,7 @@ def generate_all_reports(
 
 def _gen_csv_report(
     label: str,
-    fn: Callable[[Path], None],
+    fn: Callable[[Path], Any],
     path: Path,
     report_list: list[str],
     reraise: bool = False,

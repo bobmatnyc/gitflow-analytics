@@ -7,6 +7,7 @@ ConfigLoader via multiple inheritance.
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -33,6 +34,14 @@ from .schema import (
     VelocityConfig,
 )
 from .validator import ConfigValidator
+
+# Regex for embedded env-var references in config strings.
+# Matches both ``${VAR}`` and ``$VAR`` (latter only for ASCII identifiers).
+# WHY: Some users write ``api_token: "${CONFLUENCE_API_TOKEN}"`` but others may
+# inadvertently write ``$CONFLUENCE_API_TOKEN`` or embed the reference in a
+# larger string (e.g. ``"Bearer ${TOKEN}"``); handling all three keeps behaviour
+# predictable and backward compatible.
+_ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
 
 logger = logging.getLogger(__name__)
 
@@ -512,7 +521,7 @@ class ConfigLoaderSectionsMixin:
                     ),
                 },
             )()
-            pm_config.jira = jira_sub_config
+            pm_config.jira = jira_sub_config  # type: ignore[misc]
 
         return pm_config
 
@@ -563,30 +572,74 @@ class ConfigLoaderSectionsMixin:
 
     @staticmethod
     def _resolve_env_var(value: Optional[str]) -> Optional[str]:
-        """Resolve environment variable references.
+        """Resolve environment variable references in a string.
+
+        Supports three syntaxes (all backward-compatible with prior
+        exact-match behaviour):
+
+        * ``${VAR}`` — braced reference (preferred, works anywhere in the
+          string).
+        * ``$VAR`` — unbraced reference (must be a valid identifier).
+        * Embedded references (e.g. ``"Bearer ${TOKEN}"``).
+
+        If a referenced variable is not set in ``os.environ``, the reference
+        is replaced with an empty string and a warning is logged — this
+        mirrors shell behaviour and lets callers decide whether the resulting
+        value is acceptable.  For the legacy whole-string ``${VAR}`` pattern
+        the function preserves the prior contract of returning ``None`` when
+        the variable is unset, so downstream ``or ""`` guards continue to
+        work.
 
         Args:
-            value: Value that may contain environment variable reference
+            value: Value that may contain environment variable reference(s).
 
         Returns:
-            Resolved value or None
-
-        Raises:
-            EnvironmentVariableError: If environment variable is not set
+            Resolved string, or ``None`` if the input was empty / the legacy
+            whole-string reference resolved to an unset variable.
         """
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value  # type: ignore[return-value]
         if not value:
             return None
 
-        if value.startswith("${") and value.endswith("}"):
+        # Legacy whole-string ``${VAR}`` path — keep exact prior semantics so
+        # callers that rely on ``None`` (rather than "") continue to work.
+        if value.startswith("${") and value.endswith("}") and value.count("${") == 1:
             env_var = value[2:-1]
             resolved = os.environ.get(env_var)
             if not resolved:
-                # Note: We don't raise here directly, let the caller handle it
-                # based on whether the field is required
+                logger.warning(
+                    "Environment variable %r referenced in config is not set or empty; "
+                    "the resulting credential/value will be blank. Check your .env / "
+                    ".env.local files and shell environment.",
+                    env_var,
+                )
                 return None
             return resolved
 
-        return value
+        # Otherwise, perform substitution for every ``${VAR}`` / ``$VAR`` match.
+        if "$" not in value:
+            return value
+
+        missing: list[str] = []
+
+        def _sub(match: "re.Match[str]") -> str:
+            name = match.group(1) or match.group(2)
+            resolved = os.environ.get(name, "")
+            if not resolved:
+                missing.append(name)
+            return resolved
+
+        substituted = _ENV_VAR_PATTERN.sub(_sub, value)
+        if missing:
+            logger.warning(
+                "Environment variable(s) %s referenced in config are not set or empty; "
+                "substituted with empty strings. Check your .env / .env.local files.",
+                ", ".join(sorted(set(missing))),
+            )
+        return substituted
 
     @classmethod
     def _resolve_config_dict(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
