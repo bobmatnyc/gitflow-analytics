@@ -323,6 +323,18 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
         ai_detection_data = data.get("ai_detection", {})
         ai_detection_config = cls._process_ai_detection_config(ai_detection_data)
 
+        # Boilerplate filter config (top-level key "boilerplate_filter", Issue #28)
+        boilerplate_filter_data = data.get("boilerplate_filter", {})
+        boilerplate_filter_config = cls._process_boilerplate_filter_config(boilerplate_filter_data)
+
+        # GitHub Issues activity tracking config (top-level key "github_issues")
+        github_issues_data = data.get("github_issues", {})
+        github_issues_config = cls._process_github_issues_config(github_issues_data)
+
+        # Confluence activity tracking config (top-level key "confluence")
+        confluence_data = data.get("confluence", {})
+        confluence_config = cls._process_confluence_config(confluence_data)
+
         # Create configuration object
         config = Config(
             repositories=repositories,
@@ -339,6 +351,9 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             teams=teams_config,
             quality_report=quality_report_config,
             ai_detection=ai_detection_config,
+            boilerplate_filter=boilerplate_filter_config,
+            github_issues=github_issues_config,
+            confluence=confluence_config,
         )
 
         # Validate configuration
@@ -471,6 +486,7 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             YAMLParseError: If YAML parsing fails
             ConfigurationError: If file is invalid
         """
+        data: Any = None
         try:
             with open(config_path) as f:
                 data = yaml.safe_load(f)
@@ -530,12 +546,13 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             Base configuration data
         """
         # Resolve base path relative to current config
+        resolved_base_path: Path
         if not Path(base_path).is_absolute():
-            base_path = config_path.parent / base_path
+            resolved_base_path = config_path.parent / base_path
         else:
-            base_path = Path(base_path)
+            resolved_base_path = Path(base_path)
 
-        return cls._load_yaml(base_path)
+        return cls._load_yaml(resolved_base_path)
 
     @classmethod
     def _validate_version(cls, data: dict[str, Any]) -> None:

@@ -15,8 +15,11 @@ import click
 from .errors import EnvironmentVariableError
 from .schema import (
     AIDetectionConfig,
+    BoilerplateFilterConfig,
     CacheConfig,
     Config,
+    ConfluenceConfig,
+    GitHubIssuesConfig,
     JIRAConfig,
     JIRAIntegrationConfig,
     OutputConfig,
@@ -123,8 +126,8 @@ class ConfigLoaderSectionsMixin:
                 raise EnvironmentVariableError("JIRA_ACCESS_TOKEN", "JIRA", config_path)
 
         return JIRAConfig(
-            access_user=access_user,
-            access_token=access_token,
+            access_user=access_user or "",
+            access_token=access_token or "",
             base_url=jira_data.get("base_url"),
         )
 
@@ -150,6 +153,75 @@ class ConfigLoaderSectionsMixin:
             story_point_fields=jira_integration_data.get(
                 "story_point_fields", ["customfield_10016", "customfield_10021", "Story Points"]
             ),
+        )
+
+    @classmethod
+    def _process_github_issues_config(
+        cls, github_issues_data: dict[str, Any]
+    ) -> Optional[GitHubIssuesConfig]:
+        """Process github_issues configuration section.
+
+        Args:
+            github_issues_data: GitHub Issues configuration data from YAML.
+
+        Returns:
+            GitHubIssuesConfig instance or None when no data supplied.
+        """
+        if not github_issues_data:
+            return None
+
+        issue_state = github_issues_data.get("issue_state", "all")
+        valid_states = {"open", "closed", "all"}
+        if issue_state not in valid_states:
+            click.echo(
+                f"Warning: github_issues.issue_state '{issue_state}' is invalid; "
+                f"must be one of {sorted(valid_states)}. Defaulting to 'all'.",
+                err=True,
+            )
+            issue_state = "all"
+
+        allowed_repos = github_issues_data.get("allowed_repos")
+        if allowed_repos is not None:
+            allowed_repos = list(allowed_repos)
+
+        return GitHubIssuesConfig(
+            enabled=bool(github_issues_data.get("enabled", False)),
+            fetch_comments=bool(github_issues_data.get("fetch_comments", False)),
+            allowed_repos=allowed_repos,
+            issue_state=issue_state,
+            max_issues_per_repo=int(github_issues_data.get("max_issues_per_repo", 500)),
+        )
+
+    @classmethod
+    def _process_confluence_config(
+        cls, confluence_data: dict[str, Any]
+    ) -> Optional[ConfluenceConfig]:
+        """Process confluence configuration section.
+
+        Args:
+            confluence_data: Confluence configuration data from YAML.
+
+        Returns:
+            ConfluenceConfig instance or None when no data supplied.
+        """
+        if not confluence_data:
+            return None
+
+        username = cls._resolve_env_var(confluence_data.get("username", "")) or ""
+        api_token = cls._resolve_env_var(confluence_data.get("api_token", "")) or ""
+        base_url = confluence_data.get("base_url", "")
+
+        return ConfluenceConfig(
+            enabled=bool(confluence_data.get("enabled", False)),
+            base_url=base_url.rstrip("/") if base_url else "",
+            username=username,
+            api_token=api_token,
+            spaces=list(confluence_data.get("spaces", [])),
+            fetch_page_history=bool(confluence_data.get("fetch_page_history", False)),
+            dns_timeout=int(confluence_data.get("dns_timeout", 10)),
+            connection_timeout=int(confluence_data.get("connection_timeout", 30)),
+            max_retries=int(confluence_data.get("max_retries", 3)),
+            backoff_factor=float(confluence_data.get("backoff_factor", 1.0)),
         )
 
     @classmethod
@@ -199,7 +271,8 @@ class ConfigLoaderSectionsMixin:
                 openrouter_api_key=cls._resolve_env_var(
                     llm_data.get("openrouter_api_key")
                     or llm_data.get("api_key", "${OPENROUTER_API_KEY}")
-                ),
+                )
+                or "",
                 base_url=llm_data.get("base_url", "https://openrouter.ai/api/v1"),
                 primary_model=llm_data.get("primary_model")
                 or llm_data.get("model", "anthropic/claude-3-haiku"),
@@ -304,6 +377,37 @@ class ConfigLoaderSectionsMixin:
         )
 
     @classmethod
+    def _process_boilerplate_filter_config(cls, bp_data: dict[str, Any]) -> BoilerplateFilterConfig:
+        """Process boilerplate filter configuration section (Issue #28).
+
+        Args:
+            bp_data: Boilerplate filter configuration data from YAML.
+
+        Returns:
+            BoilerplateFilterConfig instance with defaults for any missing keys.
+        """
+        if not bp_data:
+            return BoilerplateFilterConfig()
+
+        action = bp_data.get("action", "flag")
+        valid_actions = {"flag", "exclude_from_averages", "exclude"}
+        if action not in valid_actions:
+            click.echo(
+                f"Warning: boilerplate_filter.action '{action}' is invalid; "
+                f"must be one of {sorted(valid_actions)}. Defaulting to 'flag'.",
+                err=True,
+            )
+            action = "flag"
+
+        return BoilerplateFilterConfig(
+            enabled=bool(bp_data.get("enabled", False)),
+            avg_lines_per_commit_threshold=int(bp_data.get("avg_lines_per_commit_threshold", 500)),
+            total_lines_threshold=int(bp_data.get("total_lines_threshold", 10000)),
+            action=action,
+            flag_label=str(bp_data.get("flag_label", "boilerplate")),
+        )
+
+    @classmethod
     def _process_ai_detection_config(cls, ai_data: dict[str, Any]) -> AIDetectionConfig:
         """Process AI detection configuration section.
 
@@ -394,7 +498,7 @@ class ConfigLoaderSectionsMixin:
         # Parse JIRA section within PM
         if "jira" in pm_data:
             jira_pm_data = pm_data["jira"]
-            pm_config.jira = type(
+            jira_sub_config = type(
                 "PMJIRAConfig",
                 (),
                 {
@@ -408,6 +512,7 @@ class ConfigLoaderSectionsMixin:
                     ),
                 },
             )()
+            pm_config.jira = jira_sub_config
 
         return pm_config
 

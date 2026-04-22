@@ -8,7 +8,9 @@ from ..core.cache import GitAnalysisCache
 from ..pm_framework.orchestrator import PMFrameworkOrchestrator
 from ..utils.debug import is_debug_mode
 from .cicd.github_actions import GitHubActionsIntegration
+from .confluence_integration import ConfluenceIntegration
 from .github_integration import GitHubIntegration
+from .github_issues_integration import GitHubIssuesIntegration
 from .jira_integration import JIRAIntegration
 
 
@@ -22,7 +24,15 @@ class IntegrationOrchestrator:
             print("   🔍 IntegrationOrchestrator.__init__ called")
         self.config = config
         self.cache = cache
-        self.integrations: dict[str, Union[GitHubIntegration, JIRAIntegration]] = {}
+        self.integrations: dict[
+            str,
+            Union[
+                GitHubIntegration,
+                JIRAIntegration,
+                GitHubIssuesIntegration,
+                ConfluenceIntegration,
+            ],
+        ] = {}
 
         # Initialize available integrations
         if config.github and config.github.token:
@@ -39,7 +49,12 @@ class IntegrationOrchestrator:
         if config.jira and config.jira.access_user and config.jira.access_token:
             # Get JIRA specific settings if available
             jira_settings = getattr(config, "jira_integration", {})
-            if hasattr(jira_settings, "enabled") and jira_settings.enabled:
+            jira_enabled = (
+                jira_settings.get("enabled", False)
+                if isinstance(jira_settings, dict)
+                else getattr(jira_settings, "enabled", False)
+            )
+            if jira_enabled:
                 base_url = getattr(config.jira, "base_url", None)
                 if base_url:
                     # Extract network and proxy settings from jira_settings
@@ -56,6 +71,58 @@ class IntegrationOrchestrator:
                         enable_proxy=getattr(jira_settings, "enable_proxy", False),
                         proxy_url=getattr(jira_settings, "proxy_url", None),
                     )
+
+        # Initialize GitHub Issues integration (reuses GitHub token)
+        github_issues_cfg = getattr(config, "github_issues", None)
+        if (
+            github_issues_cfg is not None
+            and getattr(github_issues_cfg, "enabled", False)
+            and config.github
+            and config.github.token
+        ):
+            try:
+                self.integrations["github_issues"] = GitHubIssuesIntegration(
+                    token=config.github.token,
+                    cache=cache,
+                    fetch_comments=github_issues_cfg.fetch_comments,
+                    allowed_repos=github_issues_cfg.allowed_repos,
+                    issue_state=github_issues_cfg.issue_state,
+                    max_issues_per_repo=github_issues_cfg.max_issues_per_repo,
+                    rate_limit_retries=getattr(config.github, "max_retries", 3),
+                    backoff_factor=float(getattr(config.github, "backoff_factor", 2)),
+                )
+                if self.debug_mode:
+                    print("   ✅ GitHub Issues integration initialized")
+            except Exception as e:
+                if self.debug_mode:
+                    print(f"   ⚠️  Failed to initialize GitHub Issues: {e}")
+
+        # Initialize Confluence integration
+        confluence_cfg = getattr(config, "confluence", None)
+        self._confluence_fetched = False
+        if (
+            confluence_cfg is not None
+            and getattr(confluence_cfg, "enabled", False)
+            and getattr(confluence_cfg, "base_url", "")
+        ):
+            try:
+                self.integrations["confluence"] = ConfluenceIntegration(
+                    base_url=confluence_cfg.base_url,
+                    username=confluence_cfg.username,
+                    api_token=confluence_cfg.api_token,
+                    cache=cache,
+                    spaces=confluence_cfg.spaces,
+                    fetch_page_history=confluence_cfg.fetch_page_history,
+                    dns_timeout=confluence_cfg.dns_timeout,
+                    connection_timeout=confluence_cfg.connection_timeout,
+                    max_retries=confluence_cfg.max_retries,
+                    backoff_factor=confluence_cfg.backoff_factor,
+                )
+                if self.debug_mode:
+                    print("   ✅ Confluence integration initialized")
+            except Exception as e:
+                if self.debug_mode:
+                    print(f"   ⚠️  Failed to initialize Confluence: {e}")
 
         # Initialize CI/CD integrations
         self.cicd_integrations: dict[str, Any] = {}
@@ -220,6 +287,29 @@ class IntegrationOrchestrator:
                     if self.debug_mode:
                         print(f"   ⚠️  JIRA enrichment failed: {e}")
 
+        # GitHub Issues activity tracking (per-repo)
+        if "github_issues" in self.integrations and repo_config.github_repo:
+            gh_issues = self.integrations["github_issues"]
+            if isinstance(gh_issues, GitHubIssuesIntegration):
+                try:
+                    gh_issues.fetch_issues_activity([repo_config.github_repo], since)
+                except Exception as e:
+                    if self.debug_mode:
+                        print(f"   ⚠️  GitHub Issues enrichment failed: {e}")
+
+        # Confluence activity tracking (once per run, not per-repo)
+        if "confluence" in self.integrations and not self._confluence_fetched:
+            conf = self.integrations["confluence"]
+            if isinstance(conf, ConfluenceIntegration):
+                try:
+                    conf.fetch_all_spaces(since)
+                    self._confluence_fetched = True
+                except Exception as e:
+                    if self.debug_mode:
+                        print(f"   ⚠️  Confluence enrichment failed: {e}")
+                    # Even on failure, mark as attempted to avoid retrying per-repo
+                    self._confluence_fetched = True
+
         # CI/CD enrichment
         if self.cicd_integrations and repo_config.github_repo:
             all_pipelines = []
@@ -308,6 +398,7 @@ class IntegrationOrchestrator:
 
     def get_platform_issues(self, project_key: str, since: datetime) -> list[dict[str, Any]]:
         """Get issues from all configured platforms."""
+        del since  # Currently unused; retained for API compatibility / future use
         all_issues: list[dict[str, Any]] = []
 
         # Check cache first

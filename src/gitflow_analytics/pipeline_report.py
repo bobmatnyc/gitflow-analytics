@@ -66,7 +66,7 @@ def run_report(
     cache = GitAnalysisCache(cfg.cache.directory)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    from sqlalchemy import and_
+    from sqlalchemy import and_  # type: ignore[import-not-found]
 
     from .models.database import CachedCommit
     from .models.database_metrics_models import QualitativeCommitData
@@ -233,7 +233,7 @@ def run_report(
 
     generated: list[str] = []
 
-    def _try_report(name: str, fn: Callable[[], None]) -> None:
+    def _try_report(name: str, fn: Callable[[], Any]) -> None:
         try:
             fn()
         except Exception as exc:
@@ -394,7 +394,7 @@ def run_report(
         try:
             from typing import cast
 
-            import pandas as pd
+            import pandas as pd  # type: ignore[import-not-found]
 
             narrative_gen = NarrativeReportGenerator()
             activity_df = pd.read_csv(activity_report)
@@ -416,8 +416,8 @@ def run_report(
                 {},
                 narrative_report,
                 weeks,
-                None,
-                None,
+                {},
+                "",
                 {},
                 exclude_authors,
                 analysis_start_date=start_date,
@@ -502,9 +502,30 @@ def run_report(
                     "untracked_commits": 0 if c.get("ticket_reference") else 1,
                     "ai_assisted_commits": 1 if c.get("is_ai_assisted") else 0,
                     "ai_generated_commits": 1 if c.get("is_ai_generated") else 0,
+                    "timestamp": c.get("timestamp"),
                 }
                 for c in all_commits
             ]
+
+            # --- Boilerplate filter (Issue #28) -----------------------------
+            # Aggregate per-developer-per-week metrics, apply the filter, and
+            # replace the commit proxy with the filtered detail rows before
+            # the team aggregator runs.  When the filter is disabled this is
+            # a no-op pass-through.
+            bp_cfg = getattr(cfg, "boilerplate_filter", None)
+            if bp_cfg is not None and getattr(bp_cfg, "enabled", False):
+                from .reports.boilerplate_filter import (
+                    BoilerplateFilter,
+                    apply_boilerplate_filter_to_commits,
+                )
+
+                bp_filter = BoilerplateFilter(bp_cfg)
+                commit_proxy = apply_boilerplate_filter_to_commits(bp_filter, commit_proxy)
+                _emit(
+                    f"Boilerplate filter action='{bp_cfg.action}' applied "
+                    f"(remaining proxy rows: {len(commit_proxy)})"
+                )
+
             summary = team_aggregator.generate(commit_proxy, output_dir)
             if summary:
                 generated.append("weekly_summary.json")
@@ -512,6 +533,25 @@ def run_report(
             msg = f"Team aggregation report failed: {exc}"
             logger.error(msg, exc_info=True)
             result.errors.append(msg)
+
+    # --- Ticketing activity report (GitHub Issues + Confluence) ---
+    gh_issues_cfg = getattr(cfg, "github_issues", None)
+    confluence_cfg = getattr(cfg, "confluence", None)
+    if (gh_issues_cfg and getattr(gh_issues_cfg, "enabled", False)) or (
+        confluence_cfg and getattr(confluence_cfg, "enabled", False)
+    ):
+
+        def _gen_ticketing_reports() -> None:
+            from .reports.ticketing_activity_report import TicketingActivityReport
+
+            ticket_gen = TicketingActivityReport(cache=cache, identity_resolver=identity_resolver)
+            written = ticket_gen.write_reports(output_dir, start_date, end_date)
+            for path_str in written:
+                name = Path(path_str).name
+                if name not in generated:
+                    generated.append(name)
+
+        _try_report("ticketing_activity", _gen_ticketing_reports)
 
     # --- Native quality report (Issue #26) ---
     quality_cfg = getattr(cfg, "quality_report", None)
@@ -580,5 +620,5 @@ def _generate_classification_trends(
         f"_{date_suffix}",
         categorize_fn=analyzer.ticket_extractor.categorize_commit,
     )
-    for _report_type, report_path in trends_paths.items():
+    for _, report_path in trends_paths.items():
         generated.append(report_path.name)

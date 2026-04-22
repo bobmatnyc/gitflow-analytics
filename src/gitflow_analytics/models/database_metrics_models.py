@@ -1,6 +1,6 @@
 """Metrics, PR, issue, training, and CI/CD database models for GitFlow Analytics."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
@@ -262,7 +262,11 @@ class TrainingData(Base):
     # Training metadata
     training_session_id = Column(String, nullable=False)  # Groups related training data
     created_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=utcnow_tz_aware)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        onupdate=utcnow_tz_aware,
+    )
 
     # Quality assurance
     validated = Column(Boolean, default=False)  # Human validation flag
@@ -458,3 +462,99 @@ class CICDPipelineCache(Base):
             f"status='{self.status}', "
             f"repo='{self.repo_path}')>"
         )
+
+
+class TicketingActivityCache(Base):
+    """Cached ticketing activity events from GitHub Issues and Confluence (v10 migration).
+
+    WHY: Tracks per-developer activity on ticketing/knowledge platforms (GitHub Issues,
+    Confluence) so that developer-productivity reports can incorporate non-git work.
+    One row represents a single activity event (issue opened, comment posted, page edited),
+    NOT a single item — so the same issue number can appear in many rows.
+
+    Actors are always stored lowercased for consistent identity matching.
+    """
+
+    __tablename__ = "ticketing_activity_cache"
+
+    id = Column(Integer, primary_key=True)
+
+    # Platform identification
+    platform = Column(String, nullable=False)  # 'github_issues' | 'confluence'
+    item_id = Column(String, nullable=False)  # issue number or page_id (as string)
+    item_type = Column(String, nullable=False)  # 'issue' | 'comment' | 'page_edit' | 'page_create'
+    repo_or_space = Column(String, nullable=False)  # owner/repo or Confluence space key
+
+    # Actor (always lowercased for identity matching)
+    actor = Column(String)  # lowercased GitHub login / Confluence username
+    actor_display_name = Column(String)
+    actor_email = Column(String)
+
+    # Event data
+    action = Column(String)  # 'opened' | 'closed' | 'commented' | 'edited' | 'created'
+    activity_at = Column(DateTime(timezone=True), nullable=False)
+    item_title = Column(String)
+    item_status = Column(String)
+    item_url = Column(String)
+
+    # Cross-reference to commit ticket_references
+    linked_ticket_id = Column(String)
+
+    # Engagement metrics
+    comment_count = Column(Integer, default=0)
+    reaction_count = Column(Integer, default=0)
+
+    # Platform-specific raw data
+    platform_data = Column(JSON)
+
+    # Cache metadata
+    cached_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+
+    __table_args__ = (
+        Index("idx_ticketing_platform_item", "platform", "item_id"),
+        Index("idx_ticketing_actor", "actor"),
+        Index("idx_ticketing_activity_at", "activity_at"),
+        Index("idx_ticketing_repo_or_space", "repo_or_space"),
+    )
+
+
+class ConfluencePageCache(Base):
+    """Cached Confluence page metadata (v10 migration).
+
+    WHY: Pages are unique by page_id, unlike activity events which may have multiple
+    rows per item.  This cache stores the latest known state of each page so that
+    summary reports can join activity events to rich page metadata.
+    """
+
+    __tablename__ = "confluence_page_cache"
+
+    id = Column(Integer, primary_key=True)
+    page_id = Column(String, nullable=False, unique=True)
+    space_key = Column(String, nullable=False)
+
+    title = Column(String)
+    version = Column(Integer)
+
+    # Creator (lowercased)
+    author = Column(String)
+    author_email = Column(String)
+
+    # Last modifier (lowercased)
+    last_editor = Column(String)
+    last_editor_email = Column(String)
+
+    created_at = Column(DateTime(timezone=True))
+    updated_at = Column(DateTime(timezone=True))
+
+    labels = Column(JSON)
+    ancestor_ids = Column(JSON)
+    page_url = Column(String)
+    platform_data = Column(JSON)
+
+    cached_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+
+    __table_args__ = (
+        Index("idx_confluence_page_id", "page_id", unique=True),
+        Index("idx_confluence_space_key", "space_key"),
+        Index("idx_confluence_author", "author"),
+    )

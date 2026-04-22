@@ -494,6 +494,43 @@ class JIRAIntegrationConfig:
 
 
 @dataclass
+class GitHubIssuesConfig:
+    """Configuration for GitHub Issues activity tracking.
+
+    WHY: Tracking issue opens/closes/comments as developer productivity signals
+    requires a separate config from the generic GitHub PR config so that users
+    can opt in/out and constrain which repos are scanned.
+    """
+
+    enabled: bool = False
+    fetch_comments: bool = False
+    allowed_repos: Optional[list[str]] = None
+    issue_state: str = "all"  # 'open' | 'closed' | 'all'
+    max_issues_per_repo: int = 500
+
+
+@dataclass
+class ConfluenceConfig:
+    """Configuration for Confluence page activity tracking.
+
+    WHY: Confluence is a separate platform from JIRA (even when using the same
+    Atlassian instance) and uses page-level activity rather than ticket-level.
+    Auth reuses the standard Atlassian username + API token pattern.
+    """
+
+    enabled: bool = False
+    base_url: str = ""
+    username: str = ""
+    api_token: str = ""
+    spaces: list[str] = field(default_factory=list)
+    fetch_page_history: bool = False
+    dns_timeout: int = 10
+    connection_timeout: int = 30
+    max_retries: int = 3
+    backoff_factor: float = 1.0
+
+
+@dataclass
 class PMPlatformConfig:
     """Base PM platform configuration."""
 
@@ -544,6 +581,42 @@ class VelocityConfig:
     cycle_time_outlier_min_hrs: float = 0.5
     cycle_time_outlier_max_hrs: float = 720.0  # 30 days
     top_n: int = 5
+
+
+@dataclass
+class BoilerplateFilterConfig:
+    """Configuration for the boilerplate / bulk-auto-generated-commit filter (Issue #28).
+
+    Developers pushing huge amounts of auto-generated code (Swagger schemas,
+    DB migrations, vendored dependencies, generated clients, etc.) can inflate
+    velocity metrics with outlier line counts that don't reflect actual
+    engineering work.  This filter detects such developers from their per-week
+    metrics and optionally flags or excludes them so team averages remain
+    meaningful.
+
+    YAML example::
+
+        boilerplate_filter:
+          enabled: true
+          avg_lines_per_commit_threshold: 500
+          total_lines_threshold: 10000
+          action: "flag"          # "flag" | "exclude_from_averages" | "exclude"
+          flag_label: "boilerplate"
+
+    Action semantics:
+      * ``flag`` — developer appears in output with ``boilerplate_flag: true``
+        and ``boilerplate_label`` annotation; they remain in team averages.
+      * ``exclude_from_averages`` — developer's metrics are kept in per-dev
+        output but excluded from team/org average computations.
+      * ``exclude`` — developer is omitted from all report output for that week.
+    """
+
+    enabled: bool = False
+    avg_lines_per_commit_threshold: int = 500
+    total_lines_threshold: int = 10000
+    # Valid values: "flag", "exclude_from_averages", "exclude"
+    action: str = "flag"
+    flag_label: str = "boilerplate"
 
 
 @dataclass
@@ -615,6 +688,9 @@ class Config:
     teams: TeamsConfig = field(default_factory=TeamsConfig)
     quality_report: QualityReportConfig = field(default_factory=QualityReportConfig)
     ai_detection: AIDetectionConfig = field(default_factory=AIDetectionConfig)
+    boilerplate_filter: BoilerplateFilterConfig = field(default_factory=BoilerplateFilterConfig)
+    github_issues: Optional[GitHubIssuesConfig] = None
+    confluence: Optional[ConfluenceConfig] = None
     launcher: Optional[LauncherPreferences] = None
 
     def discover_organization_repositories(
@@ -633,7 +709,7 @@ class Config:
         if not self.github.organization or not self.github.token:
             return []
 
-        from github import Github
+        from github import Github  # type: ignore[import-not-found]
 
         github_client = Github(self.github.token, base_url=self.github.base_url)
 

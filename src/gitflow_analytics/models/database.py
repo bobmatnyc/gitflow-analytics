@@ -39,10 +39,12 @@ from .database_identity_models import (  # noqa: E402
 from .database_metrics_models import (  # noqa: E402
     CICDPipelineCache,
     ClassificationModel,
+    ConfluencePageCache,
     IssueCache,
     LLMUsageStats,
     PullRequestCache,
     QualitativeCommitData,
+    TicketingActivityCache,
     TrainingData,
     TrainingSession,
 )
@@ -72,6 +74,8 @@ __all__ = [
     "CICDPipelineCache",
     "WeeklyFetchStatus",
     "SchemaVersion",
+    "TicketingActivityCache",
+    "ConfluencePageCache",
     "Database",
 ]
 
@@ -630,6 +634,14 @@ class Database:
                 # Existing rows receive NULL / empty string defaults.
                 self._migrate_cached_commits_ai_columns(conn)
 
+                # --- Ticketing activity tracking tables (v10.0 migration) ---
+                # WHY: GitHub Issues + Confluence activity are tracked in new tables
+                # (ticketing_activity_cache, confluence_page_cache).  The migration
+                # is a no-op when the tables already exist with the expected columns
+                # (Base.metadata.create_all handles table creation for new databases);
+                # it only adds missing columns to existing tables.
+                self._migrate_ticketing_activity_v10(conn)
+
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
             logger.debug(
@@ -949,3 +961,103 @@ class Database:
                     logger.info(f"Applied cached_commits v9.0 migration: added {col}")
                 except Exception as e:
                     logger.debug(f"Could not add cached_commits.{col}: {e}")
+
+    def _migrate_ticketing_activity_v10(self, conn) -> None:
+        """Idempotent v10 migration for ticketing_activity_cache and confluence_page_cache.
+
+        WHY: These tables are created via Base.metadata.create_all for fresh databases.
+        For existing databases that pre-date v10 the tables simply don't exist — which
+        is fine because create_all already created them.  However, we defensively add
+        missing columns via ALTER TABLE so that if an older partial schema somehow
+        exists we can bring it up to current. Each ALTER TABLE is wrapped in its own
+        try/except to remain idempotent.
+
+        Args:
+            conn: Active SQLAlchemy connection.
+        """
+        # ticketing_activity_cache columns — all nullable / defaulted for safe migration
+        ticketing_columns: list[tuple[str, str]] = [
+            ("platform", "TEXT"),
+            ("item_id", "TEXT"),
+            ("item_type", "TEXT"),
+            ("repo_or_space", "TEXT"),
+            ("actor", "TEXT"),
+            ("actor_display_name", "TEXT"),
+            ("actor_email", "TEXT"),
+            ("action", "TEXT"),
+            ("activity_at", "DATETIME"),
+            ("item_title", "TEXT"),
+            ("item_status", "TEXT"),
+            ("item_url", "TEXT"),
+            ("linked_ticket_id", "TEXT"),
+            ("comment_count", "INTEGER DEFAULT 0"),
+            ("reaction_count", "INTEGER DEFAULT 0"),
+            ("platform_data", "JSON"),
+            ("cached_at", "DATETIME"),
+        ]
+
+        try:
+            result = conn.execute(text("PRAGMA table_info(ticketing_activity_cache)"))
+            existing = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read ticketing_activity_cache schema: {e}")
+            existing = set()
+
+        # Only attempt ALTER TABLE if the table exists with some columns already
+        if existing:
+            for col_name, col_type in ticketing_columns:
+                if col_name not in existing:
+                    try:
+                        conn.execute(
+                            text(
+                                f"ALTER TABLE ticketing_activity_cache ADD COLUMN {col_name} {col_type}"
+                            )
+                        )
+                        conn.commit()
+                        logger.info(
+                            f"Applied ticketing_activity_cache v10 migration: added {col_name}"
+                        )
+                    except Exception as e:
+                        logger.debug(f"Could not add ticketing_activity_cache.{col_name}: {e}")
+
+        # confluence_page_cache columns
+        confluence_columns: list[tuple[str, str]] = [
+            ("page_id", "TEXT"),
+            ("space_key", "TEXT"),
+            ("title", "TEXT"),
+            ("version", "INTEGER"),
+            ("author", "TEXT"),
+            ("author_email", "TEXT"),
+            ("last_editor", "TEXT"),
+            ("last_editor_email", "TEXT"),
+            ("created_at", "DATETIME"),
+            ("updated_at", "DATETIME"),
+            ("labels", "JSON"),
+            ("ancestor_ids", "JSON"),
+            ("page_url", "TEXT"),
+            ("platform_data", "JSON"),
+            ("cached_at", "DATETIME"),
+        ]
+
+        try:
+            result = conn.execute(text("PRAGMA table_info(confluence_page_cache)"))
+            existing_conf = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read confluence_page_cache schema: {e}")
+            existing_conf = set()
+
+        if existing_conf:
+            for col_name, col_type in confluence_columns:
+                if col_name not in existing_conf:
+                    try:
+                        conn.execute(
+                            text(
+                                f"ALTER TABLE confluence_page_cache ADD COLUMN {col_name} {col_type}"
+                            )
+                        )
+                        conn.commit()
+                        logger.info(
+                            f"Applied confluence_page_cache v10 migration: added {col_name}"
+                        )
+                    except Exception as e:
+                        logger.debug(f"Could not add confluence_page_cache.{col_name}: {e}")
