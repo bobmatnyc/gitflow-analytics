@@ -224,6 +224,53 @@ def run_batch_mode(
     result.developer_stats = identity_result.developer_stats
     result.developer_ticket_coverage = identity_result.developer_ticket_coverage
 
+    # ------------------------------------------------------------------
+    # Auto-populate identities from external sources (#45).  Best-effort;
+    # failures must never abort the analyze pipeline.
+    # ------------------------------------------------------------------
+    if (
+        getattr(cfg, "github", None)
+        and getattr(cfg.github, "organization", None)
+        and getattr(cfg.github, "token", None)
+    ):
+        try:
+            from .integrations.github_username_sync import (
+                GitHubOrgSync,  # type: ignore[import-not-found]
+            )
+
+            gh_sync = GitHubOrgSync(
+                token=cfg.github.token,
+                org=cfg.github.organization,
+            )
+            updated = gh_sync.sync(identity_resolver)
+            if updated:
+                click.echo(
+                    f"🔗 GitHub org sync: populated github_username for {updated} developers"
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GitHub org sync failed (non-fatal): %s", exc)
+
+    if (
+        getattr(cfg, "confluence", None)
+        and getattr(cfg.confluence, "base_url", None)
+        and getattr(cfg.confluence, "api_token", None)
+    ):
+        try:
+            from .integrations.confluence_identity_sync import (
+                ConfluenceIdentitySync,  # type: ignore[import-not-found]
+            )
+
+            cf_sync = ConfluenceIdentitySync(
+                base_url=cfg.confluence.base_url,
+                username=cfg.confluence.username,
+                api_token=cfg.confluence.api_token,
+            )
+            resolved = cf_sync.sync(analyzer.cache, identity_resolver)
+            if resolved:
+                click.echo(f"🔗 Confluence identity sync: resolved {resolved} actor UUIDs")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Confluence identity sync failed (non-fatal): %s", exc)
+
     # Ticket analysis
     if display and display._live:
         display.update_progress_task(

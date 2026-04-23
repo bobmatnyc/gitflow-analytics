@@ -687,6 +687,79 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
                 if isinstance(cached, dict):
                     cached["github_username"] = username_normalized
 
+    def find_canonical_id_by_email(self, email: str) -> str | None:
+        """Return canonical_id for a developer by email, or None if not found.
+
+        WHY (#45): Pure, side-effect-free lookup used by GitHub-org and
+        Confluence identity-sync routines to map a discovered email back to
+        an existing canonical developer.  Unlike :meth:`resolve_developer`,
+        this method MUST NOT create a new identity or add aliases — callers
+        rely on ``None`` to decide whether to skip the record.
+
+        Lookup order mirrors :meth:`resolve_developer`:
+          1. In-memory alias cache (``"<email>:<name>"`` keys scanned for
+             a matching email prefix).
+          2. ``developer_aliases.email`` (primary location for secondary
+             addresses).
+          3. ``developer_identities.primary_email``.
+
+        Args:
+            email: Email address to look up.  Case-insensitive.
+
+        Returns:
+            The canonical_id if found, otherwise ``None``.
+        """
+        if not email:
+            return None
+        email_lower = email.lower().strip()
+        if not email_lower:
+            return None
+
+        # ------------------------------------------------------------------
+        # 1. Fast in-memory cache check — cache keys are "<email>:<name>"
+        # ------------------------------------------------------------------
+        email_prefix = f"{email_lower}:"
+        for cache_key, value in self._cache.items():
+            if (
+                isinstance(cache_key, str)
+                and cache_key.startswith(email_prefix)
+                and isinstance(value, str)
+            ):
+                return value
+
+        # ------------------------------------------------------------------
+        # 2. In-memory fallback path (no database)
+        # ------------------------------------------------------------------
+        if not self._database_available:
+            # _in_memory_aliases maps "<email>:<name>" → canonical_id
+            for key, canonical_id in getattr(self, "_in_memory_aliases", {}).items():
+                if key.startswith(email_prefix):
+                    return canonical_id
+            for canonical_id, identity in getattr(self, "_in_memory_identities", {}).items():
+                if (identity.get("primary_email") or "").lower() == email_lower:
+                    return canonical_id
+            return None
+
+        # ------------------------------------------------------------------
+        # 3. Database lookup: aliases first, then primary identities
+        # ------------------------------------------------------------------
+        with self.get_session() as session:
+            alias = (
+                session.query(DeveloperAlias).filter(DeveloperAlias.email == email_lower).first()
+            )
+            if alias:
+                return alias.canonical_id
+
+            identity = (
+                session.query(DeveloperIdentity)
+                .filter(DeveloperIdentity.primary_email == email_lower)
+                .first()
+            )
+            if identity:
+                return identity.canonical_id
+
+        return None
+
     def _add_alias(self, canonical_id: str, name: str, email: str):
         """Add alias for existing developer."""
         with self.get_session() as session:
