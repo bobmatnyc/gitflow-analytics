@@ -182,6 +182,9 @@ def generate_all_reports(
         anonymize=anonymize or cfg.output.anonymize_enabled,
         exclude_authors=cfg.analysis.exclude_authors,
         identity_resolver=identity_resolver,
+        cache=analyzer.cache,
+        since=start_date,
+        until=end_date,
     )
     analytics_gen = AnalyticsReportGenerator(
         anonymize=anonymize or cfg.output.anonymize_enabled,
