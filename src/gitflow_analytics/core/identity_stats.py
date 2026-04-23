@@ -267,6 +267,11 @@ class IdentityStatsMixin:
             )
             aliases = mapping.get("aliases", [])
             preferred_name = mapping.get("name")  # Optional display name
+            # Bug #44: Honour github_username from manual mappings so
+            # resolve_by_github_username() works in the in-memory fallback too.
+            mapping_github_username = mapping.get("github_username")
+            if mapping_github_username:
+                mapping_github_username = mapping_github_username.strip().lower() or None
 
             if not canonical_email or not aliases:
                 continue
@@ -276,7 +281,7 @@ class IdentityStatsMixin:
             self._in_memory_identities[canonical_id] = {
                 "primary_name": preferred_name or canonical_email.split("@")[0],
                 "primary_email": canonical_email,
-                "github_username": None,
+                "github_username": mapping_github_username,
                 "total_commits": 0,
                 "total_story_points": 0,
             }

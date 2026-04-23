@@ -407,20 +407,25 @@ class TestGitHubNoReplyEmailResolution:
             "is the extracted username"
         )
 
-    def test_noreply_email_without_plus_creates_new_identity(self, temp_dir):
-        """Noreply-style address without the numeric+username format is treated as a new identity."""
+    def test_noreply_email_bare_form_matches_username_identity(self, temp_dir):
+        """Bug #44 Gap 2: bare ``username@users.noreply.github.com`` resolves to the username identity.
+
+        Prior to the fix, the guard required a ``+`` in the local-part, so the
+        bare form silently fell through to "create new identity". After the fix
+        the bare form is treated the same as the numeric+username form.
+        """
         db_path = temp_dir / "identities.db"
         resolver = DeveloperIdentityResolver(db_path)
 
-        resolver.resolve_developer("Alice", "alice")
-
-        # An address that ends with noreply domain but lacks "+" should NOT trigger the
-        # username-extraction path and should therefore create a distinct identity.
-        id_plain = resolver.resolve_developer("Alice", "alice@users.noreply.github.com")
         id_user = resolver.resolve_developer("Alice", "alice")
 
-        # These are separate identities; the noreply path only fires when "+" is present.
-        assert id_plain != id_user
+        # Bare noreply form must now match the existing username identity.
+        id_plain = resolver.resolve_developer("Alice", "alice@users.noreply.github.com")
+
+        assert id_plain == id_user, (
+            "Bare 'username@users.noreply.github.com' should resolve to the same identity "
+            "whose primary_email is the extracted username (Bug #44 Gap 2)."
+        )
 
     def test_noreply_match_is_cached(self, temp_dir):
         """Resolving the same noreply address twice uses the cache on the second call."""
@@ -873,3 +878,104 @@ class TestUpdateCommitStatsIdempotency:
         assert (
             helper["total_commits"] == 1
         ), f"Co-author Helper should have 1 commit, got {helper['total_commits']}"
+
+
+class TestGithubUsernameBackfill:
+    """Bug #44: ensure github_username gets populated on existing identities.
+
+    Without these backfills, resolve_by_github_username() can't bridge ticketing
+    actors to canonical identities, and ticketing_score is always 0.0 for
+    developers whose identity was created before a noreply commit landed.
+    """
+
+    def test_resolve_developer_sets_github_username_on_existing_identity(self, temp_dir):
+        """Bug #44: noreply commit backfills github_username on a pre-existing identity.
+
+        Scenario: identity was created with the corporate email as primary and the
+        GitHub username listed as an alias (typical ``manual_mappings`` output),
+        but ``github_username`` is still NULL because no noreply commit has been
+        seen yet. A later noreply commit must backfill the column on the
+        existing identity so ticketing lookups can bridge to the canonical ID.
+        """
+        db_path = temp_dir / "identities.db"
+
+        # Set up an existing identity with the username as a known alias but
+        # no github_username column populated — mimics the state of every
+        # developer in the production DB before the fix.
+        manual_mappings = [
+            {
+                "primary_email": "alice@company.com",
+                "name": "Alice Smith",
+                "aliases": ["alice-gh"],  # note: no github_username here
+            }
+        ]
+        resolver = DeveloperIdentityResolver(db_path, manual_mappings=manual_mappings)
+
+        canonical_id = resolver.resolve_developer("Alice Smith", "alice@company.com")
+
+        # Sanity: github_username is NOT populated yet.
+        assert (
+            resolver.resolve_by_github_username("alice-gh") is None
+        ), "Pre-condition: no github_username set before the noreply commit lands"
+
+        # Now a noreply commit with the same person's username arrives.
+        resolved = resolver.resolve_developer(
+            "Alice Smith",
+            "12345+alice-gh@users.noreply.github.com",
+        )
+        assert resolved == canonical_id
+
+        # The key assertion: resolve_by_github_username now finds the identity.
+        found = resolver.resolve_by_github_username("alice-gh")
+        assert (
+            found == canonical_id
+        ), "github_username should have been backfilled on the existing identity"
+
+    def test_resolve_developer_bare_noreply_sets_github_username(self, temp_dir):
+        """Bug #44 Gap 2: bare username@users.noreply.github.com form is supported."""
+        db_path = temp_dir / "identities.db"
+        resolver = DeveloperIdentityResolver(db_path)
+
+        # Pre-create an identity whose primary_email is the bare username,
+        # so the noreply path's "username_identity" branch fires.
+        canonical_id = resolver.resolve_developer("Octocat", "octocat")
+
+        # Bare noreply form (no numeric ID prefix).
+        resolved = resolver.resolve_developer(
+            "Octocat",
+            "octocat@users.noreply.github.com",
+        )
+        assert resolved == canonical_id
+
+        # github_username must be populated so ticketing lookups succeed.
+        found = resolver.resolve_by_github_username("octocat")
+        assert found == canonical_id, (
+            "Bare 'username@users.noreply.github.com' form must backfill github_username "
+            "so resolve_by_github_username() can bridge ticketing actors."
+        )
+
+    def test_manual_mapping_populates_github_username(self, temp_dir):
+        """Bug #44 Gap 3: manual_mappings can supply github_username for existing identities."""
+        db_path = temp_dir / "identities.db"
+
+        # Step 1: create an identity via a commit (no github_username).
+        resolver_first = DeveloperIdentityResolver(db_path)
+        canonical_id = resolver_first.resolve_developer("Bob Builder", "bob@company.com")
+        assert resolver_first.resolve_by_github_username("bob-builder") is None
+
+        # Step 2: reload with a manual mapping that supplies github_username.
+        manual_mappings = [
+            {
+                "primary_email": "bob@company.com",
+                "name": "Bob Builder",
+                "github_username": "bob-builder",
+                "aliases": [],
+            }
+        ]
+        resolver = DeveloperIdentityResolver(db_path, manual_mappings=manual_mappings)
+
+        found = resolver.resolve_by_github_username("bob-builder")
+        assert found == canonical_id, (
+            "Manual mapping with github_username must backfill the field on an "
+            "already-existing identity so ticketing bridges to the canonical ID."
+        )

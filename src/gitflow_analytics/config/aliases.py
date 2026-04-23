@@ -26,6 +26,7 @@ class DeveloperAlias:
     primary_email: str
     aliases: list[str] = field(default_factory=list)
     name: Optional[str] = None
+    github_username: str | None = None
     confidence: float = 1.0
     reasoning: str = ""
 
@@ -42,6 +43,9 @@ class DeveloperAlias:
 
         if self.name:
             result["name"] = self.name
+
+        if self.github_username:
+            result["github_username"] = self.github_username
 
         # Only include confidence and reasoning for LLM-generated aliases
         if self.confidence < 1.0:
@@ -122,6 +126,7 @@ class AliasesManager:
                             primary_email=primary_email,
                             aliases=alias_data.get("aliases", []),
                             name=alias_data.get("name"),
+                            github_username=alias_data.get("github_username"),
                             confidence=alias_data.get("confidence", 1.0),
                             reasoning=alias_data.get("reasoning", ""),
                         )
@@ -278,6 +283,9 @@ class AliasesManager:
             if alias.name:
                 mapping["name"] = alias.name
 
+            if alias.github_username:
+                mapping["github_username"] = alias.github_username
+
             mapping["aliases"] = alias.aliases
 
             # Include confidence and reasoning for LLM-generated mappings
@@ -312,6 +320,7 @@ class AliasesManager:
                 primary_email=primary_email,
                 aliases=mapping.get("aliases", []),
                 name=mapping.get("name"),
+                github_username=mapping.get("github_username"),
                 confidence=mapping.get("confidence", 1.0),
                 reasoning=mapping.get("reasoning", ""),
             )

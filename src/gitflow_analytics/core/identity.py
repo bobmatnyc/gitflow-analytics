@@ -222,6 +222,12 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
                 )
                 aliases = mapping.get("aliases", [])
                 preferred_name = mapping.get("name")  # Optional display name
+                # Bug #44: Allow operators to supply github_username manually
+                # for developers who never commit via the GitHub web UI (so the
+                # noreply heuristic never fires for them).
+                mapping_github_username: str | None = mapping.get("github_username")
+                if mapping_github_username:
+                    mapping_github_username = mapping_github_username.strip().lower() or None
 
                 # Bug #29 fix: canonical_email is required but aliases can be empty
                 # when the mapping only intends to set/rename the primary_name.
@@ -255,6 +261,7 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
                         canonical_id=canonical_id,
                         primary_name=preferred_name or canonical_email.split("@")[0],
                         primary_email=canonical_email,
+                        github_username=mapping_github_username,
                         first_seen=datetime.now(timezone.utc),
                         last_seen=datetime.now(timezone.utc),
                         total_commits=0,
@@ -272,6 +279,12 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
                         f"Updating display name: {canonical_identity.primary_name} → {preferred_name}"
                     )
                     canonical_identity.primary_name = preferred_name
+
+                # Bug #44: Backfill github_username on an already-existing identity
+                # if the manual mapping provides one. This is deferred until after
+                # any merge() so it always applies to the surviving canonical row.
+                if mapping_github_username and not canonical_identity.github_username:
+                    canonical_identity.github_username = mapping_github_username
 
                 # Process each alias
                 for alias_email in aliases:
@@ -407,11 +420,14 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
             return canonical_id
 
         # Fix 2: Detect GitHub noreply emails and resolve via username.
-        # Pattern: {numeric_id}+{username}@users.noreply.github.com
+        # Supports both forms:
+        #   - {numeric_id}+{username}@users.noreply.github.com (with ID prefix)
+        #   - {username}@users.noreply.github.com (bare form)
         # Extract the username portion and try to match it against existing aliases.
-        if email.endswith("@users.noreply.github.com") and "+" in email:
+        if email.endswith("@users.noreply.github.com"):
             local_part = email.split("@")[0]
-            github_username = local_part.split("+", 1)[1]  # part after the numeric ID
+            # Handle both forms: "id+username" and bare "username"
+            github_username = local_part.split("+", 1)[1] if "+" in local_part else local_part
             # Look for an existing alias or identity with this username as email/alias
             with self.get_session() as session:
                 # Search aliases where email equals the plain username (common pattern
@@ -426,6 +442,13 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
                     # Register the noreply address under the same identity so future
                     # lookups hit the cache without another DB round-trip.
                     self._add_alias(username_alias.canonical_id, name, email)
+                    # Bug #44: Backfill github_username on existing identity if missing.
+                    # Without this, identities created from corporate emails before a
+                    # noreply commit ever lands never get their github_username set,
+                    # breaking resolve_by_github_username() for PR review/ticketing.
+                    self._set_github_username_if_missing(
+                        username_alias.canonical_id, github_username
+                    )
                     self._cache[cache_key] = username_alias.canonical_id
                     logger.debug(
                         f"Matched GitHub noreply email {email!r} to username "
@@ -441,6 +464,10 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
                 )
                 if username_identity:
                     self._add_alias(username_identity.canonical_id, name, email)
+                    # Bug #44: Backfill github_username on existing identity if missing.
+                    self._set_github_username_if_missing(
+                        username_identity.canonical_id, github_username
+                    )
                     self._cache[cache_key] = username_identity.canonical_id
                     logger.debug(
                         f"Matched GitHub noreply email {email!r} to primary identity "
@@ -614,6 +641,51 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
         }
 
         return canonical_id
+
+    def _set_github_username_if_missing(self, canonical_id: str, github_username: str) -> None:
+        """Populate ``github_username`` on an existing identity when missing.
+
+        WHY (#44): When we detect a noreply email or a manual mapping for an
+        identity that already exists in the database, the ``github_username``
+        column is often NULL because the identity was created earlier from a
+        corporate email (and ``_create_identity`` only writes the column at
+        creation time). Without this field populated, ``resolve_by_github_username``
+        cannot bridge ticketing/PR-review actors to canonical IDs, which makes
+        the ticketing score always 0.0 for those developers.
+
+        The update only runs when the column is NULL or empty so we never
+        overwrite a previously-resolved username.
+        """
+        if not github_username or not self._database_available:
+            # Keep in-memory cache consistent for the fallback path too.
+            if github_username and not self._database_available:
+                identity = self._in_memory_identities.get(canonical_id)
+                if identity and not identity.get("github_username"):
+                    identity["github_username"] = github_username.lower()
+            return
+
+        username_normalized = github_username.lower().strip()
+        if not username_normalized:
+            return
+
+        with self.get_session() as session:
+            identity = (
+                session.query(DeveloperIdentity)
+                .filter(DeveloperIdentity.canonical_id == canonical_id)
+                .first()
+            )
+            if identity and not identity.github_username:
+                identity.github_username = username_normalized
+                logger.debug(
+                    "Backfilled github_username=%r on canonical_id=%s",
+                    username_normalized,
+                    canonical_id,
+                )
+                # Refresh cache entry for the identity so downstream lookups
+                # see the new value without waiting for a full reload.
+                cached = self._cache.get(canonical_id)
+                if isinstance(cached, dict):
+                    cached["github_username"] = username_normalized
 
     def _add_alias(self, canonical_id: str, name: str, email: str):
         """Add alias for existing developer."""
