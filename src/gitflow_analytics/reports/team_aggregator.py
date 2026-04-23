@@ -132,7 +132,10 @@ class TeamAggregator:
         """Group ``daily_metrics`` rows by team and sum numeric counters.
 
         Rows belonging to developers not mapped to any team are silently
-        excluded from the output.
+        excluded from the output.  Rows marked ``excluded_from_averages: true``
+        by the boilerplate filter (Issue #28) are excluded from average and
+        sum computations so bulk-generated-code outliers don't skew team
+        metrics.
 
         Args:
             daily_metrics: List of developer metric dicts (one row per
@@ -143,6 +146,9 @@ class TeamAggregator:
         """
         team_buckets: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in daily_metrics:
+            # Honour boilerplate filter's exclude_from_averages flag (Issue #28).
+            if row.get("excluded_from_averages"):
+                continue
             team = self.resolve_team(row)
             if team:
                 team_buckets[team].append(row)
