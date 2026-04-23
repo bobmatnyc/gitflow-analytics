@@ -49,8 +49,10 @@ class IdentityStatsMixin:
                         "primary_name": identity_data["primary_name"],
                         "primary_email": identity_data["primary_email"],
                         "github_username": identity_data.get("github_username"),
-                        "total_commits": identity_data.get("total_commits", 0),
-                        "total_story_points": identity_data.get("total_story_points", 0),
+                        # Normalise possible NULL values to 0 so downstream sort()
+                        # never compares None vs int (see issue #39).
+                        "total_commits": identity_data.get("total_commits") or 0,
+                        "total_story_points": identity_data.get("total_story_points") or 0,
                         "alias_count": 0,  # Not tracked in memory
                         "first_seen": None,
                         "last_seen": None,
@@ -81,8 +83,12 @@ class IdentityStatsMixin:
                         "primary_name": identity.primary_name,
                         "primary_email": identity.primary_email,
                         "github_username": identity.github_username,
-                        "total_commits": identity.total_commits,
-                        "total_story_points": identity.total_story_points,
+                        # Normalise possible NULL values to 0 so downstream sort()
+                        # never compares None vs int (see issue #39).  Older
+                        # databases migrated via ALTER TABLE may not have had a
+                        # DEFAULT on these columns, so existing rows can be NULL.
+                        "total_commits": identity.total_commits or 0,
+                        "total_story_points": identity.total_story_points or 0,
                         "alias_count": alias_count,
                         "first_seen": identity.first_seen,
                         "last_seen": identity.last_seen,

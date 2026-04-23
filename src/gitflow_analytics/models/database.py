@@ -642,6 +642,15 @@ class Database:
                 # it only adds missing columns to existing tables.
                 self._migrate_ticketing_activity_v10(conn)
 
+                # --- developer_identities NULL back-fill (issue #39) ---
+                # WHY: Older databases created before total_commits /
+                # total_story_points had a server-side DEFAULT may contain NULL
+                # values in these columns.  NULL values crash downstream
+                # sorted() calls in get_developer_stats() with TypeError when
+                # comparing None vs int.  This idempotent UPDATE sets any
+                # legacy NULL rows to 0.
+                self._migrate_developer_identities_null_stats(conn)
+
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
             logger.debug(
@@ -1061,3 +1070,50 @@ class Database:
                         )
                     except Exception as e:
                         logger.debug(f"Could not add confluence_page_cache.{col_name}: {e}")
+
+    def _migrate_developer_identities_null_stats(self, conn) -> None:
+        """Back-fill NULL total_commits / total_story_points on developer_identities.
+
+        WHY: Older databases created before these columns had a server-side
+        DEFAULT may have NULL values in ``total_commits`` and
+        ``total_story_points``.  Downstream ``sorted()`` calls in
+        ``get_developer_stats()`` crash with ``TypeError`` when comparing
+        ``None`` vs ``int``.  This idempotent UPDATE sets any legacy NULL rows
+        to 0 so subsequent reads are always safe.  See issue #39.
+
+        Args:
+            conn: Active SQLAlchemy connection.
+        """
+        try:
+            # Confirm the table exists before running UPDATEs.  Fresh databases
+            # that were just created via ``Base.metadata.create_all`` will have
+            # the table with defaults, so the UPDATE is a no-op.
+            result = conn.execute(text("PRAGMA table_info(developer_identities)"))
+            existing_columns = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read developer_identities schema: {e}")
+            return
+
+        if not existing_columns:
+            # Table does not exist yet — nothing to back-fill.
+            return
+
+        for column in ("total_commits", "total_story_points"):
+            if column not in existing_columns:
+                continue
+            try:
+                # Column name is hard-coded to the allow-list above, never
+                # user-supplied, so f-string interpolation is safe here.
+                sql = f"UPDATE developer_identities SET {column} = 0 WHERE {column} IS NULL"  # nosec B608
+                res = conn.execute(text(sql))
+                conn.commit()
+                # SQLAlchemy's rowcount is -1 on some drivers; only log when > 0.
+                rowcount = getattr(res, "rowcount", -1)
+                if rowcount and rowcount > 0:
+                    logger.info(
+                        "Back-filled %d NULL %s rows in developer_identities (issue #39)",
+                        rowcount,
+                        column,
+                    )
+            except Exception as e:
+                logger.debug(f"Could not back-fill developer_identities.{column}: {e}")

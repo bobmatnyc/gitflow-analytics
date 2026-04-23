@@ -690,11 +690,20 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
             if not identity1 or not identity2:
                 raise ValueError("One or both identities not found")
 
-            # Keep identity1, merge identity2 into it
-            identity1.total_commits += identity2.total_commits
-            identity1.total_story_points += identity2.total_story_points
-            identity1.first_seen = min(identity1.first_seen, identity2.first_seen)
-            identity1.last_seen = max(identity1.last_seen, identity2.last_seen)
+            # Keep identity1, merge identity2 into it.
+            # Guard against NULL total_commits / total_story_points and
+            # NULL first_seen / last_seen to prevent TypeError when older
+            # databases (migrated via ALTER TABLE without DEFAULT) contain
+            # NULL values in these columns.  See issue #39.
+            identity1.total_commits = (identity1.total_commits or 0) + (
+                identity2.total_commits or 0
+            )
+            identity1.total_story_points = (identity1.total_story_points or 0) + (
+                identity2.total_story_points or 0
+            )
+            now = datetime.now(timezone.utc)
+            identity1.first_seen = min(identity1.first_seen or now, identity2.first_seen or now)
+            identity1.last_seen = max(identity1.last_seen or now, identity2.last_seen or now)
 
             # Move all aliases from identity2 to identity1
             aliases = (

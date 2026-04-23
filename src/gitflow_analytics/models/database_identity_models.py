@@ -25,8 +25,12 @@ class DeveloperIdentity(Base):
     github_username = Column(String, nullable=True)
 
     # Statistics
-    total_commits = Column(Integer, default=0)
-    total_story_points = Column(Integer, default=0)
+    # WHY: server_default="0" + nullable=False guarantees that ALTER TABLE-based
+    # migrations on older databases (which lacked an explicit DEFAULT) cannot
+    # leave these columns NULL.  NULL values here crash downstream sort() calls
+    # in get_developer_stats() — see issue #39.
+    total_commits = Column(Integer, nullable=False, default=0, server_default="0")
+    total_story_points = Column(Integer, nullable=False, default=0, server_default="0")
     first_seen = Column(DateTime(timezone=True), default=utcnow_tz_aware)
     last_seen = Column(DateTime(timezone=True), default=utcnow_tz_aware)
 
