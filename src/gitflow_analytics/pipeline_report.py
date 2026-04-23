@@ -222,6 +222,9 @@ def run_report(
         anonymize=_anonymize,
         exclude_authors=exclude_authors,
         identity_resolver=identity_resolver,
+        cache=cache,
+        since=start_date,
+        until=end_date,
     )
     analytics_gen = AnalyticsReportGenerator(
         anonymize=_anonymize,

@@ -30,6 +30,9 @@ class CSVReportGenerator(
         anonymize: bool = False,
         exclude_authors: list[str] | None = None,
         identity_resolver=None,
+        cache=None,
+        since=None,
+        until=None,
         **kwargs,
     ):
         """Initialize report generator."""
@@ -39,11 +42,17 @@ class CSVReportGenerator(
             identity_resolver=identity_resolver,
             **kwargs,
         )
-        # WHY: Pass the identity resolver so ticketing-event actors (GitHub
-        # logins stored in ``ticketing_activity_cache``) can be re-keyed by
-        # canonical_id, allowing per-developer ticketing scores to be looked
-        # up correctly from the developer-activity CSV.  See issue #41.
-        self.activity_scorer = ActivityScorer(identity_resolver=identity_resolver)
+        # WHY: Pass cache/since/until so ActivityScorer can load ticketing
+        # scores from ticketing_activity_cache for the correct date window.
+        # Pass identity_resolver so actor GitHub logins can be re-keyed by
+        # canonical_id (issue #41).  Without cache the scorer returns 0.0
+        # for every developer (issue #42).
+        self.activity_scorer = ActivityScorer(
+            cache=cache,
+            since=since,
+            until=until,
+            identity_resolver=identity_resolver,
+        )
 
     # Implementation of abstract methods from BaseReportGenerator
 
