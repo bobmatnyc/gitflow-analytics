@@ -157,27 +157,34 @@ class ActivityScorer:
 
         # WHY: ``TicketingActivityCache.actor`` stores raw ticketing-platform
         # identifiers — typically lowercase GitHub logins (e.g. ``bob-duetto``)
-        # for GitHub Issues events, or email addresses for some JIRA flows.
-        # Callers of :meth:`get_ticketing_score` (notably the developer-
-        # activity CSV) look up scores by canonical_id UUID.  Without
-        # translation the two key spaces are disjoint and every lookup
-        # returns 0.0.  When an identity resolver is available we
-        # additionally index each actor under its resolved canonical_id so
-        # both forms of lookup succeed.  See GitHub issue #41.
+        # for GitHub Issues events, or email addresses for Confluence (after
+        # the UUID → email resolution in #45) and some JIRA flows.  Callers
+        # of :meth:`get_ticketing_score` (notably the developer-activity CSV)
+        # look up scores by canonical_id UUID.  Without translation the two
+        # key spaces are disjoint and every lookup returns 0.0.  When an
+        # identity resolver is available we additionally index each actor
+        # under its resolved canonical_id so both forms of lookup succeed.
+        # Email-format actors (containing ``@``) are routed through
+        # ``resolve_by_email``; non-email actors use
+        # ``resolve_by_github_username``.  See GitHub issues #41 and #46.
         if self._identity_resolver is not None and totals:
             resolver = self._identity_resolver
-            resolve_fn = getattr(resolver, "resolve_by_github_username", None)
-            if callable(resolve_fn):
-                for actor, score in list(totals.items()):
-                    try:
-                        canonical_id = resolve_fn(actor)
-                    except Exception:  # noqa: BLE001
-                        canonical_id = None
-                    if canonical_id:
-                        # Accumulate in case multiple actors map to the same
-                        # canonical identity (aliases, renamed accounts).
-                        cid = str(canonical_id)
-                        totals[cid] = totals.get(cid, 0.0) + score
+            resolve_by_username = getattr(resolver, "resolve_by_github_username", None)
+            resolve_by_email = getattr(resolver, "resolve_by_email", None)
+            for actor, score in list(totals.items()):
+                canonical_id = None
+                try:
+                    if "@" in actor and callable(resolve_by_email):
+                        canonical_id = resolve_by_email(actor)
+                    elif callable(resolve_by_username):
+                        canonical_id = resolve_by_username(actor)
+                except Exception:  # noqa: BLE001
+                    canonical_id = None
+                if canonical_id:
+                    # Accumulate in case multiple actors map to the same
+                    # canonical identity (aliases, renamed accounts).
+                    cid = str(canonical_id)
+                    totals[cid] = totals.get(cid, 0.0) + score
 
         self._ticketing_cache = totals
         return totals

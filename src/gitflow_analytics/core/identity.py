@@ -687,6 +687,19 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
                 if isinstance(cached, dict):
                     cached["github_username"] = username_normalized
 
+    def resolve_by_email(self, email: str) -> str | None:
+        """Alias for :meth:`find_canonical_id_by_email` for naming consistency.
+
+        WHY (#46): :meth:`resolve_by_github_username` exists for GitHub-login
+        actor keys.  Confluence actors (and some JIRA flows) are stored as
+        email addresses after the UUID sync introduced in #45.  Callers such
+        as :class:`ActivityScorer` route email-format actors through this
+        method so the lookup key space matches the actor key space, producing
+        non-zero ticketing scores.  This is a pure rename of the existing
+        :meth:`find_canonical_id_by_email` for API symmetry.
+        """
+        return self.find_canonical_id_by_email(email)
+
     def find_canonical_id_by_email(self, email: str) -> str | None:
         """Return canonical_id for a developer by email, or None if not found.
 

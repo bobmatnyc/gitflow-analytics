@@ -240,6 +240,35 @@ class _StubIdentityResolver:
         return self._mapping.get(github_username.lower())
 
 
+class _EmailAwareStubResolver:
+    """Stub resolver supporting both GitHub-username and email lookups.
+
+    Mirrors the real :class:`DeveloperIdentityResolver` surface used by
+    :meth:`ActivityScorer._load_ticketing_scores` for issue #46 — Confluence
+    actors are stored as email addresses after the UUID resolution in #45 and
+    must be routed through ``resolve_by_email`` to be matched to canonical
+    identity IDs.
+    """
+
+    def __init__(
+        self,
+        username_map: dict[str, str] | None = None,
+        email_map: dict[str, str] | None = None,
+    ) -> None:
+        self._usernames = {k.lower(): v for k, v in (username_map or {}).items()}
+        self._emails = {k.lower(): v for k, v in (email_map or {}).items()}
+
+    def resolve_by_github_username(self, github_username: str) -> str | None:
+        if not github_username:
+            return None
+        return self._usernames.get(github_username.lower())
+
+    def resolve_by_email(self, email: str) -> str | None:
+        if not email:
+            return None
+        return self._emails.get(email.lower())
+
+
 def test_ticketing_score_resolved_via_github_username(tmp_cache: GitAnalysisCache) -> None:
     """Regression test for #41 — ticketing_score looked up by canonical_id.
 
@@ -355,3 +384,197 @@ def test_config_loader_processes_activity_scoring() -> None:
     )
     assert cfg2.ticketing_weight == 0.0
     assert cfg2.commits_weight == 0.5
+
+
+# ----------------------------------------------------------------------
+# Issue #46 — route email-format Confluence actors through resolve_by_email
+# ----------------------------------------------------------------------
+
+
+def test_email_actor_resolves_via_resolve_by_email(tmp_cache: GitAnalysisCache) -> None:
+    """Confluence email actor resolves via resolve_by_email and gets non-zero score.
+
+    Regression test for #46 — previously email-format actors (Confluence after
+    UUID resolution in #45) were routed through ``resolve_by_github_username``
+    which always returned None, leaving the canonical_id lookup at 0.0.
+    """
+    with tmp_cache.get_session() as session:
+        session.add(
+            TicketingActivityCache(
+                platform="confluence",
+                item_id="page-1",
+                item_type="page_create",
+                repo_or_space="SPACE",
+                actor="alice@example.com",
+                action="created",
+                activity_at=datetime(2024, 2, 1),
+                comment_count=0,
+                reaction_count=0,
+                platform_data={},
+            )
+        )
+        session.add(
+            TicketingActivityCache(
+                platform="confluence",
+                item_id="page-2",
+                item_type="page_edit",
+                repo_or_space="SPACE",
+                actor="alice@example.com",
+                action="edited",
+                activity_at=datetime(2024, 2, 2),
+                comment_count=0,
+                reaction_count=0,
+                platform_data={},
+            )
+        )
+        session.commit()
+
+    canonical_id = "aaaa1111-2222-3333-4444-555555555555"
+    resolver = _EmailAwareStubResolver(email_map={"alice@example.com": canonical_id})
+
+    cfg = ActivityScoringConfig(ticketing_weight=0.15)
+    scorer = ActivityScorer(
+        config=cfg,
+        cache=tmp_cache,
+        since=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        until=datetime(2024, 12, 31, tzinfo=timezone.utc),
+        identity_resolver=resolver,
+    )
+
+    # pages_created (2.0) + pages_edited (1.0) = 3.0
+    assert scorer.get_ticketing_score(canonical_id) == pytest.approx(3.0)
+    # Original email-keyed lookup still works
+    assert scorer.get_ticketing_score("alice@example.com") == pytest.approx(3.0)
+
+
+def test_github_username_actor_still_resolves(tmp_cache: GitAnalysisCache) -> None:
+    """Regression: non-email actors continue to resolve via resolve_by_github_username."""
+    with tmp_cache.get_session() as session:
+        session.add(
+            TicketingActivityCache(
+                platform="github_issues",
+                item_id="1",
+                item_type="issue",
+                repo_or_space="org/repo",
+                actor="carol-duetto",
+                action="opened",
+                activity_at=datetime(2024, 2, 1),
+                comment_count=0,
+                reaction_count=0,
+                platform_data={},
+            )
+        )
+        session.commit()
+
+    canonical_id = "bbbb2222-3333-4444-5555-666666666666"
+    resolver = _EmailAwareStubResolver(username_map={"carol-duetto": canonical_id})
+
+    cfg = ActivityScoringConfig(ticketing_weight=0.15)
+    scorer = ActivityScorer(
+        config=cfg,
+        cache=tmp_cache,
+        since=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        until=datetime(2024, 12, 31, tzinfo=timezone.utc),
+        identity_resolver=resolver,
+    )
+
+    assert scorer.get_ticketing_score(canonical_id) == pytest.approx(1.0)
+    assert scorer.get_ticketing_score("carol-duetto") == pytest.approx(1.0)
+
+
+def test_unresolved_actor_without_at_sign_scores_zero(tmp_cache: GitAnalysisCache) -> None:
+    """Non-email actor that fails resolution returns 0.0 without crashing."""
+    with tmp_cache.get_session() as session:
+        session.add(
+            TicketingActivityCache(
+                platform="github_issues",
+                item_id="1",
+                item_type="issue",
+                repo_or_space="org/repo",
+                actor="ghost-user",
+                action="opened",
+                activity_at=datetime(2024, 2, 1),
+                comment_count=0,
+                reaction_count=0,
+                platform_data={},
+            )
+        )
+        session.commit()
+
+    # Resolver has no mapping for "ghost-user"
+    resolver = _EmailAwareStubResolver(username_map={}, email_map={})
+
+    cfg = ActivityScoringConfig(ticketing_weight=0.15)
+    scorer = ActivityScorer(
+        config=cfg,
+        cache=tmp_cache,
+        since=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        until=datetime(2024, 12, 31, tzinfo=timezone.utc),
+        identity_resolver=resolver,
+    )
+
+    # Unknown canonical_id lookup → 0.0 (no crash)
+    unknown_canonical = "cccc3333-4444-5555-6666-777777777777"
+    assert scorer.get_ticketing_score(unknown_canonical) == 0.0
+    # Actor-key lookup still returns the raw score (bridge just didn't add an alias)
+    assert scorer.get_ticketing_score("ghost-user") == pytest.approx(1.0)
+
+
+def test_mixed_email_and_username_actors_resolve(tmp_cache: GitAnalysisCache) -> None:
+    """Mixed actor pool: some emails, some usernames — each resolves via correct path."""
+    with tmp_cache.get_session() as session:
+        # Confluence — email-format actor
+        session.add(
+            TicketingActivityCache(
+                platform="confluence",
+                item_id="page-1",
+                item_type="page_create",
+                repo_or_space="SPACE",
+                actor="dan@example.com",
+                action="created",
+                activity_at=datetime(2024, 2, 1),
+                comment_count=0,
+                reaction_count=0,
+                platform_data={},
+            )
+        )
+        # GitHub Issues — GitHub-login actor
+        session.add(
+            TicketingActivityCache(
+                platform="github_issues",
+                item_id="10",
+                item_type="issue",
+                repo_or_space="org/repo",
+                actor="erin-duetto",
+                action="closed",
+                activity_at=datetime(2024, 2, 2),
+                comment_count=0,
+                reaction_count=0,
+                platform_data={},
+            )
+        )
+        session.commit()
+
+    dan_id = "dddd4444-5555-6666-7777-888888888888"
+    erin_id = "eeee5555-6666-7777-8888-999999999999"
+    resolver = _EmailAwareStubResolver(
+        username_map={"erin-duetto": erin_id},
+        email_map={"dan@example.com": dan_id},
+    )
+
+    cfg = ActivityScoringConfig(ticketing_weight=0.15)
+    scorer = ActivityScorer(
+        config=cfg,
+        cache=tmp_cache,
+        since=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        until=datetime(2024, 12, 31, tzinfo=timezone.utc),
+        identity_resolver=resolver,
+    )
+
+    # Email actor routed through resolve_by_email → pages_created = 2.0
+    assert scorer.get_ticketing_score(dan_id) == pytest.approx(2.0)
+    # Username actor routed through resolve_by_github_username → issues_closed = 1.0
+    assert scorer.get_ticketing_score(erin_id) == pytest.approx(1.0)
+    # Original actor-key lookups still work
+    assert scorer.get_ticketing_score("dan@example.com") == pytest.approx(2.0)
+    assert scorer.get_ticketing_score("erin-duetto") == pytest.approx(1.0)
