@@ -647,7 +647,7 @@ class DeveloperIdentityResolver(IdentityStatsMixin):
             )
 
             if identity:
-                identity.last_seen = datetime.utcnow()
+                identity.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
 
     def merge_identities(self, canonical_id1: str, canonical_id2: str):
         """Merge two developer identities."""

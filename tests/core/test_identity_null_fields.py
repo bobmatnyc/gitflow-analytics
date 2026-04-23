@@ -14,7 +14,7 @@ silently return.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import text
+from sqlalchemy import text  # type: ignore[import-not-found]
 
 from gitflow_analytics.core.identity import DeveloperIdentityResolver
 from gitflow_analytics.models.database import DeveloperIdentity
@@ -29,7 +29,8 @@ def _recreate_developer_identities_legacy_schema(resolver: DeveloperIdentityReso
     DEFAULT existed — exactly the state an ALTER TABLE-based migration would
     have left behind on older databases.
     """
-    with resolver.db.engine.connect() as conn:
+    assert resolver.db is not None
+    with resolver.db.engine.connect() as conn:  # type: ignore[union-attr]
         conn.execute(text("DROP TABLE IF EXISTS developer_identities"))
         conn.execute(
             text(
@@ -68,7 +69,8 @@ class TestGetDeveloperStatsWithNullFields:
 
         # Insert one "normal" row and one legacy NULL row to exercise the
         # sort comparator with a mix of integers and NULL values.
-        with resolver.db.engine.connect() as conn:
+        assert resolver.db is not None
+        with resolver.db.engine.connect() as conn:  # type: ignore[union-attr]
             conn.execute(
                 text(
                     "INSERT INTO developer_identities "
@@ -116,7 +118,8 @@ class TestMergeIdentitiesWithNullFields:
         _recreate_developer_identities_legacy_schema(resolver)
 
         # Insert two identities directly with NULL stats and NULL seen-dates.
-        with resolver.db.engine.connect() as conn:
+        assert resolver.db is not None
+        with resolver.db.engine.connect() as conn:  # type: ignore[union-attr]
             for cid, name, email in [
                 ("cid-null-1", "Null One", "one@example.com"),
                 ("cid-null-2", "Null Two", "two@example.com"),
