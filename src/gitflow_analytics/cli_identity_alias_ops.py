@@ -680,6 +680,228 @@ def _load_alias_file(file_path: str) -> list[dict]:
         )
 
 
+def _migrate_legacy_developer_aliases(config_data: dict) -> bool:
+    """Migrate top-level ``developer_aliases`` key into ``analysis.identity.manual_mappings``.
+
+    Mirrors the migration logic in :mod:`config.loader` and :func:`alias_rename`
+    so that ``add-alias`` can safely operate on configs that still use the
+    legacy format. Mutates ``config_data`` in place and returns ``True`` when
+    a migration occurred.
+
+    Only migrates when the modern location is NOT already populated to avoid
+    clobbering hand-maintained mappings.
+    """
+    legacy = config_data.get("developer_aliases")
+    if not isinstance(legacy, dict) or not legacy:
+        return False
+
+    modern_present = (
+        isinstance(config_data.get("analysis"), dict)
+        and isinstance((config_data.get("analysis") or {}).get("identity"), dict)
+        and "manual_mappings" in (config_data["analysis"].get("identity") or {})
+    )
+
+    if modern_present:
+        # Modern key already set — just drop the legacy key to avoid confusion.
+        del config_data["developer_aliases"]
+        return True
+
+    config_data.setdefault("analysis", {})
+    config_data["analysis"].setdefault("identity", {})
+    config_data["analysis"]["identity"].setdefault("manual_mappings", [])
+
+    for canonical_name, emails in legacy.items():
+        if isinstance(emails, list) and emails:
+            primary_email = next((e for e in emails if "@" in e), emails[0])
+            config_data["analysis"]["identity"]["manual_mappings"].append(
+                {
+                    "name": canonical_name,
+                    "primary_email": primary_email,
+                    "aliases": list(emails),
+                }
+            )
+
+    del config_data["developer_aliases"]
+    return True
+
+
+def _resolve_cache_dir(config_path: Path, config_data: dict) -> Optional[Path]:
+    """Figure out the cache directory without requiring a fully valid config.
+
+    Tries (in order):
+      1. ``cache.directory`` from the parsed YAML, resolved relative to the
+         config file when the path is not absolute.
+      2. ``ConfigLoader.load(config_path).cache.directory`` — the authoritative
+         path but needs a valid config (repositories / org defined).
+      3. Returns ``None`` when neither succeeds.
+
+    Returning ``None`` lets callers emit a friendly warning rather than crash
+    out when run against a skeleton/in-progress config.
+    """
+    cache_section = config_data.get("cache")
+    if isinstance(cache_section, dict):
+        directory = cache_section.get("directory")
+        if directory:
+            cache_path = Path(directory).expanduser()
+            if not cache_path.is_absolute():
+                cache_path = (config_path.parent / cache_path).resolve()
+            return cache_path
+
+    try:
+        cfg = ConfigLoader.load(config_path)
+    except Exception:
+        return None
+    return cfg.cache.directory
+
+
+def _apply_aliases_to_identity_db(
+    config_path: Path,
+    config_data: dict,
+    mappings: list[dict],
+    dry_run: bool,
+) -> None:
+    """Propagate alias mappings to the ``developer_identities`` cache DB.
+
+    For each canonical/alias pair:
+    - Locate the :class:`DeveloperIdentity` rows matching the alias email (or name)
+    - Merge them into the canonical identity via
+      :meth:`DeveloperIdentityResolver.merge_identities` so subsequent reports
+      reflect the unified identity without requiring a re-collect.
+    - Set ``primary_name`` on the canonical row when an explicit name was supplied.
+
+    Aliases that don't match any cached row are reported as "not in cache"
+    (no-op) rather than treated as errors.
+    """
+    from sqlalchemy import text
+
+    from .core.identity import DeveloperIdentityResolver
+
+    cache_dir = _resolve_cache_dir(config_path, config_data)
+    if cache_dir is None:
+        click.echo(
+            click.style(
+                "Warning: could not resolve cache directory from config; skipping cache update",
+                fg="yellow",
+            )
+        )
+        return
+
+    identity_db_path = cache_dir / "identities.db"
+    if not identity_db_path.exists():
+        click.echo(
+            f"Note: identity database not found at {identity_db_path} — skipping cache update"
+        )
+        return
+
+    resolver = DeveloperIdentityResolver(str(identity_db_path), manual_mappings=None)
+
+    total_merged = 0
+    total_renamed = 0
+    total_missing = 0
+
+    for mapping in mappings:
+        canonical_email = (mapping.get("canonical") or "").strip().lower()
+        if not canonical_email:
+            continue
+        alias_values = [a.strip() for a in mapping.get("aliases", []) if a.strip()]
+        explicit_name = mapping.get("name")
+
+        # Look up the canonical identity row (case-insensitive on email).
+        with resolver.get_session() as session:
+            canonical_row = session.execute(
+                text(
+                    "SELECT canonical_id, primary_name FROM developer_identities "
+                    "WHERE LOWER(primary_email) = :email"
+                ),
+                {"email": canonical_email},
+            ).fetchone()
+
+        if canonical_row is None:
+            total_missing += 1
+            click.echo(
+                f"   [cache] canonical '{canonical_email}' not in DB — skipping "
+                "(will be created on next analysis run)"
+            )
+            continue
+
+        canonical_id = canonical_row[0]
+
+        for alias_value in alias_values:
+            alias_lower = alias_value.lower()
+            with resolver.get_session() as session:
+                if "@" in alias_value:
+                    alias_row = session.execute(
+                        text(
+                            "SELECT canonical_id FROM developer_identities "
+                            "WHERE LOWER(primary_email) = :email"
+                        ),
+                        {"email": alias_lower},
+                    ).fetchone()
+                else:
+                    alias_row = session.execute(
+                        text(
+                            "SELECT canonical_id FROM developer_identities "
+                            "WHERE LOWER(primary_name) = :name"
+                        ),
+                        {"name": alias_lower},
+                    ).fetchone()
+
+            if alias_row is None:
+                # Not yet in cache — nothing to merge. This is fine; future
+                # analyses will pick up the mapping via manual_mappings.
+                continue
+
+            alias_canonical_id = alias_row[0]
+            if alias_canonical_id == canonical_id:
+                # Already merged — idempotent no-op.
+                continue
+
+            if dry_run:
+                click.echo(
+                    f"   [cache/dry-run] Would merge '{alias_value}' into '{canonical_email}'"
+                )
+                continue
+
+            try:
+                resolver.merge_identities(canonical_id, alias_canonical_id)
+                total_merged += 1
+            except ValueError as e:
+                # merge_identities raises if rows disappear mid-flight.
+                click.echo(
+                    click.style(
+                        f"   [cache] merge skipped for '{alias_value}' ({e})",
+                        fg="yellow",
+                    )
+                )
+
+        # Optionally update primary_name when caller supplied one.
+        if explicit_name and not dry_run:
+            with resolver.get_session() as session:
+                result = session.execute(
+                    text(
+                        "UPDATE developer_identities SET primary_name = :name "
+                        "WHERE canonical_id = :cid AND primary_name != :name"
+                    ),
+                    {"name": explicit_name, "cid": canonical_id},
+                )
+                # SQLAlchemy's rowcount is only reliable for UPDATE here.
+                if getattr(result, "rowcount", 0):
+                    total_renamed += 1
+        elif explicit_name and dry_run:
+            click.echo(
+                f"   [cache/dry-run] Would set primary_name='{explicit_name}' "
+                f"for '{canonical_email}'"
+            )
+
+    if total_merged or total_renamed or total_missing:
+        click.echo(
+            f"   [cache] merged {total_merged} identity rows, "
+            f"renamed {total_renamed}, {total_missing} canonical(s) not in cache"
+        )
+    else:
+        click.echo("   [cache] no cache changes needed (nothing to merge)")
+
+
 @click.command(name="add-alias")
 @click.option(
     "--config",
@@ -701,6 +923,13 @@ def _load_alias_file(file_path: str) -> list[dict]:
     help="Email or name to map to canonical (repeatable, e.g. --alias old@co.com --alias 'Jane Smith')",
 )
 @click.option(
+    "--name",
+    "name",
+    required=False,
+    default=None,
+    help="Optional display name for the canonical developer (sets primary_name in cache DB)",
+)
+@click.option(
     "--from-file",
     "from_file",
     required=False,
@@ -709,21 +938,26 @@ def _load_alias_file(file_path: str) -> list[dict]:
     help="YAML or JSON file with batch alias mappings (see format below)",
 )
 @click.option(
-    "--apply",
-    is_flag=True,
-    default=False,
-    help="Trigger identity re-resolution after updating config (propagates to cached data)",
+    "--apply/--no-apply",
+    "apply",
+    default=True,
+    help=(
+        "Also update the developer_identities cache DB so the change takes "
+        "effect immediately (default: enabled). Use --no-apply to only "
+        "modify the config YAML."
+    ),
 )
 @click.option(
     "--dry-run",
     is_flag=True,
     default=False,
-    help="Show what would be changed without writing to config",
+    help="Show what would be changed without writing to config or cache",
 )
 def add_alias_command(
     config: str,
     canonical: Optional[str],
     aliases: tuple[str, ...],
+    name: Optional[str],
     from_file: Optional[str],
     apply: bool,
     dry_run: bool,
@@ -732,7 +966,8 @@ def add_alias_command(
 
     Maps one or more alias emails/names to a canonical developer identity
     in analysis.identity.manual_mappings. Supports single mappings via
-    --canonical/--alias flags, or bulk import via --from-file.
+    --canonical/--alias flags, or bulk import via --from-file. Writes are
+    idempotent: re-adding an alias that already exists is a no-op.
 
     \b
     USAGE MODES:
@@ -768,26 +1003,26 @@ def add_alias_command(
     \b
     EXAMPLES:
 
-      # Add single alias
+      # Add single alias (updates config AND cache DB by default)
       gfa add-alias -c config.yaml --canonical john@work.com --alias john@gmail.com
 
-      # Add multiple aliases at once
+      # Add multiple aliases with an explicit display name
       gfa add-alias -c config.yaml --canonical john@work.com \\
-          --alias john@gmail.com --alias "John Doe"
+          --alias john@gmail.com --alias "John Doe" --name "John Doe"
 
-      # Preview without writing
+      # Preview without writing anything
       gfa add-alias -c config.yaml --canonical john@work.com \\
           --alias john@gmail.com --dry-run
 
-      # Batch import from file
-      gfa add-alias -c config.yaml --from-file aliases.yaml
+      # Batch import from file, skip cache update
+      gfa add-alias -c config.yaml --from-file aliases.yaml --no-apply
 
     \b
     NOTE:
       Existing canonical entries are merged (not replaced). Duplicate
-      aliases are silently skipped. Use --dry-run to preview changes.
-      After updating config, run 'gfa identities --apply' to propagate
-      changes to cached data (or use --apply when that flag is wired).
+      aliases are silently skipped. Legacy top-level 'developer_aliases'
+      configs are auto-migrated to 'analysis.identity.manual_mappings'
+      on save. Use --dry-run to preview changes.
     """
     # Validate args
     if not from_file and not canonical:
@@ -801,11 +1036,23 @@ def add_alias_command(
     if from_file:
         mappings_to_add = _load_alias_file(from_file)
     else:
-        mappings_to_add = [{"canonical": canonical, "aliases": list(aliases)}]
+        single_mapping: dict = {"canonical": canonical, "aliases": list(aliases)}
+        if name:
+            single_mapping["name"] = name
+        mappings_to_add = [single_mapping]
 
     # Load config YAML
     with open(config) as f:
         config_data = yaml.safe_load(f) or {}
+
+    # Legacy handling: auto-migrate top-level ``developer_aliases`` into the
+    # modern ``analysis.identity.manual_mappings`` layout. Mirrors the
+    # ConfigLoader behaviour so scripted users aren't surprised.
+    migrated_from_legacy = _migrate_legacy_developer_aliases(config_data)
+    if migrated_from_legacy:
+        click.echo(
+            "Detected legacy 'developer_aliases' — migrated to 'analysis.identity.manual_mappings'."
+        )
 
     # Ensure path exists
     config_data.setdefault("analysis", {})
@@ -841,6 +1088,9 @@ def add_alias_command(
             # Merge aliases into existing mapping (idempotent)
             existing_aliases = [a.lower() for a in existing.get("aliases", [])]
             new_aliases = [a for a in alias_list if a.lower() not in existing_aliases]
+            # Also update the display name when a new one was provided.
+            if mapping.get("name") and not dry_run:
+                existing["name"] = mapping["name"]
             if new_aliases:
                 if not dry_run:
                     existing.setdefault("aliases", []).extend(new_aliases)
@@ -848,8 +1098,10 @@ def add_alias_command(
             else:
                 skipped.append(canonical_email)
 
-    # Write back to config
-    if not dry_run and added:
+    # Write back to config when either we added something OR we performed a
+    # legacy migration (so the user is moved off the deprecated format).
+    should_write = (not dry_run) and (added or migrated_from_legacy)
+    if should_write:
         with open(config, "w", encoding="utf-8") as f:
             yaml.dump(
                 config_data,
@@ -870,7 +1122,14 @@ def add_alias_command(
         click.echo("No changes made.")
     elif not dry_run:
         click.echo(f"\nConfig updated: {config}")
-        if apply:
-            click.echo("Running identity resolution to propagate changes...")
-            # TODO: wire into identity resolver apply flow
-            click.echo("   (--apply not yet wired; run 'gfa identities --apply' manually)")
+
+    # Optionally propagate to the cache DB so subsequent reports reflect the
+    # change without a re-collect. Only attempted when at least one mapping
+    # actually changed config (or we're in dry-run mode to preview).
+    if apply and (added or dry_run):
+        click.echo(
+            "\nApplying changes to developer_identities cache DB..."
+            if not dry_run
+            else "\n[DRY RUN] Cache DB changes that would be applied:"
+        )
+        _apply_aliases_to_identity_db(Path(config), config_data, mappings_to_add, dry_run=dry_run)

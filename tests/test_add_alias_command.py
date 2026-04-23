@@ -366,3 +366,355 @@ def test_load_alias_file_unrecognised_format(tmp_path):
     bad_file.write_text("key: value\n")  # dict without developer_aliases
     with pytest.raises(click.ClickException):
         _load_alias_file(str(bad_file))
+
+
+# ---------------------------------------------------------------------------
+# Legacy developer_aliases handling (issue #27)
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_developer_aliases_migrated_on_add(runner, tmp_path):
+    """Top-level `developer_aliases` block is migrated to modern format on save."""
+    cfg = tmp_path / "legacy.yaml"
+    cfg.write_text(
+        textwrap.dedent("""\
+            developer_aliases:
+              "Jane Dev":
+                - jane@work.com
+                - jane@home.com
+        """)
+    )
+
+    result = runner.invoke(
+        add_alias_command,
+        [
+            "--config",
+            str(cfg),
+            "--canonical",
+            "new@corp.com",
+            "--alias",
+            "new@personal.com",
+            "--no-apply",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    data = yaml.safe_load(cfg.read_text()) or {}
+    assert "developer_aliases" not in data, "Legacy key should be removed after migration"
+    mappings = data.get("analysis", {}).get("identity", {}).get("manual_mappings", [])
+    # Migrated entry + new entry = 2 mappings
+    assert len(mappings) == 2
+    emails = {m["primary_email"] for m in mappings}
+    assert "jane@work.com" in emails
+    assert "new@corp.com" in emails
+    # Migration message should be surfaced to the user
+    assert "legacy" in result.output.lower() or "migrated" in result.output.lower()
+
+
+def test_legacy_migrated_even_when_all_aliases_skipped(runner, tmp_path):
+    """Legacy format is still cleaned up even if the user's new aliases are all duplicates."""
+    cfg = tmp_path / "legacy_dup.yaml"
+    cfg.write_text(
+        textwrap.dedent("""\
+            developer_aliases:
+              "Jane Dev":
+                - jane@work.com
+                - jane@gmail.com
+        """)
+    )
+
+    # First pass: migrates legacy, adds jane@home.com under jane@work.com
+    r1 = runner.invoke(
+        add_alias_command,
+        [
+            "--config",
+            str(cfg),
+            "--canonical",
+            "jane@work.com",
+            "--alias",
+            "jane@home.com",
+            "--no-apply",
+        ],
+    )
+    assert r1.exit_code == 0, r1.output
+
+    data = yaml.safe_load(cfg.read_text()) or {}
+    assert "developer_aliases" not in data
+
+    # Second pass with duplicate — should be idempotent no-op but file remains migrated
+    r2 = runner.invoke(
+        add_alias_command,
+        [
+            "--config",
+            str(cfg),
+            "--canonical",
+            "jane@work.com",
+            "--alias",
+            "jane@home.com",  # now already present
+            "--no-apply",
+        ],
+    )
+    assert r2.exit_code == 0, r2.output
+    assert "skipped" in r2.output.lower() or "already exists" in r2.output.lower()
+
+    data = yaml.safe_load(cfg.read_text()) or {}
+    assert "developer_aliases" not in data
+
+
+# ---------------------------------------------------------------------------
+# --name option
+# ---------------------------------------------------------------------------
+
+
+def test_name_option_sets_display_name(runner, minimal_config):
+    """--name stores display name on the manual_mappings entry."""
+    result = runner.invoke(
+        add_alias_command,
+        [
+            "--config",
+            str(minimal_config),
+            "--canonical",
+            "karen@work.com",
+            "--alias",
+            "karen@gmail.com",
+            "--name",
+            "Karen Doe",
+            "--no-apply",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    mappings = _read_mappings(minimal_config)
+    assert len(mappings) == 1
+    assert mappings[0].get("name") == "Karen Doe"
+
+
+# ---------------------------------------------------------------------------
+# --no-apply / --apply behaviour (cache DB)
+# ---------------------------------------------------------------------------
+
+
+def test_no_apply_skips_cache_db_lookup(runner, tmp_path):
+    """--no-apply prevents the command from touching ConfigLoader / cache DB."""
+    cfg = tmp_path / "config.yaml"
+    # Intentionally invalid/empty — ConfigLoader.load() would fail on this.
+    # With --no-apply the command must not call ConfigLoader at all, so it
+    # should still succeed at the YAML-write step.
+    cfg.write_text("{}\n")
+
+    result = runner.invoke(
+        add_alias_command,
+        [
+            "--config",
+            str(cfg),
+            "--canonical",
+            "p@x.com",
+            "--alias",
+            "p@y.com",
+            "--no-apply",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    mappings = _read_mappings(cfg)
+    assert len(mappings) == 1
+
+
+def test_apply_updates_cache_db(runner, tmp_path):
+    """--apply merges alias identities into the canonical identity in the DB."""
+    # Build a real identity DB with two separate identities
+    from gitflow_analytics.core.identity import DeveloperIdentityResolver
+
+    cache_dir = tmp_path / ".gfa-cache"
+    cache_dir.mkdir()
+    db_path = cache_dir / "identities.db"
+
+    resolver = DeveloperIdentityResolver(str(db_path))
+    canonical_id = resolver.resolve_developer("Pat Canonical", "pat@work.com")
+    alias_id = resolver.resolve_developer("Pat Personal", "pat@gmail.com")
+    assert canonical_id != alias_id, "Pre-condition: identities should be distinct"
+
+    # Build a config pointing at that cache dir
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        yaml.dump(
+            {
+                "version": "1.0",
+                "repositories": [],
+                "cache": {"directory": str(cache_dir)},
+            },
+            sort_keys=False,
+        )
+    )
+
+    result = runner.invoke(
+        add_alias_command,
+        [
+            "--config",
+            str(cfg),
+            "--canonical",
+            "pat@work.com",
+            "--alias",
+            "pat@gmail.com",
+            # --apply is the default, but be explicit for clarity
+            "--apply",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "cache" in result.output.lower()
+
+    # Re-open the resolver and confirm the alias identity has been merged.
+    resolver2 = DeveloperIdentityResolver(str(db_path))
+    from sqlalchemy import text
+
+    with resolver2.get_session() as session:
+        remaining = session.execute(
+            text("SELECT COUNT(*) FROM developer_identities WHERE canonical_id = :cid"),
+            {"cid": alias_id},
+        ).scalar()
+        assert remaining == 0, "Alias identity row should have been merged away"
+
+        canonical_row = session.execute(
+            text(
+                "SELECT canonical_id FROM developer_identities "
+                "WHERE LOWER(primary_email) = 'pat@work.com'"
+            ),
+        ).fetchone()
+        assert canonical_row is not None
+        assert canonical_row[0] == canonical_id
+
+
+def test_apply_idempotent_second_run_noop(runner, tmp_path):
+    """Running --apply twice is a no-op the second time (no errors)."""
+    from gitflow_analytics.core.identity import DeveloperIdentityResolver
+
+    cache_dir = tmp_path / ".gfa-cache"
+    cache_dir.mkdir()
+    db_path = cache_dir / "identities.db"
+
+    resolver = DeveloperIdentityResolver(str(db_path))
+    resolver.resolve_developer("Sam Canonical", "sam@work.com")
+    resolver.resolve_developer("Sam Alt", "sam@gmail.com")
+
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        yaml.dump(
+            {
+                "version": "1.0",
+                "repositories": [],
+                "cache": {"directory": str(cache_dir)},
+            },
+            sort_keys=False,
+        )
+    )
+
+    args = [
+        "--config",
+        str(cfg),
+        "--canonical",
+        "sam@work.com",
+        "--alias",
+        "sam@gmail.com",
+    ]
+    first = runner.invoke(add_alias_command, args)
+    assert first.exit_code == 0, first.output
+
+    second = runner.invoke(add_alias_command, args)
+    assert second.exit_code == 0, second.output
+    # Config-level mappings should remain a single entry with one alias
+    mappings = _read_mappings(cfg)
+    assert len(mappings) == 1
+    assert mappings[0]["aliases"].count("sam@gmail.com") == 1
+
+
+def test_apply_canonical_missing_in_cache_is_not_error(runner, tmp_path):
+    """When the canonical email isn't in the cache DB yet, we report it and exit 0."""
+    from gitflow_analytics.core.identity import DeveloperIdentityResolver
+
+    cache_dir = tmp_path / ".gfa-cache"
+    cache_dir.mkdir()
+    db_path = cache_dir / "identities.db"
+
+    # Empty DB — no identities pre-created
+    DeveloperIdentityResolver(str(db_path))
+
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        yaml.dump(
+            {
+                "version": "1.0",
+                "repositories": [],
+                "cache": {"directory": str(cache_dir)},
+            },
+            sort_keys=False,
+        )
+    )
+
+    result = runner.invoke(
+        add_alias_command,
+        [
+            "--config",
+            str(cfg),
+            "--canonical",
+            "ghost@nowhere.com",
+            "--alias",
+            "ghost@gmail.com",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "not in" in result.output.lower() or "skip" in result.output.lower()
+
+
+def test_dry_run_with_apply_does_not_mutate_db(runner, tmp_path):
+    """--dry-run + --apply previews cache changes without mutating DB."""
+    from gitflow_analytics.core.identity import DeveloperIdentityResolver
+
+    cache_dir = tmp_path / ".gfa-cache"
+    cache_dir.mkdir()
+    db_path = cache_dir / "identities.db"
+
+    resolver = DeveloperIdentityResolver(str(db_path))
+    canonical_id = resolver.resolve_developer("Dee Canonical", "dee@work.com")
+    alias_id = resolver.resolve_developer("Dee Alt", "dee@gmail.com")
+    assert canonical_id != alias_id
+
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        yaml.dump(
+            {
+                "version": "1.0",
+                "repositories": [],
+                "cache": {"directory": str(cache_dir)},
+            },
+            sort_keys=False,
+        )
+    )
+
+    result = runner.invoke(
+        add_alias_command,
+        [
+            "--config",
+            str(cfg),
+            "--canonical",
+            "dee@work.com",
+            "--alias",
+            "dee@gmail.com",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    # Config unchanged
+    data = yaml.safe_load(cfg.read_text()) or {}
+    assert (
+        not data.get("analysis", {}).get("identity", {}).get("manual_mappings")
+    ), "Dry-run must not write mappings"
+
+    # DB unchanged — alias identity still exists
+    resolver2 = DeveloperIdentityResolver(str(db_path))
+    from sqlalchemy import text
+
+    with resolver2.get_session() as session:
+        remaining = session.execute(
+            text("SELECT COUNT(*) FROM developer_identities WHERE canonical_id = :cid"),
+            {"cid": alias_id},
+        ).scalar()
+        assert remaining == 1, "Dry-run must not merge identity rows"
