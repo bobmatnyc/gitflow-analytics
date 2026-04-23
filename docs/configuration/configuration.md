@@ -142,6 +142,82 @@ jira_integration:
 
 See the [PM Platform Setup Guide](../guides/pm-platform-setup.md) for detailed setup instructions for each platform.
 
+## Ticketing & Collaboration Integrations
+
+In addition to commit-based ticket reference tracking, GitFlow Analytics can fetch actual activity from ticketing and collaboration platforms to compute a per-developer `ticketing_score`. This score is blended into the `raw_activity_score` by `ActivityScorer`.
+
+### GitHub Issues
+
+Fetches issue events (opened, closed, commented) for each configured repo. Results are stored in `ticketing_activity_cache` with `platform='github_issues'`.
+
+```yaml
+github_issues:
+  enabled: true
+  fetch_comments: true          # include comment events
+  allowed_repos: []             # restrict to specific repos (empty = all configured repos)
+  issue_state: "all"            # open | closed | all
+```
+
+The existing `github.token` credential is reused — no separate authentication needed.
+
+### Confluence
+
+Fetches page creates and edits per space via HTTP Basic auth. Confluence data is fetched once per run (org-wide) and stored in `confluence_page_cache`.
+
+```yaml
+confluence:
+  base_url: "${CONFLUENCE_URL}"
+  username: "${CONFLUENCE_USER}"
+  api_token: "${CONFLUENCE_TOKEN}"
+  spaces: ["ENG", "PROD"]       # space keys to fetch
+  fetch_page_history: true
+```
+
+Set credentials in your `.env` file:
+```bash
+CONFLUENCE_URL=https://your-org.atlassian.net/wiki
+CONFLUENCE_USER=you@company.com
+CONFLUENCE_TOKEN=your_confluence_api_token
+```
+
+### JIRA Activity
+
+Fetches issue events and comments via JQL (`project in (...) AND updated >= since`). Results are stored in `ticketing_activity_cache` with `platform='jira'`.
+
+**No separate config block is required.** JIRA activity tracking is enabled automatically whenever the `jira:` credentials block is present. It uses the same credentials as the existing JIRA story point integration.
+
+```yaml
+# Existing jira: block enables activity tracking automatically
+jira:
+  access_user: "${JIRA_ACCESS_USER}"
+  access_token: "${JIRA_ACCESS_TOKEN}"
+  base_url: "https://company.atlassian.net"
+```
+
+## Activity Scoring Weights
+
+`ActivityScorer` blends five signals into `raw_activity_score`. All weights must sum to 1.0.
+
+```yaml
+activity_scoring:
+  ticketing_weight: 0.15        # fraction of raw_activity_score from ticketing platforms
+  commits_weight: 0.22
+  prs_weight: 0.26
+  code_impact_weight: 0.26
+  complexity_weight: 0.11
+```
+
+**Defaults** (applied when `activity_scoring:` is absent):
+| Signal | Default weight |
+|--------|---------------|
+| commits | 22% |
+| prs | 26% |
+| code_impact | 26% |
+| complexity | 11% |
+| ticketing | 15% |
+
+Setting `ticketing_weight: 0` is a strict no-op — the `ticketing_score` column will still appear in output CSVs but will not affect `raw_activity_score`. This preserves backward compatibility for installations that do not configure any ticketing integrations.
+
 ## Configuration Profiles
 
 Configuration profiles provide pre-configured settings optimized for specific use cases. This allows you to quickly set up GitFlow Analytics for different scenarios without manually configuring every setting.

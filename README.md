@@ -15,6 +15,7 @@ A comprehensive Python package for analyzing Git repositories to generate develo
 - **👥 Smart Identity Resolution**: Automatically consolidate developer identities across email addresses
 - **🏢 Enterprise Ready**: Organization-wide repository discovery with intelligent caching
 - **📊 Professional Reports**: Rich markdown narratives and CSV exports for executive dashboards
+- **🎫 Ticketing & Collaboration Tracking**: Measure developer contributions across GitHub Issues, Confluence, and JIRA — blended into a unified `ticketing_score` per developer
 
 ## 🎯 Quick Start
 
@@ -85,6 +86,7 @@ gitflow-analytics -c config.yaml --weeks 8
 - Developer productivity metrics and work pattern analysis
 - Story point extraction from commits and PRs
 - Ticket tracking across JIRA, GitHub, ClickUp, and Linear
+- Ticketing & collaboration tracking: `ticketing_score` blended from GitHub Issues, Confluence, and JIRA activity
 
 **🏢 Enterprise Features**
 - Organization-wide repository discovery from GitHub
@@ -512,6 +514,20 @@ The tool generates comprehensive CSV reports and markdown summaries:
    - Complete developer profiles
    - Total contributions
    - Identity aliases
+
+5. **Developer Activity Summary** (`developer_activity_summary_YYYYMMDD.csv`)
+   - Per-developer activity scores including `ticketing_score`
+   - Blended `raw_activity_score` incorporating commits, PRs, code impact, complexity, and ticketing
+   - Produced by `gfa analyze`
+
+6. **Ticketing Activity Summary** (`ticketing_activity_summary.json`)
+   - Combined per-developer `ticketing_score` across all configured platforms (GitHub Issues, Confluence, JIRA)
+
+7. **GitHub Issues Summary** (`github_issues_summary.json`)
+   - Issue breakdown, resolution times, and top contributors
+
+8. **Confluence Activity Summary** (`confluence_activity_summary.json`)
+   - Page edits by space and author
 
 5. **Untracked Commits Report** (`untracked_commits_YYYYMMDD.csv`)
    - Detailed analysis of commits without ticket references

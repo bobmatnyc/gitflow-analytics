@@ -14,6 +14,7 @@ A plain-language glossary of all GitFlow Analytics metrics with definitions, hea
 | **Feature %** | % of commits building new capabilities | 40-70% | Declining trend | < 20% |
 | **Bug Fix %** | % of commits fixing errors | 20-40% | 40-60% | > 60% |
 | **Maintenance %** | % of commits on tech debt/refactor | 10-30% | < 5% or > 40% | 0% |
+| **Ticketing Score** | Weighted sum of issue/comment/page events across platforms | Context-dependent | Consistently 0.0 with integrations configured | N/A |
 
 ## Team Health Metrics
 
@@ -532,6 +533,49 @@ A plain-language glossary of all GitFlow Analytics metrics with definitions, hea
 - ⚠️ **Platform distribution shifting**: Tool migration or team confusion
 
 **Related Metrics**: Ticket Coverage, Untracked Work Analysis
+
+---
+
+## Ticketing Activity
+
+GitFlow Analytics fetches actual activity from ticketing and collaboration platforms and computes a per-developer `ticketing_score`. This score is blended into `raw_activity_score` by `ActivityScorer` (default weight: 15%).
+
+### Supported Platforms
+
+| Platform | Auto-enabled when… |
+|----------|-------------------|
+| **GitHub Issues** | `github_issues:` block is present in config |
+| **Confluence** | `confluence:` block is present in config |
+| **JIRA** | `jira:` credentials block is present (no extra config needed) |
+
+### Point Values
+
+Each event type contributes a fixed number of points to a developer's `ticketing_score`:
+
+| Event | Points |
+|-------|--------|
+| GitHub issue opened | 1.0 |
+| GitHub issue closed | 1.5 |
+| GitHub comment | 0.5 |
+| Confluence page created | 2.0 |
+| Confluence page edited | 1.0 |
+| JIRA issue opened | 1.5 |
+| JIRA issue closed | 2.0 |
+| JIRA comment | 0.5 |
+
+### Output Files
+
+- **`ticketing_activity_summary.json`** — combined per-developer `ticketing_score` across all platforms
+- **`github_issues_summary.json`** — issue breakdown, resolution times, top contributors
+- **`confluence_activity_summary.json`** — page edits by space and author
+- **`developer_activity_summary_*.csv`** — includes `ticketing_score` column alongside other activity metrics
+
+### Interpretation
+
+- A `ticketing_score` of `0.0` with integrations configured indicates no tracked activity on those platforms during the analysis window — not that the integration is broken.
+- Setting `activity_scoring.ticketing_weight: 0.0` is a strict no-op: the `ticketing_score` column still appears in CSV output but does not influence `raw_activity_score`. This preserves backward compatibility for installations without ticketing integrations.
+
+**Related Metrics**: Developer Activity Score, Platform Distribution (Ticket Tracking)
 
 ---
 

@@ -5,6 +5,48 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.14.8] - 2026-04-23
+### Fixed
+- #43: Pass cache/since/until to CSVReportGenerator in gfa analyze path
+- #44: Populate github_username from noreply emails and config manual_mappings
+
+## [3.14.7] - 2026-04-23
+### Fixed
+- #42: Thread cache/since/until into CSVReportGenerator (gfa report path)
+
+## [3.14.6] - 2026-04-23
+### Fixed
+- #41: Resolve canonical identity for ticketing_score lookup in developer CSV
+
+## [3.14.5] - 2026-04-23
+### Fixed
+- #40: Add ticketing_score column to developer activity CSV output
+
+## [3.14.4] - 2026-04-23
+### Fixed
+- #39: Guard against NULL total_commits in identity sort and merge
+
+## [3.14.3] - 2026-04-23
+### Added
+- #37: ActivityScorer ticketing_weight blends ticketing_score into raw_activity_score
+- #38: JIRAActivityIntegration fetches JIRA issues/comments via JQL
+
+## [3.14.2] - 2026-04-22
+### Added
+- Boilerplate filter: flag/exclude bulk auto-generated commits from velocity metrics
+
+## [3.14.1] - 2026-04-22
+### Fixed
+- #32: Wire ticketing reports into gfa analyze (github_issues_summary.json, confluence_activity_summary.json, ticketing_activity_summary.json now produced without separate gfa report run)
+- #33: Fix Confluence 401 — warn on unset env vars, pre-flight credential check on init
+- #34: UNIQUE constraint violations now log at DEBUG not ERROR
+
+## [3.14.0] - 2026-04-22
+### Added
+- #31: GitHub Issues and Confluence ticketing activity tracking
+- New DB tables: ticketing_activity_cache, confluence_page_cache (v10 migration)
+- New reports: github_issues_summary.json, confluence_activity_summary.json, ticketing_activity_summary.json
+
 ## [3.13.17] - 2026-02-27
 
 ### Added
