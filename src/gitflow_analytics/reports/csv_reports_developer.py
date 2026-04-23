@@ -192,6 +192,13 @@ class CSVDeveloperReportsMixin:
             # Convert sets to counts
             metrics["unique_tickets"] = len(metrics["unique_tickets"])
 
+            # WHY: ``ActivityScorer.calculate_activity_score`` looks up the
+            # per-developer ticketing total via ``metrics.get("developer_id")``.
+            # Without this injection the key is absent and the ticketing
+            # component collapses to 0.0 for every row, even when the
+            # ticketing cache has data.  See GitHub issue #41.
+            metrics["developer_id"] = dev_id
+
             # Calculate activity score
             activity_result = self.activity_scorer.calculate_activity_score(metrics)
             developer_scores[dev_id] = activity_result["raw_score"]

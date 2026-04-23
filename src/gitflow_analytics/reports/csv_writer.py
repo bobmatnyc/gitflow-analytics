@@ -39,7 +39,11 @@ class CSVReportGenerator(
             identity_resolver=identity_resolver,
             **kwargs,
         )
-        self.activity_scorer = ActivityScorer()
+        # WHY: Pass the identity resolver so ticketing-event actors (GitHub
+        # logins stored in ``ticketing_activity_cache``) can be re-keyed by
+        # canonical_id, allowing per-developer ticketing scores to be looked
+        # up correctly from the developer-activity CSV.  See issue #41.
+        self.activity_scorer = ActivityScorer(identity_resolver=identity_resolver)
 
     # Implementation of abstract methods from BaseReportGenerator
 

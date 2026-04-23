@@ -58,6 +58,7 @@ class ActivityScorer:
         cache: Optional[Any] = None,
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
+        identity_resolver: Optional[Any] = None,
     ) -> None:
         """Initialize scorer.
 
@@ -75,6 +76,13 @@ class ActivityScorer:
                 active.
             until: Upper bound (inclusive) on ``activity_at`` for
                 ticketing lookups.
+            identity_resolver: Optional identity resolver used to bridge
+                raw ticketing actor keys (usually GitHub logins) to
+                canonical developer identity IDs.  When provided, the
+                per-actor ticketing totals are additionally re-keyed by
+                canonical_id so downstream lookups by ``developer_id``
+                (e.g. from the developer-activity CSV) succeed.  Default
+                ``None`` preserves legacy behaviour (actor-only keying).
         """
         if config is not None:
             self.WEIGHTS = {
@@ -90,6 +98,7 @@ class ActivityScorer:
         self._cache = cache
         self._since = since
         self._until = until
+        self._identity_resolver = identity_resolver
         self._ticketing_cache: Optional[dict[str, float]] = None
 
     # ------------------------------------------------------------------
@@ -146,6 +155,29 @@ class ActivityScorer:
         except Exception:  # noqa: BLE001
             totals = {}
 
+        # WHY: ``TicketingActivityCache.actor`` stores raw ticketing-platform
+        # identifiers — typically lowercase GitHub logins (e.g. ``bob-duetto``)
+        # for GitHub Issues events, or email addresses for some JIRA flows.
+        # Callers of :meth:`get_ticketing_score` (notably the developer-
+        # activity CSV) look up scores by canonical_id UUID.  Without
+        # translation the two key spaces are disjoint and every lookup
+        # returns 0.0.  When an identity resolver is available we
+        # additionally index each actor under its resolved canonical_id so
+        # both forms of lookup succeed.  See GitHub issue #41.
+        if self._identity_resolver is not None and totals:
+            resolver = self._identity_resolver
+            resolve_fn = getattr(resolver, "resolve_by_github_username", None)
+            if callable(resolve_fn):
+                for actor, score in list(totals.items()):
+                    try:
+                        canonical_id = resolve_fn(actor)
+                    except Exception:  # noqa: BLE001
+                        canonical_id = None
+                    if canonical_id:
+                        # Accumulate in case multiple actors map to the same
+                        # canonical identity (aliases, renamed accounts).
+                        totals[canonical_id] = totals.get(canonical_id, 0.0) + score
+
         self._ticketing_cache = totals
         return totals
 
@@ -178,12 +210,24 @@ class ActivityScorer:
 
         Returns 0.0 when no ticketing data is available (missing cache,
         identity not present, or ``ticketing_weight == 0``).
+
+        ``developer_id`` may be a canonical_id UUID (preferred — produced
+        by the identity-resolution layer), a raw GitHub login, or an
+        email address.  We first try a case-sensitive direct lookup so
+        UUIDs and other case-sensitive keys match verbatim, then fall
+        back to a lowercase lookup to handle display-name / login casing.
         """
         if self.WEIGHTS.get("ticketing", 0.0) <= 0:
             return 0.0
         if not developer_id:
             return 0.0
         scores = self._load_ticketing_scores()
+        # Direct lookup (matches canonical_id UUIDs keyed in
+        # ``_load_ticketing_scores`` when an identity resolver is wired).
+        if developer_id in scores:
+            return float(scores[developer_id])
+        # Fallback: lowercase lookup for actor-keyed entries (GitHub logins,
+        # emails) which are always stored lowercased.
         return float(scores.get(developer_id.lower(), 0.0))
 
     def calculate_activity_score(self, metrics: dict[str, Any]) -> dict[str, Any]:

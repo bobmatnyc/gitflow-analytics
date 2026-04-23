@@ -223,6 +223,125 @@ def test_no_cache_ticketing_score_zero() -> None:
     assert scorer.get_ticketing_score("alice") == 0.0
 
 
+class _StubIdentityResolver:
+    """Minimal stub mirroring ``DeveloperIdentityResolver.resolve_by_github_username``.
+
+    Avoids the cost of spinning up a full ``DeveloperIdentityResolver`` (which
+    requires a SQLite DB and pulls in the alias-resolution machinery) for
+    tests that only need the canonical-id bridge.
+    """
+
+    def __init__(self, mapping: dict[str, str]) -> None:
+        self._mapping = {k.lower(): v for k, v in mapping.items()}
+
+    def resolve_by_github_username(self, github_username: str) -> str | None:
+        if not github_username:
+            return None
+        return self._mapping.get(github_username.lower())
+
+
+def test_ticketing_score_resolved_via_github_username(tmp_cache: GitAnalysisCache) -> None:
+    """Regression test for #41 — ticketing_score looked up by canonical_id.
+
+    When the developer-activity CSV passes ``developer_id=<canonical_id UUID>``
+    into ``calculate_activity_score``, the ticketing lookup must still succeed
+    even though ``TicketingActivityCache.actor`` is keyed by lowercase GitHub
+    login.  The identity resolver bridges the two key spaces.
+    """
+    with tmp_cache.get_session() as session:
+        session.add(
+            TicketingActivityCache(
+                platform="github_issues",
+                item_id="1",
+                item_type="issue",
+                repo_or_space="org/repo",
+                actor="bob-duetto",
+                action="opened",
+                activity_at=datetime(2024, 2, 1),
+                comment_count=0,
+                reaction_count=0,
+                platform_data={},
+            )
+        )
+        session.add(
+            TicketingActivityCache(
+                platform="github_issues",
+                item_id="2",
+                item_type="issue",
+                repo_or_space="org/repo",
+                actor="bob-duetto",
+                action="closed",
+                activity_at=datetime(2024, 2, 2),
+                comment_count=0,
+                reaction_count=0,
+                platform_data={},
+            )
+        )
+        session.commit()
+
+    canonical_id = "11111111-2222-3333-4444-555555555555"
+    resolver = _StubIdentityResolver({"bob-duetto": canonical_id})
+
+    cfg = ActivityScoringConfig(ticketing_weight=0.15)
+    scorer = ActivityScorer(
+        config=cfg,
+        cache=tmp_cache,
+        since=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        until=datetime(2024, 12, 31, tzinfo=timezone.utc),
+        identity_resolver=resolver,
+    )
+
+    # Direct lookup by canonical_id should succeed (1.0 opened + 1.0 closed)
+    assert scorer.get_ticketing_score(canonical_id) == pytest.approx(2.0)
+
+    # Original actor-key lookup must still work for backward compatibility
+    assert scorer.get_ticketing_score("bob-duetto") == pytest.approx(2.0)
+
+    # And calculate_activity_score should populate ticketing_score via the
+    # developer_id → canonical_id path used by csv_reports_developer.py.
+    metrics = _base_metrics()
+    metrics["developer_id"] = canonical_id
+    result = scorer.calculate_activity_score(metrics)
+    assert result["components"]["ticketing_score"] == pytest.approx(2.0)
+
+
+def test_ticketing_score_zero_when_no_resolver(tmp_cache: GitAnalysisCache) -> None:
+    """Without an identity resolver, a canonical_id lookup gracefully returns 0.0.
+
+    This documents the pre-fix behaviour that issue #41 reported: when the
+    actor key space (GitHub logins) and the lookup key space (canonical_id
+    UUIDs) are disjoint and no bridge is provided, the ticketing score is 0.0
+    — no crash, just a silent miss.
+    """
+    with tmp_cache.get_session() as session:
+        session.add(
+            TicketingActivityCache(
+                platform="github_issues",
+                item_id="1",
+                item_type="issue",
+                repo_or_space="org/repo",
+                actor="bob-duetto",
+                action="opened",
+                activity_at=datetime(2024, 2, 1),
+                comment_count=0,
+                reaction_count=0,
+                platform_data={},
+            )
+        )
+        session.commit()
+
+    cfg = ActivityScoringConfig(ticketing_weight=0.15)
+    scorer = ActivityScorer(
+        config=cfg,
+        cache=tmp_cache,
+        since=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        until=datetime(2024, 12, 31, tzinfo=timezone.utc),
+        # identity_resolver intentionally omitted
+    )
+    canonical_id = "11111111-2222-3333-4444-555555555555"
+    assert scorer.get_ticketing_score(canonical_id) == 0.0
+
+
 def test_config_loader_processes_activity_scoring() -> None:
     """Config loader creates ActivityScoringConfig with defaults when absent."""
     from gitflow_analytics.config.loader_sections import ConfigLoaderSectionsMixin
