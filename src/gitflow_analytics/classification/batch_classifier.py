@@ -9,7 +9,7 @@ implementation details live in batch_classifier_impl.py (BatchClassifierImplMixi
 
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -69,6 +69,7 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
 
         # Initialize LLM classifier
         # Handle different config types
+        llm_config_obj: LLMConfig
         if isinstance(llm_config, dict):
             # Convert dict config to LLMConfig object, forwarding all provider fields
             llm_config_obj = LLMConfig(
@@ -88,9 +89,9 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
                 enable_caching=llm_config.get("enable_caching", True),
                 max_daily_requests=llm_config.get("max_daily_requests", 1000),
             )
-        elif hasattr(llm_config, "api_key"):
+        elif llm_config is not None and hasattr(llm_config, "api_key"):
             # Use provided config object (e.g., mock config for testing)
-            llm_config_obj = llm_config
+            llm_config_obj = llm_config  # type: ignore[assignment]
         else:
             # Use default LLMConfig
             llm_config_obj = LLMConfig()
@@ -124,20 +125,51 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
         self.max_consecutive_failures = 5
         self.circuit_breaker_open = False
 
-        # Rule-based fallback patterns for when LLM fails
+        # Rule-based fallback patterns for when LLM fails.
+        # ORDER MATTERS: first match wins. High-signal structural patterns
+        # (merge, revert, ticket-keyed bug fixes) must precede generic
+        # keyword heuristics so commits like "Merge pull request #..." are
+        # not miscategorised as "feature" via the word "implement".
         self.fallback_patterns = {
+            "maintenance": [
+                # Merge commits (pull requests, branches) — match first so a
+                # commit like "Merge pull request #123: implement X" is
+                # maintenance, not "feature" via the verb "implement".
+                r"^\s*merge pull request\b",
+                r"^\s*merge branch\b",
+                r"^\s*merge remote-tracking branch\b",
+                r"^\s*merge\s+[^\s]+\s+into\b",
+                r"chore[\(\:]",
+                r"maintenance[\(\:]",
+                r"update.*(?:dependencies|deps)",
+                r"bump.*version",
+                r"cleanup",
+            ],
+            "bug_fix": [
+                # Revert commits almost always roll back a defect.
+                r"^\s*revert\s+\"",
+                r"^\s*revert:\s",
+                # Conventional-commit bug prefixes
+                r"fix(?:ed|es|ing)?[\(\:]",
+                r"bug[\(\:]",
+                # Duetto ticket-keyed fixes, e.g. "RATE-6059 fix ..." or
+                # "[RATE-6059] fix ...". RATE is the main bugfix project.
+                r"^\s*\[?rate-\d+\]?",
+                r"resolve(?:d|s)?",
+                r"repair(?:ed|ing|s)?",
+                r"correct(?:ed|ing|s)?",
+            ],
             "feature": [
                 r"feat(?:ure)?[\(\:]",
                 r"add(?:ed|ing)?.*(?:feature|functionality|capability)",
                 r"implement(?:ed|ing|s)?",
                 r"introduce(?:d|s)?",
-            ],
-            "bug_fix": [
-                r"fix(?:ed|es|ing)?[\(\:]",
-                r"bug[\(\:]",
-                r"resolve(?:d|s)?",
-                r"repair(?:ed|ing|s)?",
-                r"correct(?:ed|ing|s)?",
+                # Duetto feature/epic ticket prefixes — BB (Blockbuster),
+                # ADV (Advance), DP (Data Platform), ONB (Onboarding),
+                # AE (Account Engineering), IPX (Integrations Platform),
+                # ML (Machine Learning). Match at start of message, with
+                # or without square brackets.
+                r"^\s*\[?(?:bb|adv|dp|onb|ae|ipx|ml)-\d+\]?",
             ],
             "refactor": [
                 r"refactor(?:ed|ing|s)?[\(\:]",
@@ -151,13 +183,6 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
                 r"documentation[\(\:]",
                 r"readme",
                 r"update.*(?:comment|docs?|documentation)",
-            ],
-            "maintenance": [
-                r"chore[\(\:]",
-                r"maintenance[\(\:]",
-                r"update.*(?:dependencies|deps)",
-                r"bump.*version",
-                r"cleanup",
             ],
             "test": [
                 r"test(?:s|ing)?[\(\:]",
@@ -201,7 +226,7 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
             Dictionary containing classification results and statistics
         """
         logger.info(f"Starting batch classification from {start_date.date()} to {end_date.date()}")
-        self.classification_start_time = datetime.utcnow()
+        self.classification_start_time = datetime.now(timezone.utc)
 
         # Get daily batches to process
         batches_to_process = self._get_batches_to_process(
@@ -246,7 +271,7 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
                 # Check if we've exceeded max processing time
                 if self.classification_start_time:
                     elapsed_minutes = (
-                        datetime.utcnow() - self.classification_start_time
+                        datetime.now(timezone.utc) - self.classification_start_time
                     ).total_seconds() / 60
                     if elapsed_minutes > self.max_processing_time_minutes:
                         logger.error(
@@ -319,6 +344,17 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
             "project_keys": project_keys or [],
         }
 
+    # Confidence threshold below which a stored classification is considered
+    # a low-signal fallback result that should be replaced by a real LLM
+    # classification as soon as the LLM is available again. This matches the
+    # hard-coded confidence values written by the various fallback code paths
+    # in batch_classifier_impl.py:
+    #   - 0.20 for timeout_fallback
+    #   - 0.30 for fallback_only / circuit_breaker_fallback / LLM disabled
+    # Anything > 0.30 was produced by the LLM (0.5 for medium-confidence
+    # rule-based and 0.7–0.95 for real LLM output) and is left alone.
+    LOW_CONFIDENCE_THRESHOLD = 0.30
+
     def _get_batches_to_process(
         self,
         start_date: datetime,
@@ -326,7 +362,22 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
         project_keys: Optional[list[str]],
         force_reclassify: bool,
     ) -> list[DailyCommitBatch]:
-        """Get daily commit batches that need classification."""
+        """Get daily commit batches that need classification.
+
+        Why: During an LLM outage the classifier falls back to pattern
+        matching, writes the result with ``confidence <= 0.30`` and marks
+        the owning batch ``completed``. Previously those batches were then
+        permanently skipped, so weeks classified during an outage stayed
+        polluted with "other" forever. Now, when the LLM is available and
+        the caller has not requested a full force-reclassify, we also pull
+        back any ``completed`` batch that still contains at least one
+        low-confidence commit so those commits can be re-classified.
+
+        Test: populate ``qualitative_commits`` with one row at confidence
+        0.25 for a commit inside a ``completed`` batch, call this method
+        with ``force_reclassify=False`` and ``llm_enabled=True``, and assert
+        the batch is returned.
+        """
         session = self.database.get_session()
 
         try:
@@ -338,12 +389,30 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
                 query = query.filter(DailyCommitBatch.project_key.in_(project_keys))
 
             if not force_reclassify:
-                # Only get batches that haven't been classified or failed
-                query = query.filter(
-                    DailyCommitBatch.classification_status.in_(["pending", "failed"])
-                )
+                # Always include batches that were never classified.
+                status_filter = ["pending", "failed"]
 
-            batches = query.order_by(DailyCommitBatch.date).all()
+                # When the LLM is available, also retry batches that were
+                # marked completed but only contain low-confidence fallback
+                # rows — those were classified during an LLM outage.
+                if getattr(self, "llm_enabled", False) and not getattr(
+                    self, "circuit_breaker_open", False
+                ):
+                    status_filter.append("completed")
+                    query = query.filter(DailyCommitBatch.classification_status.in_(status_filter))
+                    candidate_batches = query.order_by(DailyCommitBatch.date).all()
+                    batches = [
+                        b
+                        for b in candidate_batches
+                        if str(b.classification_status) != "completed"
+                        or self._batch_has_low_confidence_commits(session, b)
+                    ]
+                else:
+                    query = query.filter(DailyCommitBatch.classification_status.in_(status_filter))
+                    batches = query.order_by(DailyCommitBatch.date).all()
+            else:
+                batches = query.order_by(DailyCommitBatch.date).all()
+
             logger.info(f"Found {len(batches)} batches needing classification")
 
             # Debug: Log filtering criteria
@@ -387,7 +456,8 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
 
         for batch in batches:
             # Get Monday of the week
-            batch_date = datetime.combine(batch.date, datetime.min.time())
+            batch_dt: datetime = batch.date  # type: ignore[assignment]
+            batch_date = datetime.combine(batch_dt.date(), datetime.min.time())
             days_since_monday = batch_date.weekday()
             week_start = batch_date - timedelta(days=days_since_monday)
 

@@ -11,11 +11,19 @@ Methods here depend on instance attributes set by BatchCommitClassifier.__init__
     self.circuit_breaker_open, self.fallback_patterns, self.cache_dir
 """
 
+from __future__ import annotations
+
 import logging
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from ..models.database import Database
+    from ..qualitative.classifiers.llm_commit_classifier import LLMCommitClassifier
 
 from ..core.progress import get_progress_service
 from ..models.database import (
@@ -34,6 +42,23 @@ class BatchClassifierImplMixin:
     Extracted to reduce batch_classifier.py below 800 lines while keeping
     the public API in one place.
     """
+
+    # Attributes are initialised by ``BatchCommitClassifier.__init__`` — declared
+    # here so Pyright knows about them on ``self`` inside mixin methods.
+    database: Database
+    batch_size: int
+    confidence_threshold: float
+    fallback_enabled: bool
+    max_processing_time_minutes: int
+    classification_start_time: datetime | None
+    llm_enabled: bool
+    llm_classifier: LLMCommitClassifier
+    api_failure_count: int
+    max_consecutive_failures: int
+    circuit_breaker_open: bool
+    fallback_patterns: dict[str, list[str]]
+    cache_dir: Path
+    LOW_CONFIDENCE_THRESHOLD: float = 0.30
 
     def _classify_weekly_batches(self, weekly_batches: list[DailyCommitBatch]) -> dict[str, Any]:
         """Classify all batches for a single week with shared context.
@@ -78,7 +103,7 @@ class BatchClassifierImplMixin:
                     continue
 
                 # Mark batch as processing (on the live, attached object)
-                live_batch.classification_status = "processing"
+                live_batch.classification_status = "processing"  # type: ignore[assignment]
 
                 # Get commits for this day (using live_batch for accurate metadata)
                 daily_commits = self._get_commits_for_batch(session, live_batch)
@@ -89,13 +114,28 @@ class BatchClassifierImplMixin:
                     batch_commit_map[commit["commit_hash"]] = live_batch
 
             if not week_commits:
-                logger.warning(
-                    f"No commits found for weekly batches (expected {sum(b.commit_count for b in live_batches)} commits)"
+                expected = sum(b.commit_count for b in live_batches)
+                # If every commit already has a high-confidence classification,
+                # _get_commits_for_batch intentionally filters them all out —
+                # that's a success, not a failure, so mark completed.
+                all_already_classified = all(
+                    str(b.classification_status) == "completed" for b in live_batches
                 )
+                if all_already_classified:
+                    logger.info(
+                        "Skipping weekly batches: all %d commits already "
+                        "have high-confidence classifications",
+                        expected,
+                    )
+                    for live_batch in live_batches:
+                        live_batch.classified_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                    session.commit()
+                    return {"batches_processed": 0, "commits_processed": 0}
+                logger.warning(f"No commits found for weekly batches (expected {expected} commits)")
                 # Mark batches as failed due to missing commits
                 for live_batch in live_batches:
-                    live_batch.classification_status = "failed"
-                    live_batch.classified_at = datetime.now(timezone.utc)
+                    live_batch.classification_status = "failed"  # type: ignore[assignment]
+                    live_batch.classified_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                 session.commit()
                 return {"batches_processed": 0, "commits_processed": 0}
 
@@ -121,7 +161,7 @@ class BatchClassifierImplMixin:
                     # Check for timeout before processing each batch
                     if self.classification_start_time:
                         elapsed_minutes = (
-                            datetime.utcnow() - self.classification_start_time
+                            datetime.now(timezone.utc) - self.classification_start_time
                         ).total_seconds() / 60
                         if elapsed_minutes > self.max_processing_time_minutes:
                             logger.error(
@@ -172,8 +212,8 @@ class BatchClassifierImplMixin:
 
             # Mark all daily batches as completed (using live, attached objects)
             for live_batch in live_batches:
-                live_batch.classification_status = "completed"
-                live_batch.classified_at = datetime.now(timezone.utc)
+                live_batch.classification_status = "completed"  # type: ignore[assignment]
+                live_batch.classified_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                 batches_processed += 1
 
             session.commit()
@@ -188,7 +228,7 @@ class BatchClassifierImplMixin:
             # re-fetch query itself raised, so guard with a try/except.
             try:
                 for live_batch in live_batches:  # type: ignore[possibly-undefined]
-                    live_batch.classification_status = "failed"
+                    live_batch.classification_status = "failed"  # type: ignore[assignment]
                 session.commit()
             except Exception:
                 session.rollback()
@@ -200,15 +240,57 @@ class BatchClassifierImplMixin:
             "commits_processed": commits_processed,
         }
 
+    def _batch_has_low_confidence_commits(self, session: Any, batch: DailyCommitBatch) -> bool:
+        """Return True if the batch contains at least one low-confidence commit.
+
+        Why: ``_get_batches_to_process`` needs to decide whether a
+        ``completed`` batch is actually "done" or whether it was finalised
+        during an LLM outage with only fallback classifications. A single
+        cheap EXISTS-style query keeps the overhead bounded.
+        Test: seed one ``QualitativeCommitData`` row with confidence 0.25
+        for a commit in the batch's day and assert this returns True; then
+        bump it to 0.90 and assert it returns False.
+        """
+        threshold = getattr(self, "LOW_CONFIDENCE_THRESHOLD", 0.30)
+        batch_dt: datetime = batch.date  # type: ignore[assignment]
+        batch_day = batch_dt.date()
+        start_of_day = datetime.combine(batch_day, datetime.min.time(), tzinfo=timezone.utc)
+        end_of_day = datetime.combine(batch_day, datetime.max.time(), tzinfo=timezone.utc)
+
+        row = (
+            session.query(QualitativeCommitData.commit_id)
+            .join(CachedCommit, CachedCommit.id == QualitativeCommitData.commit_id)
+            .filter(
+                CachedCommit.repo_path == batch.repo_path,
+                CachedCommit.timestamp >= start_of_day,
+                CachedCommit.timestamp < end_of_day,
+                QualitativeCommitData.confidence_score <= threshold,
+            )
+            .first()
+        )
+        return row is not None
+
     def _get_commits_for_batch(self, session: Any, batch: DailyCommitBatch) -> list[dict[str, Any]]:
-        """Get all commits for a daily batch."""
+        """Get commits for a daily batch that still need (re-)classification.
+
+        Why: When a batch is re-queued because the LLM recovered after an
+        outage, we only want to spend LLM tokens on the commits that have
+        no classification or a low-confidence fallback classification.
+        Commits already scored above the low-confidence threshold keep
+        their existing result.
+        Test: seed two commits in the same day — one with confidence 0.30
+        and one with 0.80 — and assert only the 0.30 commit is returned
+        when the batch is re-processed.
+        """
         try:
             # Get cached commits for this batch
             # CRITICAL FIX: CachedCommit.timestamp is timezone-aware UTC (from analyzer.py line 806)
             # but we were creating timezone-naive boundaries, causing comparison to fail
             # Create timezone-aware UTC boundaries to match CachedCommit.timestamp format
-            start_of_day = datetime.combine(batch.date, datetime.min.time(), tzinfo=timezone.utc)
-            end_of_day = datetime.combine(batch.date, datetime.max.time(), tzinfo=timezone.utc)
+            batch_dt: datetime = batch.date  # type: ignore[assignment]
+            batch_day = batch_dt.date()
+            start_of_day = datetime.combine(batch_day, datetime.min.time(), tzinfo=timezone.utc)
+            end_of_day = datetime.combine(batch_day, datetime.max.time(), tzinfo=timezone.utc)
 
             logger.debug(
                 f"Searching for commits in {batch.repo_path} between {start_of_day} and {end_of_day}"
@@ -223,6 +305,30 @@ class BatchClassifierImplMixin:
                 )
                 .all()
             )
+
+            # If the batch was completed during an LLM outage we only want
+            # to re-classify the low-confidence commits. Look up their
+            # existing qualitative rows once and filter in Python to keep
+            # the query simple.
+            threshold = getattr(self, "LOW_CONFIDENCE_THRESHOLD", 0.30)
+            commit_ids = [c.id for c in commits]
+            existing_confidence: dict[int, float] = {}
+            if commit_ids:
+                for row in (
+                    session.query(
+                        QualitativeCommitData.commit_id,
+                        QualitativeCommitData.confidence_score,
+                    )
+                    .filter(QualitativeCommitData.commit_id.in_(commit_ids))
+                    .all()
+                ):
+                    existing_confidence[row[0]] = float(row[1] or 0.0)
+
+            commits = [
+                c
+                for c in commits
+                if c.id not in existing_confidence or existing_confidence[c.id] <= threshold
+            ]
 
             logger.debug(f"Found {len(commits)} commits for batch on {batch.date}")
 
@@ -373,13 +479,13 @@ class BatchClassifierImplMixin:
         try:
             # Use LLM classifier with enhanced context
             logger.debug(f"Calling LLM classifier for batch {batch_id[:8]}...")
-            start_time = datetime.utcnow()
+            start_time = datetime.now(timezone.utc)
 
             llm_results = self.llm_classifier.classify_commits_batch(
                 enhanced_commits, batch_id=batch_id, include_confidence=True
             )
 
-            elapsed = (datetime.utcnow() - start_time).total_seconds()
+            elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
             logger.info(f"LLM classification for batch {batch_id[:8]} took {elapsed:.2f}s")
 
             # Reset circuit breaker on successful LLM call
@@ -393,7 +499,7 @@ class BatchClassifierImplMixin:
 
             # Process LLM results and add fallbacks
             processed_results = []
-            for _i, (commit, llm_result) in enumerate(zip(commits, llm_results)):
+            for _, (commit, llm_result) in enumerate(zip(commits, llm_results)):
                 confidence = llm_result.get("confidence", 0.0)
                 predicted_category = llm_result.get("category", "other")
 
@@ -587,9 +693,9 @@ class BatchClassifierImplMixin:
 
     def _store_daily_metrics(
         self,
-        start_date: datetime,
-        end_date: datetime,
-        project_keys: Optional[list[str]],
+        _start_date: datetime,
+        _end_date: datetime,
+        _project_keys: list[str] | None,
     ) -> None:
         """Store aggregated daily metrics from classification results."""
         from ..core.metrics_storage import DailyMetricsStorage
@@ -608,7 +714,7 @@ class BatchClassifierImplMixin:
         self,
         start_date: datetime,
         end_date: datetime,
-        project_keys: Optional[list[str]] = None,
+        project_keys: list[str] | None = None,
     ) -> dict[str, Any]:
         """Get classification status for a date range."""
         session = self.database.get_session()
