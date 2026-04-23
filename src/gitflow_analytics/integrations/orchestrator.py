@@ -12,6 +12,7 @@ from .cicd.github_actions import GitHubActionsIntegration
 from .confluence_integration import ConfluenceIntegration  # type: ignore[import-untyped]
 from .github_integration import GitHubIntegration
 from .github_issues_integration import GitHubIssuesIntegration
+from .jira_activity_integration import JIRAActivityIntegration  # type: ignore[import-untyped]
 from .jira_integration import JIRAIntegration
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,10 @@ class IntegrationOrchestrator:
                 JIRAIntegration,
                 GitHubIssuesIntegration,
                 ConfluenceIntegration,
+                JIRAActivityIntegration,
             ],
         ] = {}
+        self._jira_activity_fetched = False
 
         # Initialize available integrations
         if config.github and config.github.token:
@@ -74,6 +77,33 @@ class IntegrationOrchestrator:
                         enable_proxy=getattr(jira_settings, "enable_proxy", False),
                         proxy_url=getattr(jira_settings, "proxy_url", None),
                     )
+
+        # Initialize JIRA activity integration (separate from ticket enrichment).
+        # Activated whenever valid JIRA credentials + base_url exist, regardless
+        # of jira_integration.enabled — activity tracking is additive.
+        if (
+            config.jira
+            and getattr(config.jira, "access_user", None)
+            and getattr(config.jira, "access_token", None)
+            and getattr(config.jira, "base_url", None)
+        ):
+            try:
+                jira_settings = getattr(config, "jira_integration", None)
+                self.integrations["jira_activity"] = JIRAActivityIntegration(
+                    base_url=config.jira.base_url,
+                    username=config.jira.access_user,
+                    api_token=config.jira.access_token,
+                    cache=cache,
+                    max_retries=getattr(jira_settings, "max_retries", 3) if jira_settings else 3,
+                    backoff_factor=getattr(jira_settings, "backoff_factor", 1.0)
+                    if jira_settings
+                    else 1.0,
+                )
+                if self.debug_mode:
+                    print("   ✅ JIRA Activity integration initialized")
+            except Exception as e:  # noqa: BLE001
+                if self.debug_mode:
+                    print(f"   ⚠️  Failed to initialize JIRA Activity: {e}")
 
         # Initialize GitHub Issues integration (reuses GitHub token)
         github_issues_cfg = getattr(config, "github_issues", None)
@@ -313,6 +343,25 @@ class IntegrationOrchestrator:
                 except Exception as e:
                     if self.debug_mode:
                         print(f"   ⚠️  GitHub Issues enrichment failed: {e}")
+
+        # JIRA activity tracking (once per run, scoped to configured project_keys)
+        if "jira_activity" in self.integrations and not self._jira_activity_fetched:
+            jira_act = self.integrations["jira_activity"]
+            if isinstance(jira_act, JIRAActivityIntegration):
+                try:
+                    jira_settings = getattr(self.config, "jira_integration", None)
+                    project_keys: list[str] = []
+                    if jira_settings is not None:
+                        project_keys = list(getattr(jira_settings, "project_keys", []) or [])
+                    if project_keys:
+                        jira_act.fetch_project_activity(  # type: ignore
+                            project_keys, since, datetime.now(tz=None)
+                        )
+                    self._jira_activity_fetched = True
+                except Exception as e:  # noqa: BLE001
+                    if self.debug_mode:
+                        print(f"   ⚠️  JIRA Activity enrichment failed: {e}")
+                    self._jira_activity_fetched = True
 
         # Confluence activity tracking (once per run, not per-repo)
         if "confluence" in self.integrations and not self._confluence_fetched:

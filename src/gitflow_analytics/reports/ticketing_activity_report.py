@@ -30,6 +30,9 @@ class TicketingActivityReport:
         "comments_posted": 0.5,
         "pages_created": 2.0,
         "pages_edited": 1.0,
+        "jira_issues_opened": 1.5,
+        "jira_issues_closed": 2.0,
+        "jira_comments_posted": 0.5,
     }
 
     def __init__(
@@ -238,10 +241,65 @@ class TicketingActivityReport:
             "per_developer": per_developer,
         }
 
+    def generate_jira_summary(self, since: datetime, until: datetime) -> dict[str, Any]:
+        """Build a summary of JIRA issue + comment activity for the given window.
+
+        Reads rows where ``platform='jira'`` from ``ticketing_activity_cache``.
+        """
+        from ..models.database import TicketingActivityCache
+
+        since_naive = _to_naive(since)
+        until_naive = _to_naive(until)
+
+        per_developer: dict[str, dict[str, Any]] = {}
+        total_events = 0
+
+        with self.cache.get_session() as session:
+            rows = (
+                session.query(TicketingActivityCache)
+                .filter(
+                    TicketingActivityCache.platform == "jira",
+                    TicketingActivityCache.activity_at >= since_naive,
+                    TicketingActivityCache.activity_at <= until_naive,
+                )
+                .all()
+            )
+            for row in rows:
+                total_events += 1
+                actor = getattr(row, "actor", None) or "unknown"
+                item_type = getattr(row, "item_type", None) or ""
+                canonical = self._canonical(actor)
+                entry = per_developer.setdefault(
+                    canonical,
+                    {
+                        "jira_issues_opened": 0,
+                        "jira_issues_closed": 0,
+                        "jira_comments_posted": 0,
+                        "total_activity": 0,
+                    },
+                )
+                if item_type == "issue_created":
+                    entry["jira_issues_opened"] += 1
+                elif item_type == "issue_closed":
+                    entry["jira_issues_closed"] += 1
+                elif item_type == "comment":
+                    entry["jira_comments_posted"] += 1
+                entry["total_activity"] += 1
+
+        return {
+            "period": {
+                "since": since_naive.isoformat() if since_naive else None,
+                "until": until_naive.isoformat() if until_naive else None,
+            },
+            "total_events": total_events,
+            "per_developer": per_developer,
+        }
+
     def generate_combined_summary(self, since: datetime, until: datetime) -> dict[str, Any]:
         """Build a combined per-developer summary across all platforms."""
         gh_summary = self.generate_github_issues_summary(since, until)
         conf_summary = self.generate_confluence_summary(since, until)
+        jira_summary = self.generate_jira_summary(since, until)
 
         combined: dict[str, dict[str, Any]] = {}
 
@@ -256,6 +314,12 @@ class TicketingActivityReport:
             c["pages_created"] += stats.get("pages_created", 0)
             c["pages_edited"] += stats.get("pages_edited", 0)
 
+        for dev, stats in jira_summary.get("per_developer", {}).items():
+            c = combined.setdefault(dev, _empty_combined_row())
+            c["jira_issues_opened"] += stats.get("jira_issues_opened", 0)
+            c["jira_issues_closed"] += stats.get("jira_issues_closed", 0)
+            c["jira_comments_posted"] += stats.get("jira_comments_posted", 0)
+
         for _, row in combined.items():
             row["ticketing_score"] = round(
                 sum(row.get(k, 0) * w for k, w in self._WEIGHTS.items()),
@@ -267,6 +331,9 @@ class TicketingActivityReport:
                 + row["comments_posted"]
                 + row["pages_created"]
                 + row["pages_edited"]
+                + row["jira_issues_opened"]
+                + row["jira_issues_closed"]
+                + row["jira_comments_posted"]
             )
 
         # Sort developers by ticketing_score descending for convenience
@@ -286,6 +353,9 @@ class TicketingActivityReport:
             },
             "confluence": {
                 "total_events": conf_summary.get("total_events", 0),
+            },
+            "jira": {
+                "total_events": jira_summary.get("total_events", 0),
             },
         }
 
@@ -348,6 +418,9 @@ def _empty_combined_row() -> dict[str, Any]:
         "comments_posted": 0,
         "pages_created": 0,
         "pages_edited": 0,
+        "jira_issues_opened": 0,
+        "jira_issues_closed": 0,
+        "jira_comments_posted": 0,
         "total_activity": 0,
         "ticketing_score": 0.0,
     }

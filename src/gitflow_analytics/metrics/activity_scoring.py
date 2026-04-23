@@ -9,24 +9,182 @@ this module implements a balanced scoring approach that considers:
 """
 
 import math
-from typing import Any
+from datetime import datetime
+from typing import Any, Optional
 
 
 class ActivityScorer:
-    """Calculate balanced developer activity scores based on multiple metrics."""
+    """Calculate balanced developer activity scores based on multiple metrics.
 
-    # Weights based on research indicating balanced approach
-    WEIGHTS = {
-        "commits": 0.25,  # Each commit represents baseline effort
-        "prs": 0.30,  # PRs indicate collaboration and review effort
-        "code_impact": 0.30,  # Lines changed with diminishing returns
-        "complexity": 0.15,  # File changes and complexity
+    WHY: Ticketing platforms (GitHub Issues, Confluence, JIRA) generate
+    per-developer activity events that are now folded into the composite
+    activity score.  When ``ticketing_weight > 0`` the scorer queries
+    ``ticketing_activity_cache`` for per-developer event counts and blends
+    them into ``raw_activity_score``.  ``ticketing_weight == 0`` preserves
+    the historical code-only behaviour for backward compatibility.
+    """
+
+    # Default weights — adjusted from the historical (0.25/0.30/0.30/0.15)
+    # split so that ticketing contributes 15% without re-normalising at
+    # runtime.  See :class:`ActivityScoringConfig` for configuration.
+    DEFAULT_WEIGHTS = {
+        "commits": 0.22,
+        "prs": 0.26,
+        "code_impact": 0.26,
+        "complexity": 0.11,
+        "ticketing": 0.15,
     }
 
     # Scaling factors based on research
     COMMIT_BASE_SCORE = 10  # Each commit worth base 10 points
     PR_BASE_SCORE = 50  # Each PR worth base 50 points (5x commit)
     OPTIMAL_PR_SIZE = 200  # Research shows PRs under 200 lines are optimal
+
+    # Per-event ticketing weights (same scale as TicketingActivityReport)
+    TICKETING_EVENT_WEIGHTS = {
+        "issues_opened": 1.0,
+        "issues_closed": 1.0,
+        "comments_posted": 0.5,
+        "pages_created": 2.0,
+        "pages_edited": 1.0,
+        "jira_issues_opened": 1.5,
+        "jira_issues_closed": 2.0,
+        "jira_comments_posted": 0.5,
+    }
+
+    def __init__(
+        self,
+        config: Optional[Any] = None,
+        cache: Optional[Any] = None,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+    ) -> None:
+        """Initialize scorer.
+
+        Args:
+            config: Optional :class:`ActivityScoringConfig`-shaped object
+                providing ``commits_weight``, ``prs_weight``,
+                ``code_impact_weight``, ``complexity_weight``,
+                ``ticketing_weight`` attributes.  When None, default
+                weights are used.
+            cache: Optional :class:`GitAnalysisCache` for reading
+                ``ticketing_activity_cache`` rows when
+                ``ticketing_weight > 0``.
+            since: Lower bound (inclusive) on ``activity_at`` for
+                ticketing lookups.  Required when ticketing blending is
+                active.
+            until: Upper bound (inclusive) on ``activity_at`` for
+                ticketing lookups.
+        """
+        if config is not None:
+            self.WEIGHTS = {
+                "commits": float(getattr(config, "commits_weight", 0.22)),
+                "prs": float(getattr(config, "prs_weight", 0.26)),
+                "code_impact": float(getattr(config, "code_impact_weight", 0.26)),
+                "complexity": float(getattr(config, "complexity_weight", 0.11)),
+                "ticketing": float(getattr(config, "ticketing_weight", 0.15)),
+            }
+        else:
+            self.WEIGHTS = dict(self.DEFAULT_WEIGHTS)
+
+        self._cache = cache
+        self._since = since
+        self._until = until
+        self._ticketing_cache: Optional[dict[str, float]] = None
+
+    # ------------------------------------------------------------------
+    # Ticketing integration
+    # ------------------------------------------------------------------
+    def _load_ticketing_scores(self) -> dict[str, float]:
+        """Return per-developer weighted ticketing-event totals.
+
+        Keys are lowercased actor identifiers.  Results are cached for
+        the lifetime of this scorer instance to avoid repeated DB reads
+        when scoring many developers.
+        """
+        if self._ticketing_cache is not None:
+            return self._ticketing_cache
+        if self._cache is None or self._since is None or self._until is None:
+            self._ticketing_cache = {}
+            return self._ticketing_cache
+
+        try:
+            from ..models.database import TicketingActivityCache
+        except Exception:  # noqa: BLE001
+            self._ticketing_cache = {}
+            return self._ticketing_cache
+
+        def _naive(dt: datetime) -> datetime:
+            if dt.tzinfo is not None:
+                from datetime import timezone
+
+                return dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+
+        totals: dict[str, float] = {}
+        try:
+            with self._cache.get_session() as session:
+                rows = (
+                    session.query(TicketingActivityCache)
+                    .filter(
+                        TicketingActivityCache.activity_at >= _naive(self._since),
+                        TicketingActivityCache.activity_at <= _naive(self._until),
+                    )
+                    .all()
+                )
+                for row in rows:
+                    actor = (getattr(row, "actor", None) or "").lower() or "unknown"
+                    platform = getattr(row, "platform", None) or ""
+                    item_type = getattr(row, "item_type", None) or ""
+                    action = getattr(row, "action", None) or ""
+                    key = self._ticketing_event_key(platform, item_type, action)
+                    if key is None:
+                        continue
+                    totals[actor] = totals.get(actor, 0.0) + self.TICKETING_EVENT_WEIGHTS.get(
+                        key, 0.0
+                    )
+        except Exception:  # noqa: BLE001
+            totals = {}
+
+        self._ticketing_cache = totals
+        return totals
+
+    @staticmethod
+    def _ticketing_event_key(platform: str, item_type: str, action: str) -> Optional[str]:
+        """Map a ticketing-cache row to a canonical per-developer metric key."""
+        if platform == "github_issues":
+            if item_type == "issue" and action == "opened":
+                return "issues_opened"
+            if item_type == "issue" and action == "closed":
+                return "issues_closed"
+            if item_type == "comment":
+                return "comments_posted"
+        elif platform == "confluence":
+            if item_type == "page_create":
+                return "pages_created"
+            if item_type == "page_edit":
+                return "pages_edited"
+        elif platform == "jira":
+            if item_type == "issue_created":
+                return "jira_issues_opened"
+            if item_type == "issue_closed":
+                return "jira_issues_closed"
+            if item_type == "comment":
+                return "jira_comments_posted"
+        return None
+
+    def get_ticketing_score(self, developer_id: Optional[str]) -> float:
+        """Return the weighted ticketing-event total for ``developer_id``.
+
+        Returns 0.0 when no ticketing data is available (missing cache,
+        identity not present, or ``ticketing_weight == 0``).
+        """
+        if self.WEIGHTS.get("ticketing", 0.0) <= 0:
+            return 0.0
+        if not developer_id:
+            return 0.0
+        scores = self._load_ticketing_scores()
+        return float(scores.get(developer_id.lower(), 0.0))
 
     def calculate_activity_score(self, metrics: dict[str, Any]) -> dict[str, Any]:
         """Calculate balanced activity score for a developer.
@@ -67,20 +225,46 @@ class ActivityScorer:
         code_score = self._calculate_code_impact_score(lines_added, lines_removed)
         complexity_score = self._calculate_complexity_score(files_changed, complexity)
 
+        # Ticketing score — computed only when configured weight > 0.
+        ticketing_weight = float(self.WEIGHTS.get("ticketing", 0.0) or 0.0)
+        ticketing_score = 0.0
+        if ticketing_weight > 0:
+            dev_id = (
+                metrics.get("developer_id")
+                or metrics.get("canonical_id")
+                or metrics.get("primary_email")
+            )
+            # Allow callers to supply a pre-computed score via metrics
+            # (useful for tests and non-DB-backed call sites).
+            explicit = metrics.get("ticketing_score")
+            if explicit is not None:
+                try:
+                    ticketing_score = float(explicit)
+                except (TypeError, ValueError):
+                    ticketing_score = 0.0
+            elif dev_id:
+                ticketing_score = self.get_ticketing_score(dev_id)
+
         # Weighted total
         components = {
             "commit_score": commit_score,
             "pr_score": pr_score,
             "code_impact_score": code_score,
             "complexity_score": complexity_score,
+            "ticketing_score": ticketing_score,
         }
 
-        raw_score = (
+        code_raw_score = (
             commit_score * self.WEIGHTS["commits"]
             + pr_score * self.WEIGHTS["prs"]
             + code_score * self.WEIGHTS["code_impact"]
             + complexity_score * self.WEIGHTS["complexity"]
         )
+
+        if ticketing_weight > 0:
+            raw_score = code_raw_score + ticketing_score * ticketing_weight
+        else:
+            raw_score = code_raw_score
 
         # Determine if PR data is available for proper normalization
         has_pr_data = prs > 0

@@ -15,6 +15,7 @@ import click
 
 from .errors import EnvironmentVariableError
 from .schema import (
+    ActivityScoringConfig,
     AIDetectionConfig,
     BoilerplateFilterConfig,
     CacheConfig,
@@ -363,6 +364,28 @@ class ConfigLoaderSectionsMixin:
                 velocity_data.get("cycle_time_outlier_max_hrs", 720.0)
             ),
             top_n=int(velocity_data.get("top_n", 5)),
+        )
+
+    @classmethod
+    def _process_activity_scoring_config(
+        cls, scoring_data: dict[str, Any]
+    ) -> ActivityScoringConfig:
+        """Process activity scoring configuration section.
+
+        Args:
+            scoring_data: Activity scoring configuration data from YAML.
+
+        Returns:
+            ActivityScoringConfig instance with defaults for any missing keys.
+        """
+        if not scoring_data:
+            return ActivityScoringConfig()
+        return ActivityScoringConfig(
+            commits_weight=float(scoring_data.get("commits_weight", 0.22)),
+            prs_weight=float(scoring_data.get("prs_weight", 0.26)),
+            code_impact_weight=float(scoring_data.get("code_impact_weight", 0.26)),
+            complexity_weight=float(scoring_data.get("complexity_weight", 0.11)),
+            ticketing_weight=float(scoring_data.get("ticketing_weight", 0.15)),
         )
 
     @classmethod

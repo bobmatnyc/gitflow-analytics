@@ -311,6 +311,10 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
         velocity_data = data.get("velocity", {})
         velocity_config = cls._process_velocity_config(velocity_data)
 
+        # Activity scoring config (top-level key "activity_scoring")
+        activity_scoring_data = data.get("activity_scoring", {})
+        activity_scoring_config = cls._process_activity_scoring_config(activity_scoring_data)
+
         # Teams/pods aggregation config (top-level key "teams")
         teams_data = data.get("teams")
         teams_config = cls._process_teams_config(teams_data)
@@ -348,6 +352,7 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             pm_integration=pm_integration_config,
             qualitative=qualitative_config,
             velocity=velocity_config,
+            activity_scoring=activity_scoring_config,
             teams=teams_config,
             quality_report=quality_report_config,
             ai_detection=ai_detection_config,

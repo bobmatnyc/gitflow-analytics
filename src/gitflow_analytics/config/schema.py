@@ -584,6 +584,29 @@ class VelocityConfig:
 
 
 @dataclass
+class ActivityScoringConfig:
+    """Configuration for the :class:`ActivityScorer` weighting model.
+
+    WHY: Lets operators tune the balance between code-based activity
+    (commits, PRs, code impact, complexity) and ticketing activity
+    (GitHub Issues + Confluence + JIRA events stored in
+    ``ticketing_activity_cache``).  Defaults preserve the historical
+    behaviour while reserving 15% for ticketing blending.
+
+    Weights must sum to ~1.0 (no runtime enforcement — operators can
+    intentionally over-weight a single channel).  Setting
+    ``ticketing_weight=0.0`` bypasses any ticketing lookups, matching
+    the pre-merger behaviour for backward compatibility.
+    """
+
+    commits_weight: float = 0.22
+    prs_weight: float = 0.26
+    code_impact_weight: float = 0.26
+    complexity_weight: float = 0.11
+    ticketing_weight: float = 0.15
+
+
+@dataclass
 class BoilerplateFilterConfig:
     """Configuration for the boilerplate / bulk-auto-generated-commit filter (Issue #28).
 
@@ -685,6 +708,7 @@ class Config:
     pm_integration: Optional[PMIntegrationConfig] = None
     qualitative: Optional["QualitativeConfig"] = None
     velocity: VelocityConfig = field(default_factory=VelocityConfig)
+    activity_scoring: ActivityScoringConfig = field(default_factory=ActivityScoringConfig)
     teams: TeamsConfig = field(default_factory=TeamsConfig)
     quality_report: QualityReportConfig = field(default_factory=QualityReportConfig)
     ai_detection: AIDetectionConfig = field(default_factory=AIDetectionConfig)
