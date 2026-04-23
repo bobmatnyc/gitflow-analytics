@@ -362,8 +362,20 @@ class GitHubIssuesIntegration:
     # Storage
     # ------------------------------------------------------------------
     def _store_activity_events_bulk(self, events: list[dict[str, Any]]) -> None:
-        """Persist activity events in a single session transaction."""
+        """Persist activity events in a single session transaction.
+
+        WHY: GitHub REST API only returns ``user.email`` when the user has set
+        it public, which is rare for corporate accounts.  Before writing, we
+        enrich null ``actor_email`` values from ``identities.db`` using the
+        actor (GitHub login) so downstream consumers that key by email have
+        resolvable identities.  See GitHub issue #52 (662 unresolved events).
+        Test: ingest a GH issue where API returns null email for a user whose
+        GitHub login is mapped in ``developer_identities.github_username``;
+        assert the stored row has a non-null ``actor_email``.
+        """
         from ..models.database import TicketingActivityCache
+
+        username_to_email = self._build_username_email_map(events)
 
         with self.cache.get_session() as session:
             for ev in events:
@@ -373,6 +385,12 @@ class GitHubIssuesIntegration:
                 # Store as naive UTC per project convention
                 activity_at_naive = _to_naive_utc(activity_at)
 
+                actor_email = ev.get("actor_email")
+                if not actor_email:
+                    actor_key = (ev.get("actor") or "").lower()
+                    if actor_key:
+                        actor_email = username_to_email.get(actor_key)
+
                 row = TicketingActivityCache(
                     platform=ev.get("platform", "github_issues"),
                     item_id=str(ev.get("item_id") or ""),
@@ -380,7 +398,7 @@ class GitHubIssuesIntegration:
                     repo_or_space=ev.get("repo_or_space") or "",
                     actor=ev.get("actor"),
                     actor_display_name=ev.get("actor_display_name"),
-                    actor_email=ev.get("actor_email"),
+                    actor_email=actor_email,
                     action=ev.get("action"),
                     activity_at=activity_at_naive,
                     item_title=ev.get("item_title"),
@@ -393,6 +411,51 @@ class GitHubIssuesIntegration:
                 )
                 session.add(row)
             session.commit()
+
+    def _build_username_email_map(self, events: list[dict[str, Any]]) -> dict[str, str]:
+        """Return lowercased ``github_username -> primary_email`` map.
+
+        Why: Closes the GitHub-Issues actor-email gap in one bulk read of
+        ``identities.db`` instead of per-row lookups.  Only usernames that
+        appear in the current event batch are queried.
+        Test: provide events with actors ``[\"bob-duetto\"]`` where
+        ``developer_identities`` has ``github_username='bob-duetto'``; assert
+        map contains ``{'bob-duetto': '<primary_email>'}``.
+        """
+        usernames: set[str] = set()
+        for ev in events:
+            if ev.get("actor_email"):
+                continue
+            actor = (ev.get("actor") or "").lower()
+            if actor:
+                usernames.add(actor)
+        if not usernames:
+            return {}
+
+        try:
+            from pathlib import Path
+
+            from sqlalchemy import create_engine, text
+
+            identities_path = Path(self.cache.cache_dir) / "identities.db"
+            if not identities_path.exists():
+                return {}
+
+            engine = create_engine(f"sqlite:///{identities_path}")
+            with engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        "SELECT LOWER(github_username) AS u, primary_email "
+                        "FROM developer_identities "
+                        "WHERE github_username IS NOT NULL"
+                    )
+                ).fetchall()
+            engine.dispose()
+            return {r[0]: r[1] for r in rows if r[0] in usernames and r[1]}
+        except Exception as exc:  # noqa: BLE001
+            if self.debug_mode:
+                print(f"   🔍 GitHub Issues email backfill skipped: {exc}")
+            return {}
 
     # ------------------------------------------------------------------
     # Incremental fetch + HTTP helpers
