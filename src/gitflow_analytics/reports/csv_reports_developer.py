@@ -274,6 +274,9 @@ class CSVDeveloperReportsMixin:
                 "pr_score": round(activity_result["components"]["pr_score"], 1),
                 "code_impact_score": round(activity_result["components"]["code_impact_score"], 1),
                 "complexity_score": round(activity_result["components"]["complexity_score"], 1),
+                "ticketing_score": round(
+                    activity_result["components"].get("ticketing_score", 0.0), 1
+                ),
             }
             rows.append(row)
 
@@ -317,6 +320,7 @@ class CSVDeveloperReportsMixin:
             "pr_score",
             "code_impact_score",
             "complexity_score",
+            "ticketing_score",
         ]
 
         if rows:
