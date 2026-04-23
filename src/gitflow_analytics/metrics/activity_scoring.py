@@ -176,7 +176,8 @@ class ActivityScorer:
                     if canonical_id:
                         # Accumulate in case multiple actors map to the same
                         # canonical identity (aliases, renamed accounts).
-                        totals[canonical_id] = totals.get(canonical_id, 0.0) + score
+                        cid = str(canonical_id)
+                        totals[cid] = totals.get(cid, 0.0) + score
 
         self._ticketing_cache = totals
         return totals

@@ -28,7 +28,7 @@ class CSVReportGenerator(
     def __init__(
         self,
         anonymize: bool = False,
-        exclude_authors: list[str] = None,
+        exclude_authors: list[str] | None = None,
         identity_resolver=None,
         **kwargs,
     ):
