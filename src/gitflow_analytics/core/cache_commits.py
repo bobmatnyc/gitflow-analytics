@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import git
 from sqlalchemy import and_
@@ -16,7 +16,37 @@ from ..models.database import (
 logger = logging.getLogger(__name__)
 
 
-class CommitCacheMixin:
+if TYPE_CHECKING:
+    # WHY: Mixin classes reference attributes/methods supplied by the host
+    # class (GitAnalysisCache).  Declaring a Protocol-like base at type-check
+    # time lets Pyright resolve the attribute access without affecting the
+    # runtime MRO.  At runtime the mixin subclasses ``object``.
+    from contextlib import AbstractContextManager
+
+    from sqlalchemy.orm import Session
+
+    class _CacheHost:
+        db: Any
+        ttl_hours: int
+        batch_size: int
+        cache_hits: int
+        cache_misses: int
+        bulk_operations_count: int
+        bulk_operations_time: float
+        debug_mode: bool
+
+        def get_session(self) -> "AbstractContextManager[Session]": ...
+        def _is_stale(self, cached_at: Any) -> bool: ...
+        def _commit_to_dict(self, commit: CachedCommit) -> dict[str, Any]: ...
+        def _pr_to_dict(self, pr: PullRequestCache) -> dict[str, Any]: ...
+        def _issue_to_dict(self, issue: IssueCache) -> dict[str, Any]: ...
+
+    _Base = _CacheHost
+else:
+    _Base = object
+
+
+class CommitCacheMixin(_Base):
     """Mixin providing commit, PR, and issue caching methods.
 
     Mixed into GitAnalysisCache. Uses self.db, self.ttl_hours,
@@ -148,6 +178,8 @@ class CommitCacheMixin:
                     complexity_delta=commit_data.get("complexity_delta", 0.0),
                     story_points=commit_data.get("story_points"),
                     ticket_references=commit_data.get("ticket_references", []),
+                    ai_confidence_score=commit_data.get("ai_confidence_score"),
+                    ai_detection_method=commit_data.get("ai_detection_method", ""),
                 )
                 session.add(cached_commit)
 
@@ -224,6 +256,8 @@ class CommitCacheMixin:
                         complexity_delta=commit_data.get("complexity_delta", 0.0),
                         story_points=commit_data.get("story_points"),
                         ticket_references=commit_data.get("ticket_references", []),
+                        ai_confidence_score=commit_data.get("ai_confidence_score"),
+                        ai_detection_method=commit_data.get("ai_detection_method", ""),
                     )
                     session.add(cached_commit)
 
@@ -514,6 +548,8 @@ class CommitCacheMixin:
                 "complexity_delta": commit_data.get("complexity_delta", 0.0),
                 "story_points": commit_data.get("story_points"),
                 "ticket_references": commit_data.get("ticket_references", []),
+                "ai_confidence_score": commit_data.get("ai_confidence_score"),
+                "ai_detection_method": commit_data.get("ai_detection_method", ""),
                 "cached_at": datetime.now(timezone.utc),
             }
             mappings.append(mapping)
@@ -746,6 +782,65 @@ class CommitCacheMixin:
             )
 
         return all_results
+
+    def backfill_ai_detection(self, batch_size: int = 500) -> dict[str, Any]:
+        """Re-run AI detection over cached commits missing ai_confidence_score.
+
+        WHY: Issue #47 adds persisted AI detection columns but legacy cache
+        rows have NULL for these values.  This method iterates all commits
+        with NULL ``ai_confidence_score`` and fills in the signal/score based
+        on the stored commit message.  File-based signals are skipped because
+        changed-file lists are not retained on cached rows — detection falls
+        back to message-only heuristics.
+
+        Args:
+            batch_size: Number of rows to update per transaction (tuned for
+                SQLite bulk UPDATE performance).
+
+        Returns:
+            Dict with keys ``scanned``, ``updated``, ``method_counts``.
+        """
+        # Import locally to avoid a circular import at module load time.
+        from ..utils.ai_detection import detect_ai_commit
+
+        scanned = 0
+        updated = 0
+        method_counts: dict[str, int] = {}
+
+        with self.get_session() as session:
+            # Stream rows with NULL ai_confidence_score.  yield_per keeps
+            # memory bounded for large caches.
+            query = (
+                session.query(CachedCommit)
+                .filter(CachedCommit.ai_confidence_score.is_(None))
+                .yield_per(batch_size)
+            )
+
+            batch_updates = 0
+            for row in query:
+                scanned += 1
+                message = row.message or ""
+                # Backfill path: changed_files not available.
+                confidence, method = detect_ai_commit(message, None)
+
+                row.ai_confidence_score = confidence
+                row.ai_detection_method = method
+                method_counts[method] = method_counts.get(method, 0) + 1
+                updated += 1
+                batch_updates += 1
+
+                # Flush periodically to release memory and keep TX small.
+                if batch_updates >= batch_size:
+                    session.flush()
+                    batch_updates = 0
+
+            # Final flush handled by session.commit() in get_session().
+
+        return {
+            "scanned": scanned,
+            "updated": updated,
+            "method_counts": method_counts,
+        }
 
     def _get_files_changed_count(self, commit: git.Commit) -> int:
         """Get the number of files changed using reliable git command."""

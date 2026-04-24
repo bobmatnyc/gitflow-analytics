@@ -9,7 +9,7 @@ import git
 from git import Repo
 
 from ..types import FilteredCommitStats
-from ..utils.ai_detection import detect_ai_detection_method, score_ai_confidence
+from ..utils.ai_detection import detect_ai_commit
 from ..utils.commit_utils import extract_co_authors, is_merge_commit
 from ..utils.glob_matcher import match_recursive_pattern as _match_recursive_pattern_fn
 from ..utils.glob_matcher import matches_glob_pattern as _matches_glob_pattern_fn
@@ -103,9 +103,16 @@ class CommitAnalyzerMixin:
         # Calculate complexity delta
         commit_data["complexity_delta"] = self._calculate_complexity_delta(commit)
 
-        # AI confidence scoring (Phase 1: heuristic NLP, no external calls)
-        commit_data["ai_confidence_score"] = score_ai_confidence(message_str)
-        commit_data["ai_detection_method"] = detect_ai_detection_method(message_str)
+        # AI detection (issue #47): layered signal heuristics over message
+        # body + changed-file list.  The highest-confidence signal wins and
+        # its confidence score + method name are persisted so downstream
+        # reports can filter / bucket AI-authored commits without re-running
+        # the heuristics.
+        ai_confidence, ai_method = detect_ai_commit(
+            message_str, commit_data.get("files_changed") or None
+        )
+        commit_data["ai_confidence_score"] = ai_confidence
+        commit_data["ai_detection_method"] = ai_method
 
         return commit_data
 

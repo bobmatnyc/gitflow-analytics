@@ -132,6 +132,16 @@ def register_analysis_commands(cli: click.Group) -> None:
     is_flag=True,
     help="Run only security analysis (skip productivity metrics)",
 )
+@click.option(
+    "--backfill-ai-detection",
+    is_flag=True,
+    help=(
+        "Backfill AI detection signals for cached commits with NULL "
+        "ai_confidence_score (issue #47). File-based signals are skipped "
+        "since changed-file lists are not retained on cached rows. "
+        "Exits after backfill without running analysis."
+    ),
+)
 def analyze_subcommand(
     config: Path,
     weeks: int,
@@ -158,6 +168,7 @@ def analyze_subcommand(
     cicd_metrics: bool,
     cicd_platforms: tuple[str, ...],
     security_only: bool,
+    backfill_ai_detection: bool,
 ) -> None:
     """Run the complete analysis pipeline: collect → classify → report.
 
@@ -208,6 +219,29 @@ def analyze_subcommand(
       - Smaller --weeks values analyze faster
       - Enable caching for repeated analyses
     """
+    # Issue #47: one-shot backfill mode.  When requested, load just the
+    # cache and re-score existing rows that lack ai_confidence_score.  This
+    # runs independently of the full analysis pipeline.
+    if backfill_ai_detection:
+        from .config import ConfigLoader
+        from .core.cache import GitAnalysisCache
+
+        click.echo("🧠 Backfilling AI detection for cached commits...")
+        try:
+            cfg = ConfigLoader.load(config)
+        except Exception as exc:  # noqa: BLE001 — surface any config error to user
+            click.echo(f"❌ Failed to load config: {exc}", err=True)
+            raise SystemExit(1) from exc
+
+        cache = GitAnalysisCache(cfg.cache.directory, ttl_hours=cfg.cache.ttl_hours)
+        result = cache.backfill_ai_detection()
+        click.echo(f"✅ Backfill complete: scanned={result['scanned']} updated={result['updated']}")
+        if result["method_counts"]:
+            click.echo("   Method breakdown:")
+            for method, count in sorted(result["method_counts"].items(), key=lambda kv: -kv[1]):
+                click.echo(f"     - {method}: {count}")
+        return
+
     analyze(
         config=config,
         weeks=weeks,

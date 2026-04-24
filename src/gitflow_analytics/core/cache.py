@@ -606,6 +606,12 @@ class GitAnalysisCache(CommitCacheMixin, WeeklyCacheMixin):
             "complexity_delta": commit.complexity_delta,
             "story_points": commit.story_points,
             "ticket_references": commit.ticket_references or [],
+            # AI detection (issue #47): pass-through of persisted signals so
+            # reports can bucket AI-authored commits without re-running
+            # heuristics against the cached message.  getattr with defaults
+            # keeps this safe for older rows where the columns are NULL.
+            "ai_confidence_score": getattr(commit, "ai_confidence_score", None),
+            "ai_detection_method": getattr(commit, "ai_detection_method", "") or "",
             # Gap 4: parse Co-authored-by trailers so co-author attribution
             # works for cache hits without a full re-analysis pass.
             "co_authors": _extract_co_authors_from_message(message),
