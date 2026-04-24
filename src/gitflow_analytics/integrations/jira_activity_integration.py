@@ -203,9 +203,18 @@ class JIRAActivityIntegration:
     # Issue + comment fetching
     # ------------------------------------------------------------------
     def _fetch_issues(self, project_keys: list[str], since: datetime) -> list[dict[str, Any]]:
-        """Fetch issues using JQL paginated by startAt/maxResults."""
-        # JQL — need to escape project keys for safety (keys are alphanumeric).
-        keys_csv = ",".join(project_keys)
+        """Fetch issues using JQL via the v3 /rest/api/3/search/jql POST endpoint.
+
+        WHY: Atlassian retired ``/rest/api/2/search`` (and legacy v3 ``/search``)
+        — a 410 is now returned.  The replacement endpoint is POST
+        ``/rest/api/3/search/jql`` with token-based pagination
+        (``nextPageToken``/``isLast``) rather than ``startAt``/``total``.
+        See CHANGE-2046 in Atlassian changelog.
+        """
+        # JQL — quote each project key to avoid collisions with JQL reserved
+        # words (e.g. project key ``IS`` is parsed as the ``IS`` operator
+        # without quotes and yields a 400).
+        keys_csv = ",".join(f'"{k}"' for k in project_keys)
         since_iso = since.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M")
         jql = (
             f"project in ({keys_csv}) "
@@ -213,18 +222,28 @@ class JIRAActivityIntegration:
         )
 
         issues: list[dict[str, Any]] = []
-        start_at = 0
         max_results = 50
-        url = f"{self.base_url}/rest/api/2/search"
+        url = f"{self.base_url}/rest/api/3/search/jql"
+        next_page_token: str | None = None
 
         while True:
-            params = {
+            body: dict[str, Any] = {
                 "jql": jql,
-                "startAt": start_at,
                 "maxResults": max_results,
-                "fields": "summary,status,created,updated,resolutiondate,reporter,assignee",
+                "fields": [
+                    "summary",
+                    "status",
+                    "created",
+                    "updated",
+                    "resolutiondate",
+                    "reporter",
+                    "assignee",
+                ],
             }
-            response = self._get_with_retries(url, params=params)
+            if next_page_token:
+                body["nextPageToken"] = next_page_token
+
+            response = self._post_with_retries(url, json_body=body)
             if response is None:
                 break
             data = response.json() if response.content else {}
@@ -233,9 +252,9 @@ class JIRAActivityIntegration:
                 break
             issues.extend(page_issues)
 
-            total = data.get("total", len(issues)) if isinstance(data, dict) else len(issues)
-            start_at += len(page_issues)
-            if start_at >= total or len(page_issues) < max_results:
+            is_last = bool(data.get("isLast", True)) if isinstance(data, dict) else True
+            next_page_token = data.get("nextPageToken") if isinstance(data, dict) else None
+            if is_last or not next_page_token:
                 break
             time.sleep(0.1)
 
@@ -418,6 +437,44 @@ class JIRAActivityIntegration:
         for attempt in range(self.max_retries + 1):
             try:
                 response = self._session.get(url, params=params, timeout=self.connection_timeout)
+            except requests.RequestException as exc:
+                print(f"   ⚠️  JIRA activity request error: {exc}")
+                return None
+
+            if response.status_code in (429, 503):
+                wait_time = self.backoff_factor * (2**attempt)
+                if self.debug_mode:
+                    print(
+                        f"   🔍 JIRAActivity rate-limited (status {response.status_code}), "
+                        f"waiting {wait_time}s (attempt {attempt + 1})"
+                    )
+                time.sleep(wait_time)
+                continue
+
+            if response.status_code >= 400:
+                print(
+                    f"   ⚠️  JIRA activity API error {response.status_code}: "
+                    f"{response.text[:200]}"
+                )
+                return None
+
+            return response
+
+        print("   ❌ JIRA activity retries exhausted")
+        return None
+
+    def _post_with_retries(self, url: str, json_body: dict[str, Any]) -> requests.Response | None:
+        """POST with manual retry on 429/503.
+
+        Why: the v3 ``/rest/api/3/search/jql`` endpoint requires POST with a
+        JSON body rather than GET with query params.  Mirrors the retry
+        semantics of :meth:`_get_with_retries` so the caller behaves the same.
+        Test: mock :attr:`_session` to return a 429 then a 200 and assert the
+        function retries and returns the 200 response.
+        """
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self._session.post(url, json=json_body, timeout=self.connection_timeout)
             except requests.RequestException as exc:
                 print(f"   ⚠️  JIRA activity request error: {exc}")
                 return None
