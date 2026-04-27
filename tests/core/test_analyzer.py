@@ -28,6 +28,61 @@ class TestGitAnalyzer:
         assert analyzer.batch_size == 1000
         assert analyzer.exclude_paths == []
 
+    def test_ticket_detection_config_is_forwarded_to_extractor(self, temp_dir):
+        """Custom ticket_detection patterns must reach the analyzer's TicketExtractor.
+
+        Regression test: GitAnalyzer's in-memory ticket re-extraction (the
+        "Analyzing commits for tickets" pass) used to silently fall back to the
+        hard-coded default patterns because ticket_detection_config was never
+        forwarded to build_ticket_extractor(). That caused user-supplied
+        ``analysis.ticket_detection.patterns`` (e.g. an Azure DevOps ``AB#NNNN``
+        regex) to be ignored during analyze, while GitDataFetcher honored them
+        at fetch time -- producing inconsistent ticket-coverage numbers between
+        a fresh fetch and a cached re-run.
+        """
+        from gitflow_analytics.config.schema import TicketDetectionConfig
+
+        cache = GitAnalysisCache(temp_dir / ".gitflow-cache")
+
+        # Custom pattern that overrides the github default (#(\d+)) and matches
+        # only a distinctive token that the default regex cannot match.
+        custom_pattern = r"\bABCD-(\d+)\b"
+        td_cfg = TicketDetectionConfig(
+            patterns={"github": custom_pattern},
+            exclude_patterns=[],
+        )
+
+        analyzer = GitAnalyzer(cache, ticket_detection_config=td_cfg)
+
+        # The github pattern in the analyzer's extractor must be the custom one.
+        github_patterns = [
+            p.pattern for p in analyzer.ticket_extractor.compiled_patterns.get("github", [])
+        ]
+        assert github_patterns == [
+            custom_pattern
+        ], f"Expected custom github pattern to be forwarded, got: {github_patterns}"
+
+        # Behavior: the custom pattern matches its token, the old default does not.
+        msg = "Implements ABCD-42 across the codebase"
+        ticket_ids = [t["id"] for t in analyzer.ticket_extractor.extract_from_text(msg)]
+        assert "42" in ticket_ids
+
+        # And the default github "#(\\d+)" no longer applies, so a bare "#99"
+        # in the message is NOT picked up under the custom github pattern.
+        msg2 = "See #99 for context"
+        ticket_ids2 = [t["id"] for t in analyzer.ticket_extractor.extract_from_text(msg2)]
+        assert "99" not in ticket_ids2
+
+    def test_ticket_detection_config_default_is_backward_compatible(self, temp_dir):
+        """Without ticket_detection_config the analyzer behaves as before."""
+        cache = GitAnalysisCache(temp_dir / ".gitflow-cache")
+        analyzer = GitAnalyzer(cache)
+
+        # The default github pattern (#(\\d+)) should still match.
+        msg = "Closes #1234 final cleanup"
+        ticket_ids = [t["id"] for t in analyzer.ticket_extractor.extract_from_text(msg)]
+        assert "1234" in ticket_ids
+
     @patch("gitflow_analytics.core.analyzer.Repo")
     def test_analyze_repository_basic(self, mock_repo_class, temp_dir):
         """Test basic repository analysis functionality."""
