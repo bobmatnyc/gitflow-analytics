@@ -219,6 +219,7 @@ class CommitClassificationTrainer:
                 self.config.analysis, "allowed_ticket_platforms", None
             ),
             story_point_patterns=getattr(self.config.analysis, "story_point_patterns", None),
+            ticket_detection_config=getattr(self.config.analysis, "ticket_detection", None),
         )
 
         for repo_config in repositories:

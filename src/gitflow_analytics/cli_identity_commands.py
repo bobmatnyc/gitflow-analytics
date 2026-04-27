@@ -134,6 +134,7 @@ def identities(config: Path, weeks: int, apply: bool) -> None:
             llm_config=llm_config,
             branch_analysis_config=branch_analysis_config,
             exclude_merge_commits=cfg.analysis.exclude_merge_commits,
+            ticket_detection_config=getattr(cfg.analysis, "ticket_detection", None),
         )
 
         click.echo("Analyzing repositories for developer identities...")
@@ -355,6 +356,7 @@ def aliases_command(
             llm_config=llm_config,
             branch_analysis_config=branch_analysis_config,
             exclude_merge_commits=cfg.analysis.exclude_merge_commits,
+            ticket_detection_config=getattr(cfg.analysis, "ticket_detection", None),
         )
 
         all_commits = []

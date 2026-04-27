@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from git import Repo
 
@@ -15,6 +15,9 @@ from .analysis_components import (
 )
 from .cache import GitAnalysisCache
 from .progress import get_progress_service
+
+if TYPE_CHECKING:
+    from ..config.schema import TicketDetectionConfig
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
@@ -40,6 +43,7 @@ class GitAnalyzer(GitAnalyzerMixin, CommitAnalyzerMixin):
         classification_config: Optional[dict[str, Any]] = None,
         branch_analysis_config: Optional[dict[str, Any]] = None,
         exclude_merge_commits: bool = False,
+        ticket_detection_config: Optional["TicketDetectionConfig"] = None,
     ):
         """Initialize analyzer with cache and optional ML categorization and commit classification.
 
@@ -55,6 +59,12 @@ class GitAnalyzer(GitAnalyzerMixin, CommitAnalyzerMixin):
             classification_config: Configuration for commit classification
             branch_analysis_config: Configuration for branch analysis optimization
             exclude_merge_commits: Exclude merge commits from filtered line count calculations
+            ticket_detection_config: Optional TicketDetectionConfig forwarded to the
+                ticket extractor so user-supplied ``analysis.ticket_detection.patterns``
+                / ``exclude_patterns`` / ``position`` settings are honored at analyze
+                time. Without this, the analyzer's in-memory ticket re-extraction
+                (the "Analyzing commits for tickets" pass) silently falls back to
+                hard-coded defaults, producing different results from GitDataFetcher.
         """
         self.cache = cache
         self.batch_size = batch_size
@@ -65,6 +75,7 @@ class GitAnalyzer(GitAnalyzerMixin, CommitAnalyzerMixin):
             ml_config=ml_categorization_config,
             llm_config=llm_config,
             cache_dir=cache.cache_dir / "ml_predictions",
+            ticket_detection_config=ticket_detection_config,
         )
         self.branch_mapper = build_branch_mapper(branch_mapping_rules)
         self.exclude_paths = exclude_paths or []
