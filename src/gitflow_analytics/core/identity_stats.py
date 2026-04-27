@@ -3,14 +3,40 @@
 import logging
 import uuid
 from collections import defaultdict
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from ..models.database import DeveloperAlias, DeveloperIdentity
 
 logger = logging.getLogger(__name__)
 
 
-class IdentityStatsMixin:
+if TYPE_CHECKING:
+    # WHY: Mixin classes reference attributes/methods supplied by the host
+    # class (DeveloperIdentityResolver).  Declaring a Protocol-like base at
+    # type-check time lets Pyright resolve the attribute access without
+    # affecting the runtime MRO.  At runtime the mixin subclasses ``object``.
+    from contextlib import AbstractContextManager
+
+    from sqlalchemy.orm import Session
+
+    class _IdentityHost:
+        db: Any
+        manual_mappings: Optional[list[dict[str, Any]]]
+        _database_available: bool
+        _in_memory_identities: dict[str, dict[str, Any]]
+        _in_memory_aliases: dict[str, str]
+        _cache: dict[str, Any]
+
+        def get_session(self) -> "AbstractContextManager[Session]": ...
+        def resolve_developer(self, name: str, email: str) -> str: ...
+        def _apply_manual_mappings(self, manual_mappings: list[dict[str, Any]]) -> None: ...
+
+    _Base = _IdentityHost
+else:
+    _Base = object
+
+
+class IdentityStatsMixin(_Base):
     """Mixin: developer stats, commit stat updates, canonical names, manual mappings, fallback."""
 
     def get_developer_stats(
@@ -75,7 +101,7 @@ class IdentityStatsMixin:
                 # Get actual ticket coverage if provided, otherwise default to 0.0
                 coverage_pct = 0.0
                 if ticket_coverage:
-                    coverage_pct = ticket_coverage.get(identity.canonical_id, 0.0)
+                    coverage_pct = ticket_coverage.get(str(identity.canonical_id), 0.0)
 
                 stats.append(
                     {
@@ -244,7 +270,7 @@ class IdentityStatsMixin:
             )
 
             if identity:
-                return identity.primary_name
+                return str(identity.primary_name)
 
         return "Unknown"
 

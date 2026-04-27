@@ -11,9 +11,9 @@ These tests cover:
 from __future__ import annotations
 
 import json
-import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import cast
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -115,7 +115,7 @@ class TestCalculateWeekRange:
     def test_explicit_week(self):
         weeks = calculate_week_range(week="2026-W16", since=None)
         assert len(weeks) == 1
-        label, ws, we = weeks[0]
+        label, ws, _ = weeks[0]
         assert label == "2026-W16"
         assert ws.weekday() == 0
         assert format_iso_week(ws) == "2026-W16"
@@ -268,7 +268,7 @@ class TestUpsertIdempotency:
                 .all()
             )
             assert len(rows) == 1
-            assert rows[0].prs_opened == 1
+            assert cast(int, rows[0].prs_opened) == 1
         finally:
             session.close()
 
@@ -285,7 +285,7 @@ class TestUpsertIdempotency:
                 .all()
             )
             assert len(rows) == 1  # still single row — upserted, not duplicated
-            assert rows[0].prs_opened == 2
+            assert cast(int, rows[0].prs_opened) == 2
         finally:
             session.close()
 
@@ -334,8 +334,8 @@ class TestMigrationSafety:
         s = db.get_session()
         try:
             existing = s.query(PullRequestCache).filter_by(pr_number=42).one()
-            assert existing.author == "alice"
-            assert existing.title == "legacy PR"
+            assert str(existing.author) == "alice"
+            assert str(existing.title) == "legacy PR"
         finally:
             s.close()
 
@@ -348,6 +348,7 @@ class TestMigrationSafety:
             s.close()
 
         # Confirm the table is queryable via raw SQL too.
+        assert db.engine is not None, "Database engine not initialized"
         with db.engine.connect() as conn:
             result = conn.execute(
                 text(

@@ -361,14 +361,16 @@ class Database:
                 session.close()
 
         except Exception as e:
-            raise OperationalError(f"Database write test failed: {e}", None, None) from e
+            raise OperationalError(f"Database write test failed: {e}", None, e) from e
 
     def get_session(self) -> Session:
         """Get a new database session."""
+        assert self.SessionLocal is not None, "Database not initialized"
         return self.SessionLocal()
 
     def init_db(self) -> None:
         """Initialize database tables and apply migrations."""
+        assert self.engine is not None, "Database engine not initialized"
         needs_migration = self._check_schema_version_before_create()
         Base.metadata.create_all(self.engine)
         if needs_migration:
@@ -387,6 +389,7 @@ class Database:
             True if migration is needed, False otherwise
         """
         try:
+            assert self.engine is not None, "Database engine not initialized"
             with self.engine.connect() as conn:
                 # Check if schema_version table exists
                 result = conn.execute(
@@ -423,7 +426,8 @@ class Database:
                     if has_cached_commits:
                         # Check if table has data
                         result = conn.execute(text("SELECT COUNT(*) FROM cached_commits"))
-                        commit_count = result.fetchone()[0]
+                        count_row = result.fetchone()
+                        commit_count = count_row[0] if count_row else 0
 
                         if commit_count > 0:
                             # Legacy database with data - needs migration
@@ -446,6 +450,7 @@ class Database:
         via create_all before clearing/migrating data.
         """
         try:
+            assert self.engine is not None, "Database engine not initialized"
             with self.engine.connect() as conn:
                 logger.info("🔄 Automatically upgrading cache database...")
                 logger.info("   Clearing old cache data (timezone schema incompatible)...")
@@ -490,10 +495,12 @@ class Database:
         schema version recorded for future migration detection.
         """
         try:
+            assert self.engine is not None, "Database engine not initialized"
             with self.engine.connect() as conn:
                 # Check if version is already recorded
                 result = conn.execute(text("SELECT COUNT(*) FROM schema_version"))
-                count = result.fetchone()[0]
+                count_row = result.fetchone()
+                count = count_row[0] if count_row else 0
 
                 if count == 0:
                     # No version recorded - this is a fresh database
@@ -545,6 +552,7 @@ class Database:
         This method adds new columns to existing tables without losing data.
         """
         try:
+            assert self.engine is not None, "Database engine not initialized"
             with self.engine.connect() as conn:
                 # Check if filtered columns exist in cached_commits table
                 result = conn.execute(text("PRAGMA table_info(cached_commits)"))
