@@ -29,6 +29,7 @@ from .database_commit_models import (  # noqa: E402
     RepositoryAnalysisStatus,
     SchemaVersion,
     WeeklyFetchStatus,
+    WeeklyPRMetrics,
     WeeklyTrends,
 )
 from .database_identity_models import (  # noqa: E402
@@ -71,6 +72,7 @@ __all__ = [
     "CommitTicketCorrelation",
     "DailyMetrics",
     "WeeklyTrends",
+    "WeeklyPRMetrics",
     "CICDPipelineCache",
     "WeeklyFetchStatus",
     "SchemaVersion",
@@ -642,6 +644,13 @@ class Database:
                 # it only adds missing columns to existing tables.
                 self._migrate_ticketing_activity_v10(conn)
 
+                # --- weekly_pr_metrics table (v11.0 migration, issue #49) ---
+                # WHY: Per-engineer per-ISO-week PR aggregates are stored in a
+                # dedicated table.  The migration is additive — it creates the
+                # table only if it does not already exist, never touching
+                # pull_request_cache or other existing tables.
+                self._migrate_weekly_pr_metrics_v11(conn)
+
                 # --- developer_identities NULL back-fill (issue #39) ---
                 # WHY: Older databases created before total_commits /
                 # total_story_points had a server-side DEFAULT may contain NULL
@@ -1070,6 +1079,64 @@ class Database:
                         )
                     except Exception as e:
                         logger.debug(f"Could not add confluence_page_cache.{col_name}: {e}")
+
+    def _migrate_weekly_pr_metrics_v11(self, conn) -> None:
+        """Create weekly_pr_metrics table if it doesn't exist (v11.0 migration, issue #49).
+
+        WHY: Per-engineer per-ISO-week PR aggregates need a dedicated storage
+        target so that the `gfa pr-metrics` command can upsert without touching
+        pull_request_cache or any other existing table.  This migration is
+        purely additive — it creates the table only when it does not already
+        exist on the database.  All existing data is preserved.
+
+        Args:
+            conn: Active SQLAlchemy connection.
+        """
+        try:
+            result = conn.execute(
+                text(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='weekly_pr_metrics'"
+                )
+            )
+            if result.fetchone():
+                # Table already exists — nothing to do (additive migration).
+                return
+
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE weekly_pr_metrics (
+                      engineer_identifier TEXT NOT NULL,
+                      iso_week TEXT NOT NULL,
+                      prs_opened INTEGER NOT NULL DEFAULT 0,
+                      prs_merged INTEGER NOT NULL DEFAULT 0,
+                      pr_comments_given INTEGER NOT NULL DEFAULT 0,
+                      pr_reviews_given INTEGER NOT NULL DEFAULT 0,
+                      computed_at DATETIME,
+                      PRIMARY KEY (engineer_identifier, iso_week)
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_weekly_pr_metrics_week "
+                    "ON weekly_pr_metrics (iso_week)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_weekly_pr_metrics_engineer "
+                    "ON weekly_pr_metrics (engineer_identifier)"
+                )
+            )
+            conn.commit()
+            logger.info("Applied weekly_pr_metrics v11.0 migration: created table (issue #49)")
+        except Exception as e:
+            logger.debug(
+                f"Could not create weekly_pr_metrics table "
+                f"(may already exist or DB is readonly): {e}"
+            )
 
     def _migrate_developer_identities_null_stats(self, conn) -> None:
         """Back-fill NULL total_commits / total_story_points on developer_identities.

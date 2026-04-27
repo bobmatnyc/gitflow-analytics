@@ -410,7 +410,11 @@ class DailyMetrics(Base):
 
     # Metadata
     created_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=utcnow_tz_aware)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=utcnow_tz_aware,
+        onupdate=utcnow_tz_aware,
+    )
 
     # Indexes for efficient querying
     __table_args__ = (
@@ -514,6 +518,43 @@ class WeeklyFetchStatus(Base):
         UniqueConstraint("repository_path", "week_start", name="uq_repo_week"),
         Index("idx_weekly_fetch_repo", "repository_path"),
         Index("idx_weekly_fetch_week_start", "week_start"),
+    )
+
+
+class WeeklyPRMetrics(Base):
+    """Per-engineer per-ISO-week pull request activity aggregates.
+
+    WHY: Issue #49 — Aggregating PR activity per ISO week per engineer enables
+    fast lookups for weekly engineering reports without re-scanning the
+    pull_request_cache table.  Aggregation is intentionally separate from the
+    raw PR cache so that re-running the aggregation only affects this table
+    (non-destructive).
+
+    Schema:
+        engineer_identifier (TEXT)  - GitHub login (PullRequestCache.author)
+        iso_week (TEXT)             - ISO week formatted as 'YYYY-WNN' (e.g. '2026-W16')
+        prs_opened (INTEGER)        - PRs whose created_at falls in the week
+        prs_merged (INTEGER)        - PRs whose merged_at falls in the week
+        pr_comments_given (INTEGER) - PRs in week where engineer is in reviewers list (proxy)
+        pr_reviews_given (INTEGER)  - PRs in week where engineer is in reviewers list
+        computed_at (DATETIME)      - When the row was last upserted
+
+    Primary key (engineer_identifier, iso_week) gives natural upsert semantics.
+    """
+
+    __tablename__ = "weekly_pr_metrics"
+
+    engineer_identifier = Column(String, primary_key=True, nullable=False)
+    iso_week = Column(String, primary_key=True, nullable=False)
+    prs_opened = Column(Integer, nullable=False, default=0)
+    prs_merged = Column(Integer, nullable=False, default=0)
+    pr_comments_given = Column(Integer, nullable=False, default=0)
+    pr_reviews_given = Column(Integer, nullable=False, default=0)
+    computed_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+
+    __table_args__ = (
+        Index("idx_weekly_pr_metrics_week", "iso_week"),
+        Index("idx_weekly_pr_metrics_engineer", "engineer_identifier"),
     )
 
 

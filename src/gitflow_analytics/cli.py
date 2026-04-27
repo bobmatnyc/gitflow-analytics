@@ -118,6 +118,11 @@ from .cli_identity import (  # noqa: E402
 
 register_identity_commands(cli)
 
+# Weekly per-engineer PR metrics command (issue #49)
+from .cli_pr_metrics import register_pr_metrics_commands  # noqa: E402
+
+register_pr_metrics_commands(cli)
+
 
 def main() -> None:
     """Main entry point."""
