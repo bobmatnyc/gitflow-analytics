@@ -180,7 +180,10 @@ class CommitAnalyzerMixin:
 
         try:
             parent = commit.parents[0] if commit.parents else None
-            diffs = commit.diff(parent)
+            # create_patch=True is required for diff.diff to contain the unified
+            # patch text — without it GitPython only returns metadata and the
+            # added/removed line counts below would always be zero.
+            diffs = commit.diff(parent, create_patch=True)
         except Exception as e:
             # If we can't get diffs at all, return 0 complexity delta
             logger.debug(f"Cannot calculate complexity for commit {commit.hexsha[:8]}: {e}")
@@ -224,8 +227,16 @@ class CommitAnalyzerMixin:
                                 if isinstance(diff.diff, str)
                                 else diff.diff.decode("utf-8", errors="ignore")
                             )
-                            added = len(diff_content.split("\n+"))
-                            removed = len(diff_content.split("\n-"))
+                            added = sum(
+                                1
+                                for line in diff_content.splitlines()
+                                if line.startswith("+") and not line.startswith("+++")
+                            )
+                            removed = sum(
+                                1
+                                for line in diff_content.splitlines()
+                                if line.startswith("-") and not line.startswith("---")
+                            )
                             total_delta += (added - removed) / 10
                     except (ValueError, AttributeError, UnicodeDecodeError) as e:
                         logger.debug(f"Cannot process diff content in {commit.hexsha[:8]}: {e}")
