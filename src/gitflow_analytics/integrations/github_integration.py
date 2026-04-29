@@ -479,6 +479,19 @@ class GitHubIntegration:
         PRs ("rejected" PRs) are now included so their lifecycle — and the effort spent
         on them — is reflected in developer metrics.  The ``pr_state`` field added by
         ``_extract_pr_data`` distinguishes them from merged PRs.
+
+        WHY (Issue #52): GitHub returns PRs sorted by ``updated_at`` desc, but a PR's
+        ``updated_at`` is bumped by any activity (comments, labels, CI checks) even
+        years after merge. So PRs merged within the ``since`` window with no post-merge
+        activity can appear AFTER PRs with recent activity — and their ``updated_at``
+        may be before ``since``. Previously the loop ``break``-ed on the first such PR,
+        silently dropping any in-window PRs that came later in the stream.
+
+        Fix: ``continue`` instead of ``break``, with a consecutive-miss safety valve
+        (stop after ``MAX_CONSECUTIVE_MISSES`` consecutive out-of-window PRs) and an
+        absolute pagination cap (``MAX_PAGES * PAGE_SIZE``) to bound API usage on
+        repos with very long histories.  ``cache_pr()`` upsert is idempotent so
+        scanning extra pages is safe.
         """
         prs = []
 
@@ -486,12 +499,37 @@ class GitHubIntegration:
         if since.tzinfo is None:
             since = since.replace(tzinfo=timezone.utc)
 
+        # Issue #52: Safety valves to prevent both (a) missed PRs and (b) runaway API usage.
+        MAX_CONSECUTIVE_MISSES = 10  # stop after 10 consecutive out-of-window PRs
+        PAGE_SIZE = 30  # PyGitHub default page size
+        MAX_PAGES = 500  # absolute cap → 15,000 PRs
+
         for attempt in range(self.rate_limit_retries):
             try:
+                consecutive_misses = 0
+                pr_count = 0
+
                 # Get all PRs updated since the date
                 for pr in repo.get_pulls(state="all", sort="updated", direction="desc"):
-                    if pr.updated_at < since:
+                    pr_count += 1
+                    if pr_count > MAX_PAGES * PAGE_SIZE:
+                        print(
+                            f"   ⚠️  Hit max PR pagination limit ({MAX_PAGES * PAGE_SIZE} PRs), stopping"
+                        )
                         break
+
+                    if pr.updated_at < since:
+                        consecutive_misses += 1
+                        if consecutive_misses >= MAX_CONSECUTIVE_MISSES:
+                            # Bounded API usage: highly unlikely any newer merged
+                            # PRs remain after this many consecutive misses.
+                            break
+                        # Issue #52: keep paginating — a "quiet" PR (no recent
+                        # activity) merged within the window may still appear
+                        # later in the updated_at-desc stream.
+                        continue
+                    else:
+                        consecutive_misses = 0  # reset on any in-window PR
 
                     if pr.merged and pr.merged_at >= since:
                         # Merged PR — always include

@@ -203,3 +203,180 @@ class TestCliBackfillSinceArgument:
         # validator rejected the value.  Anything else (1, etc.) means we
         # got past validation.
         assert result.exit_code != 2 or "Invalid --backfill-since" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# _get_pull_requests: pagination correctness (issue #52)
+# ---------------------------------------------------------------------------
+
+
+def _make_pr(
+    *,
+    number: int,
+    updated_at: datetime,
+    merged_at: datetime | None = None,
+    closed_at: datetime | None = None,
+    state: str = "closed",
+) -> Mock:
+    """Build a mock PyGitHub PullRequest object with the fields we use."""
+    pr = Mock()
+    pr.number = number
+    pr.updated_at = updated_at
+    pr.merged_at = merged_at
+    pr.merged = merged_at is not None
+    pr.closed_at = closed_at if closed_at is not None else merged_at
+    pr.state = state
+    return pr
+
+
+class TestGetPullRequestsPagination:
+    """Issue #52: pagination must not abort on the first out-of-window PR.
+
+    GitHub returns PRs sorted by ``updated_at`` desc.  A PR's ``updated_at`` is
+    bumped by any activity (comments, labels, CI) even years after merge.  So a
+    "quiet" PR (merged within the window but no post-merge activity) can appear
+    AFTER PRs with recent activity but NEWER PRs merged in-window may still
+    follow it in the stream.  Previously the loop ``break``-ed on the first
+    such PR, silently dropping the rest.
+    """
+
+    def test_does_not_abort_on_quiet_pr_before_in_window_prs(self) -> None:
+        """A quiet PR (updated_at < since) must NOT terminate pagination.
+
+        Reproduces the exact scenario from issue #52:
+        - PR#500 updated=11/22 merged=11/20 → included (in window)
+        - PR#490 updated=11/14 merged=11/13 → included (in window)
+        - PR#480 updated=10/28 merged=10/27 → out-of-window (the buggy break trigger)
+        - PR#485 updated=11/05 merged=11/04 → MUST still be reached & included
+        """
+        integration = _make_integration()
+        since = datetime(2025, 11, 1, tzinfo=timezone.utc)
+
+        pr500 = _make_pr(
+            number=500,
+            updated_at=datetime(2025, 11, 22, tzinfo=timezone.utc),
+            merged_at=datetime(2025, 11, 20, tzinfo=timezone.utc),
+        )
+        pr490 = _make_pr(
+            number=490,
+            updated_at=datetime(2025, 11, 14, tzinfo=timezone.utc),
+            merged_at=datetime(2025, 11, 13, tzinfo=timezone.utc),
+        )
+        pr480 = _make_pr(  # out-of-window "quiet" PR (the bug trigger)
+            number=480,
+            updated_at=datetime(2025, 10, 28, tzinfo=timezone.utc),
+            merged_at=datetime(2025, 10, 27, tzinfo=timezone.utc),
+        )
+        pr485 = _make_pr(  # in-window, but appears AFTER pr480 in the stream
+            number=485,
+            updated_at=datetime(2025, 11, 5, tzinfo=timezone.utc),
+            merged_at=datetime(2025, 11, 4, tzinfo=timezone.utc),
+        )
+
+        repo = Mock()
+        repo.get_pulls = MagicMock(return_value=iter([pr500, pr490, pr480, pr485]))
+
+        result = integration._get_pull_requests(repo, since)
+        numbers = [pr.number for pr in result]
+
+        # pr480 is out-of-window so excluded; pr485 IS in-window and MUST be present.
+        assert 500 in numbers
+        assert 490 in numbers
+        assert 485 in numbers, "Bug #52: in-window PR after a quiet PR was dropped"
+        assert 480 not in numbers
+
+    def test_safety_valve_stops_after_max_consecutive_misses(self) -> None:
+        """After MAX_CONSECUTIVE_MISSES consecutive out-of-window PRs, stop."""
+        integration = _make_integration()
+        since = datetime(2025, 11, 1, tzinfo=timezone.utc)
+
+        # 1 in-window PR followed by 15 out-of-window PRs (more than MAX=10).
+        in_window = _make_pr(
+            number=1000,
+            updated_at=datetime(2025, 11, 20, tzinfo=timezone.utc),
+            merged_at=datetime(2025, 11, 19, tzinfo=timezone.utc),
+        )
+        out_of_window = [
+            _make_pr(
+                number=900 - i,
+                updated_at=datetime(2025, 10, 20, tzinfo=timezone.utc),
+                merged_at=datetime(2025, 10, 19, tzinfo=timezone.utc),
+            )
+            for i in range(15)
+        ]
+        # A "trap" in-window PR placed at position 12 (beyond the safety valve).
+        # We expect pagination to STOP before reaching it.
+        trap = _make_pr(
+            number=42,
+            updated_at=datetime(2025, 11, 25, tzinfo=timezone.utc),
+            merged_at=datetime(2025, 11, 24, tzinfo=timezone.utc),
+        )
+        stream = [in_window, *out_of_window, trap]
+
+        repo = Mock()
+        repo.get_pulls = MagicMock(return_value=iter(stream))
+
+        result = integration._get_pull_requests(repo, since)
+        numbers = [pr.number for pr in result]
+
+        assert 1000 in numbers
+        # The trap MUST NOT be reached — safety valve fired.
+        assert 42 not in numbers
+        # None of the out-of-window PRs should be included.
+        for pr in out_of_window:
+            assert pr.number not in numbers
+
+    def test_consecutive_miss_counter_resets_on_in_window_pr(self) -> None:
+        """A mix of in-window and out-of-window PRs resets the miss counter.
+
+        Reaches MAX-1 misses, then an in-window PR resets the counter, then
+        more out-of-window PRs should be tolerated again.
+        """
+        integration = _make_integration()
+        since = datetime(2025, 11, 1, tzinfo=timezone.utc)
+
+        in1 = _make_pr(
+            number=1,
+            updated_at=datetime(2025, 11, 25, tzinfo=timezone.utc),
+            merged_at=datetime(2025, 11, 24, tzinfo=timezone.utc),
+        )
+        # 9 out-of-window (one shy of the MAX=10 valve)
+        misses_a = [
+            _make_pr(
+                number=100 + i,
+                updated_at=datetime(2025, 10, 20, tzinfo=timezone.utc),
+                merged_at=datetime(2025, 10, 19, tzinfo=timezone.utc),
+            )
+            for i in range(9)
+        ]
+        # In-window PR resets the counter
+        reset = _make_pr(
+            number=2,
+            updated_at=datetime(2025, 11, 10, tzinfo=timezone.utc),
+            merged_at=datetime(2025, 11, 9, tzinfo=timezone.utc),
+        )
+        # 9 more out-of-window — total accumulated misses would be 18 without
+        # reset, but with reset we never hit 10 in a row.
+        misses_b = [
+            _make_pr(
+                number=200 + i,
+                updated_at=datetime(2025, 10, 15, tzinfo=timezone.utc),
+                merged_at=datetime(2025, 10, 14, tzinfo=timezone.utc),
+            )
+            for i in range(9)
+        ]
+        # Final in-window PR proves we kept paginating after the reset.
+        final = _make_pr(
+            number=3,
+            updated_at=datetime(2025, 11, 8, tzinfo=timezone.utc),
+            merged_at=datetime(2025, 11, 7, tzinfo=timezone.utc),
+        )
+
+        stream = [in1, *misses_a, reset, *misses_b, final]
+        repo = Mock()
+        repo.get_pulls = MagicMock(return_value=iter(stream))
+
+        result = integration._get_pull_requests(repo, since)
+        numbers = [pr.number for pr in result]
+
+        assert numbers == [1, 2, 3], f"Counter reset failed — expected [1,2,3], got {numbers}"
