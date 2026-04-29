@@ -73,18 +73,44 @@ class TestForceSinceBypassesIncrementalGate:
         assert result.tzinfo is not None
         assert result == datetime(2025, 1, 1, tzinfo=timezone.utc)
 
-    def test_no_force_since_uses_max_of_last_and_requested(self) -> None:
-        """Sanity check: default behaviour is preserved when force_since is None."""
+    def test_requested_since_is_always_honored_even_when_older_than_last_processed(
+        self,
+    ) -> None:
+        """``--weeks N`` (any N) must bypass the incremental gate implicitly.
+
+        Previously ``_get_incremental_fetch_date`` returned
+        ``max(last_processed, requested_since)``, silently advancing the fetch
+        date when the user requested a wider window.  We now always honor the
+        caller's ``requested_since`` — ``cache_pr()`` upsert keeps re-fetches
+        safe.
+        """
         integration = _make_integration()
         integration.schema_manager.has_schema_changed = MagicMock(return_value=False)
         recent = datetime(2026, 3, 23, tzinfo=timezone.utc)
         integration.schema_manager.get_last_processed_date = MagicMock(return_value=recent)
 
+        # Simulate `--weeks 24`: requested_since is far older than last_processed.
         requested = datetime(2025, 1, 1, tzinfo=timezone.utc)
         result = integration._get_incremental_fetch_date("github", requested, {})
 
-        # Must advance to the more recent date — that's the *bug* backfill fixes.
-        assert result == recent
+        # Must honor the requested date verbatim, NOT advance to last_processed.
+        assert result == requested
+
+    def test_requested_since_more_recent_than_last_processed_is_honored(self) -> None:
+        """When the user asks for a smaller window than the checkpoint, honor it.
+
+        Symmetric guarantee: the caller is the source of truth.  We don't second-
+        guess them by walking the date backwards either.
+        """
+        integration = _make_integration()
+        integration.schema_manager.has_schema_changed = MagicMock(return_value=False)
+        old = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        integration.schema_manager.get_last_processed_date = MagicMock(return_value=old)
+
+        requested = datetime(2026, 3, 1, tzinfo=timezone.utc)
+        result = integration._get_incremental_fetch_date("github", requested, {})
+
+        assert result == requested
 
 
 # ---------------------------------------------------------------------------

@@ -76,9 +76,19 @@ class GitHubIntegration:
             force_since: When provided, bypass the incremental gate and return this
                 date directly.  Used by the ``--backfill-since`` flag so historical
                 PRs can be hydrated even when ``last_processed_date`` is more recent.
+
+        Notes:
+            The caller's ``requested_since`` is always honored directly — we no
+            longer take ``max(last_processed_date, requested_since)``.  This makes
+            ``--weeks N`` (for any N) behave consistently with ``--backfill-since``:
+            larger windows automatically pull historical PRs even when the
+            incremental checkpoint is more recent.  The ``cache_pr()`` upsert is
+            idempotent, so re-fetching already-cached PRs is safe.
         """
-        # Backfill mode: bypass the incremental gate entirely so we can fetch
-        # PRs older than the last_processed_date checkpoint.
+        # Backfill mode: explicit override path.  Functionally identical to the
+        # default path now (since requested_since is always honored), but kept
+        # as a separate branch so the "Backfill mode" log message remains
+        # accurate for the --backfill-since flag.
         if force_since is not None:
             if force_since.tzinfo is None:
                 force_since = force_since.replace(tzinfo=timezone.utc)
@@ -99,25 +109,29 @@ class GitHubIntegration:
             )
             return requested_since
 
-        # Get last processed date
+        # Get last processed date (informational only — we always honor the
+        # caller's requested_since now, so larger --weeks windows bypass the
+        # gate just like --backfill-since does).
         last_processed = self.schema_manager.get_last_processed_date(component)
         if not last_processed:
             print(f"   📥 First {component} API fetch, getting data since {requested_since}")
             return requested_since
 
-        # Ensure last_processed is timezone-aware
+        # Ensure last_processed is timezone-aware for the log comparison
         if last_processed.tzinfo is None:
             last_processed = last_processed.replace(tzinfo=timezone.utc)
 
-        # Use the later of the two dates (don't go backwards)
-        fetch_since = max(last_processed, requested_since)
-
-        if fetch_since > requested_since:
-            print(f"   ⚡ {component.title()} incremental fetch since {fetch_since}")
+        # Always honor the caller's requested_since.  cache_pr() upsert handles
+        # idempotency for any PRs already in the cache.
+        if requested_since < last_processed:
+            print(
+                f"   📥 {component.title()} window extends past last checkpoint "
+                f"({last_processed}); fetching since {requested_since}"
+            )
         else:
-            print(f"   📥 {component.title()} full fetch since {requested_since}")
+            print(f"   ⚡ {component.title()} incremental fetch since {requested_since}")
 
-        return fetch_since
+        return requested_since
 
     def enrich_repository_with_prs(
         self,
