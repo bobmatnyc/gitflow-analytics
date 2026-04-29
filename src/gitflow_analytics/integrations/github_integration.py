@@ -61,9 +61,33 @@ class GitHubIntegration:
         self._ticket_extractor = TicketExtractor(allowed_platforms=self.allowed_ticket_platforms)
 
     def _get_incremental_fetch_date(
-        self, component: str, requested_since: datetime, config: dict[str, Any]
+        self,
+        component: str,
+        requested_since: datetime,
+        config: dict[str, Any],
+        force_since: Optional[datetime] = None,
     ) -> datetime:
-        """Determine the actual fetch date based on schema versioning."""
+        """Determine the actual fetch date based on schema versioning.
+
+        Args:
+            component: Logical component name (e.g. "github").
+            requested_since: The caller-supplied "since" cutoff.
+            config: Component configuration dict (used for schema-change detection).
+            force_since: When provided, bypass the incremental gate and return this
+                date directly.  Used by the ``--backfill-since`` flag so historical
+                PRs can be hydrated even when ``last_processed_date`` is more recent.
+        """
+        # Backfill mode: bypass the incremental gate entirely so we can fetch
+        # PRs older than the last_processed_date checkpoint.
+        if force_since is not None:
+            if force_since.tzinfo is None:
+                force_since = force_since.replace(tzinfo=timezone.utc)
+            print(
+                f"   🔁 Backfill mode: fetching {component} data since {force_since}, "
+                f"bypassing incremental fetch gate"
+            )
+            return force_since
+
         # Ensure requested_since is timezone-aware
         if requested_since.tzinfo is None:
             requested_since = requested_since.replace(tzinfo=timezone.utc)
@@ -96,9 +120,22 @@ class GitHubIntegration:
         return fetch_since
 
     def enrich_repository_with_prs(
-        self, repo_name: str, commits: list[dict[str, Any]], since: datetime
+        self,
+        repo_name: str,
+        commits: list[dict[str, Any]],
+        since: datetime,
+        backfill_since: Optional[datetime] = None,
     ) -> list[dict[str, Any]]:
-        """Enrich repository commits with PR data using incremental fetching."""
+        """Enrich repository commits with PR data using incremental fetching.
+
+        Args:
+            repo_name: ``owner/repo`` slug for the GitHub repository.
+            commits: List of commit dicts to enrich.
+            since: Default lower-bound for PR fetch (subject to incremental gate).
+            backfill_since: When provided, bypass the incremental fetch gate and
+                hydrate the cache with PRs from this date forward.  Use for the
+                ``--backfill-since`` CLI flag (issue #52).
+        """
         try:
             repo = self.github.get_repo(repo_name)
         except UnknownObjectException:
@@ -112,8 +149,12 @@ class GitHubIntegration:
             "allowed_ticket_platforms": self.allowed_ticket_platforms,
         }
 
-        # Determine the actual start date for fetching
-        fetch_since = self._get_incremental_fetch_date("github", since, github_config)
+        # Determine the actual start date for fetching.  When backfill_since is
+        # supplied, the helper returns it directly and skips the schema/last-
+        # processed checkpoint logic.
+        fetch_since = self._get_incremental_fetch_date(
+            "github", since, github_config, force_since=backfill_since
+        )
 
         # Check cache first for existing PRs in this time period
         cached_prs_data = self._get_cached_prs_bulk(repo_name, fetch_since)
@@ -409,7 +450,12 @@ class GitHubIntegration:
         if self.cache.ttl_hours == 0:  # No expiration
             return False
 
-        stale_threshold = datetime.utcnow() - timedelta(hours=self.cache.ttl_hours)
+        # Use timezone-aware UTC datetime (datetime.utcnow() is deprecated in 3.12+).
+        stale_threshold = datetime.now(timezone.utc) - timedelta(hours=self.cache.ttl_hours)
+        # cached_at may be naive (SQLite DATETIME returns naive); normalize to UTC-aware
+        # so the comparison is well-defined.
+        if cached_at.tzinfo is None:
+            cached_at = cached_at.replace(tzinfo=timezone.utc)
         return cached_at < stale_threshold
 
     def _get_pull_requests(self, repo, since: datetime) -> list[Any]:

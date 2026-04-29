@@ -142,6 +142,16 @@ def register_analysis_commands(cli: click.Group) -> None:
         "Exits after backfill without running analysis."
     ),
 )
+@click.option(
+    "--backfill-since",
+    type=str,
+    default=None,
+    help=(
+        "Hydrate pull_request_cache from this date forward (YYYY-MM-DD). "
+        "Bypasses the incremental fetch gate so historical PRs older than "
+        "the last-processed checkpoint are fetched (issue #52)."
+    ),
+)
 def analyze_subcommand(
     config: Path,
     weeks: int,
@@ -169,6 +179,7 @@ def analyze_subcommand(
     cicd_platforms: tuple[str, ...],
     security_only: bool,
     backfill_ai_detection: bool,
+    backfill_since: Optional[str],
 ) -> None:
     """Run the complete analysis pipeline: collect → classify → report.
 
@@ -268,4 +279,5 @@ def analyze_subcommand(
         cicd_metrics=cicd_metrics,
         cicd_platforms=cicd_platforms,
         security_only=security_only,
+        backfill_since=backfill_since,
     )

@@ -3,7 +3,7 @@
 import json
 import logging
 from datetime import datetime
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 from ..core.cache import GitAnalysisCache
 from ..pm_framework.orchestrator import PMFrameworkOrchestrator
@@ -283,9 +283,22 @@ class IntegrationOrchestrator:
                 self.pm_orchestrator = None
 
     def enrich_repository_data(
-        self, repo_config: Any, commits: list[dict[str, Any]], since: datetime
+        self,
+        repo_config: Any,
+        commits: list[dict[str, Any]],
+        since: datetime,
+        backfill_since: Optional[datetime] = None,
     ) -> dict[str, Any]:
-        """Enrich repository data from all available integrations."""
+        """Enrich repository data from all available integrations.
+
+        Args:
+            repo_config: Repository configuration object.
+            commits: Commits to enrich.
+            since: Default lower-bound for incremental fetch.
+            backfill_since: When provided, override the incremental gate for
+                GitHub PR enrichment so historical PRs are hydrated into the
+                cache (issue #52).
+        """
         enrichment: dict[str, Any] = {
             "prs": [],
             "issues": [],
@@ -299,9 +312,14 @@ class IntegrationOrchestrator:
             github_integration = self.integrations["github"]
             if isinstance(github_integration, GitHubIntegration):
                 try:
-                    # Get PR data
+                    # Get PR data.  When backfill_since is supplied, the
+                    # GitHub integration bypasses its incremental fetch gate
+                    # and hydrates historical PRs from that date forward.
                     prs = github_integration.enrich_repository_with_prs(
-                        repo_config.github_repo, commits, since
+                        repo_config.github_repo,
+                        commits,
+                        since,
+                        backfill_since=backfill_since,
                     )
                     enrichment["prs"] = prs
 

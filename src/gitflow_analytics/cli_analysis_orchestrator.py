@@ -7,6 +7,7 @@ cli_analysis_helpers.
 
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -46,6 +47,7 @@ def analyze(
     cicd_metrics: bool = False,
     cicd_platforms: tuple[str, ...] = ("github-actions",),
     security_only: bool = False,
+    backfill_since: Optional[str] = None,
 ) -> None:
     """Analyze Git repositories using configuration file."""
 
@@ -69,9 +71,9 @@ def analyze(
     from .core.progress import get_progress_service
 
     try:
-        from ._version import __version__
+        from ._version import __version__ as _pkg_version
 
-        version = __version__
+        version = _pkg_version
     except ImportError:
         version = "1.3.11"
 
@@ -80,7 +82,7 @@ def analyze(
 
     # Create display — only if rich output is explicitly requested
     display = (
-        create_progress_display(style="simple" if no_rich else "rich", version=__version__)
+        create_progress_display(style="simple" if no_rich else "rich", version=version)
         if not no_rich
         else None
     )
@@ -216,6 +218,7 @@ def analyze(
         # ------------------------------------------------------------------
         if output is None:
             output = cfg.output.directory if cfg.output.directory else Path("./reports")
+        assert output is not None  # narrowed for type checkers
         output.mkdir(parents=True, exist_ok=True)
 
         if display:
@@ -510,6 +513,36 @@ def analyze(
         start_date = date_range_result.start_date
         end_date = date_range_result.end_date
 
+        # --backfill-since (issue #52): expand start_date to hydrate older
+        # PRs.  Validation is done here so the CLI fails fast on bad input.
+        backfill_since_dt: Optional[datetime] = None
+        if backfill_since:
+            try:
+                backfill_since_dt = datetime.strptime(backfill_since, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc
+                )
+            except ValueError:
+                click.echo(
+                    f"❌ Invalid --backfill-since date '{backfill_since}'. Expected YYYY-MM-DD.",
+                    err=True,
+                )
+                sys.exit(2)
+            if backfill_since_dt < start_date:
+                if display:
+                    display.print_status(
+                        f"Backfill mode: extending start_date from "
+                        f"{start_date.strftime('%Y-%m-%d')} to "
+                        f"{backfill_since_dt.strftime('%Y-%m-%d')}",
+                        "info",
+                    )
+                else:
+                    click.echo(
+                        f"🔁 Backfill mode: extending start_date to "
+                        f"{backfill_since_dt.strftime('%Y-%m-%d')} "
+                        f"(was {start_date.strftime('%Y-%m-%d')})"
+                    )
+                start_date = backfill_since_dt
+
         if not (display and display._live):
             click.echo(
                 f"   Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
@@ -551,6 +584,7 @@ def analyze(
                 force_fetch=force_fetch,
                 clear_cache=clear_cache,
                 display=display,
+                backfill_since=backfill_since_dt,
             )
         else:
             mode_result = run_traditional_mode(
@@ -565,6 +599,7 @@ def analyze(
                 cache_dir=cache_dir,
                 skip_identity_analysis=skip_identity_analysis,
                 display=display,
+                backfill_since=backfill_since_dt,
             )
 
         all_commits = mode_result.all_commits
@@ -619,7 +654,7 @@ def analyze(
                     all_commits=all_commits,
                     enable_qualitative=enable_qualitative,
                     qualitative_only=qualitative_only,
-                    display=display,
+                    _display=display,
                 )
                 if display:
                     display.complete_progress_task("qualitative", "Qualitative analysis complete")

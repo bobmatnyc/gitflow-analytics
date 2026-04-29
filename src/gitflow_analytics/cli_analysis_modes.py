@@ -42,6 +42,7 @@ def run_batch_mode(
     force_fetch: bool,
     clear_cache: bool,
     display: Any,
+    backfill_since: datetime | None = None,
 ) -> AnalysisModeResult:
     """Run Stage 10: two-step batch fetch + classify pipeline.
 
@@ -92,6 +93,7 @@ def run_batch_mode(
         progress_callback=lambda msg: (
             display.print_status(f"   {msg}", "info") if display else None
         ),
+        backfill_since=backfill_since,
     )
 
     if display and display._live:
@@ -315,6 +317,7 @@ def run_traditional_mode(
     cache_dir: Path,
     skip_identity_analysis: bool,
     display: Any,
+    backfill_since: datetime | None = None,
 ) -> AnalysisModeResult:
     """Run Stage 10b: traditional per-repository analysis (non-batch).
 
@@ -394,7 +397,9 @@ def run_traditional_mode(
             )
             result.branch_health_metrics[repo_config.name] = branch_metrics
 
-            enrichment = orchestrator.enrich_repository_data(repo_config, commits, start_date)
+            enrichment = orchestrator.enrich_repository_data(
+                repo_config, commits, start_date, backfill_since=backfill_since
+            )
             result.all_enrichments[repo_config.name] = enrichment
             if enrichment["prs"]:
                 result.all_prs.extend(enrichment["prs"])

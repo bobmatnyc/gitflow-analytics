@@ -159,11 +159,15 @@ def load_and_validate_config(
                     self.enabled = True
                     self.github_actions_enabled = "github-actions" in cicd_platforms
 
-            cfg.cicd = _CICDConfig()
+            # Config has no static `cicd` attribute; attach dynamically.
+            setattr(cfg, "cicd", _CICDConfig())  # noqa: B010
         else:
-            cfg.cicd.enabled = True
-            if "github-actions" in cicd_platforms:
-                cfg.cicd.github_actions_enabled = True
+            # Config has no static `cicd` attribute; access dynamically.
+            cicd_cfg = getattr(cfg, "cicd", None)
+            if cicd_cfg is not None:
+                cicd_cfg.enabled = True
+                if "github-actions" in cicd_platforms:
+                    cicd_cfg.github_actions_enabled = True
 
     warnings = ConfigLoader.validate_config(cfg)
     return ConfigResult(cfg=cfg, warnings=warnings)
@@ -263,6 +267,7 @@ def fetch_repositories_batch(
     force_fetch: bool,
     progress_callback: Callable[[str], None] | None = None,
     repo_progress_callback: Callable[[str, str, dict[str, Any]], None] | None = None,
+    backfill_since: datetime | None = None,
 ) -> FetchResult:
     """Fetch raw git data for all repositories that need analysis.
 
@@ -284,7 +289,13 @@ def fetch_repositories_batch(
     )
 
     orchestrator = IntegrationOrchestrator(cfg, cache)
-    jira_integration = orchestrator.integrations.get("jira")
+    # Narrow union dict value to JIRAIntegration | None for downstream callers.
+    from ..integrations.jira_integration import JIRAIntegration
+
+    _jira_candidate = orchestrator.integrations.get("jira")
+    jira_integration: JIRAIntegration | None = (
+        _jira_candidate if isinstance(_jira_candidate, JIRAIntegration) else None
+    )
 
     # Determine which repos need fetching
     repos_needing_analysis: list[Any] = []
@@ -383,7 +394,10 @@ def fetch_repositories_batch(
                         ]
 
                     enrichment = orchestrator.enrich_repository_data(
-                        repo_config, commits_for_enrichment, start_date
+                        repo_config,
+                        commits_for_enrichment,
+                        start_date,
+                        backfill_since=backfill_since,
                     )
                     if repo_progress_callback and enrichment.get("prs"):
                         repo_progress_callback(

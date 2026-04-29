@@ -35,6 +35,16 @@ logger = logging.getLogger(__name__)
 )
 @click.option("--clear-cache", is_flag=True, help="Clear cache before fetching data")
 @click.option(
+    "--backfill-since",
+    type=str,
+    default=None,
+    help=(
+        "Hydrate pull_request_cache from this date forward (YYYY-MM-DD). "
+        "Bypasses the incremental fetch gate so historical PRs older than "
+        "the last-processed checkpoint are fetched. Idempotent — safe to re-run."
+    ),
+)
+@click.option(
     "--log",
     type=click.Choice(["none", "INFO", "DEBUG"], case_sensitive=False),
     default="none",
@@ -51,6 +61,7 @@ def fetch(
     weeks: int,
     output: Optional[Path],
     clear_cache: bool,
+    backfill_since: Optional[str],
     log: str,
     no_rich: bool,
 ) -> None:
@@ -103,9 +114,25 @@ def fetch(
 
     logger = setup_logging(log, __name__)
 
+    # Validate --backfill-since up-front (issue #52). Done before any heavy
+    # imports / config loading so user gets fast feedback on bad input.
+    backfill_since_dt: Optional[datetime] = None
+    if backfill_since:
+        try:
+            backfill_since_dt = datetime.strptime(backfill_since, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc
+            )
+        except ValueError:
+            click.echo(
+                f"❌ Invalid --backfill-since date '{backfill_since}'. Expected YYYY-MM-DD.",
+                err=True,
+            )
+            sys.exit(2)
+
     try:
         # Lazy imports
         from .core.cache import GitAnalysisCache
+        from .integrations.jira_integration import JIRAIntegration
         from .integrations.orchestrator import IntegrationOrchestrator
 
         if display:
@@ -132,7 +159,7 @@ def fetch(
                 display.print_status("Clearing cache...", "info")
             else:
                 click.echo("🗑️  Clearing cache...")
-            cache.clear_all()
+            cache.clear_all_cache()
 
         # Initialize data fetcher
         from .core.data_fetcher import GitDataFetcher
@@ -147,7 +174,9 @@ def fetch(
 
         # Initialize integrations for ticket fetching
         orchestrator = IntegrationOrchestrator(cfg, cache)
-        jira_integration = orchestrator.integrations.get("jira")
+        # Narrow the integration union type to JIRAIntegration | None for type safety
+        _raw_jira = orchestrator.integrations.get("jira")
+        jira_integration = _raw_jira if isinstance(_raw_jira, JIRAIntegration) else None
 
         # Discovery organization repositories if needed
         repositories_to_fetch = cfg.repositories
@@ -220,6 +249,27 @@ def fetch(
         # End date is the end of the last complete week (last Sunday)
         end_date = get_week_end(last_complete_week_start + timedelta(days=6))
 
+        # When --backfill-since is provided, expand the start_date so the
+        # data fetcher walks the full requested window.  We keep end_date at
+        # the last complete week so we don't accidentally pull partial-week
+        # data.  PR enrichment uses backfill_since_dt directly to bypass the
+        # incremental gate in github_integration._get_incremental_fetch_date.
+        if backfill_since_dt is not None and backfill_since_dt < start_date:
+            if display:
+                display.print_status(
+                    f"Backfill mode: extending start_date from "
+                    f"{start_date.strftime('%Y-%m-%d')} to "
+                    f"{backfill_since_dt.strftime('%Y-%m-%d')}",
+                    "info",
+                )
+            else:
+                click.echo(
+                    f"🔁 Backfill mode: extending start_date to "
+                    f"{backfill_since_dt.strftime('%Y-%m-%d')} "
+                    f"(was {start_date.strftime('%Y-%m-%d')})"
+                )
+            start_date = backfill_since_dt
+
         # Progress tracking
         total_repos = len(repositories_to_fetch)
         processed_repos = 0
@@ -240,9 +290,9 @@ def fetch(
 
         # Process each repository
         for repo_config in repositories_to_fetch:
+            project_key: str = repo_config.project_key or Path(repo_config.path).name
             try:
                 repo_path = Path(repo_config.path)
-                project_key = repo_config.project_key or repo_path.name
 
                 if display:
                     display.print_status(f"Fetching data for {project_key}...", "info")
@@ -296,6 +346,63 @@ def fetch(
                         f"   ✅ {result['stats']['total_commits']} commits, {result['stats']['unique_tickets']} tickets"
                     )
 
+                # Backfill PR cache when --backfill-since is supplied.  The
+                # standalone `gfa fetch` path does not normally invoke PR
+                # enrichment (commits-only), but backfill mode explicitly
+                # hydrates pull_request_cache with historical data.
+                if backfill_since_dt is not None and getattr(repo_config, "github_repo", None):
+                    try:
+                        with cache.get_session() as session:
+                            from .models.database import CachedCommit
+
+                            cached_rows = (
+                                session.query(CachedCommit)
+                                .filter(
+                                    CachedCommit.repo_path == str(repo_path),
+                                    CachedCommit.timestamp >= start_date,
+                                    CachedCommit.timestamp <= end_date,
+                                )
+                                .all()
+                            )
+                            commits_for_enrichment = [
+                                {
+                                    "hash": c.commit_hash,
+                                    "author_name": c.author_name,
+                                    "author_email": c.author_email,
+                                    "date": c.timestamp,
+                                    "message": c.message,
+                                }
+                                for c in cached_rows
+                            ]
+
+                        enrichment = orchestrator.enrich_repository_data(
+                            repo_config,
+                            commits_for_enrichment,
+                            start_date,
+                            backfill_since=backfill_since_dt,
+                        )
+                        pr_count = len(enrichment.get("prs", []))
+                        if display:
+                            display.print_status(
+                                f"   🔁 Backfilled {pr_count} PRs for {project_key}",
+                                "info",
+                            )
+                        else:
+                            click.echo(f"   🔁 Backfilled {pr_count} PRs for {project_key}")
+                    except Exception as pr_err:  # noqa: BLE001
+                        logger.warning(
+                            "PR backfill failed for %s: %s",
+                            getattr(repo_config, "github_repo", "?"),
+                            pr_err,
+                        )
+                        if display:
+                            display.print_status(
+                                f"   ⚠️  PR backfill skipped for {project_key}: {pr_err}",
+                                "warning",
+                            )
+                        else:
+                            click.echo(f"   ⚠️  PR backfill skipped for {project_key}: {pr_err}")
+
             except Exception as e:
                 logger.error(f"Error fetching data for {repo_config.path}: {e}")
                 if display:
@@ -303,6 +410,56 @@ def fetch(
                 else:
                     click.echo(f"   ❌ Error: {e}")
                 continue
+
+        # When backfilling, also refresh weekly_pr_metrics so downstream
+        # consumers (rollup tables, reports) see the newly hydrated PR rows.
+        # Mirrors `gfa pr-metrics --since DATE` semantics so users don't have
+        # to remember a second command (issue #52).
+        if backfill_since_dt is not None:
+            try:
+                from .cli_pr_metrics import (
+                    aggregate_week,
+                    calculate_week_range,
+                    upsert_weekly_metrics,
+                )
+                from .models.database import Database
+
+                db_path = cfg.cache.directory / "gitflow_cache.db"
+                db = Database(db_path)
+                weeks_to_roll = calculate_week_range(
+                    week=None, since=backfill_since_dt.strftime("%Y-%m-%d")
+                )
+                if display:
+                    display.print_status(
+                        f"📊 Rolling up weekly_pr_metrics for {len(weeks_to_roll)} week(s)...",
+                        "info",
+                    )
+                else:
+                    click.echo(
+                        f"📊 Rolling up weekly_pr_metrics for {len(weeks_to_roll)} week(s)..."
+                    )
+                total_metric_rows = 0
+                for iso_week, week_start, week_end in weeks_to_roll:
+                    aggregates = aggregate_week(db, iso_week, week_start, week_end)
+                    total_metric_rows += upsert_weekly_metrics(db, iso_week, aggregates)
+                if display:
+                    display.print_status(
+                        f"✅ weekly_pr_metrics: {total_metric_rows} engineer rows upserted",
+                        "success",
+                    )
+                else:
+                    click.echo(
+                        f"   ✅ weekly_pr_metrics: {total_metric_rows} engineer rows upserted"
+                    )
+            except Exception as rollup_err:  # noqa: BLE001
+                logger.warning("Weekly PR metrics rollup failed: %s", rollup_err)
+                if display:
+                    display.print_status(
+                        f"⚠️  weekly_pr_metrics rollup skipped: {rollup_err}",
+                        "warning",
+                    )
+                else:
+                    click.echo(f"⚠️  weekly_pr_metrics rollup skipped: {rollup_err}")
 
         # Show final summary
         if display:
