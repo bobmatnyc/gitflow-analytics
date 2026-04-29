@@ -58,6 +58,7 @@ gitflow-analytics analyze -c config.yaml [OPTIONS]
 **Options**:
 - All global options apply
 - `--repositories TEXT` - Comma-separated list of repositories to analyze (overrides config)
+- `--backfill-since YYYY-MM-DD` - Hydrate `pull_request_cache` from this date forward. Bypasses the incremental fetch gate so historical PRs older than the last-processed checkpoint are fetched. Auto-triggers `weekly_pr_metrics` rollup for the same date range. Idempotent — safe to re-run. Does not change default behavior (#52).
 
 **Examples**:
 ```bash
@@ -66,6 +67,39 @@ gitflow-analytics analyze -c config.yaml --repositories "repo1,repo2"
 
 # Quick 2-week analysis with JSON output
 gitflow-analytics analyze -c config.yaml --weeks 2 --format json
+
+# Backfill all merged PRs back to a specific date
+gfa analyze -c config.yaml --backfill-since 2025-01-01
+```
+
+### fetch
+Fetch data from external platforms (GitHub PRs, JIRA, ClickUp) and cache it locally.
+
+```bash
+gfa fetch -c config.yaml [OPTIONS]
+```
+
+**Options**:
+- `-c, --config PATH` - Path to YAML configuration file (required)
+- `--weeks, -w INTEGER` - Number of weeks to fetch (default: 4)
+- `--output, -o PATH` - Output directory for cache (overrides config)
+- `--clear-cache` - Clear cache before fetching data
+- `--backfill-since YYYY-MM-DD` - Hydrate `pull_request_cache` from this date forward. Bypasses the incremental fetch gate so historical PRs older than the last-processed checkpoint are fetched. Idempotent — safe to re-run. Does not change default behavior (#52).
+- `--log [none|INFO|DEBUG]` - Enable logging at the specified level (default: none)
+
+**Examples**:
+```bash
+# Standard incremental fetch for the last 4 weeks
+gfa fetch -c config.yaml
+
+# Fetch the last 8 weeks
+gfa fetch -c config.yaml --weeks 8
+
+# Backfill all merged PRs back to a specific date
+gfa fetch -c config.yaml --backfill-since 2025-01-01
+
+# Re-run the same backfill safely (idempotent)
+gfa fetch -c config.yaml --backfill-since 2025-01-01
 ```
 
 ### identities

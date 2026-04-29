@@ -392,6 +392,7 @@ gitflow-analytics discover-storypoint-fields -c config.yaml
 - `--validate-only`: Validate configuration without running
 - `--skip-identity-analysis`: Skip automatic identity analysis
 - `--apply-identity-suggestions`: Apply identity suggestions without prompting
+- `--backfill-since YYYY-MM-DD`: Hydrate `pull_request_cache` from the given date forward. Bypasses the incremental fetch gate so historical PRs are fetched regardless of the last-processed checkpoint. Auto-triggers `weekly_pr_metrics` rollup for the same date range. Idempotent — safe to re-run. Does not change default behavior. Available on both `gfa fetch` and `gfa analyze` (#52).
 
 ## Complete Configuration Example
 

@@ -5,6 +5,15 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.14.18] - 2026-04-29
+### Added
+- feat: add `--backfill-since YYYY-MM-DD` to `gfa fetch` and `gfa analyze` for historical PR hydration (#52)
+  - Fetches all merged PRs from the GitHub API back to the specified date
+  - Bypasses the incremental fetch gate that previously blocked historical fetches
+  - Auto-triggers `weekly_pr_metrics` rollup for the same date range
+  - Idempotent — safe to re-run with the same date
+  - Does not change default (incremental) behavior
+
 ## [3.14.8] - 2026-04-23
 ### Fixed
 - #43: Pass cache/since/until to CSVReportGenerator in gfa analyze path
