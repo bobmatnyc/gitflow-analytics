@@ -1013,13 +1013,21 @@ GitFlow Analytics captures the full pull request lifecycle from GitHub, includin
 
 The `PullRequestCache` table (v4 schema) includes:
 
-| Column | Description |
-|--------|-------------|
-| `pr_state` | Current state: `open`, `closed`, or `merged` |
-| `closed_at` | Timestamp when the PR was closed or merged |
-| `is_merged` | Boolean — `true` if the PR was merged into the target branch |
+| Column | Type | Description |
+|--------|------|-------------|
+| `pr_state` | TEXT | Current state: `open`, `closed`, or `merged` |
+| `closed_at` | TEXT | Timestamp when the PR was closed or merged |
+| `is_merged` | BOOLEAN | `true` if the PR was merged into the target branch |
+| `commit_count` | INTEGER | Number of commits in the PR; populated automatically at fetch time with no additional API calls (#53) |
+| `ticket_ids` | JSON | Deduplicated list of JIRA-style ticket IDs extracted from all commit messages in the PR (e.g. `["DUE-1234", "CORE-567"]`); populated during enrichment via `pr.get_commits()` (#53) |
 
 A PR with `pr_state = "closed"` and `is_merged = false` represents a rejected/abandoned PR.
+
+To populate `commit_count` and `ticket_ids` on PRs that were cached before v3.14.22, run the backfill command (no API calls required):
+
+```bash
+gfa backfill-ticket-ids -c config.yaml
+```
 
 ### Configuration
 

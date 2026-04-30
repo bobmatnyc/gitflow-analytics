@@ -5,6 +5,13 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.14.22] - 2026-04-29
+### Added
+- feat: add `commit_count` and `ticket_ids` columns to `pull_request_cache` (#53)
+  - `commit_count INTEGER` — `len(commit_hashes)`, populated automatically at fetch time with no additional API calls
+  - `ticket_ids JSON` — deduplicated list of JIRA-style ticket IDs (e.g. `["DUE-1234", "CORE-567"]`) extracted from all commit messages in the PR via `pr.get_commits()` during enrichment
+- feat: add `gfa backfill-ticket-ids` command to populate `ticket_ids` and `commit_count` on existing cached PRs using `cached_commits.message` — no GitHub API calls, idempotent
+
 ## [3.14.18] - 2026-04-29
 ### Added
 - feat: add `--backfill-since YYYY-MM-DD` to `gfa fetch` and `gfa analyze` for historical PR hydration (#52)

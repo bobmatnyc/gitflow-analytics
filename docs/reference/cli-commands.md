@@ -318,6 +318,40 @@ gfa add-alias -c config.yaml \
 - Always verify with `--dry-run` before running in unattended automation
 - See [Managing Aliases Guide](../guides/managing-aliases.md) for detailed identity management guidance
 
+### backfill-ticket-ids
+Populate NULL `ticket_ids` and `commit_count` values on existing cached pull requests using commit messages already stored in `cached_commits`. No GitHub API calls are made — all data is sourced from the local cache database. The operation is idempotent and safe to re-run.
+
+```bash
+gfa backfill-ticket-ids -c config.yaml
+```
+
+**Options**:
+- `-c, --config PATH` - Path to YAML configuration file (required)
+
+**Examples**:
+```bash
+# Backfill ticket IDs and commit counts for all cached PRs
+gfa backfill-ticket-ids -c config.yaml
+```
+
+**What It Does**:
+1. Queries `pull_request_cache` for rows where `ticket_ids` IS NULL or `commit_count` IS NULL
+2. For each such PR, joins against `cached_commits` using commit hashes already in the local database
+3. Extracts JIRA-style ticket IDs matching `[A-Z]+-\d+` from each commit message and deduplicates them
+4. Counts commit hashes to produce `commit_count`
+5. Writes `ticket_ids` (JSON array, e.g. `["DUE-1234", "CORE-567"]`) and `commit_count` back to the row
+6. Makes no outbound GitHub API calls — entirely offline
+
+**Use Cases**:
+- Upgrading an existing installation to v3.14.22 and enriching previously cached PRs
+- Recovering `ticket_ids` after a schema migration
+- Re-running after updating the ticket-ID extraction regex without re-fetching PRs
+
+**Notes**:
+- PRs whose `ticket_ids` and `commit_count` are already populated are skipped
+- Commit messages must already be present in `cached_commits`; PRs with no associated cached commits will have `ticket_ids` set to `[]` and `commit_count` set to `0`
+- See [Cache System Reference](./cache-system.md) for the full `pull_request_cache` schema
+
 ## 📊 Output Formats
 
 ### CSV Format (`--format csv`)
