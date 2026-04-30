@@ -1,5 +1,6 @@
 """Caching layer for Git analysis with SQLite backend."""
 
+import json
 import logging
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,32 @@ from .cache_commits import CommitCacheMixin
 from .cache_weekly import WeeklyCacheMixin
 
 logger = logging.getLogger(__name__)
+
+
+def _decode_ticket_ids(raw: Any) -> list[str]:
+    """Decode the JSON-encoded ticket_ids column into a list[str].
+
+    WHY: ``pull_request_cache.ticket_ids`` is stored as a JSON string for
+    portability across SQLite + future PostgreSQL backends.  Older rows have
+    NULL or empty values which must degrade gracefully to ``[]``.
+
+    Args:
+        raw: Either ``None``, a JSON-encoded list string, or an already-decoded list.
+
+    Returns:
+        A list of ticket-ID strings (possibly empty).
+    """
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, list):
+        return [str(x) for x in raw]
+    try:
+        decoded = json.loads(raw)
+        if isinstance(decoded, list):
+            return [str(x) for x in decoded]
+    except (ValueError, TypeError):
+        return []
+    return []
 
 
 class GitAnalysisCache(CommitCacheMixin, WeeklyCacheMixin):
@@ -589,7 +616,7 @@ class GitAnalysisCache(CommitCacheMixin, WeeklyCacheMixin):
         so that the identity resolver can credit co-authors even when the
         commit is served from cache rather than re-analysed from git.
         """
-        message = commit.message or ""
+        message = str(commit.message or "")
         return {
             "hash": commit.commit_hash,
             "author_name": commit.author_name,
@@ -661,6 +688,9 @@ class GitAnalysisCache(CommitCacheMixin, WeeklyCacheMixin):
             "changed_files": getattr(pr, "changed_files", None) or 0,
             "additions": getattr(pr, "additions", None) or 0,
             "deletions": getattr(pr, "deletions", None) or 0,
+            # v5 (issue #53): commit_count + ticket_ids
+            "commit_count": getattr(pr, "commit_count", None),
+            "ticket_ids": _decode_ticket_ids(getattr(pr, "ticket_ids", None)),
         }
 
     def _issue_to_dict(self, issue: IssueCache) -> dict[str, Any]:

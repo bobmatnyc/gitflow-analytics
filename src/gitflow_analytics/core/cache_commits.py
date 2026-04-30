@@ -1,6 +1,8 @@
 """Commit, PR, and issue caching mixin for GitAnalysisCache."""
 
+import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -14,6 +16,34 @@ from ..models.database import (
 )
 
 logger = logging.getLogger(__name__)
+
+# JIRA-style ticket ID pattern (e.g. DUE-1234, CORE-567).
+# Used as fallback when no TicketExtractor is available.  Anchored on word
+# boundaries to avoid matching mid-word.
+_TICKET_ID_PATTERN = re.compile(r"\b[A-Z]+-\d+\b")
+
+
+def _extract_ticket_ids_from_messages(messages: list[str]) -> list[str]:
+    """Extract a deduplicated, sorted list of JIRA-style ticket IDs from messages.
+
+    WHY: Used by ``cache_pr()`` to populate the new ``ticket_ids`` column on
+    ``pull_request_cache`` (issue #53) without taking a hard dependency on
+    :class:`TicketExtractor` (which requires platform/config setup).
+
+    Args:
+        messages: List of commit message strings (any may be None / empty).
+
+    Returns:
+        Sorted list of unique ticket IDs (uppercased).  Empty list when no
+        messages contain ticket-like patterns.
+    """
+    found: set[str] = set()
+    for msg in messages or []:
+        if not msg:
+            continue
+        for match in _TICKET_ID_PATTERN.findall(msg):
+            found.add(match.upper())
+    return sorted(found)
 
 
 if TYPE_CHECKING:
@@ -147,7 +177,7 @@ class CommitCacheMixin(_Base):
                     if hasattr(existing, key):
                         setattr(existing, key, value)
                 # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
-                existing.cached_at = datetime.now(timezone.utc)
+                existing.cached_at = datetime.now(timezone.utc)  # type: ignore[assignment]
             else:
                 # Create new
                 cached_commit = CachedCommit(
@@ -225,7 +255,7 @@ class CommitCacheMixin(_Base):
                         if key != "hash" and hasattr(existing, key):
                             setattr(existing, key, value)
                     # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
-                    existing.cached_at = datetime.now(timezone.utc)
+                    existing.cached_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                 else:
                     # Create new
                     cached_commit = CachedCommit(
@@ -337,7 +367,37 @@ class CommitCacheMixin(_Base):
             return None
 
     def cache_pr(self, repo_path: str, pr_data: dict[str, Any]) -> None:
-        """Cache pull request data."""
+        """Cache pull request data.
+
+        Issue #53: also populates ``commit_count`` (derived from
+        ``commit_hashes``) and ``ticket_ids`` (extracted from
+        ``commit_messages`` when present in the payload).  ``ticket_ids`` is
+        only computed when ``commit_messages`` is supplied — otherwise the
+        column is left untouched (NULL on first write, or whatever was there
+        on update) so a separate backfill pass can populate it later.
+        """
+        # --- v5 (issue #53) derived fields -----------------------------------
+        # commit_count is derived from commit_hashes JSON length.  We compute
+        # it eagerly so it is correct regardless of whether the caller passes
+        # ``commit_count`` explicitly.
+        commit_hashes_payload = pr_data.get("commit_hashes") or []
+        if isinstance(commit_hashes_payload, str):
+            # Defensive: some callers may pass JSON strings.
+            try:
+                commit_hashes_payload = json.loads(commit_hashes_payload)
+            except (ValueError, TypeError):
+                commit_hashes_payload = []
+        derived_commit_count = len(commit_hashes_payload)
+
+        # ticket_ids is derived from commit_messages when supplied.  When the
+        # payload omits commit_messages we don't know the messages, so we
+        # leave the column unchanged (None on first write).
+        derived_ticket_ids_json: Optional[str] = None
+        if "commit_messages" in pr_data:
+            messages = pr_data.get("commit_messages") or []
+            ids = _extract_ticket_ids_from_messages(messages)
+            derived_ticket_ids_json = json.dumps(ids)
+
         with self.get_session() as session:
             # Check if already exists
             existing = (
@@ -353,22 +413,22 @@ class CommitCacheMixin(_Base):
 
             if existing:
                 # Update existing
-                existing.title = pr_data.get("title")
-                existing.description = pr_data.get("description")
-                existing.author = pr_data.get("author")
-                existing.created_at = pr_data.get("created_at")
-                existing.merged_at = pr_data.get("merged_at")
-                existing.story_points = pr_data.get("story_points")
+                existing.title = pr_data.get("title")  # type: ignore[assignment]
+                existing.description = pr_data.get("description")  # type: ignore[assignment]
+                existing.author = pr_data.get("author")  # type: ignore[assignment]
+                existing.created_at = pr_data.get("created_at")  # type: ignore[assignment]
+                existing.merged_at = pr_data.get("merged_at")  # type: ignore[assignment]
+                existing.story_points = pr_data.get("story_points")  # type: ignore[assignment]
                 existing.labels = pr_data.get("labels", [])
                 existing.commit_hashes = pr_data.get("commit_hashes", [])
                 # PR state fields (v4.0) - only update when present in payload
                 # to avoid overwriting good data with None from a partial fetch.
                 if "pr_state" in pr_data:
-                    existing.pr_state = pr_data.get("pr_state")
+                    existing.pr_state = pr_data.get("pr_state")  # type: ignore[assignment]
                 if "closed_at" in pr_data:
-                    existing.closed_at = pr_data.get("closed_at")
+                    existing.closed_at = pr_data.get("closed_at")  # type: ignore[assignment]
                 if "is_merged" in pr_data:
-                    existing.is_merged = pr_data.get("is_merged")
+                    existing.is_merged = pr_data.get("is_merged")  # type: ignore[assignment]
                 # Enhanced PR tracking fields (v3.0) - only update when present in payload
                 # to avoid accidentally zeroing out data already stored from a richer fetch.
                 if "review_comments" in pr_data:
@@ -384,7 +444,7 @@ class CommitCacheMixin(_Base):
                 if "approved_by" in pr_data:
                     existing.approved_by = pr_data.get("approved_by", [])
                 if "time_to_first_review_hours" in pr_data:
-                    existing.time_to_first_review_hours = pr_data.get("time_to_first_review_hours")
+                    existing.time_to_first_review_hours = pr_data.get("time_to_first_review_hours")  # type: ignore[assignment]
                 if "revision_count" in pr_data:
                     existing.revision_count = pr_data.get("revision_count", 0)
                 if "changed_files" in pr_data:
@@ -393,8 +453,14 @@ class CommitCacheMixin(_Base):
                     existing.additions = pr_data.get("additions", 0)
                 if "deletions" in pr_data:
                     existing.deletions = pr_data.get("deletions", 0)
+                # v5 (issue #53): always recompute commit_count from commit_hashes
+                # (cheap derivation) and only update ticket_ids when commit_messages
+                # was supplied so we don't accidentally clear good data.
+                existing.commit_count = derived_commit_count  # type: ignore[assignment]
+                if derived_ticket_ids_json is not None:
+                    existing.ticket_ids = derived_ticket_ids_json  # type: ignore[assignment]
                 # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
-                existing.cached_at = datetime.now(timezone.utc)
+                existing.cached_at = datetime.now(timezone.utc)  # type: ignore[assignment]
             else:
                 # Create new
                 cached_pr = PullRequestCache(
@@ -424,6 +490,9 @@ class CommitCacheMixin(_Base):
                     changed_files=pr_data.get("changed_files", 0),
                     additions=pr_data.get("additions", 0),
                     deletions=pr_data.get("deletions", 0),
+                    # v5 (issue #53)
+                    commit_count=derived_commit_count,
+                    ticket_ids=derived_ticket_ids_json,
                 )
                 session.add(cached_pr)
 
@@ -445,18 +514,18 @@ class CommitCacheMixin(_Base):
             if existing:
                 # Update existing
                 existing.project_key = issue_data["project_key"]
-                existing.title = issue_data.get("title")
-                existing.description = issue_data.get("description")
-                existing.status = issue_data.get("status")
-                existing.assignee = issue_data.get("assignee")
-                existing.created_at = issue_data.get("created_at")
-                existing.updated_at = issue_data.get("updated_at")
-                existing.resolved_at = issue_data.get("resolved_at")
-                existing.story_points = issue_data.get("story_points")
+                existing.title = issue_data.get("title")  # type: ignore[assignment]
+                existing.description = issue_data.get("description")  # type: ignore[assignment]
+                existing.status = issue_data.get("status")  # type: ignore[assignment]
+                existing.assignee = issue_data.get("assignee")  # type: ignore[assignment]
+                existing.created_at = issue_data.get("created_at")  # type: ignore[assignment]
+                existing.updated_at = issue_data.get("updated_at")  # type: ignore[assignment]
+                existing.resolved_at = issue_data.get("resolved_at")  # type: ignore[assignment]
+                existing.story_points = issue_data.get("story_points")  # type: ignore[assignment]
                 existing.labels = issue_data.get("labels", [])
                 existing.platform_data = issue_data.get("platform_data", {})
                 # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
-                existing.cached_at = datetime.now(timezone.utc)
+                existing.cached_at = datetime.now(timezone.utc)  # type: ignore[assignment]
             else:
                 # Create new
                 cached_issue = IssueCache(
@@ -560,7 +629,7 @@ class CommitCacheMixin(_Base):
             for i in range(0, len(mappings), self.batch_size):
                 batch = mappings[i : i + self.batch_size]
                 try:
-                    session.bulk_insert_mappings(CachedCommit, batch)
+                    session.bulk_insert_mappings(CachedCommit, batch)  # type: ignore[arg-type]
                     inserted_count += len(batch)
                 except Exception as e:
                     # On error, fall back to individual inserts for this batch
@@ -673,7 +742,7 @@ class CommitCacheMixin(_Base):
 
             # Perform bulk update
             if update_mappings:
-                session.bulk_update_mappings(CachedCommit, update_mappings)
+                session.bulk_update_mappings(CachedCommit, update_mappings)  # type: ignore[arg-type]
 
         elapsed = time.time() - start_time
         self.bulk_operations_count += 1
@@ -819,12 +888,12 @@ class CommitCacheMixin(_Base):
             batch_updates = 0
             for row in query:
                 scanned += 1
-                message = row.message or ""
+                message = str(row.message or "")
                 # Backfill path: changed_files not available.
-                confidence, method = detect_ai_commit(message, None)
+                confidence, method = detect_ai_commit(message, None)  # type: ignore[arg-type]
 
-                row.ai_confidence_score = confidence
-                row.ai_detection_method = method
+                row.ai_confidence_score = confidence  # type: ignore[assignment]
+                row.ai_detection_method = method  # type: ignore[assignment]
                 method_counts[method] = method_counts.get(method, 0) + 1
                 updated += 1
                 batch_updates += 1

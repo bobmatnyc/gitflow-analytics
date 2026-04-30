@@ -659,6 +659,12 @@ class Database:
                 # pull_request_cache or other existing tables.
                 self._migrate_weekly_pr_metrics_v11(conn)
 
+                # --- pull_request_cache v5 columns (issue #53) ---
+                # WHY: commit_count and ticket_ids are added to pull_request_cache
+                # so that PR size + ticket extraction don't need to be recomputed
+                # at report time.  Migration is additive and idempotent.
+                self._migrate_pull_request_cache_v5(conn)
+
                 # --- developer_identities NULL back-fill (issue #39) ---
                 # WHY: Older databases created before total_commits /
                 # total_story_points had a server-side DEFAULT may contain NULL
@@ -1144,6 +1150,58 @@ class Database:
             logger.debug(
                 f"Could not create weekly_pr_metrics table "
                 f"(may already exist or DB is readonly): {e}"
+            )
+
+    def _migrate_pull_request_cache_v5(self, conn) -> None:
+        """Add commit_count and ticket_ids columns to pull_request_cache (v5.0, issue #53).
+
+        WHY: These columns are added incrementally so existing rows are preserved.
+        ``commit_count`` is derived at write time from the JSON ``commit_hashes``
+        column.  ``ticket_ids`` is a JSON-encoded list of deduplicated JIRA-style
+        ticket IDs extracted from the commit messages of all commits in the PR.
+
+        Both columns are nullable so legacy rows remain valid; a separate
+        backfill command (``gfa backfill-ticket-ids``) populates them from
+        ``cached_commits`` for already-cached PRs.
+
+        Columns added:
+            commit_count  - INTEGER: number of commits in the PR (len(commit_hashes))
+            ticket_ids    - TEXT (JSON): deduplicated list of ticket IDs
+
+        Args:
+            conn: Active SQLAlchemy connection.
+        """
+        try:
+            result = conn.execute(text("PRAGMA table_info(pull_request_cache)"))
+            existing_columns = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read pull_request_cache schema for v5 migration: {e}")
+            return
+
+        new_columns: list[tuple[str, str]] = [
+            ("commit_count", "INTEGER"),
+            ("ticket_ids", "TEXT"),
+        ]
+
+        added: list[str] = []
+        for col_name, col_type in new_columns:
+            if col_name not in existing_columns:
+                try:
+                    conn.execute(
+                        text(f"ALTER TABLE pull_request_cache ADD COLUMN {col_name} {col_type}")
+                    )
+                    conn.commit()
+                    added.append(col_name)
+                except Exception as e:
+                    logger.debug(
+                        f"Could not add pull_request_cache.{col_name} "
+                        f"(may already exist or DB is readonly): {e}"
+                    )
+
+        if added:
+            logger.info(
+                "Applied pull_request_cache v5.0 migration: added columns %s",
+                ", ".join(added),
             )
 
     def _migrate_developer_identities_null_stats(self, conn) -> None:

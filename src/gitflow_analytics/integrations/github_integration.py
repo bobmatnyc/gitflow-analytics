@@ -692,8 +692,20 @@ class GitHubIntegration:
         # Extract ticket references
         tickets = self._ticket_extractor.extract_from_text(pr_text)
 
-        # Get commit SHAs — pr.get_commits() is paginated automatically by PyGitHub
-        commit_hashes = [c.sha for c in pr.get_commits()]
+        # Get commit SHAs and messages in a single iteration — pr.get_commits()
+        # is paginated automatically by PyGitHub.  Issue #53: commit_messages
+        # are collected here so cache_pr() can extract ticket IDs without an
+        # extra per-commit GitHub API call.
+        commit_hashes: list[str] = []
+        commit_messages: list[str] = []
+        for c in pr.get_commits():
+            commit_hashes.append(c.sha)
+            try:
+                # PyGitHub Commit -> .commit (GitCommit) -> .message
+                commit_messages.append(c.commit.message or "")
+            except Exception:
+                # Defensive: never let message extraction break PR enrichment.
+                commit_messages.append("")
 
         # Gap 5: Normalize author login to lowercase (GitHub usernames are case-insensitive)
         author_login: str = pr.user.login.lower() if pr.user and pr.user.login else "unknown"
@@ -722,6 +734,9 @@ class GitHubIntegration:
             "story_points": story_points,
             "labels": [label.name for label in pr.labels],
             "commit_hashes": commit_hashes,
+            # Issue #53: commit_messages are passed through to cache_pr() so it
+            # can populate the ticket_ids column on pull_request_cache.
+            "commit_messages": commit_messages,
             "ticket_references": tickets,
             # Inline review comment count — available on the base PR object,
             # no extra API call required.

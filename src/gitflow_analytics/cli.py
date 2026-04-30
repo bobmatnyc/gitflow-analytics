@@ -123,6 +123,11 @@ from .cli_pr_metrics import register_pr_metrics_commands  # noqa: E402
 
 register_pr_metrics_commands(cli)
 
+# PR cache backfill for commit_count + ticket_ids (issue #53)
+from .cli_backfill_ticket_ids import register_backfill_ticket_ids_commands  # noqa: E402
+
+register_backfill_ticket_ids_commands(cli)
+
 
 def main() -> None:
     """Main entry point."""

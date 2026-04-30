@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
 )
 
 from .database_base import Base, utcnow_tz_aware
@@ -25,6 +26,7 @@ class PullRequestCache(Base):
     - v2.0: Timezone-aware timestamps
     - v3.0: Enhanced PR tracking (review counts, approvals, file stats, revision tracking)
     - v4.0: PR state tracking (pr_state, closed_at, is_merged)
+    - v5.0: Commit count and ticket IDs (commit_count, ticket_ids) — issue #53
     """
 
     __tablename__ = "pull_request_cache"
@@ -46,6 +48,18 @@ class PullRequestCache(Base):
 
     # Associated commits
     commit_hashes = Column(JSON)  # List of commit hashes
+
+    # --- Commit count and ticket IDs (v5.0, issue #53) ---
+
+    # WHY: commit_count is derived from commit_hashes at write time so reports can
+    # filter / aggregate by PR size without parsing the JSON list on every read.
+    commit_count = Column(Integer, nullable=True)
+
+    # WHY: ticket_ids is a deduplicated JSON list of JIRA-style ticket IDs
+    # (pattern [A-Z]+-\d+) extracted from the commit messages of all commits in
+    # the PR. Storing it on the PR row avoids re-running ticket extraction at
+    # report time and gives a fast lookup path for PR ↔ ticket joins.
+    ticket_ids = Column(Text, nullable=True)  # JSON-encoded list[str]
 
     # --- PR state fields (v4.0) ---
 
