@@ -489,9 +489,9 @@ class GitHubIntegration:
 
         Fix: ``continue`` instead of ``break``, with a consecutive-miss safety valve
         (stop after ``MAX_CONSECUTIVE_MISSES`` consecutive out-of-window PRs) and an
-        absolute pagination cap (``MAX_PAGES * PAGE_SIZE``) to bound API usage on
-        repos with very long histories.  ``cache_pr()`` upsert is idempotent so
-        scanning extra pages is safe.
+        absolute pagination cap (``MAX_PRS``) to bound API usage on repos with very
+        long histories.  ``cache_pr()`` upsert is idempotent so scanning extra pages
+        is safe.
         """
         prs = []
 
@@ -500,9 +500,13 @@ class GitHubIntegration:
             since = since.replace(tzinfo=timezone.utc)
 
         # Issue #52: Safety valves to prevent both (a) missed PRs and (b) runaway API usage.
-        MAX_CONSECUTIVE_MISSES = 10  # stop after 10 consecutive out-of-window PRs
-        PAGE_SIZE = 30  # PyGitHub default page size
-        MAX_PAGES = 500  # absolute cap → 15,000 PRs
+        # 3 consecutive misses is sufficient because GitHub's updated_at sort is descending —
+        # if 3 consecutive PRs are all before the window with no in-window PR between them,
+        # the stream has almost certainly moved past the target period.
+        MAX_CONSECUTIVE_MISSES = 3  # stop after 3 consecutive out-of-window PRs
+        MAX_PRS = (
+            5_000  # absolute cap — even large monorepos rarely exceed this in a 24-week window
+        )
 
         for attempt in range(self.rate_limit_retries):
             try:
@@ -512,10 +516,8 @@ class GitHubIntegration:
                 # Get all PRs updated since the date
                 for pr in repo.get_pulls(state="all", sort="updated", direction="desc"):
                     pr_count += 1
-                    if pr_count > MAX_PAGES * PAGE_SIZE:
-                        print(
-                            f"   ⚠️  Hit max PR pagination limit ({MAX_PAGES * PAGE_SIZE} PRs), stopping"
-                        )
+                    if pr_count > MAX_PRS:
+                        print(f"   ⚠️  Hit max PR pagination limit ({MAX_PRS} PRs), stopping")
                         break
 
                     if pr.updated_at < since:

@@ -286,11 +286,16 @@ class TestGetPullRequestsPagination:
         assert 480 not in numbers
 
     def test_safety_valve_stops_after_max_consecutive_misses(self) -> None:
-        """After MAX_CONSECUTIVE_MISSES consecutive out-of-window PRs, stop."""
+        """After MAX_CONSECUTIVE_MISSES consecutive out-of-window PRs, stop.
+
+        Uses MAX_CONSECUTIVE_MISSES + 2 = 5 out-of-window PRs to trigger the
+        valve, ensuring the trap PR placed after them is never reached.
+        """
         integration = _make_integration()
         since = datetime(2025, 11, 1, tzinfo=timezone.utc)
 
-        # 1 in-window PR followed by 15 out-of-window PRs (more than MAX=10).
+        # 1 in-window PR followed by MAX_CONSECUTIVE_MISSES + 2 = 5 out-of-window
+        # PRs (enough to exceed the valve threshold of 3).
         in_window = _make_pr(
             number=1000,
             updated_at=datetime(2025, 11, 20, tzinfo=timezone.utc),
@@ -302,9 +307,9 @@ class TestGetPullRequestsPagination:
                 updated_at=datetime(2025, 10, 20, tzinfo=timezone.utc),
                 merged_at=datetime(2025, 10, 19, tzinfo=timezone.utc),
             )
-            for i in range(15)
+            for i in range(5)  # MAX_CONSECUTIVE_MISSES + 2 = 5
         ]
-        # A "trap" in-window PR placed at position 12 (beyond the safety valve).
+        # A "trap" in-window PR placed after the valve trigger zone.
         # We expect pagination to STOP before reaching it.
         trap = _make_pr(
             number=42,
@@ -329,8 +334,8 @@ class TestGetPullRequestsPagination:
     def test_consecutive_miss_counter_resets_on_in_window_pr(self) -> None:
         """A mix of in-window and out-of-window PRs resets the miss counter.
 
-        Reaches MAX-1 misses, then an in-window PR resets the counter, then
-        more out-of-window PRs should be tolerated again.
+        Reaches MAX_CONSECUTIVE_MISSES - 1 = 2 misses, then an in-window PR
+        resets the counter, then more out-of-window PRs should be tolerated again.
         """
         integration = _make_integration()
         since = datetime(2025, 11, 1, tzinfo=timezone.utc)
@@ -340,14 +345,14 @@ class TestGetPullRequestsPagination:
             updated_at=datetime(2025, 11, 25, tzinfo=timezone.utc),
             merged_at=datetime(2025, 11, 24, tzinfo=timezone.utc),
         )
-        # 9 out-of-window (one shy of the MAX=10 valve)
+        # MAX_CONSECUTIVE_MISSES - 1 = 2 out-of-window (one shy of the valve)
         misses_a = [
             _make_pr(
                 number=100 + i,
                 updated_at=datetime(2025, 10, 20, tzinfo=timezone.utc),
                 merged_at=datetime(2025, 10, 19, tzinfo=timezone.utc),
             )
-            for i in range(9)
+            for i in range(2)
         ]
         # In-window PR resets the counter
         reset = _make_pr(
@@ -355,15 +360,15 @@ class TestGetPullRequestsPagination:
             updated_at=datetime(2025, 11, 10, tzinfo=timezone.utc),
             merged_at=datetime(2025, 11, 9, tzinfo=timezone.utc),
         )
-        # 9 more out-of-window — total accumulated misses would be 18 without
-        # reset, but with reset we never hit 10 in a row.
+        # 2 more out-of-window — total accumulated misses would be 4 without
+        # reset (triggering the valve), but with reset we never hit 3 in a row.
         misses_b = [
             _make_pr(
                 number=200 + i,
                 updated_at=datetime(2025, 10, 15, tzinfo=timezone.utc),
                 merged_at=datetime(2025, 10, 14, tzinfo=timezone.utc),
             )
-            for i in range(9)
+            for i in range(2)
         ]
         # Final in-window PR proves we kept paginating after the reset.
         final = _make_pr(
