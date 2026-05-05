@@ -5,6 +5,13 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.14.24] - 2026-05-05
+### Fixed
+- #55: `--backfill-since` now applies to both commit fetching and PR fetching
+  - Previously, `--backfill-since` only backfilled commits; `pull_request_cache` remained empty for historical dates
+  - Added `--backfill-prs-since YYYY-MM-DD` flag for PR-only window override (takes priority over `--backfill-since` for the PR fetch)
+  - Adds end-to-end regression test ensuring `--backfill-since` threads through to `enrich_repository_data`
+
 ## [3.14.22] - 2026-04-29
 ### Added
 - feat: add `commit_count` and `ticket_ids` columns to `pull_request_cache` (#53)

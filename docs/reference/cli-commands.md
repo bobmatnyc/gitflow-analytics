@@ -85,6 +85,7 @@ gfa fetch -c config.yaml [OPTIONS]
 - `--output, -o PATH` - Output directory for cache (overrides config)
 - `--clear-cache` - Clear cache before fetching data
 - `--backfill-since YYYY-MM-DD` - Hydrate `pull_request_cache` from this date forward. Bypasses the incremental fetch gate so historical PRs older than the last-processed checkpoint are fetched. Idempotent — safe to re-run. Does not change default behavior (#52).
+- `--backfill-prs-since YYYY-MM-DD` - Override the PR-fetch lower bound independently of `--backfill-since`. When set, PRs are fetched back to this date; commits still use `--backfill-since`. Takes priority over `--backfill-since` for the PR window. Idempotent. (#55)
 - `--log [none|INFO|DEBUG]` - Enable logging at the specified level (default: none)
 
 **Examples**:
@@ -100,6 +101,9 @@ gfa fetch -c config.yaml --backfill-since 2025-01-01
 
 # Re-run the same backfill safely (idempotent)
 gfa fetch -c config.yaml --backfill-since 2025-01-01
+
+# Backfill PRs further back than commits
+gfa fetch -c config.yaml --backfill-since 2025-06-01 --backfill-prs-since 2025-01-01
 ```
 
 ### identities
