@@ -45,6 +45,18 @@ logger = logging.getLogger(__name__)
     ),
 )
 @click.option(
+    "--backfill-prs-since",
+    type=str,
+    default=None,
+    help=(
+        "Override the PR backfill window (YYYY-MM-DD).  When supplied, this "
+        "date controls the PR fetch lower-bound independently of "
+        "--backfill-since (which then only affects commits).  Useful when you "
+        "want to backfill PRs over a different window than commits.  If "
+        "omitted, --backfill-since (when present) is used for both."
+    ),
+)
+@click.option(
     "--log",
     type=click.Choice(["none", "INFO", "DEBUG"], case_sensitive=False),
     default="none",
@@ -62,6 +74,7 @@ def fetch(
     output: Optional[Path],
     clear_cache: bool,
     backfill_since: Optional[str],
+    backfill_prs_since: Optional[str],
     log: str,
     no_rich: bool,
 ) -> None:
@@ -128,6 +141,28 @@ def fetch(
                 err=True,
             )
             sys.exit(2)
+
+    # Validate --backfill-prs-since (issue #55).  When supplied, this is the
+    # PR-specific override that takes priority over --backfill-since for PR
+    # fetching.  When absent, --backfill-since is used for both (preserving
+    # the issue #52 behavior).
+    backfill_prs_since_dt: Optional[datetime] = None
+    if backfill_prs_since:
+        try:
+            backfill_prs_since_dt = datetime.strptime(backfill_prs_since, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc
+            )
+        except ValueError:
+            click.echo(
+                f"❌ Invalid --backfill-prs-since date '{backfill_prs_since}'. Expected YYYY-MM-DD.",
+                err=True,
+            )
+            sys.exit(2)
+
+    # Effective PR backfill date: explicit --backfill-prs-since wins, falls
+    # back to --backfill-since (issue #55: ensure --backfill-since applies to
+    # PR fetching as well as commit fetching).
+    pr_backfill_dt: Optional[datetime] = backfill_prs_since_dt or backfill_since_dt
 
     try:
         # Lazy imports
@@ -346,12 +381,20 @@ def fetch(
                         f"   ✅ {result['stats']['total_commits']} commits, {result['stats']['unique_tickets']} tickets"
                     )
 
-                # Backfill PR cache when --backfill-since is supplied.  The
-                # standalone `gfa fetch` path does not normally invoke PR
-                # enrichment (commits-only), but backfill mode explicitly
-                # hydrates pull_request_cache with historical data.
-                if backfill_since_dt is not None and getattr(repo_config, "github_repo", None):
+                # Backfill PR cache when --backfill-since (or
+                # --backfill-prs-since) is supplied.  The standalone
+                # `gfa fetch` path does not normally invoke PR enrichment
+                # (commits-only), but backfill mode explicitly hydrates
+                # pull_request_cache with historical data (issues #52, #55).
+                if pr_backfill_dt is not None and getattr(repo_config, "github_repo", None):
                     try:
+                        # Use the PR backfill window for selecting cached
+                        # commits to enrich.  When the user supplied
+                        # --backfill-prs-since this may differ from start_date
+                        # (which is the commit window).
+                        pr_window_start = (
+                            pr_backfill_dt if pr_backfill_dt < start_date else start_date
+                        )
                         with cache.get_session() as session:
                             from .models.database import CachedCommit
 
@@ -359,7 +402,7 @@ def fetch(
                                 session.query(CachedCommit)
                                 .filter(
                                     CachedCommit.repo_path == str(repo_path),
-                                    CachedCommit.timestamp >= start_date,
+                                    CachedCommit.timestamp >= pr_window_start,
                                     CachedCommit.timestamp <= end_date,
                                 )
                                 .all()
@@ -378,8 +421,8 @@ def fetch(
                         enrichment = orchestrator.enrich_repository_data(
                             repo_config,
                             commits_for_enrichment,
-                            start_date,
-                            backfill_since=backfill_since_dt,
+                            pr_window_start,
+                            backfill_since=pr_backfill_dt,
                         )
                         pr_count = len(enrichment.get("prs", []))
                         if display:
@@ -415,7 +458,7 @@ def fetch(
         # consumers (rollup tables, reports) see the newly hydrated PR rows.
         # Mirrors `gfa pr-metrics --since DATE` semantics so users don't have
         # to remember a second command (issue #52).
-        if backfill_since_dt is not None:
+        if pr_backfill_dt is not None:
             try:
                 from .cli_pr_metrics import (
                     aggregate_week,
@@ -427,7 +470,7 @@ def fetch(
                 db_path = cfg.cache.directory / "gitflow_cache.db"
                 db = Database(db_path)
                 weeks_to_roll = calculate_week_range(
-                    week=None, since=backfill_since_dt.strftime("%Y-%m-%d")
+                    week=None, since=pr_backfill_dt.strftime("%Y-%m-%d")
                 )
                 if display:
                     display.print_status(
