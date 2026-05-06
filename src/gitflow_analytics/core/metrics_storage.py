@@ -154,7 +154,9 @@ class DailyMetricsStorage:
                     if existing:
                         # Update existing record
                         self._update_metrics_record(existing, metrics)
-                        existing.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                        existing.updated_at = datetime.now(timezone.utc).replace(  # type: ignore[assignment]
+                            tzinfo=None
+                        )
                         logger.debug(
                             f"Updated existing daily metrics for {dev_id} in {project_key} on {analysis_date}"
                         )
@@ -208,7 +210,9 @@ class DailyMetricsStorage:
                         if existing:
                             # Record was created by another process, just update it
                             self._update_metrics_record(existing, metrics)
-                            existing.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                            existing.updated_at = datetime.now(timezone.utc).replace(  # type: ignore[assignment]
+                                tzinfo=None
+                            )
                             session.commit()
                             records_processed += 1
                             logger.info(

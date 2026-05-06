@@ -189,7 +189,9 @@ class BasePlatformAdapter(ABC):
             List of UnifiedSprint objects, empty if not supported.
         """
         if not self.capabilities.supports_sprints:
-            self.logger.debug(f"Sprints not supported by {self.platform_name}")
+            self.logger.debug(
+                f"Sprints not supported by {self.platform_name} (project_id={project_id})"
+            )
             return []
         raise NotImplementedError(f"get_sprints not implemented for {self.platform_name}")
 
@@ -205,7 +207,9 @@ class BasePlatformAdapter(ABC):
         Returns:
             List of UnifiedUser objects, empty by default.
         """
-        self.logger.debug(f"User enumeration not implemented for {self.platform_name}")
+        self.logger.debug(
+            f"User enumeration not implemented for {self.platform_name} (project_id={project_id})"
+        )
         return []
 
     def get_issue_comments(self, issue_key: str) -> list[dict[str, Any]]:
@@ -221,7 +225,9 @@ class BasePlatformAdapter(ABC):
             List of comment dictionaries, empty if not supported.
         """
         if not self.capabilities.supports_comments:
-            self.logger.debug(f"Comments not supported by {self.platform_name}")
+            self.logger.debug(
+                f"Comments not supported by {self.platform_name} (issue_key={issue_key})"
+            )
             return []
         raise NotImplementedError(f"get_issue_comments not implemented for {self.platform_name}")
 
@@ -238,7 +244,9 @@ class BasePlatformAdapter(ABC):
             Dictionary of custom field definitions, empty if not supported.
         """
         if not self.capabilities.supports_custom_fields:
-            self.logger.debug(f"Custom fields not supported by {self.platform_name}")
+            self.logger.debug(
+                f"Custom fields not supported by {self.platform_name} (project_id={project_id})"
+            )
             return {}
         raise NotImplementedError(f"get_custom_fields not implemented for {self.platform_name}")
 

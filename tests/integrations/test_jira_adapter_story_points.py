@@ -22,7 +22,7 @@ class _BaseFallback:
     "nothing found" branch of the real base implementation).
     """
 
-    def _extract_story_points(self, fields: dict[str, object]) -> float | None:  # noqa: ARG002
+    def _extract_story_points(self, _fields: dict[str, object]) -> float | None:
         return None
 
 

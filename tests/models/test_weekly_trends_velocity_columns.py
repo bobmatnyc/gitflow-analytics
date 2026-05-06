@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from sqlalchemy import Float, Integer, create_engine, inspect, text
 
 from gitflow_analytics.core.cache import GitAnalysisCache

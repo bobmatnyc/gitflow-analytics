@@ -9,7 +9,7 @@ JIRAAdapter via multiple inheritance.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from ..models import (
     IssueStatus,
@@ -19,11 +19,26 @@ from ..models import (
     UnifiedUser,
 )
 
+if TYPE_CHECKING:
+    from ..models import Priority
+
 logger = logging.getLogger(__name__)
 
 
 class JIRAAdapterConvertersMixin:
     """Mixin adding conversion and mapping methods to JIRAAdapter."""
+
+    # Type stubs for attributes/methods provided by the concrete JIRAAdapter
+    # class and BasePlatformAdapter base class. These declarations exist purely
+    # for static type checkers (Pyright/mypy) — at runtime, these are supplied
+    # by the surrounding multiple-inheritance hierarchy. See JIRAAdapter and
+    # BasePlatformAdapter for the actual definitions.
+    if TYPE_CHECKING:
+        platform_name: str
+        base_url: str
+
+        def _normalize_date(self, date_str: Optional[str]) -> Optional[datetime]: ...
+        def _map_priority(self, platform_priority: str) -> "Priority": ...
 
     def _convert_jira_issue(self, issue_data: dict[str, Any]) -> UnifiedIssue:
         """Convert JIRA issue data to unified issue format.
