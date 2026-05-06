@@ -70,7 +70,7 @@ class JiraTicketCache:
                     ticket_key TEXT PRIMARY KEY,
                     project_key TEXT NOT NULL,
                     ticket_data JSON NOT NULL,
-                    story_points INTEGER,
+                    story_points REAL,
                     status TEXT,
                     issue_type TEXT,
                     assignee TEXT,

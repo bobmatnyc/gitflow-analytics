@@ -230,18 +230,23 @@ class JIRAAdapterConvertersMixin:
             },
         )
 
-    def _extract_story_points(self, fields: dict[str, Any]) -> Optional[int]:
+    def _extract_story_points(self, fields: dict[str, Any]) -> Optional[float]:
         """Extract story points from JIRA custom fields.
 
         WHY: Story points can be stored in various custom fields depending
         on JIRA configuration. This method tries multiple common field IDs
         and field names to find story point values.
 
+        WHY float (issue #56): JIRA supports fractional story points
+        (e.g., modified Fibonacci scale: 0.5, 1.5, 3.5). Returning ``int``
+        truncated 3.5 → 3, losing information. Now returns ``float`` so
+        fractional values flow through reports unchanged.
+
         Args:
             fields: JIRA issue fields dictionary.
 
         Returns:
-            Story points as integer, or None if not found.
+            Story points as float, or None if not found.
         """
         # Track which fields were tried for debugging
         tried_fields = []
@@ -256,9 +261,9 @@ class JIRAAdapterConvertersMixin:
                 try:
                     if isinstance(value, (int, float)):
                         logger.debug(f"Found story points in field '{field_id}': {value}")
-                        return int(value)
+                        return float(value)
                     elif isinstance(value, str) and value.strip():
-                        points = int(float(value.strip()))
+                        points = float(value.strip())
                         logger.debug(f"Found story points in field '{field_id}': {points}")
                         return points
                 except (ValueError, TypeError) as e:

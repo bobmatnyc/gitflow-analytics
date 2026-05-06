@@ -42,7 +42,9 @@ class _DayStats(TypedDict):
     files_changed: int
     lines_added: int
     lines_deleted: int
-    story_points: int
+    # WHY float (issue #56): aggregated story points may be fractional when
+    # underlying issues use modified Fibonacci scales (e.g., 0.5, 1.5, 3.5).
+    story_points: float
     tracked_commits: int
     untracked_commits: int
     unique_tickets: set[str]
@@ -68,7 +70,7 @@ def _make_day_stats() -> _DayStats:
         files_changed=0,
         lines_added=0,
         lines_deleted=0,
-        story_points=0,
+        story_points=0.0,
         tracked_commits=0,
         untracked_commits=0,
         unique_tickets=set(),

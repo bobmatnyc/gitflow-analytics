@@ -549,7 +549,7 @@ def run_report(
                     "test_commits": 1 if c.get("commit_type") == "test" else 0,
                     "lines_added": int(c.get("lines_added") or 0),
                     "lines_deleted": int(c.get("lines_deleted") or 0),
-                    "story_points": int(c.get("story_points") or 0),
+                    "story_points": float(c.get("story_points") or 0),
                     "tracked_commits": 1 if c.get("ticket_reference") else 0,
                     "untracked_commits": 0 if c.get("ticket_reference") else 1,
                     "ai_assisted_commits": 1 if c.get("is_ai_assisted") else 0,

@@ -5,6 +5,10 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.15.0] - 2026-05-05
+### Changed
+- `UnifiedIssue.story_points` widened from `int` to `float`; JIRA adapter now preserves fractional values (e.g., 3.5 instead of 3). SQLite schema updated from INTEGER to REAL. Teams using modified Fibonacci scales will now see correct values in reports. (#56)
+
 ## [3.14.24] - 2026-05-05
 ### Fixed
 - #55: `--backfill-since` now applies to both commit fetching and PR fetching

@@ -147,7 +147,10 @@ class UnifiedIssue:
     due_date: Optional[datetime] = None
 
     # Estimation and tracking - for velocity and capacity planning
-    story_points: Optional[int] = None
+    # WHY float: JIRA and other PM tools support fractional story points
+    # (e.g., modified Fibonacci scale 0.5, 1.5, 3.5). Truncating to int
+    # loses information for teams using these scales. See issue #56.
+    story_points: Optional[float] = None
     original_estimate_hours: Optional[float] = None
     remaining_estimate_hours: Optional[float] = None
     time_spent_hours: Optional[float] = None
@@ -201,8 +204,9 @@ class UnifiedSprint:
     is_completed: bool = False
 
     # Metrics - for velocity and planning analysis
-    planned_story_points: Optional[int] = None
-    completed_story_points: Optional[int] = None
+    # WHY float: matches UnifiedIssue.story_points to support fractional values (issue #56).
+    planned_story_points: Optional[float] = None
+    completed_story_points: Optional[float] = None
 
     # Issues - for sprint content analysis
     issue_keys: list[str] = field(default_factory=list)

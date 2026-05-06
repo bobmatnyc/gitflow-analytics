@@ -330,18 +330,21 @@ class BasePlatformAdapter(ABC):
 
         return mapped_priority
 
-    def _extract_story_points(self, custom_fields: dict[str, Any]) -> Optional[int]:
+    def _extract_story_points(self, custom_fields: dict[str, Any]) -> Optional[float]:
         """Extract story points from custom fields.
 
         WHY: Story points are critical for velocity tracking but stored
         differently across platforms (custom fields, dedicated fields, etc.).
         This method attempts to find story points using common field names.
 
+        WHY float (issue #56): Some teams use fractional story points
+        (e.g., 0.5, 1.5, 3.5). Returning ``float`` preserves these values.
+
         Args:
             custom_fields: Dictionary of custom field values from the platform.
 
         Returns:
-            Story points as integer, or None if not found.
+            Story points as float, or None if not found.
         """
         if not custom_fields:
             return None
@@ -363,14 +366,13 @@ class BasePlatformAdapter(ABC):
         for field_name in story_point_fields:
             if field_name in custom_fields:
                 value = custom_fields[field_name]
+                # WHY float (issue #56): preserve fractional story points
+                # used by modified Fibonacci scales (0.5, 1.5, 3.5).
                 if isinstance(value, (int, float)):
-                    return int(value)
-                elif isinstance(value, str) and value.strip().isdigit():
-                    return int(value.strip())
-                elif isinstance(value, str):
-                    # Handle decimal story points
+                    return float(value)
+                elif isinstance(value, str) and value.strip():
                     try:
-                        return int(float(value.strip()))
+                        return float(value.strip())
                     except (ValueError, AttributeError):
                         continue
 

@@ -27,6 +27,7 @@ class PullRequestCache(Base):
     - v3.0: Enhanced PR tracking (review counts, approvals, file stats, revision tracking)
     - v4.0: PR state tracking (pr_state, closed_at, is_merged)
     - v5.0: Commit count and ticket IDs (commit_count, ticket_ids) — issue #53
+    - v6.0: story_points widened from INTEGER to REAL — issue #56
     """
 
     __tablename__ = "pull_request_cache"
@@ -43,7 +44,8 @@ class PullRequestCache(Base):
     merged_at = Column(DateTime(timezone=True), nullable=True)
 
     # Extracted data
-    story_points = Column(Integer, nullable=True)
+    # WHY Float (issue #56): support fractional story points (e.g., 0.5, 1.5, 3.5).
+    story_points = Column(Float, nullable=True)
     labels = Column(JSON)  # List of labels
 
     # Associated commits
@@ -138,7 +140,8 @@ class IssueCache(Base):
     resolved_at = Column(DateTime(timezone=True), nullable=True)
 
     # Extracted data
-    story_points = Column(Integer, nullable=True)
+    # WHY Float (issue #56): support fractional story points from JIRA.
+    story_points = Column(Float, nullable=True)
     labels = Column(JSON)
 
     # Platform-specific data

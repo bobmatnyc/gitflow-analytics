@@ -665,6 +665,14 @@ class Database:
                 # at report time.  Migration is additive and idempotent.
                 self._migrate_pull_request_cache_v5(conn)
 
+                # --- story_points widened to REAL (issue #56) ---
+                # WHY: SQLite uses dynamic type affinity, so existing INTEGER
+                # columns will transparently accept REAL values for new writes
+                # without requiring an ALTER TABLE.  This migration is a no-op
+                # at the SQL level — it exists to log the schema bump so
+                # operators can confirm the change took effect.
+                self._migrate_story_points_to_real_v12(conn)  # type: ignore[attr-defined]
+
                 # --- developer_identities NULL back-fill (issue #39) ---
                 # WHY: Older databases created before total_commits /
                 # total_story_points had a server-side DEFAULT may contain NULL
@@ -1203,6 +1211,41 @@ class Database:
                 "Applied pull_request_cache v5.0 migration: added columns %s",
                 ", ".join(added),
             )
+
+    def _migrate_story_points_to_real_v12(self, conn) -> None:
+        """Document the story_points type widening from INTEGER to REAL (issue #56).
+
+        WHY: SQLite uses dynamic type affinity rather than strict typing — a
+        column declared INTEGER will still accept and store REAL values
+        verbatim when SQLAlchemy writes a Python ``float``.  As a result, no
+        destructive ALTER TABLE / table-rebuild is needed for existing
+        databases; the SQLAlchemy model definitions (now ``Float``) drive new
+        writes, and existing integer values continue to read back correctly.
+
+        This migration is intentionally a no-op at the SQL level — it exists
+        only to log the schema bump so operators can confirm in their logs
+        that they are running a build that supports fractional story points.
+
+        Affected columns (for reference):
+            cached_commits.story_points         (was INTEGER, now REAL)
+            qualitative_commits.story_points    (was INTEGER, now REAL)
+            daily_metrics.story_points          (was INTEGER, now REAL)
+            weekly_trends.story_points_delivered (was INTEGER, now REAL)
+            pull_request_cache.story_points     (was INTEGER, now REAL)
+            issue_cache.story_points            (was INTEGER, now REAL)
+
+        Args:
+            conn: Active SQLAlchemy connection (unused — kept for signature
+                consistency with sibling migration helpers).
+        """
+        # SQLite type-affinity means no DDL is needed.  Just log so the bump
+        # is traceable via normal log inspection.
+        logger.debug(
+            "Applied story_points v12.0 migration (issue #56): "
+            "INTEGER → REAL via SQLite dynamic typing (no DDL needed)"
+        )
+        # Mark conn as intentionally unused without raising.
+        _ = conn
 
     def _migrate_developer_identities_null_stats(self, conn) -> None:
         """Back-fill NULL total_commits / total_story_points on developer_identities.

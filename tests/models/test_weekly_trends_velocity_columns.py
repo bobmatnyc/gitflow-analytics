@@ -33,8 +33,15 @@ VELOCITY_COLUMNS = [
     "story_points_delivered",
 ]
 
-INTEGER_VELOCITY_COLUMNS = {"prs_merged", "story_points_delivered"}
-FLOAT_VELOCITY_COLUMNS = {"avg_cycle_time_hrs", "median_cycle_time_hrs", "avg_revision_count"}
+# NOTE: story_points_delivered was widened from Integer to Float in v12.0
+# (issue #56) so fractional story points (e.g., 3.5) survive aggregation.
+INTEGER_VELOCITY_COLUMNS = {"prs_merged"}
+FLOAT_VELOCITY_COLUMNS = {
+    "avg_cycle_time_hrs",
+    "median_cycle_time_hrs",
+    "avg_revision_count",
+    "story_points_delivered",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -94,25 +101,25 @@ class TestWeeklyTrendsVelocityColumnsOnModel:
         mapper = inspect(WeeklyTrends)
         column_names = {col.key for col in mapper.columns}
         for col in VELOCITY_COLUMNS:
-            assert col in column_names, (
-                f"Expected column '{col}' on WeeklyTrends. Check models/database_commit_models.py."
-            )
+            assert (
+                col in column_names
+            ), f"Expected column '{col}' on WeeklyTrends. Check models/database_commit_models.py."
 
     def test_integer_columns_have_integer_type(self) -> None:
         mapper = inspect(WeeklyTrends)
         for col_name in INTEGER_VELOCITY_COLUMNS:
             col = mapper.columns[col_name]
-            assert isinstance(col.type, Integer), (
-                f"Column '{col_name}' should be Integer but is {type(col.type).__name__}"
-            )
+            assert isinstance(
+                col.type, Integer
+            ), f"Column '{col_name}' should be Integer but is {type(col.type).__name__}"
 
     def test_float_columns_have_float_type(self) -> None:
         mapper = inspect(WeeklyTrends)
         for col_name in FLOAT_VELOCITY_COLUMNS:
             col = mapper.columns[col_name]
-            assert isinstance(col.type, Float), (
-                f"Column '{col_name}' should be Float but is {type(col.type).__name__}"
-            )
+            assert isinstance(
+                col.type, Float
+            ), f"Column '{col_name}' should be Float but is {type(col.type).__name__}"
 
     def test_pre_existing_columns_still_present(self) -> None:
         """Velocity additions must not remove any pre-existing WeeklyTrends columns."""
@@ -167,9 +174,9 @@ class TestMigrationAddsVelocityColumns:
             actual_columns = {row[1] for row in result}
 
         for col in VELOCITY_COLUMNS:
-            assert col in actual_columns, (
-                f"v8.0 migration failed to add column '{col}' to legacy weekly_trends"
-            )
+            assert (
+                col in actual_columns
+            ), f"v8.0 migration failed to add column '{col}' to legacy weekly_trends"
 
     def test_migration_preserves_existing_rows(self, tmp_path: Path) -> None:
         """Existing weekly_trends rows must survive the v8.0 migration."""

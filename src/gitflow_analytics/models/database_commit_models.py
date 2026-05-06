@@ -47,7 +47,9 @@ class CachedCommit(Base):
     complexity_delta = Column(Float)
 
     # Extracted data
-    story_points = Column(Integer, nullable=True)
+    # WHY Float (issue #56): supports fractional story points (e.g., 0.5, 1.5, 3.5)
+    # used by modified Fibonacci scales. SQLite stores as REAL.
+    story_points = Column(Float, nullable=True)
     ticket_references = Column(JSON)  # List of ticket IDs
 
     # AI detection (v9.0)
@@ -217,7 +219,8 @@ class DetailedTicketData(Base):
     resolved_at = Column(DateTime(timezone=True), nullable=True)
 
     # Metrics for classification context
-    story_points = Column(Integer, nullable=True)
+    # WHY Float (issue #56): preserve fractional story points from JIRA.
+    story_points = Column(Float, nullable=True)
     original_estimate = Column(String, nullable=True)  # Time estimate
     time_spent = Column(String, nullable=True)
 
@@ -388,7 +391,9 @@ class DailyMetrics(Base):
     files_changed = Column(Integer, default=0)
     lines_added = Column(Integer, default=0)
     lines_deleted = Column(Integer, default=0)
-    story_points = Column(Integer, default=0)
+    # WHY Float (issue #56): aggregated story points may be fractional when
+    # underlying issues use modified Fibonacci scales (0.5, 1.5, 3.5).
+    story_points = Column(Float, default=0.0)
 
     # Ticket tracking metrics
     tracked_commits = Column(Integer, default=0)  # Commits with ticket references
@@ -466,7 +471,8 @@ class WeeklyTrends(Base):
     avg_cycle_time_hrs = Column(Float, default=0.0)
     median_cycle_time_hrs = Column(Float, default=0.0)
     avg_revision_count = Column(Float, default=0.0)
-    story_points_delivered = Column(Integer, default=0)
+    # WHY Float (issue #56): underlying PR story_points may be fractional.
+    story_points_delivered = Column(Float, default=0.0)
 
     # Metadata
     calculated_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
