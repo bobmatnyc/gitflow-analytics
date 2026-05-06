@@ -95,6 +95,19 @@ class SchemaVersionManager:
             "version": "1.0",
             "fields": ["story_point_fields", "project_keys", "base_url", "issue_data"],
         },
+        # Azure DevOps schema fingerprint (Phase 1 stub; the adapter has no
+        # cached data yet, but the registry must accept the platform key so
+        # ``has_schema_changed("azure_devops")`` does not raise).
+        "azure_devops": {
+            "version": "1.0",
+            "fields": [
+                "story_point_fields",
+                "organization_url",
+                "project",
+                "work_item_types",
+                "issue_data",
+            ],
+        },
     }
 
     def __init__(self, cache_dir: Path):

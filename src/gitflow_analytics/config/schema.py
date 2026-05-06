@@ -387,6 +387,10 @@ class TicketDetectionConfig:
         default_factory=lambda: {
             "jira": r"([A-Z]{2,10}-\d+)",
             "github": r"(?:closes|fixes|resolves)\s+#(\d+)",
+            # Azure DevOps "AB#" prefix is the only cross-platform-safe form.
+            # Bare ``#1234`` collides with GitHub PR/issue refs and is opt-in
+            # per ADO config (``ticket_regex_override``). See ADR decision 3.
+            "azure_devops": r"AB#(\d+)",
         }
     )
 
@@ -479,6 +483,89 @@ class JIRAConfig:
     access_user: str
     access_token: str
     base_url: Optional[str] = None
+
+
+@dataclass
+class AzureDevOpsConfig:
+    """Azure DevOps PM platform configuration.
+
+    Phase 1 schema for the Azure DevOps integration. Real network behaviour
+    arrives in Phases 2–5; this dataclass exists so the loader can validate
+    YAML, the orchestrator can register the adapter, and downstream code
+    can branch on ``Config.pm.azure_devops`` being non-None. Per plan §3.3,
+    the only canonical home for ADO config is ``pm.azure_devops`` — there
+    is no top-level ``azure_devops:`` block.
+
+    Attributes:
+        enabled: Whether the adapter is active for this run.
+        organization_url: Cloud-only Azure DevOps organization URL. Must
+            match ``https://dev.azure.com/{org}`` or
+            ``https://{org}.visualstudio.com``. On-premises (TFS / ADO
+            Server) URLs are rejected at config-load time per ADR
+            decision 2.
+        personal_access_token: PAT resolved from ``${AZURE_DEVOPS_PAT}``.
+        project: Optional default project name; multi-project support
+            arrives in a later phase.
+        work_item_types: Optional allowlist of work-item type names to
+            collect. ``None`` means the canonical six (User Story, Bug,
+            Task, Feature, Epic, Issue).
+        area_paths: Iteration / area-path filters joined with OR.
+        story_point_fields: Reference names tried in order when extracting
+            story points (Agile / Scrum / CMMI).
+        custom_fields: Map of friendly-name to ADO reference-name for
+            user-defined custom fields.
+        api_version: ADO REST API version to target.
+        batch_size: Maximum work-items per batch fetch (ADO hard cap 200).
+        rate_limit_delay: Seconds to sleep between API calls to stay under
+            ADO's TSTU rate budget.
+        verify_ssl: Whether to verify TLS certificates.
+        cache_ttl_hours: TTL for the ADO ticket cache (Phase 3).
+        dns_timeout: DNS resolution timeout in seconds.
+        connection_timeout: HTTP connection timeout in seconds.
+        max_retries: Retry count for transient HTTP failures.
+        backoff_factor: ``urllib3.Retry`` backoff factor.
+        state_category_overrides: ADO state name → ``StateCategory`` map
+            for inherited custom processes.
+        work_item_type_overrides: Custom work-item-type → unified
+            ``IssueType`` map for inherited templates.
+        is_on_premise: Reserved forward-compatibility marker. v1 rejects
+            ``True`` at config load time per ADR decision 2; v1.2 will
+            flip the rejection to a feature-gated implementation.
+
+    Note:
+        A ``ticket_regex_override`` field intentionally does not exist in
+        Phase 1. The default ``r"AB#(\\d+)"`` pattern is registered in
+        :class:`TicketDetectionConfig` defaults. Per-config override will
+        be added in Phase 6 when the override is actually wired into the
+        ticket extractor pipeline.
+    """
+
+    enabled: bool = True
+    organization_url: str = ""
+    personal_access_token: str = ""
+    project: Optional[str] = None
+    work_item_types: Optional[list[str]] = None
+    area_paths: list[str] = field(default_factory=list)
+    story_point_fields: list[str] = field(
+        default_factory=lambda: [
+            "Microsoft.VSTS.Scheduling.StoryPoints",
+            "Microsoft.VSTS.Scheduling.Effort",
+            "Microsoft.VSTS.Scheduling.Size",
+        ]
+    )
+    custom_fields: dict[str, str] = field(default_factory=dict)
+    api_version: str = "7.1"
+    batch_size: int = 200
+    rate_limit_delay: float = 0.2
+    verify_ssl: bool = True
+    cache_ttl_hours: int = 168
+    dns_timeout: int = 10
+    connection_timeout: int = 30
+    max_retries: int = 3
+    backoff_factor: float = 1.0
+    state_category_overrides: dict[str, str] = field(default_factory=dict)
+    work_item_type_overrides: dict[str, str] = field(default_factory=dict)
+    is_on_premise: bool = False
 
 
 @dataclass
@@ -704,6 +791,10 @@ class Config:
     cache: CacheConfig
     jira: Optional[JIRAConfig] = None
     jira_integration: Optional[JIRAIntegrationConfig] = None
+    # Note: there is no top-level ``Config.azure_devops`` field. Per plan
+    # §3.3, ADO configuration lives only at ``Config.pm.azure_devops``.
+    # JIRA's dual-stack (``Config.jira`` + ``Config.pm.jira``) is the
+    # mistake we are not repeating.
     pm: Optional[Any] = None  # Modern PM framework config
     pm_integration: Optional[PMIntegrationConfig] = None
     qualitative: Optional["QualitativeConfig"] = None
@@ -799,6 +890,8 @@ class Config:
                 platforms.append("linear")
             if hasattr(self.pm, "clickup") and self.pm.clickup:
                 platforms.append("clickup")
+            if hasattr(self.pm, "azure_devops") and self.pm.azure_devops:
+                platforms.append("azure_devops")
 
         # Check legacy JIRA config
         if (self.jira or self.jira_integration) and "jira" not in platforms:
@@ -808,7 +901,12 @@ class Config:
         if self.github.token:
             platforms.append("github")
 
-        # If nothing configured, fall back to common platforms
+        # If nothing configured, fall back to common platforms.
+        # Note: ``azure_devops`` is intentionally NOT in this fallback list.
+        # Adding it would silently turn ``AB#NNN`` references in commit
+        # messages into ADO-tagged tickets for users who never configured
+        # ADO. The fallback only includes platforms whose regexes are
+        # safe to apply universally.
         if not platforms:
             platforms = ["jira", "github", "clickup", "linear"]
 

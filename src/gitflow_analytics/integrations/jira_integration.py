@@ -15,7 +15,17 @@ from ..core.cache import GitAnalysisCache
 
 
 class JIRAIntegration:
-    """Integrate with JIRA API for ticket and story point data."""
+    """Integrate with JIRA API for ticket and story point data.
+
+    The ``platform_name`` class attribute tags every cache row and ticket
+    correlation produced through this integration. It is the canonical
+    contract that ``data_fetcher.py`` reads via ``getattr(integration,
+    "platform_name", ...)`` to derive the platform tag for non-JIRA
+    integrations as well. Any future ``*Integration`` class must declare
+    its own ``platform_name`` to participate in the per-platform routing.
+    """
+
+    platform_name: str = "jira"
 
     def __init__(
         self,

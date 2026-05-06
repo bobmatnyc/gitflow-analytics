@@ -13,10 +13,11 @@ from typing import Any, Optional
 
 import click
 
-from .errors import EnvironmentVariableError
+from .errors import ConfigurationError, EnvironmentVariableError
 from .schema import (
     ActivityScoringConfig,
     AIDetectionConfig,
+    AzureDevOpsConfig,
     BoilerplateFilterConfig,
     CacheConfig,
     Config,
@@ -35,6 +36,17 @@ from .schema import (
     VelocityConfig,
 )
 from .validator import ConfigValidator
+
+# ADR Decision 2: Azure DevOps Server (on-premises) is rejected at config-load
+# time in v1. The validator below performs the URL allowlist check; the
+# message is reproduced verbatim from docs/design/azure-devops-decisions.md.
+_AZURE_DEVOPS_ONPREM_REJECTION_MESSAGE = (
+    "Azure DevOps Server (on-premises) is not supported in v1.\n"
+    "Only Azure DevOps Services (cloud) is supported. Configure\n"
+    "either https://dev.azure.com/{org} or https://{org}.visualstudio.com.\n"
+    "On-premises support is roadmapped for v1.2; see\n"
+    "docs/design/azure-devops-integration-plan.md §8."
+)
 
 # Regex for embedded env-var references in config strings.
 # Matches both ``${VAR}`` and ``$VAR`` (latter only for ASCII identifiers).
@@ -513,14 +525,17 @@ class ConfigLoaderSectionsMixin:
         return TeamsConfig(teams=teams, enabled=enabled)
 
     @classmethod
-    def _process_pm_config(cls, pm_data: dict[str, Any]) -> Optional[Any]:
+    def _process_pm_config(
+        cls, pm_data: dict[str, Any], config_path: Optional[Path] = None
+    ) -> Optional[Any]:
         """Process PM configuration section.
 
         Args:
-            pm_data: PM configuration data
+            pm_data: PM configuration data.
+            config_path: Path to the config file, used in error messages.
 
         Returns:
-            PM configuration object or None
+            PM configuration object or None.
         """
         if not pm_data:
             return None
@@ -546,7 +561,157 @@ class ConfigLoaderSectionsMixin:
             )()
             pm_config.jira = jira_sub_config  # type: ignore[misc]
 
+        # Parse Azure DevOps section within PM (Phase 1 — config + validation only)
+        if "azure_devops" in pm_data:
+            ado_sub_config = cls._process_azure_devops_pm_config(
+                pm_data["azure_devops"], config_path
+            )
+            pm_config.azure_devops = ado_sub_config  # type: ignore[misc]
+
         return pm_config
+
+    @classmethod
+    def _process_azure_devops_pm_config(
+        cls,
+        ado_data: dict[str, Any],
+        config_path: Optional[Path] = None,
+    ) -> AzureDevOpsConfig:
+        """Process the ``pm.azure_devops`` configuration block.
+
+        Resolves environment variables, validates the organization URL
+        against the cloud-host allowlist (ADR decision 2), and constructs
+        the :class:`AzureDevOpsConfig` dataclass.
+
+        Args:
+            ado_data: Raw mapping from the ``pm.azure_devops`` YAML block.
+            config_path: Path to the config file, used to enrich loader
+                errors with a file location.
+
+        Returns:
+            Populated :class:`AzureDevOpsConfig` instance.
+
+        Raises:
+            EnvironmentVariableError: If ``personal_access_token`` references
+                an unset environment variable (typically
+                ``${AZURE_DEVOPS_PAT}``).
+            ConfigurationError: If ``organization_url`` matches the
+                on-premises pattern or ``is_on_premise`` is ``True``.
+        """
+        # Resolve credentials. The PAT must come from an environment variable
+        # in normal operation; raise a friendly error if it is missing.
+        raw_pat = ado_data.get("personal_access_token", "")
+        resolved_pat = cls._resolve_env_var(raw_pat) if raw_pat else ""
+        if raw_pat and not resolved_pat:
+            # Identify the env var name from the original string when present.
+            # NOTE: Do NOT collapse the if/else into a ternary — the previous
+            # form ``env_match.group(1) or env_match.group(2) if env_match else ...``
+            # had an operator-precedence bug (parsed as ``group(1) or (group(2)
+            # if env_match else default)`` which raises ``AttributeError`` when
+            # ``env_match is None``). Keep the explicit if/else.
+            env_match = _ENV_VAR_PATTERN.search(raw_pat)
+            if env_match:  # noqa: SIM108 — see comment above
+                env_var = env_match.group(1) or env_match.group(2)
+            else:
+                env_var = "AZURE_DEVOPS_PAT"
+            raise EnvironmentVariableError(env_var, "AzureDevOps", config_path)
+        # Reject empty / whitespace-only PATs (silent-empty trap). An
+        # ``AZURE_DEVOPS_PAT=""`` env var resolves to an empty string but
+        # ``raw_pat`` is truthy (the literal ``"${AZURE_DEVOPS_PAT}"``), so
+        # the env-var error above would not fire. Catch it explicitly here.
+        if not resolved_pat or not resolved_pat.strip():
+            raise EnvironmentVariableError("AZURE_DEVOPS_PAT", "AzureDevOps", config_path)
+
+        organization_url = cls._resolve_env_var(ado_data.get("organization_url", "")) or ""
+        is_on_premise = bool(ado_data.get("is_on_premise", False))
+
+        cls._validate_azure_devops_url(organization_url, is_on_premise, config_path)
+
+        return AzureDevOpsConfig(
+            enabled=bool(ado_data.get("enabled", True)),
+            organization_url=organization_url,
+            personal_access_token=resolved_pat or "",
+            project=cls._resolve_env_var(ado_data.get("project")),
+            work_item_types=ado_data.get("work_item_types"),
+            area_paths=list(ado_data.get("area_paths", []) or []),
+            story_point_fields=list(
+                ado_data.get(
+                    "story_point_fields",
+                    [
+                        "Microsoft.VSTS.Scheduling.StoryPoints",
+                        "Microsoft.VSTS.Scheduling.Effort",
+                        "Microsoft.VSTS.Scheduling.Size",
+                    ],
+                )
+            ),
+            custom_fields=dict(ado_data.get("custom_fields", {}) or {}),
+            api_version=str(ado_data.get("api_version", "7.1")),
+            batch_size=int(ado_data.get("batch_size", 200)),
+            rate_limit_delay=float(ado_data.get("rate_limit_delay", 0.2)),
+            verify_ssl=bool(ado_data.get("verify_ssl", True)),
+            cache_ttl_hours=int(ado_data.get("cache_ttl_hours", 168)),
+            dns_timeout=int(ado_data.get("dns_timeout", 10)),
+            connection_timeout=int(ado_data.get("connection_timeout", 30)),
+            max_retries=int(ado_data.get("max_retries", 3)),
+            backoff_factor=float(ado_data.get("backoff_factor", 1.0)),
+            state_category_overrides=dict(ado_data.get("state_category_overrides", {}) or {}),
+            work_item_type_overrides=dict(ado_data.get("work_item_type_overrides", {}) or {}),
+            is_on_premise=is_on_premise,
+        )
+
+    @staticmethod
+    def _validate_azure_devops_url(
+        organization_url: str,
+        is_on_premise: bool,
+        config_path: Optional[Path] = None,
+    ) -> None:
+        """Validate an Azure DevOps organization URL against the cloud allowlist.
+
+        Implements ADR decision 2: v1 supports only Azure DevOps Services
+        (cloud). On-premises (TFS / ADO Server) URLs and the
+        ``is_on_premise=True`` opt-in marker are both rejected with a
+        verbatim error message.
+
+        Args:
+            organization_url: Resolved URL string from the config.
+            is_on_premise: The ``is_on_premise`` flag from the config.
+            config_path: Optional config-file path included in the raised
+                :class:`ConfigurationError`.
+
+        Raises:
+            ConfigurationError: If the URL is missing, fails the cloud-host
+                allowlist, or ``is_on_premise`` is ``True``.
+        """
+        if is_on_premise:
+            raise ConfigurationError(_AZURE_DEVOPS_ONPREM_REJECTION_MESSAGE, config_path)
+
+        if not organization_url:
+            raise ConfigurationError(
+                "Azure DevOps configuration requires 'organization_url'.",
+                config_path,
+                suggestion=(
+                    "Set organization_url to your cloud Azure DevOps URL,\n"
+                    "for example https://dev.azure.com/myorg."
+                ),
+            )
+
+        # Quick on-prem fingerprints: TFS collection URLs and the explicit
+        # ``DefaultCollection`` segment are unambiguous markers.
+        lowered = organization_url.lower()
+        if "/tfs/" in lowered or "/defaultcollection" in lowered:
+            raise ConfigurationError(_AZURE_DEVOPS_ONPREM_REJECTION_MESSAGE, config_path)
+
+        # Parse the URL and check the host against the cloud allowlist.
+        from urllib.parse import urlparse
+
+        parsed = urlparse(organization_url)
+        host = (parsed.hostname or "").lower()
+        if not host:
+            raise ConfigurationError(_AZURE_DEVOPS_ONPREM_REJECTION_MESSAGE, config_path)
+
+        is_dev_azure = host == "dev.azure.com"
+        is_visualstudio = host.endswith(".visualstudio.com")
+        if not (is_dev_azure or is_visualstudio):
+            raise ConfigurationError(_AZURE_DEVOPS_ONPREM_REJECTION_MESSAGE, config_path)
 
     @classmethod
     def _process_pm_integration_config(
@@ -688,9 +853,7 @@ class ConfigLoaderSectionsMixin:
                     (
                         cls._resolve_env_var(item)
                         if isinstance(item, str)
-                        else cls._resolve_config_dict(item)
-                        if isinstance(item, dict)
-                        else item
+                        else cls._resolve_config_dict(item) if isinstance(item, dict) else item
                     )
                     for item in value
                 ]

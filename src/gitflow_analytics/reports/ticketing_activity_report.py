@@ -33,6 +33,13 @@ class TicketingActivityReport:
         "jira_issues_opened": 1.5,
         "jira_issues_closed": 2.0,
         "jira_comments_posted": 0.5,
+        # Azure DevOps weights mirror JIRA's. The adapter does not yet emit
+        # ticketing-cache rows (Phase 3+); registering the keys now keeps the
+        # combined summary forward-compatible without changing existing
+        # behaviour for JIRA-only deployments.
+        "azure_devops_issues_opened": 1.5,
+        "azure_devops_issues_closed": 2.0,
+        "azure_devops_comments_posted": 0.5,
     }
 
     def __init__(
