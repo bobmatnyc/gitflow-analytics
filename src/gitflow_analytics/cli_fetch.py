@@ -209,9 +209,11 @@ def fetch(
 
         # Initialize integrations for ticket fetching
         orchestrator = IntegrationOrchestrator(cfg, cache)
-        # Narrow the integration union type to JIRAIntegration | None for type safety
+        # Generic PM integration handle. Today only JIRA is wired into the
+        # legacy enrichment path; new platforms (Azure DevOps, …) plug in here
+        # via the same orchestrator.integrations map.
         _raw_jira = orchestrator.integrations.get("jira")
-        jira_integration = _raw_jira if isinstance(_raw_jira, JIRAIntegration) else None
+        pm_integration = _raw_jira if isinstance(_raw_jira, JIRAIntegration) else None
 
         # Discovery organization repositories if needed
         repositories_to_fetch = cfg.repositories
@@ -356,7 +358,7 @@ def fetch(
                     project_key=project_key,
                     weeks_back=weeks,
                     branch_patterns=branch_patterns,
-                    jira_integration=jira_integration,
+                    pm_integration=pm_integration,
                     progress_callback=progress_callback,
                     start_date=start_date,
                     end_date=end_date,

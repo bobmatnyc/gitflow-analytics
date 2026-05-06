@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -280,20 +280,20 @@ def fetch_repositories_batch(
     data_fetcher = GitDataFetcher(
         cache=cache,
         branch_mapping_rules=getattr(cfg.analysis, "branch_mapping_rules", {}),
-        allowed_ticket_platforms=getattr(
-            cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]
-        ),
+        allowed_ticket_platforms=cfg.get_effective_ticket_platforms(),
         exclude_paths=getattr(cfg.analysis, "exclude_paths", None),
         exclude_merge_commits=cfg.analysis.exclude_merge_commits,
         ticket_detection_config=getattr(cfg.analysis, "ticket_detection", None),
     )
 
     orchestrator = IntegrationOrchestrator(cfg, cache)
-    # Narrow union dict value to JIRAIntegration | None for downstream callers.
+    # Resolve a PM integration object for ticket enrichment. Today the legacy
+    # path only wires up JIRA; new platforms (Azure DevOps, …) plug in here
+    # via the same orchestrator.integrations map without further changes.
     from ..integrations.jira_integration import JIRAIntegration
 
     _jira_candidate = orchestrator.integrations.get("jira")
-    jira_integration: JIRAIntegration | None = (
+    pm_integration: Optional[Any] = (
         _jira_candidate if isinstance(_jira_candidate, JIRAIntegration) else None
     )
 
@@ -357,7 +357,7 @@ def fetch_repositories_batch(
                 project_key=project_key,
                 weeks_back=weeks,
                 branch_patterns=branch_patterns,
-                jira_integration=jira_integration,
+                pm_integration=pm_integration,
                 progress_callback=progress_callback,
                 start_date=start_date,
                 end_date=end_date,

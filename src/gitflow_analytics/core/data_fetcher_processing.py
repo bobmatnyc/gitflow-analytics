@@ -167,20 +167,41 @@ class ProcessingMixin:
     def _fetch_detailed_tickets(
         self,
         ticket_ids: set[str],
-        jira_integration: JIRAIntegration,
+        jira_integration: Any,
         project_key: str,
         progress_callback: Optional[callable] = None,
+        platform: str = "jira",
     ) -> None:
-        """Fetch detailed ticket information and store in database."""
+        """Fetch detailed ticket information and store in database.
+
+        Args:
+            ticket_ids: Set of ticket IDs to fetch.
+            jira_integration: Integration object that exposes ``get_issue``.
+                The parameter name is kept for backwards compatibility, but any
+                integration with a compatible interface (and a ``platform_name``
+                attribute) may be passed.
+            project_key: Project identifier used for record scoping.
+            progress_callback: Optional callable invoked after each ticket fetch.
+            platform: Platform tag stored on the resulting ticket records.
+                Defaults to ``"jira"`` for backwards compatibility; callers
+                that pass a non-JIRA integration should pass the platform
+                name explicitly. When the integration object exposes a
+                ``platform_name`` attribute it overrides this default.
+        """
         session = self.database.get_session()
 
+        # Prefer the integration-declared platform when available so that
+        # PM-framework adapters (JIRA, Azure DevOps, …) tag rows correctly
+        # without requiring callers to pass the platform explicitly.
+        effective_platform = getattr(jira_integration, "platform_name", None) or platform
+
         try:
-            # Check which tickets we already have
+            # Check which tickets we already have for this platform
             existing_tickets = (
                 session.query(DetailedTicketData)
                 .filter(
                     DetailedTicketData.ticket_id.in_(ticket_ids),
-                    DetailedTicketData.platform == "jira",
+                    DetailedTicketData.platform == effective_platform,
                 )
                 .all()
             )
@@ -209,13 +230,13 @@ class ProcessingMixin:
 
                     for ticket_id in batch:
                         try:
-                            # Fetch ticket from JIRA
+                            # Fetch ticket from the configured integration
                             issue_data = jira_integration.get_issue(ticket_id)
 
                             if issue_data:
                                 # Create detailed ticket record
                                 detailed_ticket = self._create_detailed_ticket_record(
-                                    issue_data, project_key, "jira"
+                                    issue_data, project_key, effective_platform
                                 )
                                 session.add(detailed_ticket)
 
@@ -285,13 +306,24 @@ class ProcessingMixin:
         )
 
     def _build_commit_ticket_correlations(
-        self, daily_commits: dict[str, Any], repo_path: Path
+        self,
+        daily_commits: dict[str, Any],
+        repo_path: Path,
+        platform: str = "jira",
     ) -> int:
         """Build and store commit-ticket correlations.
 
         BUG 3 FIX: Accepts the lightweight summary-dict format returned by
         _fetch_commits_by_day (each day entry has a "commit_ticket_pairs" list)
         as well as the legacy full-list format for backward compatibility.
+
+        Args:
+            daily_commits: Day-keyed mapping of commits/summaries.
+            repo_path: Repository path used for correlation scoping.
+            platform: Platform tag stored on each correlation record.
+                Defaults to ``"jira"`` for backwards compatibility. Callers
+                that drive enrichment through a non-JIRA integration should
+                pass the platform name explicitly.
         """
         session = self.database.get_session()
         correlations_created = 0
@@ -320,12 +352,14 @@ class ProcessingMixin:
 
                     for ticket_id in ticket_refs:
                         try:
-                            # Create correlation record
+                            # Create correlation record. The platform tag comes
+                            # from the parameter so non-JIRA enrichment paths
+                            # (e.g. Azure DevOps) record the correct platform.
                             correlation = CommitTicketCorrelation(
                                 commit_hash=commit_hash,
                                 repo_path=str(repo_path),
                                 ticket_id=ticket_id,
-                                platform="jira",  # Assuming JIRA for now
+                                platform=platform,
                                 project_key=commit["project_key"],
                                 correlation_type="direct",
                                 confidence=1.0,
@@ -333,14 +367,14 @@ class ProcessingMixin:
                                 matching_pattern=None,  # Could add pattern detection
                             )
 
-                            # Check if correlation already exists
+                            # Check if correlation already exists for this platform
                             existing = (
                                 session.query(CommitTicketCorrelation)
                                 .filter(
                                     CommitTicketCorrelation.commit_hash == commit_hash,
                                     CommitTicketCorrelation.repo_path == str(repo_path),
                                     CommitTicketCorrelation.ticket_id == ticket_id,
-                                    CommitTicketCorrelation.platform == "jira",
+                                    CommitTicketCorrelation.platform == platform,
                                 )
                                 .first()
                             )

@@ -40,7 +40,9 @@ class ActivityScorer:
     PR_BASE_SCORE = 50  # Each PR worth base 50 points (5x commit)
     OPTIMAL_PR_SIZE = 200  # Research shows PRs under 200 lines are optimal
 
-    # Per-event ticketing weights (same scale as TicketingActivityReport)
+    # Per-event ticketing weights (same scale as TicketingActivityReport).
+    # Azure DevOps weights mirror JIRA's so existing downstream consumers
+    # treat ADO events with parity once Phase 3+ starts emitting them.
     TICKETING_EVENT_WEIGHTS = {
         "issues_opened": 1.0,
         "issues_closed": 1.0,
@@ -50,6 +52,9 @@ class ActivityScorer:
         "jira_issues_opened": 1.5,
         "jira_issues_closed": 2.0,
         "jira_comments_posted": 0.5,
+        "azure_devops_issues_opened": 1.5,
+        "azure_devops_issues_closed": 2.0,
+        "azure_devops_comments_posted": 0.5,
     }
 
     def __init__(
@@ -211,6 +216,17 @@ class ActivityScorer:
                 return "jira_issues_closed"
             if item_type == "comment":
                 return "jira_comments_posted"
+        elif platform == "azure_devops":
+            # Azure DevOps activity events are not yet emitted by any
+            # integration (Phase 3+). The branch is registered now so the
+            # downstream scoring map accepts the platform once the adapter
+            # starts populating ``ticketing_activity_cache`` rows.
+            if item_type == "issue_created":
+                return "azure_devops_issues_opened"
+            if item_type == "issue_closed":
+                return "azure_devops_issues_closed"
+            if item_type == "comment":
+                return "azure_devops_comments_posted"
         return None
 
     def get_ticketing_score(self, developer_id: Optional[str]) -> float:

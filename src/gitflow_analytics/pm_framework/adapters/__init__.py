@@ -26,16 +26,17 @@ platform adapters without modifying core framework code.
 """
 
 # Import available adapters
+from .azure_devops_adapter import AzureDevOpsAdapter
 from .jira_adapter import JIRAAdapter
 
 # Placeholder for future adapter imports
-# from .azure_devops_adapter import AzureDevOpsAdapter
 # from .linear_adapter import LinearAdapter
 # from .asana_adapter import AsanaAdapter
 # from .github_issues_adapter import GitHubIssuesAdapter
 # from .clickup_adapter import ClickUpAdapter
 
 __all__: list[str] = [
+    "AzureDevOpsAdapter",
     "JIRAAdapter",
     # Platform adapters will be added here as they are implemented
 ]

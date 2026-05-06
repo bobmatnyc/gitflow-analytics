@@ -304,8 +304,41 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             qualitative_data = data["analysis"].get("qualitative", {})
         qualitative_config = cls._process_qualitative_config(qualitative_data)
 
-        pm_config = cls._process_pm_config(data.get("pm", {}))
-        pm_integration_config = cls._process_pm_integration_config(data.get("pm_integration", {}))
+        pm_config = cls._process_pm_config(data.get("pm", {}), config_path)
+
+        # Per plan §3.3, ADO configuration lives only at ``pm.azure_devops``.
+        # We do NOT accept a top-level ``azure_devops:`` block — that would
+        # repeat the dual-stack mistake of ``jira:`` + ``jira_integration:``.
+        # The auto-synthesis below mirrors ``pm.azure_devops`` onto the
+        # ``pm_integration.platforms.azure_devops`` block so the orchestrator
+        # picks it up without users needing to write the synthesis manually.
+        ado_block = getattr(pm_config, "azure_devops", None) if pm_config is not None else None
+
+        # Auto-synthesize a matching pm_integration.platforms.azure_devops
+        # entry whenever an Azure DevOps block was provided (mirrors the
+        # JIRA auto-synthesis pattern). Uses a copy to avoid mutating user
+        # data when pm_integration was supplied explicitly.
+        pm_integration_data = dict(data.get("pm_integration", {}) or {})
+        if ado_block is not None:
+            platforms_data = dict(pm_integration_data.get("platforms", {}) or {})
+            if "azure_devops" not in platforms_data:
+                platforms_data["azure_devops"] = {
+                    "enabled": ado_block.enabled,
+                    "platform_type": "azure_devops",
+                    "config": {
+                        "organization_url": ado_block.organization_url,
+                        "personal_access_token": ado_block.personal_access_token,
+                        "project": ado_block.project,
+                        "api_version": ado_block.api_version,
+                        "story_point_fields": ado_block.story_point_fields,
+                    },
+                }
+                pm_integration_data["platforms"] = platforms_data
+                # Activate pm_integration for the run when the user gave us an
+                # Azure DevOps block but no explicit pm_integration section.
+                pm_integration_data.setdefault("enabled", True)
+
+        pm_integration_config = cls._process_pm_integration_config(pm_integration_data)
 
         # Velocity report config (top-level key "velocity")
         velocity_data = data.get("velocity", {})

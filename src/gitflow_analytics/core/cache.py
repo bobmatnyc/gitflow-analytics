@@ -168,11 +168,25 @@ class GitAnalysisCache(CommitCacheMixin, WeeklyCacheMixin):
             total_prs = session.query(PullRequestCache).count()
             total_issues = session.query(IssueCache).count()
 
-            # Platform-specific issue counts
-            jira_issues = session.query(IssueCache).filter(IssueCache.platform == "jira").count()
-            github_issues = (
-                session.query(IssueCache).filter(IssueCache.platform == "github").count()
+            # Platform-specific issue counts.
+            # The legacy ``cached_jira_issues`` / ``cached_github_issues`` keys are
+            # preserved verbatim for downstream consumers; the new
+            # ``cached_issues_by_platform`` map gives a generic per-platform
+            # breakdown so additional platforms (e.g. ``azure_devops``) appear
+            # automatically once they start writing rows to ``IssueCache``.
+            from sqlalchemy import func as _sql_func
+
+            issues_by_platform_rows = (
+                session.query(IssueCache.platform, _sql_func.count(IssueCache.platform))
+                .group_by(IssueCache.platform)
+                .all()
             )
+            issues_by_platform: dict[str, int] = {
+                (platform_name or "unknown"): int(count)
+                for platform_name, count in issues_by_platform_rows
+            }
+            jira_issues = issues_by_platform.get("jira", 0)
+            github_issues = issues_by_platform.get("github", 0)
 
             # Stale entries
             # Bug 1 fix: use timezone-aware UTC datetime instead of naive utcnow()
@@ -236,6 +250,8 @@ class GitAnalysisCache(CommitCacheMixin, WeeklyCacheMixin):
                 "cached_issues": total_issues,
                 "cached_jira_issues": jira_issues,
                 "cached_github_issues": github_issues,
+                # Generic per-platform breakdown (additive).
+                "cached_issues_by_platform": issues_by_platform,
                 # Freshness analysis
                 "stale_commits": stale_commits,
                 "stale_prs": stale_prs,

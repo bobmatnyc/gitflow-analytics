@@ -7,6 +7,7 @@ without performing any LLM-based classification.
 
 import logging
 import threading
+import warnings
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
@@ -14,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from sqlalchemy import func
 
 from ..constants import BatchSizes, Timeouts
-from ..integrations.jira_integration import JIRAIntegration
+from ..integrations.jira_integration import JIRAIntegration  # noqa: F401  (legacy re-export)
 from ..models.database import (
     DailyCommitBatch,
 )
@@ -123,11 +124,12 @@ class GitDataFetcher(GitFetcherMixin, ProcessingMixin, ParallelFetcherMixin):
         project_key: str,
         weeks_back: int = 4,
         branch_patterns: Optional[list[str]] = None,
-        jira_integration: Optional[JIRAIntegration] = None,
+        jira_integration: Optional[Any] = None,
         progress_callback: Optional[callable] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         force: bool = False,
+        pm_integration: Optional[Any] = None,
     ) -> dict[str, Any]:
         """Fetch all data for a repository and organize by day.
 
@@ -143,19 +145,42 @@ class GitDataFetcher(GitFetcherMixin, ProcessingMixin, ParallelFetcherMixin):
         - When force=True every week is re-fetched regardless of cache status.
 
         Args:
-            repo_path: Path to the Git repository
-            project_key: Project identifier
-            weeks_back: Number of weeks to analyze (used only if start_date/end_date not provided)
-            branch_patterns: Branch patterns to include
-            jira_integration: JIRA integration for ticket data
-            progress_callback: Optional callback for progress updates
-            start_date: Optional explicit start date (overrides weeks_back calculation)
-            end_date: Optional explicit end date (overrides weeks_back calculation)
+            repo_path: Path to the Git repository.
+            project_key: Project identifier.
+            weeks_back: Number of weeks to analyze (used only if
+                ``start_date``/``end_date`` not provided).
+            branch_patterns: Branch patterns to include.
+            jira_integration: Deprecated alias for ``pm_integration``.
+                Accepts any object exposing ``get_issue`` and an optional
+                ``platform_name`` attribute. Kept for backwards compatibility
+                with external callers; new callers should pass
+                ``pm_integration`` instead.
+            progress_callback: Optional callback for progress updates.
+            start_date: Optional explicit start date (overrides
+                ``weeks_back`` calculation).
+            end_date: Optional explicit end date (overrides ``weeks_back``
+                calculation).
             force: If True, re-fetch all weeks even if already cached.
+            pm_integration: PM integration object used to enrich tickets.
+                Generalized replacement for ``jira_integration``: any
+                integration that exposes ``get_issue`` (and optionally
+                ``platform_name``) is acceptable. When both are provided
+                ``pm_integration`` wins.
 
         Returns:
-            Dictionary containing fetch results and statistics
+            Dictionary containing fetch results and statistics.
         """
+        # Backwards-compat shim: prefer the modern ``pm_integration`` kwarg,
+        # fall back to the deprecated ``jira_integration`` alias.
+        if pm_integration is None and jira_integration is not None:
+            warnings.warn(
+                "The 'jira_integration' keyword is deprecated; pass "
+                "'pm_integration' instead. The alias will be removed in a "
+                "future release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            pm_integration = jira_integration
         logger.debug("🔍 DEBUG: ===== FETCH METHOD CALLED =====")
         logger.info(f"Starting data fetch for project {project_key} at {repo_path}")
         logger.debug(f"🔍 DEBUG: weeks_back={weeks_back}, repo_path={repo_path}")
@@ -284,17 +309,32 @@ class GitDataFetcher(GitFetcherMixin, ProcessingMixin, ParallelFetcherMixin):
             ticket_ids = self._extract_all_ticket_references(daily_commits)
             logger.debug(f"🔍 DEBUG: Extracted {len(ticket_ids)} ticket IDs")
 
-            if jira_integration and ticket_ids:
+            # Resolve the platform tag from the integration so non-JIRA
+            # adapters (e.g. Azure DevOps) record the correct platform on
+            # detailed-ticket and correlation rows.
+            # TODO(phase-3): drop the ``"jira"`` fallback once every integration
+            # exposes ``platform_name``; right now JIRAIntegration may not set
+            # it on older instances, so we default rather than tag silently.
+            integration_platform = getattr(pm_integration, "platform_name", None) or "jira"
+
+            if pm_integration and ticket_ids:
                 logger.info(
-                    f"Fetching {len(ticket_ids)} unique tickets from JIRA for {project_key}..."
+                    f"Fetching {len(ticket_ids)} unique tickets from "
+                    f"{integration_platform} for {project_key}..."
                 )
                 self._fetch_detailed_tickets(
-                    ticket_ids, jira_integration, project_key, progress_callback
+                    ticket_ids,
+                    pm_integration,
+                    project_key,
+                    progress_callback,
+                    platform=integration_platform,
                 )
 
             # Build commit-ticket correlations
             logger.info(f"Building commit-ticket correlations for {project_key}...")
-            correlations_created = self._build_commit_ticket_correlations(daily_commits, repo_path)
+            correlations_created = self._build_commit_ticket_correlations(
+                daily_commits, repo_path, platform=integration_platform
+            )
             progress.update(repo_progress_ctx)
 
             # Step 3: Store daily commit batches

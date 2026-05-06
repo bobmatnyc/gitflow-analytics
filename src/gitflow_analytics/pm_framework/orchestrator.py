@@ -107,12 +107,14 @@ class PMFrameworkOrchestrator:
         logger.debug("Registering built-in platform adapters...")
 
         # Register available adapters
-        from .adapters import JIRAAdapter
+        from .adapters import AzureDevOpsAdapter, JIRAAdapter
 
         self.registry.register_adapter("jira", JIRAAdapter)
         logger.debug("Registered JIRA adapter")
 
-        # self.registry.register_adapter('azure_devops', AzureDevOpsAdapter)
+        self.registry.register_adapter("azure_devops", AzureDevOpsAdapter)
+        logger.debug("Registered Azure DevOps adapter (Phase 1 stub)")
+
         # self.registry.register_adapter('linear', LinearAdapter)
         # self.registry.register_adapter('asana', AsanaAdapter)
 

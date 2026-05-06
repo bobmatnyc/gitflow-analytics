@@ -59,24 +59,23 @@ def run_collect(
     _emit(f"Collect period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
 
     cache = GitAnalysisCache(cfg.cache.directory)
+    effective_ticket_platforms = cfg.get_effective_ticket_platforms()
     data_fetcher = GitDataFetcher(
         cache=cache,
         branch_mapping_rules=getattr(cfg.analysis, "branch_mapping_rules", {}),
-        allowed_ticket_platforms=getattr(
-            cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]
-        ),
+        allowed_ticket_platforms=effective_ticket_platforms,
         exclude_paths=getattr(cfg.analysis, "exclude_paths", None),
         exclude_merge_commits=cfg.analysis.exclude_merge_commits,
         ticket_detection_config=getattr(cfg.analysis, "ticket_detection", None),
     )
     orchestrator = IntegrationOrchestrator(cfg, cache)
-    jira_integration = orchestrator.integrations.get("jira")
+    # Generic PM integration handle: today the legacy path only wires JIRA, but
+    # any registered integration with a ``get_issue`` interface plugs in here.
+    pm_integration = orchestrator.integrations.get("jira")
 
     config_hash = cache.generate_config_hash(
         branch_mapping_rules=getattr(cfg.analysis, "branch_mapping_rules", {}),
-        ticket_platforms=getattr(
-            cfg.analysis, "ticket_platforms", ["jira", "github", "clickup", "linear"]
-        ),
+        ticket_platforms=effective_ticket_platforms,
         exclude_paths=getattr(cfg.analysis, "exclude_paths", None),
         ml_categorization_enabled=False,
         additional_config={"weeks": weeks},
@@ -140,7 +139,7 @@ def run_collect(
                 project_key=project_key,
                 weeks_back=weeks,
                 branch_patterns=branch_patterns,
-                jira_integration=jira_integration,
+                pm_integration=pm_integration,
                 progress_callback=_progress_cb,
                 start_date=start_date,
                 end_date=end_date,

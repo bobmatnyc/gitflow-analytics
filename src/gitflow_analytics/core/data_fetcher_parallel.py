@@ -3,6 +3,7 @@
 import logging
 import threading
 import time
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +12,7 @@ from typing import Any, Optional
 import git
 
 from ..constants import Timeouts
-from ..integrations.jira_integration import JIRAIntegration
+from ..integrations.jira_integration import JIRAIntegration  # noqa: F401  (legacy re-export)
 from ..types import CommitStats
 from ..utils.commit_utils import is_merge_commit
 from .git_timeout_wrapper import GitOperationTimeout, HeartbeatLogger
@@ -275,24 +276,40 @@ class ParallelFetcherMixin:
         self,
         repositories: list[dict],
         weeks_back: int = 4,
-        jira_integration: Optional[JIRAIntegration] = None,
+        jira_integration: Optional[Any] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         max_workers: int = 3,
+        pm_integration: Optional[Any] = None,
     ) -> dict[str, Any]:
         """Process multiple repositories in parallel with proper timeout protection.
 
         Args:
-            repositories: List of repository configurations
-            weeks_back: Number of weeks to analyze
-            jira_integration: Optional JIRA integration for ticket data
-            start_date: Optional explicit start date
-            end_date: Optional explicit end date
-            max_workers: Maximum number of parallel workers
+            repositories: List of repository configurations.
+            weeks_back: Number of weeks to analyze.
+            jira_integration: Deprecated alias for ``pm_integration``. Kept
+                for backwards compatibility with external callers.
+            start_date: Optional explicit start date.
+            end_date: Optional explicit end date.
+            max_workers: Maximum number of parallel workers.
+            pm_integration: PM integration (any object exposing
+                ``get_issue`` and an optional ``platform_name`` attribute)
+                used to enrich tickets across repositories. Generalized
+                replacement for ``jira_integration``.
 
         Returns:
-            Dictionary containing processing results and statistics
+            Dictionary containing processing results and statistics.
         """
+        # Backwards-compat shim: accept the legacy ``jira_integration`` kwarg.
+        if pm_integration is None and jira_integration is not None:
+            warnings.warn(
+                "The 'jira_integration' keyword is deprecated; pass "
+                "'pm_integration' instead. The alias will be removed in a "
+                "future release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            pm_integration = jira_integration
         logger.info(
             f"🚀 Starting parallel processing of {len(repositories)} repositories with {max_workers} workers"
         )
@@ -331,7 +348,7 @@ class ParallelFetcherMixin:
                         project_key,
                         weeks_back,
                         branch_patterns,
-                        jira_integration,
+                        pm_integration,
                         start_date,
                         end_date,
                     )
@@ -511,7 +528,7 @@ class ParallelFetcherMixin:
         project_key: str,
         weeks_back: int = 4,
         branch_patterns: Optional[list[str]] = None,
-        jira_integration: Optional[JIRAIntegration] = None,
+        pm_integration: Optional[Any] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         timeout_per_operation: int = Timeouts.DEFAULT_GIT_OPERATION,
@@ -519,17 +536,19 @@ class ParallelFetcherMixin:
         """Process a single repository with comprehensive timeout protection.
 
         Args:
-            repo_path: Path to the repository
-            project_key: Project identifier
-            weeks_back: Number of weeks to analyze
-            branch_patterns: Branch patterns to include
-            jira_integration: JIRA integration for ticket data
-            start_date: Optional explicit start date
-            end_date: Optional explicit end date
-            timeout_per_operation: Timeout for individual git operations
+            repo_path: Path to the repository.
+            project_key: Project identifier.
+            weeks_back: Number of weeks to analyze.
+            branch_patterns: Branch patterns to include.
+            pm_integration: PM integration for ticket enrichment (any object
+                exposing ``get_issue`` and an optional ``platform_name``
+                attribute). Generalized replacement for ``jira_integration``.
+            start_date: Optional explicit start date.
+            end_date: Optional explicit end date.
+            timeout_per_operation: Timeout for individual git operations.
 
         Returns:
-            Repository processing results or None if failed
+            Repository processing results or None if failed.
         """
         try:
             # Track this repository in progress
@@ -546,7 +565,7 @@ class ParallelFetcherMixin:
                     project_key=project_key,
                     weeks_back=weeks_back,
                     branch_patterns=branch_patterns,
-                    jira_integration=jira_integration,
+                    pm_integration=pm_integration,
                     progress_callback=None,  # We handle progress at a higher level
                     start_date=start_date,
                     end_date=end_date,
