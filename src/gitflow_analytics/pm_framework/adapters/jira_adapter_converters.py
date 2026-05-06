@@ -42,8 +42,8 @@ class JIRAAdapterConvertersMixin:
         _field_mapping: Optional[dict[str, Any]]
         ticket_cache: "JiraTicketCache"
 
-        def _normalize_date(self, date_str: Optional[str]) -> Optional[datetime]: ...
-        def _map_priority(self, platform_priority: str) -> "Priority": ...
+        def _normalize_date(self, _date_str: Optional[str]) -> Optional[datetime]: ...
+        def _map_priority(self, _platform_priority: str) -> "Priority": ...
 
     def _convert_jira_issue(self, issue_data: dict[str, Any]) -> UnifiedIssue:
         """Convert JIRA issue data to unified issue format.
@@ -305,7 +305,7 @@ class JIRAAdapterConvertersMixin:
             )
 
         # Use base class method as fallback
-        return super()._extract_story_points(fields)
+        return super()._extract_story_points(fields)  # type: ignore[misc]
 
     def _extract_sprint_info(self, fields: dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
         """Extract sprint information from JIRA fields.
