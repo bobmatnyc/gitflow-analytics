@@ -23,6 +23,7 @@ class _BaseFallback:
     """
 
     def _extract_story_points(self, _fields: dict[str, object]) -> float | None:
+        del _fields
         return None
 
 

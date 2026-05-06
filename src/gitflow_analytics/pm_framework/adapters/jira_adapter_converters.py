@@ -21,6 +21,7 @@ from ..models import (
 
 if TYPE_CHECKING:
     from ..models import Priority
+    from .jira_cache import JiraTicketCache
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,10 @@ class JIRAAdapterConvertersMixin:
     if TYPE_CHECKING:
         platform_name: str
         base_url: str
+        story_point_fields: list[str]
+        sprint_fields: list[str]
+        _field_mapping: Optional[dict[str, Any]]
+        ticket_cache: "JiraTicketCache"
 
         def _normalize_date(self, date_str: Optional[str]) -> Optional[datetime]: ...
         def _map_priority(self, platform_priority: str) -> "Priority": ...
@@ -662,9 +667,10 @@ class JIRAAdapterConvertersMixin:
             description=data.get("description", ""),
             created_date=parse_datetime(data.get("created_date")) or datetime.now(timezone.utc),
             updated_date=parse_datetime(data.get("updated_date")) or datetime.now(timezone.utc),
-            issue_type=safe_enum_conversion(IssueType, data.get("issue_type")),
-            status=safe_enum_conversion(IssueStatus, data.get("status")),
-            priority=safe_enum_conversion(self._get_priority_enum(), data.get("priority")),
+            issue_type=safe_enum_conversion(IssueType, data.get("issue_type")) or IssueType.UNKNOWN,
+            status=safe_enum_conversion(IssueStatus, data.get("status")) or IssueStatus.UNKNOWN,
+            priority=safe_enum_conversion(self._get_priority_enum(), data.get("priority"))
+            or self._get_priority_enum().UNKNOWN,
             assignee=dict_to_user(data.get("assignee")),
             reporter=dict_to_user(data.get("reporter")),
             resolved_date=parse_datetime(data.get("resolved_date")),
