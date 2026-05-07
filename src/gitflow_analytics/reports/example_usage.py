@@ -6,7 +6,7 @@ to generate reports in various formats with a unified interface.
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from .base import ReportData, ReportMetadata
 from .factory import ReportBuilder, ReportFactory, create_multiple_reports, create_report
@@ -120,7 +120,7 @@ def example_custom_generator():
     class CustomHTMLGenerator(BaseReportGenerator):
         """Custom HTML report generator."""
 
-        def generate(self, data: ReportData, output_path: Path = None) -> ReportOutput:
+        def generate(self, data: ReportData, output_path: Optional[Path] = None) -> ReportOutput:
             """Generate HTML report."""
             # Pre-process data
             data = self.pre_process(data)
@@ -245,11 +245,11 @@ def example_template_based_generation():
     class TemplateReportGenerator(BaseReportGenerator):
         """Template-based report generator."""
 
-        def __init__(self, template_path: Path = None, **kwargs):
+        def __init__(self, template_path: Optional[Path] = None, **kwargs):
             super().__init__(**kwargs)
             self.template_path = template_path
 
-        def generate(self, data: ReportData, output_path: Path = None) -> ReportOutput:
+        def generate(self, data: ReportData, output_path: Optional[Path] = None) -> ReportOutput:
             """Generate report from template."""
             # Pre-process data
             data = self.pre_process(data)

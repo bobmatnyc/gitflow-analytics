@@ -5,6 +5,20 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.15.2] - 2026-05-06
+### Fixed
+- Resolve Pyright type errors in reports factory and example_usage introduced
+  by 3.15.1 formatting refactor:
+  - `factory.py`: widen `register_generator` `generator_class` parameter to
+    `type[Any]` (generators conform via Protocol, not strict inheritance);
+    use `Sequence` for covariant `report_types` parameter; guard
+    empty-string `output_path` against `Path | None` typing
+  - `example_usage.py`: match `generate()` override signatures to base
+    `Path | None`; use `Optional[Path]` in custom generator constructors
+  - `test_github_username_sync.py`: silence unused `params`/`timeout`
+    parameters in mock callbacks via `del` (preserves keyword arg matching
+    expected by `requests.Session.get` mocks)
+
 ## [3.15.1] - 2026-05-06
 ### Changed
 - Apply Black/Ruff formatting across the `reports` module and JIRA/Confluence

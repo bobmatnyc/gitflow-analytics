@@ -6,6 +6,7 @@ allowing dynamic creation and registration of report generators.
 
 import contextlib
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -20,14 +21,14 @@ class ReportGeneratorRegistry:
 
     def __init__(self):
         """Initialize the registry."""
-        self._generators: dict[tuple, type[BaseReportGenerator]] = {}
+        self._generators: dict[tuple, type[Any]] = {}
         self._aliases: dict[str, tuple] = {}
 
     def register(
         self,
         report_type: ReportType,
         format_type: ReportFormat,
-        generator_class: type[BaseReportGenerator],
+        generator_class: type[Any],
         alias: Optional[str] = None,
     ) -> None:
         """Register a report generator class.
@@ -50,7 +51,7 @@ class ReportGeneratorRegistry:
 
     def get(
         self, report_type: Union[ReportType, str], format_type: Union[ReportFormat, str]
-    ) -> Optional[type[BaseReportGenerator]]:
+    ) -> Optional[type[Any]]:
         """Get a registered generator class.
 
         Args:
@@ -163,7 +164,9 @@ class ReportFactory(IReportFactory):
         return generator_class(**config)
 
     def create_composite_generator(
-        self, report_types: list[tuple[Union[ReportType, str], Union[ReportFormat, str]]], **kwargs
+        self,
+        report_types: Sequence[tuple[Union[ReportType, str], Union[ReportFormat, str]]],
+        **kwargs,
     ) -> CompositeReportGenerator:
         """Create a composite generator for multiple report types.
 
@@ -186,7 +189,7 @@ class ReportFactory(IReportFactory):
         self,
         report_type: ReportType,
         format_type: ReportFormat,
-        generator_class: type[BaseReportGenerator],
+        generator_class: type[Any],
         alias: Optional[str] = None,
     ) -> None:
         """Register a report generator class.
@@ -432,10 +435,9 @@ def create_report(
     factory = get_default_factory()
     generator = factory.create_generator(report_type, format_type, **kwargs)
 
-    if output_path:
-        output_path = Path(output_path)
+    resolved_path: Optional[Path] = Path(output_path) if output_path else None
 
-    return generator.generate(data, output_path)
+    return generator.generate(data, resolved_path)
 
 
 def create_multiple_reports(
