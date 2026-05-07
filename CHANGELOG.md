@@ -5,6 +5,30 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.15.1] - 2026-05-06
+### Changed
+- Apply Black/Ruff formatting across the `reports` module and JIRA/Confluence
+  integrations: consistent double-quote style, one-argument-per-line call
+  sites, and collapsed implicit string concatenations into single f-strings
+- Modernise `reports` module type annotations from `typing.List`/`Dict`/`Type`
+  to built-in `list`/`dict`/`type` (Python 3.10+ style)
+
+### Fixed
+- `factory.py`: replace bare `try/except/pass` with `contextlib.suppress`
+- `example_usage.py`: add missing local import of `BaseReportGenerator` /
+  `ReportOutput` in `example_template_based_generation()`
+- `base.py`: rename loop variable `field` → `field_name` to avoid shadowing
+  `dataclasses.field`; flatten nested `if` to single compound condition
+- `formatters.py`: add missing `import os`
+- `csv_reports_dora.py`: add missing `import csv`
+- `test_github_username_sync`: update mock `_get()` signatures from
+  `_params`/`_timeout` to `params`/`timeout` to match production keyword args
+- `test_jira_activity_integration`: migrate `_fetch_issues` mocks from
+  `_get_with_retries` to `_post_with_retries` (POST `/rest/api/3/search/jql`);
+  update pagination shape to `isLast`/`nextPageToken`
+- `test_pr_reporting`: replace `.replace(day=N+2)` arithmetic with `timedelta`
+  addition to prevent `ValueError` when running near month boundaries
+
 ## [3.15.0] - 2026-05-05
 ### Changed
 - `UnifiedIssue.story_points` widened from `int` to `float`; JIRA adapter now preserves fractional values (e.g., 3.5 instead of 3). SQLite schema updated from INTEGER to REAL. Teams using modified Fibonacci scales will now see correct values in reports. (#56)
