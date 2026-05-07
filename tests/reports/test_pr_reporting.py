@@ -12,7 +12,7 @@ Covers:
 from __future__ import annotations
 
 import csv
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -31,8 +31,6 @@ from gitflow_analytics.reports.narrative_writer import NarrativeReportGenerator
 @pytest.fixture
 def recent_date() -> datetime:
     """A consistent recent datetime for tests (within the last week)."""
-    from datetime import timedelta
-
     return datetime.now(timezone.utc).replace(
         hour=10, minute=0, second=0, microsecond=0
     ) - timedelta(days=7)
@@ -105,8 +103,8 @@ def review_prs(recent_date: datetime) -> list[dict[str, Any]]:
             "title": "Add tests",
             "author": "bob",
             "canonical_id": "bob@example.com",
-            "created_at": recent_date.replace(day=recent_date.day + 1),
-            "merged_at": recent_date.replace(day=recent_date.day + 1, hour=14),
+            "created_at": (recent_date + timedelta(days=1)).replace(hour=10),
+            "merged_at": (recent_date + timedelta(days=1)).replace(hour=14),
             "additions": 150,
             "deletions": 0,
             "changed_files": 6,
@@ -126,8 +124,8 @@ def review_prs(recent_date: datetime) -> list[dict[str, Any]]:
             "title": "Update docs",
             "author": "alice",
             "canonical_id": "alice@example.com",
-            "created_at": recent_date.replace(day=recent_date.day + 2),
-            "merged_at": recent_date.replace(day=recent_date.day + 2, hour=11),
+            "created_at": (recent_date + timedelta(days=2)).replace(hour=10),
+            "merged_at": (recent_date + timedelta(days=2)).replace(hour=11),
             "additions": 30,
             "deletions": 5,
             "changed_files": 2,
@@ -806,6 +804,6 @@ class TestComplianceMetricsRealApprovalRate:
             result = analyzer._calculate_compliance_metrics(
                 commits, {"pr_metrics": {"approval_rate": rate, "total_prs": 5}}, {}
             )
-            assert result["pr_approval_rate"]["status"] == expected_status, (
-                f"rate={rate} expected '{expected_status}' got '{result['pr_approval_rate']['status']}'"
-            )
+            assert (
+                result["pr_approval_rate"]["status"] == expected_status
+            ), f"rate={rate} expected '{expected_status}' got '{result['pr_approval_rate']['status']}'"

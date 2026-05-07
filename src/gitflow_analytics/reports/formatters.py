@@ -5,10 +5,11 @@ that can be used across different report generators.
 """
 
 import json
+import os
 import re
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, List, Optional, Union
+from typing import Any, Optional, Union
 
 
 class DateFormatter:
@@ -32,7 +33,7 @@ class DateFormatter:
             else:
                 dt = date.fromisoformat(dt)
 
-        if isinstance(dt, datetime) or isinstance(dt, date):
+        if isinstance(dt, (datetime, date)):
             return dt.strftime(format_string)
         else:
             return str(dt)
@@ -291,7 +292,7 @@ class TextFormatter:
 
     @staticmethod
     def format_list(
-        items: List[str],
+        items: list[str],
         separator: str = ", ",
         last_separator: str = " and ",
         max_items: Optional[int] = None,
@@ -422,7 +423,7 @@ class MarkdownFormatter:
 
     @staticmethod
     def table(
-        headers: List[str], rows: List[List[str]], alignment: Optional[List[str]] = None
+        headers: list[str], rows: list[list[str]], alignment: Optional[list[str]] = None
     ) -> str:
         """Create a Markdown table.
 
@@ -498,7 +499,7 @@ class CSVFormatter:
         return str_value
 
     @staticmethod
-    def format_row(values: List[Any], delimiter: str = ",") -> str:
+    def format_row(values: list[Any], delimiter: str = ",") -> str:
         """Format a row of values as CSV.
 
         Args:

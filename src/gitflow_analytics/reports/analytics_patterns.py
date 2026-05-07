@@ -8,7 +8,7 @@ and provide the weekly developer/project trend CSV writing helpers.
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -24,7 +24,7 @@ class AnalyticsPatternseMixin:
     and generate_weekly_trends_report. Kept separate to reduce file size.
     """
 
-    def _analyze_commit_patterns(self, commits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _analyze_commit_patterns(self, commits: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Analyze patterns in commit data."""
         insights = []
 
@@ -95,8 +95,8 @@ class AnalyticsPatternseMixin:
         return insights
 
     def _analyze_developer_patterns(
-        self, commits: List[Dict[str, Any]], developer_stats: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, commits: list[dict[str, Any]], developer_stats: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Analyze developer behavior patterns."""
         insights = []
 
@@ -146,8 +146,8 @@ class AnalyticsPatternseMixin:
         return insights
 
     def _analyze_collaboration_patterns(
-        self, commits: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, commits: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Analyze collaboration patterns."""
         insights = []
 
@@ -175,7 +175,7 @@ class AnalyticsPatternseMixin:
 
         return insights
 
-    def _analyze_work_distribution(self, commits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _analyze_work_distribution(self, commits: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Analyze work distribution patterns."""
         insights = []
 
@@ -206,7 +206,7 @@ class AnalyticsPatternseMixin:
 
         return insights
 
-    def _calculate_gini_coefficient(self, values: List[float]) -> float:
+    def _calculate_gini_coefficient(self, values: list[float]) -> float:
         """Calculate Gini coefficient for distribution analysis."""
         if not values or len(values) == 1:
             return 0.0
@@ -264,13 +264,13 @@ class AnalyticsPatternseMixin:
 
     def _add_project_columns_to_focus_row(
         self,
-        row: Dict[str, Any],
-        all_projects: List[str],
+        row: dict[str, Any],
+        all_projects: list[str],
         projects: Any,
         project_lines: Any,
         project_totals: Any,
-        dev_commits: List[Any],
-        commit_sizes: List[float],
+        dev_commits: list[Any],
+        commit_sizes: list[float],
         total_commits: int,
     ) -> None:
         """Add per-project metric columns to a developer focus row dict.
@@ -285,15 +285,15 @@ class AnalyticsPatternseMixin:
             if gross_commits > 0 and project_lines[project] > 0:
                 project_avg_lines = project_lines[project] / gross_commits
                 overall_avg_lines = sum(commit_sizes) / len(commit_sizes) if commit_sizes else 1
-                adjustment_factor = project_avg_lines / overall_avg_lines if overall_avg_lines > 0 else 1
+                adjustment_factor = (
+                    project_avg_lines / overall_avg_lines if overall_avg_lines > 0 else 1
+                )
                 adjusted_commits = round(gross_commits * adjustment_factor, 1)
             else:
                 adjusted_commits = 0
             row[f"{project}_adjusted_commits"] = adjusted_commits
 
-            dev_pct = (
-                round(gross_commits / len(dev_commits) * 100, 1) if dev_commits else 0
-            )
+            dev_pct = round(gross_commits / len(dev_commits) * 100, 1) if dev_commits else 0
             row[f"{project}_dev_pct"] = dev_pct
 
             proj_pct = (
@@ -313,13 +313,13 @@ class AnalyticsPatternseMixin:
     def _write_developer_trends_csv(
         self,
         output_path: Path,
-        developer_weekly: Dict[str, Any],
-        dev_lookup: Dict[str, Any],
-        sorted_weeks: List[str],
+        developer_weekly: dict[str, Any],
+        dev_lookup: dict[str, Any],
+        sorted_weeks: list[str],
     ) -> None:
         """Write per-developer weekly trends to a companion CSV file."""
         dev_trends_path = (
-            output_path.parent / f'developer_trends_{output_path.stem.split("_")[-1]}.csv'
+            output_path.parent / f"developer_trends_{output_path.stem.split('_')[-1]}.csv"
         )
         dev_trend_rows = []
 
@@ -337,14 +337,16 @@ class AnalyticsPatternseMixin:
             if sum(weekly_values) == 0:
                 continue
 
-            changes = [weekly_values[i] - weekly_values[i - 1] for i in range(1, len(weekly_values))]
+            changes = [
+                weekly_values[i] - weekly_values[i - 1] for i in range(1, len(weekly_values))
+            ]
             avg_change = sum(changes) / len(changes) if changes else 0
             volatility = np.std(changes) if len(changes) > 1 else 0
             trend = (
                 "increasing" if avg_change > 1 else "decreasing" if avg_change < -1 else "stable"
             )
 
-            row: Dict[str, Any] = {
+            row: dict[str, Any] = {
                 "developer": dev_name,
                 "total_commits": sum(weekly_values),
                 "avg_weekly_commits": round(sum(weekly_values) / len(weekly_values), 1),
@@ -368,12 +370,12 @@ class AnalyticsPatternseMixin:
     def _write_project_trends_csv(
         self,
         output_path: Path,
-        project_weekly: Dict[str, Any],
-        sorted_weeks: List[str],
+        project_weekly: dict[str, Any],
+        sorted_weeks: list[str],
     ) -> None:
         """Write per-project weekly trends to a companion CSV file."""
         proj_trends_path = (
-            output_path.parent / f'project_trends_{output_path.stem.split("_")[-1]}.csv'
+            output_path.parent / f"project_trends_{output_path.stem.split('_')[-1]}.csv"
         )
         proj_trend_rows = []
 
@@ -382,27 +384,24 @@ class AnalyticsPatternseMixin:
                 weekly_commits.get(week, {}).get("commits", 0) for week in sorted_weeks
             ]
             weekly_developers = [
-                len(weekly_commits.get(week, {}).get("developers", set()))
-                for week in sorted_weeks
+                len(weekly_commits.get(week, {}).get("developers", set())) for week in sorted_weeks
             ]
 
             if sum(weekly_values) == 0:
                 continue
 
-            changes = [weekly_values[i] - weekly_values[i - 1] for i in range(1, len(weekly_values))]
+            changes = [
+                weekly_values[i] - weekly_values[i - 1] for i in range(1, len(weekly_values))
+            ]
             avg_change = sum(changes) / len(changes) if changes else 0
             volatility = np.std(changes) if len(changes) > 1 else 0
-            trend = (
-                "growing" if avg_change > 2 else "shrinking" if avg_change < -2 else "stable"
-            )
+            trend = "growing" if avg_change > 2 else "shrinking" if avg_change < -2 else "stable"
 
-            row: Dict[str, Any] = {
+            row: dict[str, Any] = {
                 "project": project,
                 "total_commits": sum(weekly_values),
                 "avg_weekly_commits": round(sum(weekly_values) / len(weekly_values), 1),
-                "avg_weekly_developers": round(
-                    sum(weekly_developers) / len(weekly_developers), 1
-                ),
+                "avg_weekly_developers": round(sum(weekly_developers) / len(weekly_developers), 1),
                 "avg_weekly_change": round(avg_change, 1),
                 "volatility": round(float(volatility), 1),
                 "trend": trend,

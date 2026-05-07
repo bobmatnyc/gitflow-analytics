@@ -90,7 +90,7 @@ def test_sync_happy_path_sets_username(sync_inst: GitHubOrgSync, mock_resolver: 
     user_alice = {"login": "alice", "email": "alice@example.com"}
     user_bob = {"login": "bob", "email": "bob@example.com"}
 
-    def _get(url: str, _params: Any = None, _timeout: int = 30) -> MagicMock:
+    def _get(url: str, params: Any = None, timeout: int = 30) -> MagicMock:
         if "/orgs/acme/members" in url:
             return _make_response(200, members_page)
         if url.endswith("/users/alice"):
@@ -115,8 +115,8 @@ def test_pagination_two_pages(sync_inst: GitHubOrgSync, mock_resolver: MagicMock
 
     next_url = "https://api.github.com/orgs/acme/members?page=2"
 
-    def _get(url: str, _params: Any = None, _timeout: int = 30) -> MagicMock:
-        if url.endswith("/orgs/acme/members") and _params and _params.get("per_page") == 100:
+    def _get(url: str, params: Any = None, timeout: int = 30) -> MagicMock:
+        if url.endswith("/orgs/acme/members") and params and params.get("per_page") == 100:
             return _make_response(200, page1, links={"next": {"url": next_url}})
         if url == next_url:
             return _make_response(200, page2)
@@ -136,7 +136,7 @@ def test_skip_user_without_public_email(sync_inst: GitHubOrgSync, mock_resolver:
     """A user whose /users/{login} returns email=None is skipped."""
     members_page = [{"login": "alice"}, {"login": "ghost"}]
 
-    def _get(url: str, _params: Any = None, _timeout: int = 30) -> MagicMock:
+    def _get(url: str, params: Any = None, timeout: int = 30) -> MagicMock:
         if "/orgs/acme/members" in url:
             return _make_response(200, members_page)
         if url.endswith("/users/alice"):
@@ -158,7 +158,7 @@ def test_retry_on_429(sync_inst: GitHubOrgSync, mock_resolver: MagicMock) -> Non
     members_page = [{"login": "alice"}]
     call_counter = {"members": 0, "user": 0}
 
-    def _get(url: str, _params: Any = None, _timeout: int = 30) -> MagicMock:
+    def _get(url: str, params: Any = None, timeout: int = 30) -> MagicMock:
         if "/orgs/acme/members" in url:
             call_counter["members"] += 1
             if call_counter["members"] == 1:
@@ -180,7 +180,7 @@ def test_unknown_email_is_skipped(sync_inst: GitHubOrgSync, mock_resolver: Magic
     """A user whose email is not in the identity resolver is skipped."""
     members_page = [{"login": "stranger"}]
 
-    def _get(url: str, _params: Any = None, _timeout: int = 30) -> MagicMock:
+    def _get(url: str, params: Any = None, timeout: int = 30) -> MagicMock:
         if "/orgs/acme/members" in url:
             return _make_response(200, members_page)
         if url.endswith("/users/stranger"):

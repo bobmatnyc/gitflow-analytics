@@ -393,12 +393,12 @@ class ClassificationCsvMixin:
                 n = len(confidence_scores)
 
                 writer.writerow(
-                    ["Very High (\u22650.9)", f"{very_high} ({(very_high/n)*100:.1f}%)"]
+                    ["Very High (\u22650.9)", f"{very_high} ({(very_high / n) * 100:.1f}%)"]
                 )
-                writer.writerow(["High (0.8-0.9)", f"{high} ({(high/n)*100:.1f}%)"])
-                writer.writerow(["Medium (0.6-0.8)", f"{medium} ({(medium/n)*100:.1f}%)"])
-                writer.writerow(["Low (0.4-0.6)", f"{low} ({(low/n)*100:.1f}%)"])
-                writer.writerow(["Very Low (<0.4)", f"{very_low} ({(very_low/n)*100:.1f}%)"])
+                writer.writerow(["High (0.8-0.9)", f"{high} ({(high / n) * 100:.1f}%)"])
+                writer.writerow(["Medium (0.6-0.8)", f"{medium} ({(medium / n) * 100:.1f}%)"])
+                writer.writerow(["Low (0.4-0.6)", f"{low} ({(low / n) * 100:.1f}%)"])
+                writer.writerow(["Very Low (<0.4)", f"{very_low} ({(very_low / n) * 100:.1f}%)"])
                 writer.writerow([])
 
             writer.writerow(["Confidence by Classification Type"])
@@ -418,7 +418,7 @@ class ClassificationCsvMixin:
                             f"{avg_conf:.3f}",
                             f"{min(scores):.3f}",
                             f"{max(scores):.3f}",
-                            f"{high_conf_count} ({(high_conf_count/len(scores))*100:.1f}%)",
+                            f"{high_conf_count} ({(high_conf_count / len(scores)) * 100:.1f}%)",
                         ]
                     )
 

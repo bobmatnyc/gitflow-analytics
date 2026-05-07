@@ -5,6 +5,7 @@ Contains generate_story_point_correlation_report, generate_weekly_velocity_repor
 generate_weekly_dora_report, and generate_weekly_cicd_report.
 """
 
+import csv
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone

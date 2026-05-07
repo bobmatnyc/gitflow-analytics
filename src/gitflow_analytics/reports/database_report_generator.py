@@ -8,7 +8,7 @@ and trend analysis.
 import logging
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from ..core.metrics_storage import DailyMetricsStorage
 
@@ -36,9 +36,9 @@ class DatabaseReportGenerator:
         start_date: date,
         end_date: date,
         output_path: Path,
-        developer_ids: Optional[List[str]] = None,
-        project_keys: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        developer_ids: Optional[list[str]] = None,
+        project_keys: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
         """Generate comprehensive qualitative analysis report.
 
         WHY: Provides detailed insights into development patterns,
@@ -94,9 +94,9 @@ class DatabaseReportGenerator:
 
     def _build_qualitative_report_content(
         self,
-        daily_metrics: List[Dict[str, Any]],
-        classification_summary: Dict[str, Dict[str, int]],
-        trends: Dict[Tuple[str, str], Dict[str, float]],
+        daily_metrics: list[dict[str, Any]],
+        classification_summary: dict[str, dict[str, int]],
+        trends: dict[tuple[str, str], dict[str, float]],
         start_date: date,
         end_date: date,
     ) -> str:
@@ -140,8 +140,8 @@ class DatabaseReportGenerator:
         return "\n".join(lines)
 
     def _build_executive_summary(
-        self, daily_metrics: List[Dict[str, Any]], classification_summary: Dict[str, Dict[str, int]]
-    ) -> List[str]:
+        self, daily_metrics: list[dict[str, Any]], classification_summary: dict[str, dict[str, int]]
+    ) -> list[str]:
         """Build executive summary section."""
         if not daily_metrics:
             return ["## Executive Summary", "", "No data available for the selected period.", ""]
@@ -185,7 +185,7 @@ class DatabaseReportGenerator:
             "",
         ]
 
-    def _build_team_analysis(self, developer_summary: Dict[str, Dict[str, int]]) -> List[str]:
+    def _build_team_analysis(self, developer_summary: dict[str, dict[str, int]]) -> list[str]:
         """Build team analysis section."""
         if not developer_summary:
             return ["## Team Analysis", "", "No developer data available.", ""]
@@ -218,7 +218,7 @@ class DatabaseReportGenerator:
 
         return lines
 
-    def _build_project_analysis(self, project_summary: Dict[str, Dict[str, int]]) -> List[str]:
+    def _build_project_analysis(self, project_summary: dict[str, dict[str, int]]) -> list[str]:
         """Build project analysis section."""
         if not project_summary:
             return ["## Project Analysis", "", "No project data available.", ""]
@@ -252,8 +252,8 @@ class DatabaseReportGenerator:
         return lines
 
     def _build_trends_analysis(
-        self, trends: Dict[Tuple[str, str], Dict[str, float]], daily_metrics: List[Dict[str, Any]]
-    ) -> List[str]:
+        self, trends: dict[tuple[str, str], dict[str, float]], daily_metrics: list[dict[str, Any]]
+    ) -> list[str]:
         """Build weekly trends analysis section."""
         lines = ["## Weekly Trends Analysis", ""]
 
@@ -304,7 +304,7 @@ class DatabaseReportGenerator:
 
         return lines
 
-    def _build_classification_insights(self, daily_metrics: List[Dict[str, Any]]) -> List[str]:
+    def _build_classification_insights(self, daily_metrics: list[dict[str, Any]]) -> list[str]:
         """Build classification insights section."""
         lines = ["## Classification Insights", ""]
 
@@ -362,10 +362,10 @@ class DatabaseReportGenerator:
 
     def _build_recommendations(
         self,
-        daily_metrics: List[Dict[str, Any]],
-        classification_summary: Dict[str, Dict[str, int]],
-        trends: Dict[Tuple[str, str], Dict[str, float]],
-    ) -> List[str]:
+        daily_metrics: list[dict[str, Any]],
+        classification_summary: dict[str, dict[str, int]],
+        trends: dict[tuple[str, str], dict[str, float]],
+    ) -> list[str]:
         """Build recommendations section."""
         lines = ["## Recommendations", ""]
 
@@ -407,7 +407,7 @@ class DatabaseReportGenerator:
 
         # Trend-based recommendations
         declining_developers = []
-        for (dev_id, project_key), trend_data in trends.items():
+        for (dev_id, _project_key), trend_data in trends.items():
             if trend_data["total_commits_change"] < -20:
                 # Find developer name
                 dev_name = "Unknown"

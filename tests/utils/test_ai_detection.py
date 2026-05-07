@@ -324,7 +324,7 @@ class TestDetectAiCommitPrecedence:
 
     def test_claude_trailer_beats_cursorrules_file(self) -> None:
         # Claude trailer (0.95) should win over cursorrules touch (0.75)
-        msg = "feat: huge change\n\n" "Co-authored-by: Claude <noreply@anthropic.com>"
+        msg = "feat: huge change\n\nCo-authored-by: Claude <noreply@anthropic.com>"
         confidence, method = detect_ai_commit(msg, [".cursorrules", "src/main.py"])
         assert method == "co_author_claude"
         assert confidence == 0.95
@@ -347,7 +347,7 @@ class TestDetectAiCommitPrecedence:
 
     def test_copilot_trailer_beats_message_pattern(self) -> None:
         # Copilot trailer (0.95) beats message pattern (0.60)
-        msg = "feat: code was ai-assisted\n\n" "Co-authored-by: Copilot[bot] <copilot@github.com>"
+        msg = "feat: code was ai-assisted\n\nCo-authored-by: Copilot[bot] <copilot@github.com>"
         confidence, method = detect_ai_commit(msg)
         assert method == "co_author_copilot"
         assert confidence == 0.95

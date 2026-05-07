@@ -294,29 +294,30 @@ def test_fetch_issues_jql_contains_project_keys(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    def fake_get(url: str, params: Any = None) -> Any:
+    def fake_post(url: str, json_body: dict[str, Any]) -> Any:
         captured["url"] = url
-        captured["params"] = params
-        return _make_response(payload={"issues": [], "total": 0})
+        captured["json_body"] = json_body
+        return _make_response(payload={"issues": [], "isLast": True})
 
-    with patch.object(integration, "_get_with_retries", side_effect=fake_get):
+    with patch.object(integration, "_post_with_retries", side_effect=fake_post):
         integration._fetch_issues(["PROJ", "ENG"], datetime(2024, 1, 1, tzinfo=timezone.utc))
-    jql = captured["params"]["jql"]
-    assert "project in (PROJ,ENG)" in jql
+    jql = captured["json_body"]["jql"]
+    assert '"PROJ"' in jql and '"ENG"' in jql
     assert "created >=" in jql or "updated >=" in jql
 
 
 def test_fetch_issues_pagination(integration: JIRAActivityIntegration) -> None:
     page1 = {
         "issues": [_make_issue(key=f"PROJ-{i}") for i in range(1, 51)],
-        "total": 60,
+        "isLast": False,
+        "nextPageToken": "token-page-2",
     }
     page2 = {
         "issues": [_make_issue(key=f"PROJ-{i}") for i in range(51, 61)],
-        "total": 60,
+        "isLast": True,
     }
     responses = [_make_response(payload=page1), _make_response(payload=page2)]
-    with patch.object(integration, "_get_with_retries", side_effect=responses):
+    with patch.object(integration, "_post_with_retries", side_effect=responses):
         issues = integration._fetch_issues(["PROJ"], datetime(2024, 1, 1, tzinfo=timezone.utc))
     assert len(issues) == 60
 
@@ -348,10 +349,11 @@ def test_fetch_project_activity_end_to_end(
         assignee={"emailAddress": "Bob@x"},
     )
 
+    def fake_post_with_retries(url: str, json_body: Any = None) -> Any:
+        # _fetch_issues uses POST /rest/api/3/search/jql
+        return _make_response(payload={"issues": [issue], "isLast": True})
+
     def fake_get_with_retries(url: str, params: Any = None) -> Any:
-        _ = params
-        if "/search" in url:
-            return _make_response(payload={"issues": [issue], "total": 1})
         if "/comment" in url:
             return _make_response(
                 payload={
@@ -366,7 +368,10 @@ def test_fetch_project_activity_end_to_end(
             )
         return _make_response(payload={})
 
-    with patch.object(integration, "_get_with_retries", side_effect=fake_get_with_retries):
+    with (
+        patch.object(integration, "_post_with_retries", side_effect=fake_post_with_retries),
+        patch.object(integration, "_get_with_retries", side_effect=fake_get_with_retries),
+    ):
         events = integration.fetch_project_activity(
             ["PROJ"],
             datetime(2024, 1, 1, tzinfo=timezone.utc),
@@ -390,10 +395,10 @@ def test_fetch_project_activity_drops_out_of_window_comments(
 ) -> None:
     issue = _make_issue(key="PROJ-1", created="2024-02-01T10:00:00.000+0000")
 
+    def fake_post_with_retries(url: str, json_body: Any = None) -> Any:
+        return _make_response(payload={"issues": [issue], "isLast": True})
+
     def fake_get_with_retries(url: str, params: Any = None) -> Any:
-        _ = params
-        if "/search" in url:
-            return _make_response(payload={"issues": [issue], "total": 1})
         if "/comment" in url:
             return _make_response(
                 payload={
@@ -408,7 +413,10 @@ def test_fetch_project_activity_drops_out_of_window_comments(
             )
         return _make_response(payload={})
 
-    with patch.object(integration, "_get_with_retries", side_effect=fake_get_with_retries):
+    with (
+        patch.object(integration, "_post_with_retries", side_effect=fake_post_with_retries),
+        patch.object(integration, "_get_with_retries", side_effect=fake_get_with_retries),
+    ):
         events = integration.fetch_project_activity(
             ["PROJ"],
             datetime(2024, 1, 1, tzinfo=timezone.utc),

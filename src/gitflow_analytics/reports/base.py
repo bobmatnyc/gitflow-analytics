@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -20,16 +20,16 @@ class ReportMetadata:
 
     generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     generation_time_seconds: float = 0.0
-    source_repositories: List[str] = field(default_factory=list)
+    source_repositories: list[str] = field(default_factory=list)
     analysis_period_weeks: int = 0
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     total_commits: int = 0
     total_developers: int = 0
-    excluded_authors: List[str] = field(default_factory=list)
+    excluded_authors: list[str] = field(default_factory=list)
     report_version: str = "1.0.0"
     generator_name: str = ""
-    additional_info: Dict[str, Any] = field(default_factory=dict)
+    additional_info: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -41,37 +41,37 @@ class ReportData:
     """
 
     # Core data
-    commits: List[Dict[str, Any]] = field(default_factory=list)
-    pull_requests: List[Dict[str, Any]] = field(default_factory=list)
-    developer_stats: List[Dict[str, Any]] = field(default_factory=list)
+    commits: list[dict[str, Any]] = field(default_factory=list)
+    pull_requests: list[dict[str, Any]] = field(default_factory=list)
+    developer_stats: list[dict[str, Any]] = field(default_factory=list)
 
     # Analysis results
-    activity_data: List[Dict[str, Any]] = field(default_factory=list)
-    focus_data: List[Dict[str, Any]] = field(default_factory=list)
-    insights_data: List[Dict[str, Any]] = field(default_factory=list)
-    ticket_analysis: Dict[str, Any] = field(default_factory=dict)
+    activity_data: list[dict[str, Any]] = field(default_factory=list)
+    focus_data: list[dict[str, Any]] = field(default_factory=list)
+    insights_data: list[dict[str, Any]] = field(default_factory=list)
+    ticket_analysis: dict[str, Any] = field(default_factory=dict)
 
     # Metrics
-    pr_metrics: Dict[str, Any] = field(default_factory=dict)
-    dora_metrics: Dict[str, Any] = field(default_factory=dict)
-    branch_health_metrics: List[Dict[str, Any]] = field(default_factory=list)
-    cicd_metrics: Dict[str, Any] = field(default_factory=dict)
+    pr_metrics: dict[str, Any] = field(default_factory=dict)
+    dora_metrics: dict[str, Any] = field(default_factory=dict)
+    branch_health_metrics: list[dict[str, Any]] = field(default_factory=list)
+    cicd_metrics: dict[str, Any] = field(default_factory=dict)
 
     # Project management data
-    pm_data: Optional[Dict[str, Any]] = None
-    story_points_data: Optional[Dict[str, Any]] = None
+    pm_data: Optional[dict[str, Any]] = None
+    story_points_data: Optional[dict[str, Any]] = None
 
     # Qualitative analysis
-    qualitative_results: List[Dict[str, Any]] = field(default_factory=list)
+    qualitative_results: list[dict[str, Any]] = field(default_factory=list)
     chatgpt_summary: Optional[str] = None
 
     # Metadata
     metadata: ReportMetadata = field(default_factory=ReportMetadata)
 
     # Configuration
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
 
-    def get_required_fields(self) -> Set[str]:
+    def get_required_fields(self) -> set[str]:
         """Get the set of required fields for basic report generation."""
         return {"commits", "developer_stats"}
 
@@ -104,9 +104,9 @@ class ReportOutput:
     content: Optional[Union[str, bytes]] = None
     format: str = ""
     size_bytes: int = 0
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class BaseReportGenerator(ABC):
@@ -119,9 +119,9 @@ class BaseReportGenerator(ABC):
     def __init__(
         self,
         anonymize: bool = False,
-        exclude_authors: Optional[List[str]] = None,
+        exclude_authors: Optional[list[str]] = None,
         identity_resolver: Optional[Any] = None,
-        config: Optional[Dict[str, Any]] = None,
+        config: Optional[dict[str, Any]] = None,
     ):
         """Initialize the report generator.
 
@@ -135,7 +135,7 @@ class BaseReportGenerator(ABC):
         self.exclude_authors = exclude_authors or []
         self.identity_resolver = identity_resolver
         self.config = config or {}
-        self._anonymization_map: Dict[str, str] = {}
+        self._anonymization_map: dict[str, str] = {}
         self._anonymous_counter = 0
 
         # Set up logging
@@ -155,7 +155,7 @@ class BaseReportGenerator(ABC):
         pass
 
     @abstractmethod
-    def get_required_fields(self) -> List[str]:
+    def get_required_fields(self) -> list[str]:
         """Get the list of required data fields for this report generator.
 
         Returns:
@@ -194,10 +194,13 @@ class BaseReportGenerator(ABC):
                 return False
 
             # Check if collections are empty when they shouldn't be
-            if isinstance(field_value, (list, dict)) and not field_value:
-                if field_name in ["commits", "developer_stats"]:  # Core required fields
-                    self.logger.error(f"Required field '{field_name}' is empty")
-                    return False
+            if (
+                isinstance(field_value, (list, dict))
+                and not field_value
+                and field_name in ["commits", "developer_stats"]  # Core required fields
+            ):
+                self.logger.error(f"Required field '{field_name}' is empty")
+                return False
 
         return True
 
@@ -280,7 +283,7 @@ class BaseReportGenerator(ABC):
 
         return data
 
-    def _should_exclude_author(self, commit: Dict[str, Any], excluded_lower: List[str]) -> bool:
+    def _should_exclude_author(self, commit: dict[str, Any], excluded_lower: list[str]) -> bool:
         """Check if a commit author should be excluded.
 
         WHY: Commits may not have canonical_id populated, so we need to check
@@ -297,8 +300,8 @@ class BaseReportGenerator(ABC):
         identity_values = []
 
         # Collect all identity fields (canonical_id may not be present)
-        for field in ["canonical_id", "author_email", "author_name", "author"]:
-            value = commit.get(field, "")
+        for field_name in ["canonical_id", "author_email", "author_name", "author"]:
+            value = commit.get(field_name, "")
             if value:
                 identity_values.append(value.lower())
 
@@ -322,7 +325,7 @@ class BaseReportGenerator(ABC):
 
         return False
 
-    def _should_exclude_developer(self, dev: Dict[str, Any], excluded_lower: List[str]) -> bool:
+    def _should_exclude_developer(self, dev: dict[str, Any], excluded_lower: list[str]) -> bool:
         """Check if a developer should be excluded.
 
         Args:
@@ -343,14 +346,14 @@ class BaseReportGenerator(ABC):
             "display_name",
         ]
 
-        for field in identity_fields:
-            value = dev.get(field, "")
+        for field_name in identity_fields:
+            value = dev.get(field_name, "")
             if value and value.lower() in excluded_lower:
                 return True
 
         return False
 
-    def _should_exclude_item(self, item: Dict[str, Any], excluded_lower: List[str]) -> bool:
+    def _should_exclude_item(self, item: dict[str, Any], excluded_lower: list[str]) -> bool:
         """Generic exclusion check for data items.
 
         Args:
@@ -371,8 +374,8 @@ class BaseReportGenerator(ABC):
             "display_name",
         ]
 
-        for field in identity_fields:
-            value = item.get(field, "")
+        for field_name in identity_fields:
+            value = item.get(field_name, "")
             if value and value.lower() in excluded_lower:
                 return True
 
@@ -406,17 +409,17 @@ class BaseReportGenerator(ABC):
 
         return data
 
-    def _anonymize_commit(self, commit: Dict[str, Any]) -> None:
+    def _anonymize_commit(self, commit: dict[str, Any]) -> None:
         """Anonymize a commit record in-place.
 
         Args:
             commit: Commit data to anonymize
         """
-        for field in ["author_name", "author_email", "canonical_id"]:
-            if field in commit:
-                commit[field] = self._get_anonymous_name(commit[field])
+        for field_name in ["author_name", "author_email", "canonical_id"]:
+            if field_name in commit:
+                commit[field_name] = self._get_anonymous_name(commit[field_name])
 
-    def _anonymize_developer(self, dev: Dict[str, Any]) -> None:
+    def _anonymize_developer(self, dev: dict[str, Any]) -> None:
         """Anonymize a developer record in-place.
 
         Args:
@@ -432,11 +435,11 @@ class BaseReportGenerator(ABC):
             "display_name",
         ]
 
-        for field in identity_fields:
-            if field in dev:
-                dev[field] = self._get_anonymous_name(dev[field])
+        for field_name in identity_fields:
+            if field_name in dev:
+                dev[field_name] = self._get_anonymous_name(dev[field_name])
 
-    def _anonymize_item(self, item: Dict[str, Any]) -> None:
+    def _anonymize_item(self, item: dict[str, Any]) -> None:
         """Anonymize a generic data item in-place.
 
         Args:
@@ -453,9 +456,9 @@ class BaseReportGenerator(ABC):
             "author_name",
         ]
 
-        for field in identity_fields:
-            if field in item:
-                item[field] = self._get_anonymous_name(item[field])
+        for field_name in identity_fields:
+            if field_name in item:
+                item[field_name] = self._get_anonymous_name(item[field_name])
 
     def _get_anonymous_name(self, original: str) -> str:
         """Get an anonymous name for a given original name.
@@ -495,7 +498,7 @@ class BaseReportGenerator(ABC):
 class CompositeReportGenerator(BaseReportGenerator):
     """Generator that can produce multiple report formats in a single run."""
 
-    def __init__(self, generators: List[BaseReportGenerator], **kwargs):
+    def __init__(self, generators: list[BaseReportGenerator], **kwargs):
         """Initialize composite generator with multiple sub-generators.
 
         Args:
@@ -547,7 +550,7 @@ class CompositeReportGenerator(BaseReportGenerator):
             metadata={"outputs": outputs},
         )
 
-    def get_required_fields(self) -> List[str]:
+    def get_required_fields(self) -> list[str]:
         """Get union of all required fields from sub-generators."""
         required = set()
         for generator in self.generators:
@@ -583,7 +586,7 @@ class CompositeReportGenerator(BaseReportGenerator):
 class ChainedReportGenerator(BaseReportGenerator):
     """Generator that chains multiple generators, passing output of one as input to the next."""
 
-    def __init__(self, generators: List[BaseReportGenerator], **kwargs):
+    def __init__(self, generators: list[BaseReportGenerator], **kwargs):
         """Initialize chained generator.
 
         Args:
@@ -641,7 +644,7 @@ class ChainedReportGenerator(BaseReportGenerator):
             else ReportOutput(success=False, errors=["No generators in chain"])
         )
 
-    def get_required_fields(self) -> List[str]:
+    def get_required_fields(self) -> list[str]:
         """Get required fields from first generator in chain."""
         return self.generators[0].get_required_fields() if self.generators else []
 

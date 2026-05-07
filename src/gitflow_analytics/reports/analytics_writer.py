@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -142,7 +142,7 @@ class AnalyticsReportGenerator(AnalyticsPatternseMixin):
 
         return fallback_name
 
-    def _get_files_changed_count(self, commit: Dict[str, Any]) -> int:
+    def _get_files_changed_count(self, commit: dict[str, Any]) -> int:
         """Safely extract files_changed count from commit data.
 
         WHY: The files_changed field can be either an int (count) or list (file names).
@@ -244,8 +244,8 @@ class AnalyticsReportGenerator(AnalyticsPatternseMixin):
 
     def generate_activity_distribution_report(
         self,
-        commits: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
+        commits: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
         output_path: Path,
     ) -> Path:
         """Generate activity distribution report with percentage breakdowns."""
@@ -367,9 +367,9 @@ class AnalyticsReportGenerator(AnalyticsPatternseMixin):
 
     def generate_qualitative_insights_report(
         self,
-        commits: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
-        ticket_analysis: Dict[str, Any],
+        commits: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
+        ticket_analysis: dict[str, Any],
         output_path: Path,
     ) -> Path:
         """Generate qualitative insights and patterns report."""
@@ -405,8 +405,8 @@ class AnalyticsReportGenerator(AnalyticsPatternseMixin):
 
     def generate_developer_focus_report(
         self,
-        commits: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
+        commits: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
         output_path: Path,
         weeks: int = 12,
     ) -> Path:
@@ -424,7 +424,7 @@ class AnalyticsReportGenerator(AnalyticsPatternseMixin):
         logger.debug(f"  end_date: {end_date} (tzinfo: {end_date.tzinfo})")
 
         # Build developer lookup
-        dev_lookup = {dev["canonical_id"]: dev for dev in developer_stats}
+        {dev["canonical_id"]: dev for dev in developer_stats}
 
         # Get all unique projects
         all_projects = sorted(list(set(c.get("project_key", "UNKNOWN") for c in commits)))
@@ -541,8 +541,14 @@ class AnalyticsReportGenerator(AnalyticsPatternseMixin):
 
             # Add project-specific metrics
             self._add_project_columns_to_focus_row(
-                row, all_projects, projects, project_lines, project_totals,
-                dev_commits, commit_sizes, total_commits,
+                row,
+                all_projects,
+                projects,
+                project_lines,
+                project_totals,
+                dev_commits,
+                commit_sizes,
+                total_commits,
             )
 
             focus_data.append(row)
@@ -574,8 +580,8 @@ class AnalyticsReportGenerator(AnalyticsPatternseMixin):
 
     def generate_weekly_trends_report(
         self,
-        commits: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
+        commits: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
         output_path: Path,
         weeks: int = 12,
     ) -> Path:
@@ -586,7 +592,7 @@ class AnalyticsReportGenerator(AnalyticsPatternseMixin):
 
         # Calculate week boundaries
         end_date = datetime.now(timezone.utc)
-        start_date = end_date - timedelta(weeks=weeks)
+        end_date - timedelta(weeks=weeks)
 
         # Build developer lookup
         dev_lookup = {dev["canonical_id"]: dev for dev in developer_stats}
@@ -769,4 +775,3 @@ class AnalyticsReportGenerator(AnalyticsPatternseMixin):
         self._write_project_trends_csv(output_path, project_weekly, sorted_weeks)
 
         return output_path
-

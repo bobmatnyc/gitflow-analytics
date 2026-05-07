@@ -7,7 +7,7 @@ report generation abstraction layer while maintaining backward compatibility.
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from .base import ReportData, ReportMetadata
 from .factory import ReportBuilder, ReportFactory
@@ -23,7 +23,7 @@ class ReportCLIAdapter:
     report abstraction layer, allowing gradual migration.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize the CLI adapter.
 
         Args:
@@ -43,18 +43,18 @@ class ReportCLIAdapter:
 
     def prepare_report_data(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
-        activity_data: List[Dict[str, Any]] = None,
-        focus_data: List[Dict[str, Any]] = None,
-        insights_data: List[Dict[str, Any]] = None,
-        ticket_analysis: Dict[str, Any] = None,
-        pr_metrics: Dict[str, Any] = None,
-        dora_metrics: Dict[str, Any] = None,
-        branch_health_metrics: List[Dict[str, Any]] = None,
-        pm_data: Dict[str, Any] = None,
-        qualitative_results: List[Dict[str, Any]] = None,
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
+        activity_data: list[dict[str, Any]] = None,
+        focus_data: list[dict[str, Any]] = None,
+        insights_data: list[dict[str, Any]] = None,
+        ticket_analysis: dict[str, Any] = None,
+        pr_metrics: dict[str, Any] = None,
+        dora_metrics: dict[str, Any] = None,
+        branch_health_metrics: list[dict[str, Any]] = None,
+        pm_data: dict[str, Any] = None,
+        qualitative_results: list[dict[str, Any]] = None,
         chatgpt_summary: str = None,
         start_date: datetime = None,
         end_date: datetime = None,
@@ -100,8 +100,8 @@ class ReportCLIAdapter:
         )
 
     def generate_reports(
-        self, report_data: ReportData, output_dir: Path, formats: List[str] = None
-    ) -> Dict[str, Any]:
+        self, report_data: ReportData, output_dir: Path, formats: list[str] = None
+    ) -> dict[str, Any]:
         """Generate all configured reports.
 
         Args:
@@ -116,7 +116,7 @@ class ReportCLIAdapter:
             formats = self.config.get("output", {}).get("formats", ["csv", "markdown"])
 
         results = {}
-        timestamp = datetime.now().strftime("%Y%m%d")
+        datetime.now().strftime("%Y%m%d")
 
         # Use ReportBuilder to configure and generate reports
         builder = ReportBuilder(self.factory)
@@ -170,12 +170,12 @@ class ReportCLIAdapter:
 
     def generate_legacy_reports(
         self,
-        commits: List[Dict[str, Any]],
-        prs: List[Dict[str, Any]],
-        developer_stats: List[Dict[str, Any]],
+        commits: list[dict[str, Any]],
+        prs: list[dict[str, Any]],
+        developer_stats: list[dict[str, Any]],
         output_dir: Path,
         **kwargs,
-    ) -> Dict[str, Path]:
+    ) -> dict[str, Path]:
         """Generate reports using legacy method for backward compatibility.
 
         This method maintains the exact same interface as the existing CLI
@@ -308,7 +308,7 @@ class ReportCLIAdapter:
         for report_type in csv_reports:
             builder.add_report(report_type, ReportFormat.CSV)
 
-    def _extract_repositories(self, commits: List[Dict[str, Any]]) -> List[str]:
+    def _extract_repositories(self, commits: list[dict[str, Any]]) -> list[str]:
         """Extract unique repository names from commits.
 
         Args:
@@ -326,8 +326,8 @@ class ReportCLIAdapter:
         return list(repos)
 
     def _extract_story_points(
-        self, commits: List[Dict[str, Any]], prs: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, commits: list[dict[str, Any]], prs: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Extract story points data from commits and PRs.
 
         Args:
@@ -358,7 +358,7 @@ class ReportCLIAdapter:
         }
 
 
-def integrate_with_cli(cli_config: Dict[str, Any]) -> ReportCLIAdapter:
+def integrate_with_cli(cli_config: dict[str, Any]) -> ReportCLIAdapter:
     """Create a CLI adapter for report generation.
 
     This function can be called from the existing CLI to use the new

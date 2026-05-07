@@ -216,10 +216,7 @@ class JIRAActivityIntegration:
         # without quotes and yields a 400).
         keys_csv = ",".join(f'"{k}"' for k in project_keys)
         since_iso = since.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M")
-        jql = (
-            f"project in ({keys_csv}) "
-            f'AND (created >= "{since_iso}" OR updated >= "{since_iso}")'
-        )
+        jql = f'project in ({keys_csv}) AND (created >= "{since_iso}" OR updated >= "{since_iso}")'
 
         issues: list[dict[str, Any]] = []
         max_results = 50
@@ -453,8 +450,7 @@ class JIRAActivityIntegration:
 
             if response.status_code >= 400:
                 print(
-                    f"   ⚠️  JIRA activity API error {response.status_code}: "
-                    f"{response.text[:200]}"
+                    f"   ⚠️  JIRA activity API error {response.status_code}: {response.text[:200]}"
                 )
                 return None
 
@@ -491,8 +487,7 @@ class JIRAActivityIntegration:
 
             if response.status_code >= 400:
                 print(
-                    f"   ⚠️  JIRA activity API error {response.status_code}: "
-                    f"{response.text[:200]}"
+                    f"   ⚠️  JIRA activity API error {response.status_code}: {response.text[:200]}"
                 )
                 return None
 

@@ -131,8 +131,7 @@ class ConfluenceIdentitySync:
             if response.status_code in (429, 503):
                 wait_time = self.backoff_factor * (2**attempt)
                 logger.debug(
-                    "Confluence identity sync rate-limited (status %s), "
-                    "waiting %ss (attempt %d)",
+                    "Confluence identity sync rate-limited (status %s), waiting %ss (attempt %d)",
                     response.status_code,
                     wait_time,
                     attempt + 1,
