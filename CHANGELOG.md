@@ -28,6 +28,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with timezone-aware `datetime.now(timezone.utc)`; naive cached_at values are
   normalized to UTC consistently.
 
+## [3.16.0] - 2026-05-07
+
+### Added
+- **Classification overrides**: `classification_overrides` table + `gfa override set/list/remove` CLI commands (#63)
+- **AI detection cache**: AI-detection results stored to cache DB + `gfa backfill-ai-detection` CLI command (#47)
+- **Revert tracking**: `is_revert` field in `cached_commits` + `reversion_commits` count in metrics (#64)
+- **Coverage warnings**: Classification coverage warnings + `--validate-coverage` / `--coverage-threshold` flags (#65)
+- **JIRA tier-3 classifier**: JIRA project-key → `work_type` mapping via `jira_project_mappings` config (#62)
+- **AI footer detection**: Made-with-AI trailer detection for Cursor, Claude, Copilot commit footers (#61)
+- **PR metrics**: `pr_merge_rate` and `avg_cycle_time_hrs` fields in `weekly_pr_metrics` (#66)
+- **Ticket IDs from PR titles**: Extract ticket IDs from PR title text + regex false-positive suppression (#54)
+
+### Changed
+- Performance: TTL guards + watermark anchors to eliminate redundant API fetches
+- `gfa backfill-ticket-ids` extended to scan PR titles in addition to commit messages
+
+### Fixed
+- Pyright type errors across test files (spacy import guard, revert detection imports)
+
 ## [3.15.2] - 2026-05-06
 ### Fixed
 - Resolve Pyright type errors in reports factory and example_usage introduced

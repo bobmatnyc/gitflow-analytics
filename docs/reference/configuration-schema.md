@@ -107,6 +107,14 @@ github:
   timeout: 30                       # API request timeout (seconds)
   retry_attempts: 3                 # Number of retry attempts
   rate_limit_buffer: 100            # Buffer for rate limiting
+  open_pr_refresh_ttl_hours: 1.0    # TTL for open-PR refresh (float, default 1.0)
+                                    # PRs cached within this window are skipped.
+                                    # Set to 0 to disable and always refresh.
+  full_scan_ttl_hours: 1.0          # TTL for full repository/space scans
+                                    # (float, default 1.0). Scan is skipped
+                                    # entirely when last scan completed within
+                                    # this window. Mirrors the Confluence/JIRA
+                                    # incremental-watermark pattern.
 ```
 
 ## 📊 Analysis Configuration

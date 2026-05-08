@@ -121,6 +121,11 @@ gfa classify -c config.yaml [OPTIONS]
 - `--show-jira-signals` - Log every commit short-circuited by the JIRA project-key
   mapping (issue #62). Useful for auditing which commits hit the tier-3
   classification path defined in `jira_project_mappings`.
+- `--validate-coverage` - Warn when the fraction of classified commits falls below the
+  coverage threshold. Exits with a non-zero code if coverage is insufficient (#65).
+- `--coverage-threshold FLOAT` - Minimum acceptable classification coverage ratio
+  (default: 0.8). Values between 0.0 and 1.0. Used in conjunction with
+  `--validate-coverage`.
 - `--log [none|INFO|DEBUG]` - Enable logging at the specified level (default: none)
 
 **Examples**:
@@ -133,6 +138,12 @@ gfa classify -c config.yaml --reclassify
 
 # Audit which commits were classified via the JIRA project-key mapping
 gfa classify -c config.yaml --show-jira-signals --log INFO
+
+# Warn if fewer than 80% of commits are classified (default threshold)
+gfa classify -c config.yaml --validate-coverage
+
+# Warn if fewer than 90% of commits are classified
+gfa classify -c config.yaml --validate-coverage --coverage-threshold 0.9
 ```
 
 **Prerequisite**: `gfa collect -c config.yaml`
@@ -388,6 +399,109 @@ gfa backfill-ticket-ids -c config.yaml
 - PRs whose `ticket_ids` and `commit_count` are already populated are skipped
 - Commit messages must already be present in `cached_commits`; PRs with no associated cached commits will have `ticket_ids` set to `[]` and `commit_count` set to `0`
 - See [Cache System Reference](./cache-system.md) for the full `pull_request_cache` schema
+
+### override
+Manage manual classification overrides for individual commits. Overrides take
+precedence over all automated classifiers (LLM, rule-based, JIRA mapping).
+
+```bash
+gfa override <subcommand> [OPTIONS]
+```
+
+**Subcommands**:
+
+#### override set
+Manually assign a `change_type` classification to a specific commit.
+
+```bash
+gfa override set <commit_sha> <change_type> -c config.yaml
+```
+
+**Arguments**:
+- `commit_sha` - Full or abbreviated commit SHA to override
+- `change_type` - Classification to apply (e.g. `feature`, `maintenance`, `bugfix`, `analytics`)
+
+**Examples**:
+```bash
+# Override a commit to be classified as a feature
+gfa override set abc1234 feature -c config.yaml
+
+# Override a commit to be classified as maintenance
+gfa override set def5678 maintenance -c config.yaml
+```
+
+#### override list
+List all manual classification overrides currently stored in the cache database.
+
+```bash
+gfa override list -c config.yaml
+```
+
+**Options**:
+- `-c, --config PATH` - Path to YAML configuration file (required)
+
+**Examples**:
+```bash
+# Show all active overrides
+gfa override list -c config.yaml
+```
+
+#### override remove
+Remove a manual classification override, returning the commit to automated
+classification on the next `gfa classify` run.
+
+```bash
+gfa override remove <commit_sha> -c config.yaml
+```
+
+**Arguments**:
+- `commit_sha` - Full or abbreviated commit SHA whose override should be removed
+
+**Examples**:
+```bash
+# Remove an override and allow automated re-classification
+gfa override remove abc1234 -c config.yaml
+```
+
+**What It Does** (all override subcommands):
+1. Reads/writes the `classification_overrides` table in the local cache database
+2. On the next `gfa classify` run, overrides take the highest precedence —
+   the LLM call for overridden commits is skipped entirely
+3. `override remove` deletes the row; the commit reverts to standard
+   classification on the next classify pass
+
+### backfill-ai-detection
+Backfill AI-detection results for commits already stored in `cached_commits`.
+Scans commit footers and trailers for known AI-tool signatures (Cursor, Claude,
+GitHub Copilot) and writes results to the cache database. No GitHub API calls
+are made — all data is sourced from cached commit messages.
+
+```bash
+gfa backfill-ai-detection -c config.yaml
+```
+
+**Options**:
+- `-c, --config PATH` - Path to YAML configuration file (required)
+
+**Examples**:
+```bash
+# Detect AI footers for all cached commits
+gfa backfill-ai-detection -c config.yaml
+```
+
+**What It Does**:
+1. Queries `cached_commits` for all rows
+2. Scans each commit message/body for AI-tool trailer patterns:
+   - `Co-authored-by: Claude` (Anthropic Claude)
+   - `Co-authored-by: GitHub Copilot` (GitHub Copilot)
+   - Cursor-specific commit footers
+3. Writes `is_ai_assisted` flag and detected tool name back to `cached_commits`
+4. Operation is idempotent — safe to re-run after adding new AI-tool signatures
+
+**Use Cases**:
+- Upgrading an existing installation and enriching previously cached commits
+- Adding AI-tool detection to a repository after the fact
+- Re-running after adding new AI-tool signature patterns
 
 ## 📊 Output Formats
 
