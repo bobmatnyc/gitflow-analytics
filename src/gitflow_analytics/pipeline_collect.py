@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,7 @@ def run_collect(
     weeks: int,
     force: bool = False,
     progress_callback: Callable[[str], None] | None = None,
+    explicit_date_range: tuple[date, date] | None = None,
 ) -> CollectResult:
     """Fetch raw commit data from repositories into the weekly cache.
 
@@ -32,6 +33,8 @@ def run_collect(
         force: When True, bypass the per-week cache and always re-fetch.
         progress_callback: Optional function called with human-readable status
             messages as work progresses.
+        explicit_date_range: When provided, use this (start, end) date pair
+            directly instead of computing a rolling-week window from ``weeks``.
 
     Returns:
         A :class:`CollectResult` with summary statistics.
@@ -47,11 +50,18 @@ def run_collect(
 
     result = CollectResult()
 
-    current_time = datetime.now(timezone.utc)
-    current_week_start = get_week_start(current_time)
-    last_complete_week_start = current_week_start - timedelta(weeks=1)
-    start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
-    end_date = get_week_end(last_complete_week_start + timedelta(days=6))
+    if explicit_date_range is not None:
+        _sd, _ed = explicit_date_range
+        # Convert plain date → datetime (midnight / end-of-day, UTC) so that
+        # downstream functions which expect datetime receive the right type.
+        start_date: datetime = datetime(_sd.year, _sd.month, _sd.day, tzinfo=timezone.utc)
+        end_date: datetime = datetime(_ed.year, _ed.month, _ed.day, 23, 59, 59, tzinfo=timezone.utc)
+    else:
+        current_time = datetime.now(timezone.utc)
+        current_week_start = get_week_start(current_time)
+        last_complete_week_start = current_week_start - timedelta(weeks=1)
+        start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
+        end_date = get_week_end(last_complete_week_start + timedelta(days=6))
 
     result.start_date = start_date
     result.end_date = end_date

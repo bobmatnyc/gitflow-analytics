@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,7 @@ def run_report(
     generate_csv: bool = True,
     anonymize: bool = False,
     progress_callback: Callable[[str], None] | None = None,
+    explicit_date_range: tuple[date, date] | None = None,
 ) -> ReportResult:
     """Generate reports from classified commit data in the cache.
 
@@ -35,6 +36,8 @@ def run_report(
             markdown report.
         anonymize: When True, anonymize developer names/emails in reports.
         progress_callback: Optional function called with status messages.
+        explicit_date_range: When provided, use this (start, end) date pair
+            directly instead of computing a rolling-week window from ``weeks``.
 
     Returns:
         A :class:`ReportResult` with the list of generated file names.
@@ -55,11 +58,18 @@ def run_report(
 
     result = ReportResult(output_dir=output_dir)
 
-    current_time = datetime.now(timezone.utc)
-    current_week_start = get_week_start(current_time)
-    last_complete_week_start = current_week_start - timedelta(weeks=1)
-    start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
-    end_date = get_week_end(last_complete_week_start + timedelta(days=6))
+    if explicit_date_range is not None:
+        _sd, _ed = explicit_date_range
+        # Convert plain date → datetime (midnight / end-of-day, UTC) so that
+        # downstream functions which expect datetime receive the right type.
+        start_date: datetime = datetime(_sd.year, _sd.month, _sd.day, tzinfo=timezone.utc)
+        end_date: datetime = datetime(_ed.year, _ed.month, _ed.day, 23, 59, 59, tzinfo=timezone.utc)
+    else:
+        current_time = datetime.now(timezone.utc)
+        current_week_start = get_week_start(current_time)
+        last_complete_week_start = current_week_start - timedelta(weeks=1)
+        start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
+        end_date = get_week_end(last_complete_week_start + timedelta(days=6))
 
     _emit(f"Report period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
 

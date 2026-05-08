@@ -1,4 +1,4 @@
-"""Tests for ISO week targeting flags on gfa classify (#70)."""
+"""Tests for ISO week targeting flags on gfa classify/collect/report (#70)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,11 @@ from datetime import date, timedelta
 import pytest
 from click.testing import CliRunner
 
-from gitflow_analytics.cli_pipeline_commands import classify_command
+from gitflow_analytics.cli_pipeline_commands import (
+    classify_command,
+    collect_command,
+    report_command,
+)
 from gitflow_analytics.utils.iso_week import iso_week_range, parse_iso_week
 
 
@@ -61,6 +65,72 @@ class TestClassifyCommandFlags:
         cfg.write_text("# placeholder\n")
         runner = CliRunner()
         return runner.invoke(classify_command, ["--config", str(cfg), *args])
+
+    def test_week_and_weeks_mutually_exclusive(self, tmp_path):
+        result = self._invoke(["--week", "2026-W07", "--weeks", "8"], tmp_path)
+        assert result.exit_code != 0
+        assert "cannot be combined" in result.output.lower()
+
+    def test_from_without_to_raises(self, tmp_path):
+        result = self._invoke(["--from", "2026-W01"], tmp_path)
+        assert result.exit_code != 0
+        assert "must be used together" in result.output.lower()
+
+    def test_to_without_from_raises(self, tmp_path):
+        result = self._invoke(["--to", "2026-W04"], tmp_path)
+        assert result.exit_code != 0
+        assert "must be used together" in result.output.lower()
+
+    def test_week_and_from_mutually_exclusive(self, tmp_path):
+        result = self._invoke(
+            ["--week", "2026-W07", "--from", "2026-W01", "--to", "2026-W04"],
+            tmp_path,
+        )
+        assert result.exit_code != 0
+        assert "cannot be combined" in result.output.lower()
+
+
+class TestCollectCommandFlags:
+    """Verify CLI-level mutual-exclusivity checks for --week/--from/--to on collect."""
+
+    def _invoke(self, args: list[str], tmp_path):
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text("# placeholder\n")
+        runner = CliRunner()
+        return runner.invoke(collect_command, ["--config", str(cfg), *args])
+
+    def test_week_and_weeks_mutually_exclusive(self, tmp_path):
+        result = self._invoke(["--week", "2026-W07", "--weeks", "8"], tmp_path)
+        assert result.exit_code != 0
+        assert "cannot be combined" in result.output.lower()
+
+    def test_from_without_to_raises(self, tmp_path):
+        result = self._invoke(["--from", "2026-W01"], tmp_path)
+        assert result.exit_code != 0
+        assert "must be used together" in result.output.lower()
+
+    def test_to_without_from_raises(self, tmp_path):
+        result = self._invoke(["--to", "2026-W04"], tmp_path)
+        assert result.exit_code != 0
+        assert "must be used together" in result.output.lower()
+
+    def test_week_and_from_mutually_exclusive(self, tmp_path):
+        result = self._invoke(
+            ["--week", "2026-W07", "--from", "2026-W01", "--to", "2026-W04"],
+            tmp_path,
+        )
+        assert result.exit_code != 0
+        assert "cannot be combined" in result.output.lower()
+
+
+class TestReportCommandFlags:
+    """Verify CLI-level mutual-exclusivity checks for --week/--from/--to on report."""
+
+    def _invoke(self, args: list[str], tmp_path):
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text("# placeholder\n")
+        runner = CliRunner()
+        return runner.invoke(report_command, ["--config", str(cfg), *args])
 
     def test_week_and_weeks_mutually_exclusive(self, tmp_path):
         result = self._invoke(["--week", "2026-W07", "--weeks", "8"], tmp_path)

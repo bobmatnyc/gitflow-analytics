@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from datetime import date as _date
 from pathlib import Path
 from typing import Optional
 
@@ -11,6 +12,55 @@ from .cli_utils import setup_logging
 from .config import ConfigLoader
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_date_range(
+    weeks: int,
+    target_weeks: tuple[str, ...],
+    from_week: Optional[str],
+    to_week: Optional[str],
+) -> Optional[tuple[_date, _date]]:
+    """Validate ISO week-targeting flags and return an explicit date range, or None.
+
+    When ``target_weeks``, ``from_week``, or ``to_week`` are provided the
+    function validates mutual-exclusivity constraints and returns the
+    corresponding ``(start_date, end_date)`` span.  Returns ``None`` when no
+    targeting flags are active, signalling that the caller should use the
+    rolling-weeks mode.
+
+    Args:
+        weeks: Value of the ``--weeks`` option (default 4).
+        target_weeks: Tuple of YYYY-Www strings from repeated ``--week`` flags.
+        from_week: Optional start of an inclusive ISO week range.
+        to_week: Optional end of an inclusive ISO week range.
+
+    Returns:
+        ``(start_date, end_date)`` when targeting flags are active, else ``None``.
+
+    Raises:
+        click.UsageError: On any mutual-exclusivity violation.
+    """
+    from .utils.iso_week import iso_week_range, parse_iso_week
+
+    targeting_flags = bool(target_weeks) or (from_week is not None) or (to_week is not None)
+    weeks_non_default = weeks != 4  # 4 is the Click default
+
+    if targeting_flags and weeks_non_default:
+        raise click.UsageError(
+            "--week/--from/--to cannot be combined with an explicit --weeks value."
+        )
+    if bool(target_weeks) and (from_week is not None or to_week is not None):
+        raise click.UsageError("--week cannot be combined with --from/--to.")
+    if (from_week is None) != (to_week is None):
+        raise click.UsageError("--from and --to must be used together.")
+
+    if target_weeks:
+        pairs = [parse_iso_week(w) for w in target_weeks]
+        starts, ends = zip(*pairs)
+        return (min(starts), max(ends))
+    if from_week is not None and to_week is not None:
+        return iso_week_range(from_week, to_week)
+    return None
 
 
 @click.command(name="collect")
@@ -31,6 +81,39 @@ logger = logging.getLogger(__name__)
     help="Number of complete weeks to collect",
 )
 @click.option(
+    "--week",
+    "target_weeks",
+    multiple=True,
+    metavar="YYYY-Www",
+    help=(
+        "Target a specific ISO week for collection (e.g. 2026-W07). "
+        "May be repeated for multiple discrete weeks. "
+        "Mutually exclusive with --weeks, --from, and --to."
+    ),
+)
+@click.option(
+    "--from",
+    "from_week",
+    default=None,
+    metavar="YYYY-Www",
+    help=(
+        "Start of an inclusive ISO week range (e.g. 2026-W01). "
+        "Must be used together with --to. "
+        "Mutually exclusive with --weeks and --week."
+    ),
+)
+@click.option(
+    "--to",
+    "to_week",
+    default=None,
+    metavar="YYYY-Www",
+    help=(
+        "End of an inclusive ISO week range (e.g. 2026-W18). "
+        "Must be used together with --from. "
+        "Mutually exclusive with --weeks and --week."
+    ),
+)
+@click.option(
     "--force",
     "-f",
     is_flag=True,
@@ -42,7 +125,15 @@ logger = logging.getLogger(__name__)
     default="none",
     help="Enable logging with specified level",
 )
-def collect_command(config_path: Path, weeks: int, force: bool, log: str) -> None:
+def collect_command(
+    config_path: Path,
+    weeks: int,
+    target_weeks: tuple[str, ...],
+    from_week: Optional[str],
+    to_week: Optional[str],
+    force: bool,
+    log: str,
+) -> None:
     """Stage 1: Collect raw commit data from repositories into the weekly cache.
 
     \b
@@ -55,6 +146,12 @@ def collect_command(config_path: Path, weeks: int, force: bool, log: str) -> Non
       # Collect 4 weeks of data
       gfa collect -c config.yaml --weeks 4
 
+      # Collect a specific ISO week
+      gfa collect -c config.yaml --week 2026-W07
+
+      # Collect an inclusive range of ISO weeks
+      gfa collect -c config.yaml --from 2026-W01 --to 2026-W04
+
       # Force a fresh fetch, ignoring cached weeks
       gfa collect -c config.yaml --weeks 4 -f
 
@@ -64,17 +161,25 @@ def collect_command(config_path: Path, weeks: int, force: bool, log: str) -> Non
     """
     setup_logging(log, __name__)
 
+    explicit_date_range = _resolve_date_range(weeks, target_weeks, from_week, to_week)
+
     try:
         from .pipeline import run_collect
 
         cfg = ConfigLoader.load(config_path)
-        click.echo(f"Stage 1: Collecting data ({weeks} weeks)...")
+        if explicit_date_range is not None:
+            from_iso = explicit_date_range[0].strftime("%G-W%V")
+            to_iso = explicit_date_range[1].strftime("%G-W%V")
+            click.echo(f"Stage 1: Collecting data ({from_iso} → {to_iso})...")
+        else:
+            click.echo(f"Stage 1: Collecting data ({weeks} weeks)...")
 
         result = run_collect(
             cfg=cfg,
             weeks=weeks,
             force=force,
             progress_callback=lambda msg: click.echo(f"  {msg}"),
+            explicit_date_range=explicit_date_range,
         )
 
         if result.errors:
@@ -221,32 +326,7 @@ def classify_command(
     """
     setup_logging(log, __name__)
 
-    # Mutual-exclusivity validation for ISO-week targeting flags (#70).
-    # We approximate "was --weeks explicitly set?" by comparing to the
-    # default. Click does not expose source-of-value cleanly without ctx.
-    weeks_default = 4
-    targeting_flags = bool(target_weeks) or (from_week is not None) or (to_week is not None)
-    weeks_explicitly_set = weeks != weeks_default
-
-    if targeting_flags and weeks_explicitly_set:
-        raise click.UsageError("--week/--from/--to cannot be combined with --weeks.")
-    if bool(target_weeks) and (from_week is not None or to_week is not None):
-        raise click.UsageError("--week cannot be combined with --from/--to.")
-    if (from_week is None) != (to_week is None):
-        raise click.UsageError("--from and --to must be used together.")
-
-    # Compute explicit_date_range (Mon..Sun span) when targeting flags used.
-    from datetime import date as _date
-
-    from .utils.iso_week import iso_week_range, parse_iso_week
-
-    explicit_date_range: Optional[tuple[_date, _date]] = None
-    if target_weeks:
-        # Union of all requested weeks: min(mondays) -> max(sundays).
-        starts, ends = zip(*[parse_iso_week(w) for w in target_weeks])
-        explicit_date_range = (min(starts), max(ends))
-    elif from_week is not None and to_week is not None:
-        explicit_date_range = iso_week_range(from_week, to_week)
+    explicit_date_range = _resolve_date_range(weeks, target_weeks, from_week, to_week)
 
     try:
         from .pipeline import run_classify
@@ -255,7 +335,7 @@ def classify_command(
         if explicit_date_range is not None:
             from_iso = explicit_date_range[0].strftime("%G-W%V")
             to_iso = explicit_date_range[1].strftime("%G-W%V")
-            click.echo(f"Stage 2: Classifying commits ({from_iso} to {to_iso})...")
+            click.echo(f"Stage 2: Classifying commits ({from_iso} → {to_iso})...")
         else:
             click.echo(f"Stage 2: Classifying commits ({weeks} weeks)...")
 
@@ -348,6 +428,39 @@ def classify_command(
     help="Number of weeks to include in reports",
 )
 @click.option(
+    "--week",
+    "target_weeks",
+    multiple=True,
+    metavar="YYYY-Www",
+    help=(
+        "Target a specific ISO week for reporting (e.g. 2026-W07). "
+        "May be repeated for multiple discrete weeks. "
+        "Mutually exclusive with --weeks, --from, and --to."
+    ),
+)
+@click.option(
+    "--from",
+    "from_week",
+    default=None,
+    metavar="YYYY-Www",
+    help=(
+        "Start of an inclusive ISO week range (e.g. 2026-W01). "
+        "Must be used together with --to. "
+        "Mutually exclusive with --weeks and --week."
+    ),
+)
+@click.option(
+    "--to",
+    "to_week",
+    default=None,
+    metavar="YYYY-Www",
+    help=(
+        "End of an inclusive ISO week range (e.g. 2026-W18). "
+        "Must be used together with --from. "
+        "Mutually exclusive with --weeks and --week."
+    ),
+)
+@click.option(
     "--output",
     "-o",
     "output_path",
@@ -374,6 +487,9 @@ def classify_command(
 def report_command(
     config_path: Path,
     weeks: int,
+    target_weeks: tuple[str, ...],
+    from_week: Optional[str],
+    to_week: Optional[str],
     output_path: Optional[Path],
     generate_csv: bool,
     anonymize: bool,
@@ -394,6 +510,12 @@ def report_command(
       # Generate CSV reports as well
       gfa report -c config.yaml --generate-csv
 
+      # Report on a specific ISO week
+      gfa report -c config.yaml --week 2026-W07
+
+      # Report on an inclusive range of ISO weeks
+      gfa report -c config.yaml --from 2026-W01 --to 2026-W04
+
       # Write reports to a custom directory
       gfa report -c config.yaml -o /tmp/my-reports --generate-csv
 
@@ -404,6 +526,8 @@ def report_command(
     """
     setup_logging(log, __name__)
 
+    explicit_date_range = _resolve_date_range(weeks, target_weeks, from_week, to_week)
+
     try:
         from .pipeline import run_report
 
@@ -412,7 +536,12 @@ def report_command(
         if output_path is None:
             output_path = cfg.output.directory if cfg.output.directory else Path("./reports")
 
-        click.echo(f"Stage 3: Generating reports ({weeks} weeks) → {output_path}")
+        if explicit_date_range is not None:
+            from_iso = explicit_date_range[0].strftime("%G-W%V")
+            to_iso = explicit_date_range[1].strftime("%G-W%V")
+            click.echo(f"Stage 3: Generating reports ({from_iso} → {to_iso}) → {output_path}")
+        else:
+            click.echo(f"Stage 3: Generating reports ({weeks} weeks) → {output_path}")
 
         result = run_report(
             cfg=cfg,
@@ -421,6 +550,7 @@ def report_command(
             generate_csv=generate_csv,
             anonymize=anonymize,
             progress_callback=lambda msg: click.echo(f"  {msg}"),
+            explicit_date_range=explicit_date_range,
         )
 
         if result.errors:
