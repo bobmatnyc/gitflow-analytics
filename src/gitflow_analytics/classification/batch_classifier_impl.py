@@ -1305,9 +1305,9 @@ class BatchClassifierImplMixin:
 
     def _store_daily_metrics(
         self,
-        _start_date: datetime,
-        _end_date: datetime,
-        _project_keys: list[str] | None,
+        start_date: datetime,
+        end_date: datetime,
+        project_keys: list[str] | None,
     ) -> None:
         """Store aggregated daily metrics from classification results."""
         from ..core.metrics_storage import DailyMetricsStorage

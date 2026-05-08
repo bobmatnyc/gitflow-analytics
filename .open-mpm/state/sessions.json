@@ -1,0 +1,10 @@
+{
+  "sessions": [
+    {
+      "id": "73548a6b-50b1-4e08-853b-8cf614041658",
+      "started_at": "2026-05-08T17:09:23.672202Z",
+      "workflow": "pending",
+      "status": "running"
+    }
+  ]
+}
