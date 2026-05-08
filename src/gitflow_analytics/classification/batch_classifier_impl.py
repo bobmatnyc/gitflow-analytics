@@ -1313,6 +1313,7 @@ class BatchClassifierImplMixin:
         project_keys: list[str] | None,
     ) -> None:
         """Store aggregated daily metrics from classification results."""
+        del start_date, end_date, project_keys
         from ..core.metrics_storage import DailyMetricsStorage
 
         try:
