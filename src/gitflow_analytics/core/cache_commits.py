@@ -23,6 +23,39 @@ logger = logging.getLogger(__name__)
 _TICKET_ID_PATTERN = re.compile(r"\b[A-Z]+-\d+\b")
 
 
+def _ensure_ai_detection_fields(commit_data: dict[str, Any]) -> None:
+    """Populate AI detection fields on commit_data if missing (issue #47).
+
+    WHY: Most commits flow through analyzer_commit.py which already runs
+    detect_ai_commit() before reaching the cache.  However, some code paths
+    (tests, ad-hoc tooling, replay-from-export) may insert commits directly
+    via cache_commit()/cache_commits_batch().  Doing detection at the cache
+    boundary guarantees the persisted columns are populated regardless of
+    upstream caller, so reports never see NULLs for newly-cached rows.
+
+    Mutates ``commit_data`` in place.  Idempotent: if ai_confidence_score is
+    already a non-None value (including 0.0), no changes are made.
+    """
+    if commit_data.get("ai_confidence_score") is not None:
+        return
+    # Local import to avoid module-load-time circular dependencies.
+    from ..utils.ai_detection import detect_ai_commit
+
+    raw_message = commit_data.get("message") or ""
+    message_str = (
+        raw_message
+        if isinstance(raw_message, str)
+        else raw_message.decode("utf-8", errors="ignore")
+    )
+    files_changed = commit_data.get("files_changed")
+    # Only pass files when it's a list of paths; an int count is useless to
+    # the file-based heuristics.
+    files_arg = files_changed if isinstance(files_changed, list) else None
+    confidence, method = detect_ai_commit(message_str, files_arg)
+    commit_data["ai_confidence_score"] = confidence
+    commit_data["ai_detection_method"] = method
+
+
 def _extract_ticket_ids_from_messages(messages: list[str]) -> list[str]:
     """Extract a deduplicated, sorted list of JIRA-style ticket IDs from messages.
 
@@ -158,6 +191,8 @@ class CommitCacheMixin(_Base):
 
     def cache_commit(self, repo_path: str, commit_data: dict[str, Any]) -> None:
         """Cache commit analysis results."""
+        # Issue #47: ensure AI detection columns are populated at write time.
+        _ensure_ai_detection_fields(commit_data)
         with self.get_session() as session:
             # Check if already exists
             existing = (
@@ -222,6 +257,11 @@ class CommitCacheMixin(_Base):
         """
         if not commits:
             return
+
+        # Issue #47: ensure AI detection columns are populated at write time
+        # for every commit in the batch.  Idempotent — skips already-populated rows.
+        for commit_data in commits:
+            _ensure_ai_detection_fields(commit_data)
 
         import time
 

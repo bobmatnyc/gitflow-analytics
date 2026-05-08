@@ -128,6 +128,11 @@ from .cli_backfill_ticket_ids import register_backfill_ticket_ids_commands  # no
 
 register_backfill_ticket_ids_commands(cli)
 
+# AI detection backfill for cached_commits (issue #47)
+from .cli_backfill_ai_detection import register_backfill_ai_detection_commands  # noqa: E402
+
+register_backfill_ai_detection_commands(cli)
+
 
 def main() -> None:
     """Main entry point."""
