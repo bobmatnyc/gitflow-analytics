@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with timezone-aware `datetime.now(timezone.utc)`; naive cached_at values are
   normalized to UTC consistently.
 
+## [3.16.1] - 2026-05-08
+
+### Added
+- **Tier-1.5 issuetype classifier**: Issue-linked commits are now classified via their JIRA/GH ticket `issuetype` field (confidence 0.90) before falling through to the LLM — eliminates LLM overhead for commits where the ticket type already encodes the answer (#68)
+- `IssueCache.issue_type` column (v17 migration) — `issuetype` extracted from JIRA API response during sync and stored as a queryable top-level field
+- `business_domain` now populated from ticket `components` / `labels` for issue-linked commits (was always "unknown")
+- Issuetype → change_type mapping: Bug→bugfix, Story/Feature/Epic→feature, Task+platform-label→maintenance, Task+refactor-label→refactor, Documentation→documentation, Test→test; ambiguous Task/Sub-task falls through to LLM
+
+### Fixed
+- "Platform work" metric no longer collapses to 0% — issue-linked commits with Bug/Story/Task issuetype bypass the gitflow_cache rule-based path (which cannot produce "Platform work") and use the authoritative ticket signal instead
+
 ## [3.16.0] - 2026-05-07
 
 ### Added
