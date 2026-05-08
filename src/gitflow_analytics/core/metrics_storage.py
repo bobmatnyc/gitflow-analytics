@@ -50,6 +50,8 @@ class _DayStats(TypedDict):
     unique_tickets: set[str]
     merge_commits: int
     complex_commits: int
+    # Issue #64: count of commits flagged as revert/rollback for this day-bucket.
+    reversion_commits: int
     developer_name: str
     developer_email: str
 
@@ -76,6 +78,7 @@ def _make_day_stats() -> _DayStats:
         unique_tickets=set(),
         merge_commits=0,
         complex_commits=0,
+        reversion_commits=0,
         developer_name="",
         developer_email="",
     )
@@ -494,6 +497,18 @@ class DailyMetricsStorage:
             if commit.get("files_changed", 0) > 5:
                 metrics["complex_commits"] += 1
 
+            # Issue #64: aggregate revert count for daily_metrics.reversion_commits.
+            # Prefer the persisted is_revert flag from cached_commits; fall back to
+            # re-scanning the message so commits coming from non-cache sources
+            # (e.g., direct analyzer output before being cached) still count.
+            is_revert_flag = commit.get("is_revert")
+            if is_revert_flag is None:
+                from ..utils.revert_detection import is_revert_commit as _is_revert
+
+                is_revert_flag = _is_revert(commit.get("message"))
+            if is_revert_flag:
+                metrics["reversion_commits"] += 1
+
         # Convert sets to scalar values and merge AI accumulator data.
         # We cast to dict[str, Any] here because we're intentionally replacing
         # set fields with their int/str summaries, which TypedDict can't express.
@@ -558,6 +573,9 @@ class DailyMetricsStorage:
             "unique_tickets": record.unique_tickets,
             "merge_commits": record.merge_commits,
             "complex_commits": record.complex_commits,
+            # Issue #64: surface reversion_commits from daily_metrics so reports
+            # can render revert trends alongside other classification counts.
+            "reversion_commits": getattr(record, "reversion_commits", 0) or 0,
             "ai_assisted_commits": record.ai_assisted_commits,
             "ai_generated_commits": record.ai_generated_commits,
             "ai_tool_primary": record.ai_tool_primary,

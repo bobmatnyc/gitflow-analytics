@@ -71,6 +71,26 @@ def _is_valid_ticket_id(ticket_id: str) -> bool:
     return prefix not in _TICKET_ID_FALSE_POSITIVE_PREFIXES
 
 
+def _ensure_revert_flag(commit_data: dict[str, Any]) -> None:
+    """Populate ``is_revert`` on ``commit_data`` from the commit message (issue #64).
+
+    WHY: Every commit cached through the write path must record whether it is
+    a revert/rollback so downstream metrics (daily_metrics.reversion_commits,
+    weekly_trends.reversion_commits) can be aggregated without re-scanning
+    messages.  Idempotent: if the caller already set ``is_revert`` to a bool
+    we trust them and do not re-evaluate.
+
+    Mutates ``commit_data`` in place.
+    """
+    # Local import to avoid module-load-time cycles via utils package.
+    from ..utils.revert_detection import is_revert_commit
+
+    existing = commit_data.get("is_revert")
+    if isinstance(existing, bool):
+        return
+    commit_data["is_revert"] = is_revert_commit(commit_data.get("message"))
+
+
 def _ensure_ai_detection_fields(commit_data: dict[str, Any]) -> None:
     """Populate AI detection fields on commit_data if missing (issue #47).
 
@@ -244,6 +264,9 @@ class CommitCacheMixin(_Base):
         """Cache commit analysis results."""
         # Issue #47: ensure AI detection columns are populated at write time.
         _ensure_ai_detection_fields(commit_data)
+        # Issue #64: ensure is_revert is set at write time so daily_metrics /
+        # weekly_trends.reversion_commits aggregations are correct.
+        _ensure_revert_flag(commit_data)
         with self.get_session() as session:
             # Check if already exists
             existing = (
@@ -275,6 +298,7 @@ class CommitCacheMixin(_Base):
                     timestamp=commit_data.get("timestamp"),
                     branch=commit_data.get("branch"),
                     is_merge=commit_data.get("is_merge", False),
+                    is_revert=bool(commit_data.get("is_revert", False)),
                     files_changed=commit_data.get(
                         "files_changed_count",
                         (
@@ -311,8 +335,10 @@ class CommitCacheMixin(_Base):
 
         # Issue #47: ensure AI detection columns are populated at write time
         # for every commit in the batch.  Idempotent — skips already-populated rows.
+        # Issue #64: same treatment for the is_revert flag.
         for commit_data in commits:
             _ensure_ai_detection_fields(commit_data)
+            _ensure_revert_flag(commit_data)
 
         import time
 
@@ -358,6 +384,7 @@ class CommitCacheMixin(_Base):
                         timestamp=commit_data.get("timestamp"),
                         branch=commit_data.get("branch"),
                         is_merge=commit_data.get("is_merge", False),
+                        is_revert=bool(commit_data.get("is_revert", False)),
                         files_changed=commit_data.get(
                             "files_changed_count",
                             (
@@ -688,6 +715,11 @@ class CommitCacheMixin(_Base):
 
         start_time = time.time()
 
+        # Issue #64: ensure is_revert is populated before mapping is built so the
+        # bulk INSERT path matches the row-by-row path semantically.
+        for commit_data in commits:
+            _ensure_revert_flag(commit_data)
+
         # Prepare mappings for bulk insert
         mappings = []
         for commit_data in commits:
@@ -700,6 +732,7 @@ class CommitCacheMixin(_Base):
                 "timestamp": commit_data.get("timestamp"),
                 "branch": commit_data.get("branch"),
                 "is_merge": commit_data.get("is_merge", False),
+                "is_revert": bool(commit_data.get("is_revert", False)),
                 "files_changed": commit_data.get(
                     "files_changed_count",
                     (
@@ -1011,6 +1044,68 @@ class CommitCacheMixin(_Base):
             "scanned": scanned,
             "updated": updated,
             "method_counts": method_counts,
+        }
+
+    def backfill_revert_flags(self, batch_size: int = 1000) -> dict[str, Any]:
+        """Re-evaluate ``cached_commits.is_revert`` for legacy / un-flagged rows (issue #64).
+
+        WHY: Commits cached before issue #64 landed have ``is_revert = FALSE``
+        regardless of their message content.  Reports that depend on
+        ``daily_metrics.reversion_commits`` / ``weekly_trends.reversion_commits``
+        therefore under-count reverts on legacy data.  This method scans every
+        row that is currently flagged ``FALSE`` (or NULL on rare half-migrated
+        databases) and re-applies the revert regex set in
+        :func:`gitflow_analytics.utils.revert_detection.is_revert_commit`.
+        Only rows whose flag changes are written back; non-reverts are left
+        alone so the operation is idempotent and cheap on a re-run.
+
+        Args:
+            batch_size: Rows to process between explicit session flushes.
+
+        Returns:
+            Dict with keys:
+                ``scanned``  - total rows examined.
+                ``updated``  - rows whose ``is_revert`` flipped to True.
+                ``revert_count`` - alias of ``updated`` for caller-facing logs.
+        """
+        # Local imports keep utils package out of module-load critical path.
+        from sqlalchemy import or_
+
+        from ..utils.revert_detection import is_revert_commit
+
+        scanned = 0
+        updated = 0
+
+        with self.get_session() as session:
+            # Pick rows that could still be reverts: explicit FALSE or NULL.
+            # NULL only appears on databases mid-way through a partial v15
+            # migration; the regex re-evaluation is cheap, so include both.
+            query = (
+                session.query(CachedCommit)
+                .filter(
+                    or_(
+                        CachedCommit.is_revert.is_(False),
+                        CachedCommit.is_revert.is_(None),
+                    )
+                )
+                .yield_per(batch_size)
+            )
+
+            batch_updates = 0
+            for row in query:
+                scanned += 1
+                if is_revert_commit(row.message):
+                    row.is_revert = True  # type: ignore[assignment]
+                    updated += 1
+                    batch_updates += 1
+                    if batch_updates >= batch_size:
+                        session.flush()
+                        batch_updates = 0
+
+        return {
+            "scanned": scanned,
+            "updated": updated,
+            "revert_count": updated,
         }
 
     def _get_files_changed_count(self, commit: git.Commit) -> int:

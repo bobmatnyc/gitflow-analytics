@@ -625,6 +625,9 @@ class GitAnalysisCache(CommitCacheMixin, WeeklyCacheMixin):
             "timestamp": commit.timestamp,
             "branch": commit.branch,
             "is_merge": commit.is_merge,
+            # Issue #64: surface persisted revert flag so report generators and
+            # metrics-storage callers don't need to re-run regexes on cache hits.
+            "is_revert": bool(getattr(commit, "is_revert", False) or False),
             "files_changed": commit.files_changed,
             "insertions": commit.insertions,
             "deletions": commit.deletions,

@@ -138,6 +138,11 @@ from .cli_overrides import register_override_commands  # noqa: E402
 
 register_override_commands(cli)
 
+# Revert flag backfill for cached_commits (issue #64)
+from .cli_backfill_revert_flags import register_backfill_revert_flags_commands  # noqa: E402
+
+register_backfill_revert_flags_commands(cli)
+
 
 def main() -> None:
     """Main entry point."""
