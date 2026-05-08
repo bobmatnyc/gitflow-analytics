@@ -113,6 +113,39 @@ def collect_command(config_path: Path, weeks: int, force: bool, log: str) -> Non
     help="Number of weeks to classify (must match the collect --weeks value)",
 )
 @click.option(
+    "--week",
+    "target_weeks",
+    multiple=True,
+    metavar="YYYY-Www",
+    help=(
+        "Target a specific ISO week for classification (e.g. 2026-W07). "
+        "May be repeated for multiple discrete weeks. "
+        "Mutually exclusive with --weeks, --from, and --to."
+    ),
+)
+@click.option(
+    "--from",
+    "from_week",
+    default=None,
+    metavar="YYYY-Www",
+    help=(
+        "Start of an inclusive ISO week range (e.g. 2026-W01). "
+        "Must be used together with --to. "
+        "Mutually exclusive with --weeks and --week."
+    ),
+)
+@click.option(
+    "--to",
+    "to_week",
+    default=None,
+    metavar="YYYY-Www",
+    help=(
+        "End of an inclusive ISO week range (e.g. 2026-W18). "
+        "Must be used together with --from. "
+        "Mutually exclusive with --weeks and --week."
+    ),
+)
+@click.option(
     "--reclassify",
     is_flag=True,
     help="Re-classify commits that were already classified",
@@ -154,6 +187,9 @@ def collect_command(config_path: Path, weeks: int, force: bool, log: str) -> Non
 def classify_command(
     config_path: Path,
     weeks: int,
+    target_weeks: tuple[str, ...],
+    from_week: Optional[str],
+    to_week: Optional[str],
     reclassify: bool,
     log: str,
     show_jira_signals: bool,
@@ -185,11 +221,43 @@ def classify_command(
     """
     setup_logging(log, __name__)
 
+    # Mutual-exclusivity validation for ISO-week targeting flags (#70).
+    # We approximate "was --weeks explicitly set?" by comparing to the
+    # default. Click does not expose source-of-value cleanly without ctx.
+    weeks_default = 4
+    targeting_flags = bool(target_weeks) or (from_week is not None) or (to_week is not None)
+    weeks_explicitly_set = weeks != weeks_default
+
+    if targeting_flags and weeks_explicitly_set:
+        raise click.UsageError("--week/--from/--to cannot be combined with --weeks.")
+    if bool(target_weeks) and (from_week is not None or to_week is not None):
+        raise click.UsageError("--week cannot be combined with --from/--to.")
+    if (from_week is None) != (to_week is None):
+        raise click.UsageError("--from and --to must be used together.")
+
+    # Compute explicit_date_range (Mon..Sun span) when targeting flags used.
+    from datetime import date as _date
+
+    from .utils.iso_week import iso_week_range, parse_iso_week
+
+    explicit_date_range: Optional[tuple[_date, _date]] = None
+    if target_weeks:
+        # Union of all requested weeks: min(mondays) -> max(sundays).
+        starts, ends = zip(*[parse_iso_week(w) for w in target_weeks])
+        explicit_date_range = (min(starts), max(ends))
+    elif from_week is not None and to_week is not None:
+        explicit_date_range = iso_week_range(from_week, to_week)
+
     try:
         from .pipeline import run_classify
 
         cfg = ConfigLoader.load(config_path)
-        click.echo(f"Stage 2: Classifying commits ({weeks} weeks)...")
+        if explicit_date_range is not None:
+            from_iso = explicit_date_range[0].strftime("%G-W%V")
+            to_iso = explicit_date_range[1].strftime("%G-W%V")
+            click.echo(f"Stage 2: Classifying commits ({from_iso} to {to_iso})...")
+        else:
+            click.echo(f"Stage 2: Classifying commits ({weeks} weeks)...")
 
         result = run_classify(
             cfg=cfg,
@@ -198,6 +266,7 @@ def classify_command(
             progress_callback=lambda msg: click.echo(f"  {msg}"),
             show_jira_signals=show_jira_signals,
             coverage_threshold=coverage_threshold,
+            explicit_date_range=explicit_date_range,
         )
 
         if result.errors:

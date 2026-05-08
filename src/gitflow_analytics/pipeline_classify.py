@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from .constants import Thresholds
@@ -20,6 +20,7 @@ def run_classify(
     progress_callback: Callable[[str], None] | None = None,
     show_jira_signals: bool = False,
     coverage_threshold: float = Thresholds.CLASSIFICATION_COVERAGE_DEFAULT,
+    explicit_date_range: tuple[date, date] | None = None,
 ) -> ClassifyResult:
     """Run batch LLM classification on commits that are already in the cache.
 
@@ -54,13 +55,25 @@ def run_classify(
 
     result = ClassifyResult()
 
-    current_time = datetime.now(timezone.utc)
-    current_week_start = get_week_start(current_time)
-    last_complete_week_start = current_week_start - timedelta(weeks=1)
-    start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
-    end_date = get_week_end(last_complete_week_start + timedelta(days=6))
-
-    _emit(f"Classify period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    if explicit_date_range is not None:
+        start_date = datetime.combine(
+            explicit_date_range[0], datetime.min.time(), tzinfo=timezone.utc
+        )
+        end_date = datetime.combine(explicit_date_range[1], time(23, 59, 59), tzinfo=timezone.utc)
+        _emit(
+            f"Classify period: {start_date.strftime('%Y-%m-%d')} to "
+            f"{end_date.strftime('%Y-%m-%d')} (targeted window)"
+        )
+    else:
+        current_time = datetime.now(timezone.utc)
+        current_week_start = get_week_start(current_time)
+        last_complete_week_start = current_week_start - timedelta(weeks=1)
+        start_date = last_complete_week_start - timedelta(weeks=weeks - 1)
+        end_date = get_week_end(last_complete_week_start + timedelta(days=6))
+        _emit(
+            f"Classify period: {start_date.strftime('%Y-%m-%d')} to "
+            f"{end_date.strftime('%Y-%m-%d')}"
+        )
 
     cache = GitAnalysisCache(cfg.cache.directory)
 
