@@ -353,6 +353,19 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
                 if normalized_key and normalized_value:
                     jira_project_mappings[normalized_key] = normalized_value
 
+        # Taxonomy mapping (top-level key "taxonomy_mapping").
+        # Maps native change_type → custom work_type label. Issue #69.
+        raw_taxonomy = data.get("taxonomy_mapping", {}) or {}
+        taxonomy_mapping: dict[str, str] = {}
+        if isinstance(raw_taxonomy, dict):
+            for key, value in raw_taxonomy.items():
+                if not isinstance(key, str) or not isinstance(value, str):
+                    continue
+                normalized_key = key.strip()
+                normalized_value = value.strip()
+                if normalized_key and normalized_value:
+                    taxonomy_mapping[normalized_key] = normalized_value
+
         # Create configuration object
         config = Config(
             repositories=repositories,
@@ -374,6 +387,7 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             github_issues=github_issues_config,
             confluence=confluence_config,
             jira_project_mappings=jira_project_mappings,
+            taxonomy_mapping=taxonomy_mapping,
         )
 
         # Validate configuration

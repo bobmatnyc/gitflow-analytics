@@ -51,6 +51,7 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
         max_processing_time_minutes: int = 30,  # Maximum time for classification
         jira_project_mappings: Optional[dict[str, str]] = None,
         show_jira_signals: bool = False,
+        taxonomy_mapping: Optional[dict[str, str]] = None,
     ):
         """Initialize the batch classifier.
 
@@ -87,6 +88,13 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
                     normalized_mappings[key.strip().upper()] = value.strip()
         self.jira_project_mappings: dict[str, str] = normalized_mappings
         self.show_jira_signals: bool = show_jira_signals
+        # Taxonomy mapping: native change_type -> custom work_type label.
+        # Stored on QualitativeCommitData.work_type for downstream analytics.
+        self.taxonomy_mapping: dict[str, str] = {}
+        if taxonomy_mapping:
+            for k, v in taxonomy_mapping.items():
+                if isinstance(k, str) and isinstance(v, str):
+                    self.taxonomy_mapping[k.strip()] = v.strip()
         # High confidence assigned to JIRA project-key short-circuited results.
         # Higher than the LLM confidence_threshold (0.7) so these results survive
         # the threshold check and are always preferred over fallback patterns.
@@ -183,6 +191,13 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
                 r"resolve(?:d|s)?",
                 r"repair(?:ed|ing|s)?",
                 r"correct(?:ed|ing|s)?",
+            ],
+            "platform": [
+                r"platform[\(\:]",
+                r"\binfra(?:structure)?[\(\:]",
+                r"\bdevops[\(\:]",
+                r"\btooling[\(\:]",
+                r"\barchitect(?:ure|ural)?[\(\:]",
             ],
             "feature": [
                 r"feat(?:ure)?[\(\:]",

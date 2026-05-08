@@ -71,7 +71,8 @@ class PromptGenerator:
     CATEGORIES = {
         "feature": "New functionality, capabilities, enhancements, additions",
         "bugfix": "Fixes, errors, issues, crashes, bugs, corrections",
-        "maintenance": "Configuration, chores, dependencies, cleanup, refactoring, updates",
+        "platform": "Deliberate infrastructure/architectural investment: new platform capabilities, architectural refactoring toward better design, internal tooling that enables other teams, DevOps improvements, foundational work. NOT routine upkeep — only when work builds new platform capability.",
+        "maintenance": "Routine upkeep, dependency bumps, CI fixes, KTLO work, configuration changes, code cleanup with no new capability. Does NOT include architectural investment — use 'platform' for that.",
         "integration": "Third-party services, APIs, webhooks, external systems",
         "content": "Text, copy, documentation, README updates, comments",
         "media": "Video, audio, streaming, players, visual assets, images",

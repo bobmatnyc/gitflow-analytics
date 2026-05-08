@@ -724,6 +724,12 @@ class Database:
                 # next JIRA fetch populates the column.
                 self._migrate_issue_cache_v17(conn)
 
+                # --- QualitativeCommitData.work_type column (v18 migration, issue #69) ---
+                # WHY: Adds work_type column populated from config.taxonomy_mapping
+                # mapping native change_type to custom work_type labels for
+                # downstream analytics. Additive; existing rows receive NULL.
+                self._migrate_qualitative_commits_v18(conn)
+
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
             logger.debug(
@@ -1609,5 +1615,40 @@ class Database:
         except Exception as e:
             logger.debug(
                 f"Could not add issue_cache.issue_type "
+                f"(may already exist or DB is readonly): {e}"
+            )
+
+    def _migrate_qualitative_commits_v18(self, conn) -> None:
+        """Add work_type column to qualitative_commits (taxonomy-mapped label).
+
+        WHY: Issue #69 introduces a config-driven ``taxonomy_mapping`` that maps
+        native ``change_type`` values to custom ``work_type`` labels for
+        downstream analytics. This migration adds the column on existing
+        databases; fresh databases get it via ``Base.metadata.create_all``.
+
+        The migration is additive and idempotent — existing rows receive NULL
+        and are backfilled by the fast remap path on the next classify run.
+        """
+        try:
+            result = conn.execute(text("PRAGMA table_info(qualitative_commits)"))
+            existing = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read qualitative_commits schema for v18: {e}")
+            return
+
+        if not existing:
+            # Fresh databases create the column via Base.metadata.create_all.
+            return
+
+        if "work_type" in existing:
+            return
+
+        try:
+            conn.execute(text("ALTER TABLE qualitative_commits ADD COLUMN work_type TEXT"))
+            conn.commit()
+            logger.info("Applied v18 migration (issue #69): added qualitative_commits.work_type")
+        except Exception as e:
+            logger.debug(
+                f"Could not add qualitative_commits.work_type "
                 f"(may already exist or DB is readonly): {e}"
             )

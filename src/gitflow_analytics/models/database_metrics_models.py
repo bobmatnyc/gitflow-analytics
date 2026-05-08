@@ -176,6 +176,9 @@ class QualitativeCommitData(Base):
     # Classification results
     change_type = Column(String, nullable=False)
     change_type_confidence = Column(Float, nullable=False)
+    work_type = Column(
+        String, nullable=True
+    )  # Mapped label from taxonomy_mapping; NULL when no mapping configured
     business_domain = Column(String, nullable=False)
     domain_confidence = Column(Float, nullable=False)
     risk_level = Column(String, nullable=False)
@@ -202,6 +205,7 @@ class QualitativeCommitData(Base):
     # Indexes for efficient querying
     __table_args__ = (
         Index("idx_change_type", "change_type"),
+        Index("idx_work_type", "work_type"),
         Index("idx_business_domain", "business_domain"),
         Index("idx_risk_level", "risk_level"),
         Index("idx_qualitative_confidence", "confidence_score"),

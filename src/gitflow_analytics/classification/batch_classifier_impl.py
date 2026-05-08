@@ -92,7 +92,9 @@ class BatchClassifierImplMixin:
         "sub-task": None,  # ambiguous — fall through
         "subtask": None,
         "technical task": "maintenance",
-        "tech debt": "refactor",
+        "tech debt": "platform",  # deliberate architectural investment (#69)
+        "infrastructure": "platform",
+        "platform": "platform",
         "spike": "research",
         "documentation": "documentation",
         "test": "test",
@@ -1239,6 +1241,12 @@ class BatchClassifierImplMixin:
             confidence = float(classification_result["confidence"])
             method = classification_result.get("method", "unknown")
 
+            # Issue #69: apply taxonomy_mapping to derive work_type label.
+            # When unset or category not in mapping, work_type stays NULL and
+            # downstream analytics fall back to change_type.
+            taxonomy: dict[str, str] = getattr(self, "taxonomy_mapping", {}) or {}
+            work_type: str | None = taxonomy.get(category) if taxonomy else None
+
             # Upsert: update existing row or create a new one.
             qualitative = (
                 session.query(QualitativeCommitData)
@@ -1264,6 +1272,7 @@ class BatchClassifierImplMixin:
                 qualitative.processing_method = method
                 qualitative.analyzed_at = datetime.now(timezone.utc)
                 qualitative.complexity = classification_result.get("complexity")
+                qualitative.work_type = work_type  # type: ignore[assignment]
                 # Only overwrite business_domain when the new result actually
                 # carries a domain signal — avoid clobbering a previous good
                 # value with "unknown" from a fallback path.
@@ -1276,6 +1285,7 @@ class BatchClassifierImplMixin:
                     commit_id=cached_commit.id,
                     change_type=category,
                     change_type_confidence=confidence,
+                    work_type=work_type,
                     # business_domain and domain_confidence are required NOT NULL —
                     # use sensible defaults when the batch classifier does not provide them.
                     business_domain=business_domain,
@@ -1305,6 +1315,40 @@ class BatchClassifierImplMixin:
             logger.error(
                 f"Error storing classification for {classification_result.get('commit_hash', 'unknown')}: {e}"
             )
+
+    def _apply_taxonomy_remap(self, session: Any) -> int:
+        """Fast taxonomy-only remap path (issue #69).
+
+        Updates ``QualitativeCommitData.work_type`` for rows whose current value
+        does not match what ``self.taxonomy_mapping`` would produce — without
+        invoking the LLM. Rows whose ``change_type`` is not in the mapping are
+        set to NULL (so removing a mapping clears the stale value).
+
+        Args:
+            session: Active SQLAlchemy session.
+
+        Returns:
+            Number of rows updated.
+        """
+        taxonomy: dict[str, str] = getattr(self, "taxonomy_mapping", {}) or {}
+        if not taxonomy:
+            return 0
+
+        rows = session.query(QualitativeCommitData).all()
+        updated = 0
+        batch = 0
+        for row in rows:
+            expected = taxonomy.get(row.change_type)
+            if row.work_type != expected:
+                row.work_type = expected
+                updated += 1
+                batch += 1
+                if batch >= 500:
+                    session.commit()
+                    batch = 0
+        if batch:
+            session.commit()
+        return updated
 
     def _store_daily_metrics(
         self,

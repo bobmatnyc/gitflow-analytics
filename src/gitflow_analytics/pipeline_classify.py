@@ -137,6 +137,8 @@ def run_classify(
         # Issue #62: JIRA project-key → work_type mapping (tier-3 signal).
         jira_project_mappings=getattr(cfg, "jira_project_mappings", None) or {},
         show_jira_signals=show_jira_signals,
+        # Issue #69: native change_type → custom work_type mapping.
+        taxonomy_mapping=getattr(cfg, "taxonomy_mapping", None) or {},
     )
 
     project_keys = [repo_config.project_key or repo_config.name for repo_config in cfg.repositories]
@@ -160,6 +162,23 @@ def run_classify(
 
         if result.skipped_batches:
             _emit(f"Skipped {result.skipped_batches} already-classified batches")
+
+        # Issue #69: Fast taxonomy-only remap path. Updates work_type column
+        # for any rows whose mapped value drifted from config (e.g. user added
+        # a new mapping or ran --reclassify with skipped batches). Cheap — no
+        # LLM calls; runs only when taxonomy_mapping is configured.
+        taxonomy_cfg = getattr(cfg, "taxonomy_mapping", None) or {}
+        if taxonomy_cfg:
+            try:
+                session = batch_classifier.database.get_session()
+                try:
+                    updated = batch_classifier._apply_taxonomy_remap(session)
+                finally:
+                    session.close()
+                if updated:
+                    _emit(f"Taxonomy remap: updated work_type on {updated} rows")
+            except Exception as exc:
+                logger.warning("Taxonomy remap failed: %s", exc)
 
         # Issue #65: measure per-repo classification coverage and emit
         # warnings when too many commits fell to maintenance/KTLO.  This

@@ -122,6 +122,9 @@ def run_report(
                     continue
                 all_commits[idx]["change_type"] = qual.change_type
                 all_commits[idx]["change_type_confidence"] = qual.change_type_confidence
+                # Issue #69: expose taxonomy-mapped work_type to downstream
+                # reports; fall back to native change_type when no mapping.
+                all_commits[idx]["work_type"] = qual.work_type or qual.change_type
                 all_commits[idx]["complexity"] = qual.complexity
                 all_commits[idx]["processing_method"] = qual.processing_method
             logger.debug(

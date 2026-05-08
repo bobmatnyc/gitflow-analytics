@@ -391,7 +391,7 @@ Commits to classify:
 {chr(10).join(commit_data)}
 
 For each commit, provide:
-- change_type: feature|bugfix|refactor|docs|test|chore|security|hotfix|config
+- change_type: feature|bugfix|platform|maintenance|refactor|docs|test|chore|security|hotfix|config|integration|content|other
 - business_domain: frontend|backend|database|infrastructure|mobile|devops|unknown
 - risk_level: low|medium|high|critical
 - confidence: 0.0-1.0 (classification certainty)

@@ -262,6 +262,7 @@ class CommitClassificationConfig:
         default_factory=lambda: {
             "feature": "New functionality or capabilities",
             "bugfix": "Bug fixes and error corrections",
+            "platform": "Deliberate infrastructure/architectural investment",
             "refactor": "Code restructuring and optimization",
             "docs": "Documentation changes and updates",
             "test": "Testing-related changes",
@@ -730,6 +731,12 @@ class Config:
     # corrects the largest source of misclassification (feature work tagged as
     # maintenance) when projects already use disciplined JIRA prefixes.
     jira_project_mappings: dict[str, str] = field(default_factory=dict)
+
+    # Maps native change_type values to custom work_type labels for downstream analytics.
+    # Example: {"feature": "NPS enhancements", "platform": "Tech Debt", "content": "Content"}
+    # When set, qualitative_commits.work_type is populated with the mapped value;
+    # otherwise it remains NULL and downstream analytics fall back to change_type.
+    taxonomy_mapping: dict[str, str] = field(default_factory=dict)
 
     def discover_organization_repositories(
         self, clone_base_path: Optional[Path] = None, progress_callback=None
