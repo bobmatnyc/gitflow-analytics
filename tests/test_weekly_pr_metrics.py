@@ -55,6 +55,8 @@ def _add_pr(
     merged_at: datetime | None = None,
     is_merged: bool | None = None,
     reviewers: list[str] | None = None,
+    change_requests_count: int = 0,
+    revision_count: int | None = None,
 ) -> None:
     """Insert a synthetic PR row directly into pull_request_cache."""
     session = db.get_session()
@@ -73,6 +75,8 @@ def _add_pr(
                 approved_by=[],
                 labels=[],
                 commit_hashes=[],
+                change_requests_count=change_requests_count,
+                revision_count=revision_count,
             )
         )
         session.commit()
@@ -362,3 +366,292 @@ class TestMigrationSafety:
         # Two consecutive opens must not error out.
         Database(db_path)
         Database(db_path)
+
+
+# ---------------------------------------------------------------------------
+# Issue #66: pr_merge_rate, avg_cycle_time_hrs, change_requests_received,
+# avg_revisions_per_pr
+# ---------------------------------------------------------------------------
+
+
+class TestIssue66DerivedMetrics:
+    """Tests for the four derived metrics added in issue #66."""
+
+    def test_pr_merge_rate_basic(self, fresh_db: Database):
+        ws, we = parse_iso_week("2026-W17")
+        opened_at = ws + timedelta(days=1)
+        merge_time = ws + timedelta(days=3)
+
+        # alice: 2 opens, 1 merge -> 0.5
+        _add_pr(
+            fresh_db,
+            pr_number=1,
+            author="alice",
+            created_at=opened_at,
+            merged_at=merge_time,
+            is_merged=True,
+        )
+        _add_pr(fresh_db, pr_number=2, author="alice", created_at=opened_at)
+
+        result = aggregate_week(fresh_db, "2026-W17", ws, we)
+        assert result["alice"]["prs_opened"] == 2
+        assert result["alice"]["prs_merged"] == 1
+        assert result["alice"]["pr_merge_rate"] == 0.5
+
+    def test_pr_merge_rate_undefined_when_no_opens(self, fresh_db: Database):
+        """Engineer who only reviewed (no opens) gets pr_merge_rate=None."""
+        ws, we = parse_iso_week("2026-W17")
+        opened_at = ws + timedelta(days=1)
+
+        # alice opens, bob only reviews.
+        _add_pr(
+            fresh_db,
+            pr_number=1,
+            author="alice",
+            created_at=opened_at,
+            reviewers=["bob"],
+        )
+
+        result = aggregate_week(fresh_db, "2026-W17", ws, we)
+        # bob: prs_opened=0 -> pr_merge_rate must be None (undefined, not 0.0)
+        assert result["bob"]["prs_opened"] == 0
+        assert result["bob"]["pr_merge_rate"] is None
+
+    def test_pr_merge_rate_one_when_all_merged(self, fresh_db: Database):
+        ws, we = parse_iso_week("2026-W17")
+        opened_at = ws + timedelta(days=1)
+        merge_time = ws + timedelta(days=2)
+
+        _add_pr(
+            fresh_db,
+            pr_number=1,
+            author="alice",
+            created_at=opened_at,
+            merged_at=merge_time,
+            is_merged=True,
+        )
+        result = aggregate_week(fresh_db, "2026-W17", ws, we)
+        assert result["alice"]["pr_merge_rate"] == 1.0
+
+    def test_avg_cycle_time_hrs(self, fresh_db: Database):
+        """avg_cycle_time_hrs averages (merged_at - created_at) for week's merges."""
+        ws, we = parse_iso_week("2026-W17")
+        # PR #1: opened 24h before merge in week
+        _add_pr(
+            fresh_db,
+            pr_number=1,
+            author="alice",
+            created_at=ws + timedelta(days=1),
+            merged_at=ws + timedelta(days=2),  # delta = 24h
+            is_merged=True,
+        )
+        # PR #2: opened 12h before merge in week
+        _add_pr(
+            fresh_db,
+            pr_number=2,
+            author="alice",
+            created_at=ws + timedelta(days=3),
+            merged_at=ws + timedelta(days=3, hours=12),  # delta = 12h
+            is_merged=True,
+        )
+
+        result = aggregate_week(fresh_db, "2026-W17", ws, we)
+        # Average of 24h and 12h = 18h
+        assert result["alice"]["avg_cycle_time_hrs"] == pytest.approx(18.0)
+
+    def test_avg_cycle_time_hrs_none_when_no_merges(self, fresh_db: Database):
+        """Engineer with opens but no merges in week gets None for cycle time."""
+        ws, we = parse_iso_week("2026-W17")
+        _add_pr(
+            fresh_db,
+            pr_number=1,
+            author="alice",
+            created_at=ws + timedelta(days=1),
+        )
+        result = aggregate_week(fresh_db, "2026-W17", ws, we)
+        assert result["alice"]["avg_cycle_time_hrs"] is None
+
+    def test_change_requests_received(self, fresh_db: Database):
+        """change_requests_received sums change_requests_count for the week's opens."""
+        ws, we = parse_iso_week("2026-W17")
+        opened_at = ws + timedelta(days=1)
+
+        _add_pr(
+            fresh_db,
+            pr_number=1,
+            author="alice",
+            created_at=opened_at,
+            change_requests_count=2,
+        )
+        _add_pr(
+            fresh_db,
+            pr_number=2,
+            author="alice",
+            created_at=opened_at,
+            change_requests_count=1,
+        )
+        # Out-of-week PR — must NOT contribute
+        _add_pr(
+            fresh_db,
+            pr_number=3,
+            author="alice",
+            created_at=ws - timedelta(days=10),
+            change_requests_count=99,
+        )
+
+        result = aggregate_week(fresh_db, "2026-W17", ws, we)
+        assert result["alice"]["change_requests_received"] == 3
+
+    def test_avg_revisions_per_pr(self, fresh_db: Database):
+        """avg_revisions_per_pr averages revision_count across week's opens."""
+        ws, we = parse_iso_week("2026-W17")
+        opened_at = ws + timedelta(days=1)
+
+        _add_pr(
+            fresh_db,
+            pr_number=1,
+            author="alice",
+            created_at=opened_at,
+            revision_count=4,
+        )
+        _add_pr(
+            fresh_db,
+            pr_number=2,
+            author="alice",
+            created_at=opened_at,
+            revision_count=2,
+        )
+
+        result = aggregate_week(fresh_db, "2026-W17", ws, we)
+        assert result["alice"]["avg_revisions_per_pr"] == pytest.approx(3.0)
+
+    def test_avg_revisions_per_pr_none_when_no_data(self, fresh_db: Database):
+        """When all revision_count values are NULL, avg_revisions_per_pr is None.
+
+        Use raw SQL to bypass the SQLAlchemy column default of 0 and create a
+        genuine NULL revision_count, simulating a pre-v3 legacy PR row.
+        """
+        ws, we = parse_iso_week("2026-W17")
+        opened_at = ws + timedelta(days=1)
+        session = fresh_db.get_session()
+        try:
+            session.execute(
+                text(
+                    "INSERT INTO pull_request_cache "
+                    "(repo_path, pr_number, author, created_at, revision_count) "
+                    "VALUES (:r, :n, :a, :c, NULL)"
+                ),
+                {"r": "octocat/hello", "n": 500, "a": "alice", "c": opened_at},
+            )
+            session.commit()
+        finally:
+            session.close()
+        result = aggregate_week(fresh_db, "2026-W17", ws, we)
+        assert result["alice"]["avg_revisions_per_pr"] is None
+
+    def test_upsert_persists_new_columns(self, fresh_db: Database):
+        """Upsert writes the four new columns and they round-trip through the DB."""
+        ws, we = parse_iso_week("2026-W17")
+        opened_at = ws + timedelta(days=1)
+        merge_time = ws + timedelta(days=2)
+
+        _add_pr(
+            fresh_db,
+            pr_number=1,
+            author="alice",
+            created_at=opened_at,
+            merged_at=merge_time,
+            is_merged=True,
+            change_requests_count=2,
+            revision_count=3,
+        )
+        agg = aggregate_week(fresh_db, "2026-W17", ws, we)
+        upsert_weekly_metrics(fresh_db, "2026-W17", agg)
+
+        session = fresh_db.get_session()
+        try:
+            row = (
+                session.query(WeeklyPRMetrics)
+                .filter_by(engineer_identifier="alice", iso_week="2026-W17")
+                .one()
+            )
+            assert cast(float, row.pr_merge_rate) == 1.0
+            assert cast(float, row.avg_cycle_time_hrs) == pytest.approx(24.0)
+            assert cast(int, row.change_requests_received) == 2
+            assert cast(float, row.avg_revisions_per_pr) == pytest.approx(3.0)
+        finally:
+            session.close()
+
+
+class TestIssue66MigrationSafety:
+    """The v13 migration must add columns without disturbing existing rows."""
+
+    def test_v13_migration_adds_columns_to_existing_table(self, tmp_path: Path):
+        """An existing weekly_pr_metrics table without v13 columns gets them added."""
+        db_path = tmp_path / "legacy_v11.db"
+
+        # Build a database that has the v11 schema but NOT v13 columns.
+        engine = create_engine(f"sqlite:///{db_path}")
+        with engine.connect() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE weekly_pr_metrics (
+                      engineer_identifier TEXT NOT NULL,
+                      iso_week TEXT NOT NULL,
+                      prs_opened INTEGER NOT NULL DEFAULT 0,
+                      prs_merged INTEGER NOT NULL DEFAULT 0,
+                      pr_comments_given INTEGER NOT NULL DEFAULT 0,
+                      pr_reviews_given INTEGER NOT NULL DEFAULT 0,
+                      computed_at DATETIME,
+                      PRIMARY KEY (engineer_identifier, iso_week)
+                    )
+                    """
+                )
+            )
+            # Insert a legacy row WITHOUT the v13 columns.
+            conn.execute(
+                text(
+                    "INSERT INTO weekly_pr_metrics "
+                    "(engineer_identifier, iso_week, prs_opened, prs_merged, "
+                    " pr_comments_given, pr_reviews_given) "
+                    "VALUES ('legacy_user', '2025-W01', 5, 3, 1, 1)"
+                )
+            )
+            conn.commit()
+        engine.dispose()
+
+        # Re-open via the production wrapper which runs _apply_migrations
+        # and therefore _migrate_weekly_pr_metrics_v13.
+        db = Database(db_path)
+
+        # Verify columns now exist.
+        assert db.engine is not None
+        with db.engine.connect() as conn:
+            result = conn.execute(text("PRAGMA table_info(weekly_pr_metrics)"))
+            columns = {row[1] for row in result}
+        for col in (
+            "pr_merge_rate",
+            "avg_cycle_time_hrs",
+            "change_requests_received",
+            "avg_revisions_per_pr",
+        ):
+            assert col in columns, f"v13 migration failed to add column {col}"
+
+        # Legacy row preserved with NULL/0 in new columns.
+        s = db.get_session()
+        try:
+            row = (
+                s.query(WeeklyPRMetrics)
+                .filter_by(engineer_identifier="legacy_user", iso_week="2025-W01")
+                .one()
+            )
+            assert cast(int, row.prs_opened) == 5
+            assert cast(int, row.prs_merged) == 3
+            # New columns: REAL defaults to NULL, INTEGER defaults to 0.
+            assert row.pr_merge_rate is None
+            assert row.avg_cycle_time_hrs is None
+            assert cast(int, row.change_requests_received) == 0
+            assert row.avg_revisions_per_pr is None
+        finally:
+            s.close()

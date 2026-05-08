@@ -659,6 +659,14 @@ class Database:
                 # pull_request_cache or other existing tables.
                 self._migrate_weekly_pr_metrics_v11(conn)
 
+                # --- weekly_pr_metrics extra columns (v13.0 migration, issue #66) ---
+                # WHY: pr_merge_rate / avg_cycle_time_hrs / change_requests_received /
+                # avg_revisions_per_pr were specified in issue #49 but never populated.
+                # The migration is additive — existing rows get NULL/0 for the new
+                # columns and the aggregation step in cli_pr_metrics fills them on
+                # the next run.
+                self._migrate_weekly_pr_metrics_v13(conn)
+
                 # --- pull_request_cache v5 columns (issue #53) ---
                 # WHY: commit_count and ticket_ids are added to pull_request_cache
                 # so that PR size + ticket extraction don't need to be recomputed
@@ -1158,6 +1166,68 @@ class Database:
             logger.debug(
                 f"Could not create weekly_pr_metrics table "
                 f"(may already exist or DB is readonly): {e}"
+            )
+
+    def _migrate_weekly_pr_metrics_v13(self, conn) -> None:
+        """Add advanced PR aggregate columns to weekly_pr_metrics (v13.0, issue #66).
+
+        WHY: Issue #49 specified four metrics that the original v11 migration did
+        not populate because the source aggregation only counted opens/merges/
+        reviews.  This migration adds the columns so the next run of
+        ``gfa pr-metrics`` can populate them.  Existing rows receive NULL (REAL
+        columns) or 0 (INTEGER columns) — both are valid and match the SQLAlchemy
+        model defaults.
+
+        Columns added:
+            pr_merge_rate              REAL    - prs_merged / prs_opened ratio
+            avg_cycle_time_hrs         REAL    - avg open->merge hours for merged PRs
+            change_requests_received   INTEGER - sum of change_requests_count
+            avg_revisions_per_pr       REAL    - avg revision_count across week's PRs
+
+        Args:
+            conn: Active SQLAlchemy connection.
+        """
+        try:
+            # If the table doesn't exist yet (very fresh DB before v11 ran in
+            # the same call), the v11 migration above will have created it.
+            result = conn.execute(text("PRAGMA table_info(weekly_pr_metrics)"))
+            existing_columns = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read weekly_pr_metrics schema for v13 migration: {e}")
+            return
+
+        if not existing_columns:
+            # Table doesn't exist; v11 migration must run first.  Skip silently —
+            # SQLAlchemy's create_all on a fresh DB will include the new columns
+            # via the model definition.
+            return
+
+        new_columns: list[tuple[str, str]] = [
+            ("pr_merge_rate", "REAL"),
+            ("avg_cycle_time_hrs", "REAL"),
+            ("change_requests_received", "INTEGER DEFAULT 0"),
+            ("avg_revisions_per_pr", "REAL"),
+        ]
+
+        added: list[str] = []
+        for col_name, col_type in new_columns:
+            if col_name not in existing_columns:
+                try:
+                    conn.execute(
+                        text(f"ALTER TABLE weekly_pr_metrics ADD COLUMN {col_name} {col_type}")
+                    )
+                    conn.commit()
+                    added.append(col_name)
+                except Exception as e:
+                    logger.debug(
+                        f"Could not add weekly_pr_metrics.{col_name} "
+                        f"(may already exist or DB is readonly): {e}"
+                    )
+
+        if added:
+            logger.info(
+                "Applied weekly_pr_metrics v13.0 migration (issue #66): added columns %s",
+                ", ".join(added),
             )
 
     def _migrate_pull_request_cache_v5(self, conn) -> None:

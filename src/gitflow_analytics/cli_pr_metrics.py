@@ -18,7 +18,7 @@ import sys
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import click
 from sqlalchemy import and_
@@ -159,20 +159,27 @@ def aggregate_week(
     iso_week: str,
     week_start: datetime,
     week_end: datetime,
-) -> dict[str, dict[str, int]]:
+) -> dict[str, dict[str, Any]]:
     """Compute per-engineer aggregates for a single ISO week.
 
-    Aggregation rules (issue #49):
-      * ``prs_opened``       — count of PRs whose ``created_at`` is in the week
-                               grouped by ``author``.
-      * ``prs_merged``       — count of PRs whose ``merged_at`` is in the week
-                               AND ``is_merged`` is truthy, grouped by ``author``.
-      * ``pr_reviews_given`` — for each PR overlapping the week, increment by
-                               1 for every login present in the ``reviewers``
-                               JSON list.
-      * ``pr_comments_given``— same as ``pr_reviews_given`` (current schema does
-                               not store per-reviewer comment counts; the
-                               reviewers list is the best available proxy).
+    Aggregation rules (issue #49 + #66):
+      * ``prs_opened``               — count of PRs whose ``created_at`` is in the week
+                                        grouped by ``author``.
+      * ``prs_merged``               — count of PRs whose ``merged_at`` is in the week
+                                        AND ``is_merged`` is truthy, grouped by ``author``.
+      * ``pr_reviews_given``         — for each PR opened in the week, increment by 1
+                                        for every login in the ``reviewers`` JSON list.
+      * ``pr_comments_given``        — same as ``pr_reviews_given`` (proxy).
+      * ``pr_merge_rate``            — prs_merged / prs_opened (None when prs_opened = 0).
+                                        Issue #66.
+      * ``avg_cycle_time_hrs``       — Avg ``(merged_at - created_at).total_seconds() / 3600``
+                                        across PRs *merged* in the week (None when no
+                                        merges or timestamps missing). Issue #66.
+      * ``change_requests_received`` — Sum of ``change_requests_count`` on PRs the
+                                        engineer authored that opened in the week.
+                                        Issue #66.
+      * ``avg_revisions_per_pr``     — Avg ``revision_count`` across PRs the engineer
+                                        authored that opened in the week. Issue #66.
 
     Args:
         db: Database wrapper exposing ``get_session``.
@@ -181,15 +188,23 @@ def aggregate_week(
         week_end: Inclusive upper bound (UTC, tz-aware).
 
     Returns:
-        Mapping ``engineer -> {prs_opened, prs_merged, pr_reviews_given, pr_comments_given}``.
-        Engineers with zero activity for the week are omitted.
+        Mapping ``engineer -> {<metric_keys>}``.  Engineers with zero activity
+        for the week are omitted.
     """
-    counts: dict[str, dict[str, int]] = defaultdict(
+    # Per-engineer counters; revision/cycle-time totals are tracked separately
+    # so we can compute averages at the end without losing precision.
+    counts: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
             "prs_opened": 0,
             "prs_merged": 0,
             "pr_reviews_given": 0,
             "pr_comments_given": 0,
+            "change_requests_received": 0,
+            # Internal accumulators (popped before return)
+            "_revision_total": 0,
+            "_revision_count_prs": 0,
+            "_cycle_time_hours_total": 0.0,
+            "_cycle_time_count": 0,
         }
     )
 
@@ -207,8 +222,23 @@ def aggregate_week(
             .all()
         )
         for pr in opened:
-            if pr.author:
-                counts[pr.author]["prs_opened"] += 1
+            if not pr.author:
+                continue
+            entry = counts[pr.author]
+            entry["prs_opened"] += 1
+
+            # Issue #66: aggregate change_requests_received and revision stats
+            # over PRs *opened in this week* by the engineer.  The columns may
+            # be NULL on legacy rows (pre-v3 pull_request_cache) — coerce to 0.
+            # cast() to int silences pyright's Column[int] arithmetic complaints
+            # without changing runtime behavior.
+            cr_count = cast(int, pr.change_requests_count) or 0
+            entry["change_requests_received"] += cr_count
+
+            rev_count = pr.revision_count
+            if rev_count is not None:
+                entry["_revision_total"] += cast(int, rev_count)
+                entry["_revision_count_prs"] += 1
 
         # 2. PRs merged in the week (by merged_at AND is_merged truthy)
         merged = (
@@ -225,8 +255,21 @@ def aggregate_week(
         for pr in merged:
             # is_merged may be NULL on legacy rows — fall back to merged_at presence
             is_merged = pr.is_merged if pr.is_merged is not None else (pr.merged_at is not None)
-            if is_merged and pr.author:
-                counts[pr.author]["prs_merged"] += 1
+            author = cast(str, pr.author) if pr.author else None
+            if not is_merged or author is None:
+                continue
+            entry = counts[author]
+            entry["prs_merged"] += 1
+
+            # Issue #66: cycle time uses (merged_at - created_at).  Both must
+            # exist and merged_at must be after created_at for the delta to be
+            # meaningful.  Skip negative or null-edge cases silently.
+            if pr.created_at is not None and pr.merged_at is not None:
+                delta = pr.merged_at - pr.created_at
+                hours = delta.total_seconds() / 3600.0
+                if hours >= 0:
+                    entry["_cycle_time_hours_total"] += hours
+                    entry["_cycle_time_count"] += 1
 
         # 3. Reviewer / commenter aggregation across PRs touching the week
         # WHY: A reviewer is "active" in the week the PR is opened (proxy).
@@ -242,8 +285,37 @@ def aggregate_week(
     finally:
         session.close()
 
-    logger.debug("Aggregated %d engineers for week %s", len(counts), iso_week)
-    return dict(counts)
+    # Finalize derived metrics for each engineer (issue #66).
+    # WHY: We compute averages and ratios *after* the loop so each engineer's
+    # numerator/denominator pair stays atomic.  None values represent "no data"
+    # (e.g. zero opens => merge_rate is undefined, not 0.0) so consumers can
+    # distinguish "no activity" from "all opens, zero merges".
+    finalized: dict[str, dict[str, Any]] = {}
+    for engineer, entry in counts.items():
+        prs_opened = entry["prs_opened"]
+        prs_merged = entry["prs_merged"]
+
+        # Engineers who only reviewed (no opens) get None rather than 0,
+        # since a 0/0 ratio is mathematically undefined.
+        pr_merge_rate: float | None = prs_merged / prs_opened if prs_opened > 0 else None
+
+        cycle_count = entry.pop("_cycle_time_count")
+        cycle_total = entry.pop("_cycle_time_hours_total")
+        avg_cycle_time_hrs: float | None = cycle_total / cycle_count if cycle_count > 0 else None
+
+        rev_count_prs = entry.pop("_revision_count_prs")
+        rev_total = entry.pop("_revision_total")
+        avg_revisions_per_pr: float | None = (
+            rev_total / rev_count_prs if rev_count_prs > 0 else None
+        )
+
+        entry["pr_merge_rate"] = pr_merge_rate
+        entry["avg_cycle_time_hrs"] = avg_cycle_time_hrs
+        entry["avg_revisions_per_pr"] = avg_revisions_per_pr
+        finalized[engineer] = entry
+
+    logger.debug("Aggregated %d engineers for week %s", len(finalized), iso_week)
+    return finalized
 
 
 def _normalize_reviewers(raw: Any) -> list[str]:
@@ -270,7 +342,7 @@ def _normalize_reviewers(raw: Any) -> list[str]:
 def upsert_weekly_metrics(
     db: Database,
     iso_week: str,
-    aggregates: dict[str, dict[str, int]],
+    aggregates: dict[str, dict[str, Any]],
 ) -> int:
     """Upsert per-engineer aggregates for the given week.
 
@@ -303,6 +375,13 @@ def upsert_weekly_metrics(
                     prs_merged=vals.get("prs_merged", 0),
                     pr_comments_given=vals.get("pr_comments_given", 0),
                     pr_reviews_given=vals.get("pr_reviews_given", 0),
+                    # Issue #66: nullable derived metrics.  ``vals.get(..., None)``
+                    # preserves the explicit None for "undefined" cases (e.g. no
+                    # PRs opened => merge_rate undefined).
+                    pr_merge_rate=vals.get("pr_merge_rate"),
+                    avg_cycle_time_hrs=vals.get("avg_cycle_time_hrs"),
+                    change_requests_received=vals.get("change_requests_received", 0),
+                    avg_revisions_per_pr=vals.get("avg_revisions_per_pr"),
                     computed_at=now,
                 )
             )

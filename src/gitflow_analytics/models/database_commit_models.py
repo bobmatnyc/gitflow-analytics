@@ -537,13 +537,17 @@ class WeeklyPRMetrics(Base):
     (non-destructive).
 
     Schema:
-        engineer_identifier (TEXT)  - GitHub login (PullRequestCache.author)
-        iso_week (TEXT)             - ISO week formatted as 'YYYY-WNN' (e.g. '2026-W16')
-        prs_opened (INTEGER)        - PRs whose created_at falls in the week
-        prs_merged (INTEGER)        - PRs whose merged_at falls in the week
-        pr_comments_given (INTEGER) - PRs in week where engineer is in reviewers list (proxy)
-        pr_reviews_given (INTEGER)  - PRs in week where engineer is in reviewers list
-        computed_at (DATETIME)      - When the row was last upserted
+        engineer_identifier (TEXT)       - GitHub login (PullRequestCache.author)
+        iso_week (TEXT)                  - ISO week formatted as 'YYYY-WNN' (e.g. '2026-W16')
+        prs_opened (INTEGER)             - PRs whose created_at falls in the week
+        prs_merged (INTEGER)             - PRs whose merged_at falls in the week
+        pr_comments_given (INTEGER)      - PRs in week where engineer is in reviewers list (proxy)
+        pr_reviews_given (INTEGER)       - PRs in week where engineer is in reviewers list
+        pr_merge_rate (REAL)             - prs_merged / prs_opened ratio (NULL when prs_opened=0). Issue #66.
+        avg_cycle_time_hrs (REAL)        - Avg hours from PR open to merge for PRs merged that week. Issue #66.
+        change_requests_received (INT)   - Sum of change_requests_count on engineer's PRs opened that week. Issue #66.
+        avg_revisions_per_pr (REAL)      - Avg revision_count across engineer's PRs opened that week. Issue #66.
+        computed_at (DATETIME)           - When the row was last upserted
 
     Primary key (engineer_identifier, iso_week) gives natural upsert semantics.
     """
@@ -556,6 +560,16 @@ class WeeklyPRMetrics(Base):
     prs_merged = Column(Integer, nullable=False, default=0)
     pr_comments_given = Column(Integer, nullable=False, default=0)
     pr_reviews_given = Column(Integer, nullable=False, default=0)
+
+    # --- v13.0 columns (issue #66) ---
+    # WHY: These four columns were specified in the original issue #49 but never
+    # populated because the aggregation only counted opens / merges / reviews.
+    # They are nullable REAL/INTEGER so legacy rows remain valid (NULL/0).
+    pr_merge_rate = Column(Float, nullable=True)  # prs_merged / prs_opened, NULL if prs_opened=0
+    avg_cycle_time_hrs = Column(Float, nullable=True)  # Avg open->merge hours for week's merges
+    change_requests_received = Column(Integer, nullable=True, default=0)
+    avg_revisions_per_pr = Column(Float, nullable=True)
+
     computed_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
 
     __table_args__ = (
