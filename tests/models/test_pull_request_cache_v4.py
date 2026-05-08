@@ -17,9 +17,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
-import pytest
 from sqlalchemy import create_engine, inspect, text
 
 from gitflow_analytics.core.cache import GitAnalysisCache
@@ -491,9 +490,9 @@ class TestPrToDictV4BackwardCompatibility:
             commit_hashes=[],
         )
         # Explicitly set v4.0 columns to "open"
-        pr_obj.pr_state = "open"
-        pr_obj.is_merged = False
-        pr_obj.closed_at = None
+        pr_obj.pr_state = "open"  # type: ignore[assignment]
+        pr_obj.is_merged = False  # type: ignore[assignment]
+        pr_obj.closed_at = None  # type: ignore[assignment]
 
         result = cache._pr_to_dict(pr_obj)
 

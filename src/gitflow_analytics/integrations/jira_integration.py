@@ -599,7 +599,7 @@ class JIRAIntegration:
             print(f"   🌐 Using proxy: {self.proxy_url}")
 
         # Set default timeout
-        session.timeout = self.connection_timeout
+        session.timeout = self.connection_timeout  # type: ignore[attr-defined]
 
         return session
 
@@ -622,12 +622,13 @@ class JIRAIntegration:
         ):
             return True
 
+        hostname: str = ""
         try:
             # Extract hostname from base URL
             from urllib.parse import urlparse
 
             parsed_url = urlparse(self.base_url)
-            hostname = parsed_url.hostname
+            hostname = parsed_url.hostname or ""
             port = parsed_url.port or (443 if parsed_url.scheme == "https" else 80)
 
             if not hostname:
