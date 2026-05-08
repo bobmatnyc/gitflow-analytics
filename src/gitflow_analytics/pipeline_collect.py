@@ -150,7 +150,7 @@ def run_collect(
                 project_key=project_key,
                 weeks_back=weeks,
                 branch_patterns=branch_patterns,
-                jira_integration=jira_integration,
+                jira_integration=jira_integration,  # type: ignore[arg-type]
                 progress_callback=_progress_cb,
                 start_date=start_date,
                 end_date=end_date,
