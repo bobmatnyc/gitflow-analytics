@@ -131,12 +131,34 @@ def collect_command(config_path: Path, weeks: int, force: bool, log: str) -> Non
         "(see 'jira_project_mappings' in config.yaml; issue #62)."
     ),
 )
+@click.option(
+    "--validate-coverage",
+    is_flag=True,
+    help=(
+        "Issue #65: exit non-zero when any repository's classification "
+        "coverage is below --coverage-threshold. Useful for CI pipelines "
+        "that want to fail when commits are silently falling to maintenance."
+    ),
+)
+@click.option(
+    "--coverage-threshold",
+    type=float,
+    default=20.0,
+    show_default=True,
+    help=(
+        "Per-repo classification coverage percent below which a warning is "
+        "emitted (and --validate-coverage exits non-zero). Coverage = % of "
+        "commits NOT classified as maintenance/KTLO/other/unknown."
+    ),
+)
 def classify_command(
     config_path: Path,
     weeks: int,
     reclassify: bool,
     log: str,
     show_jira_signals: bool,
+    validate_coverage: bool,
+    coverage_threshold: float,
 ) -> None:
     """Stage 2: Classify collected commits using batch LLM classification.
 
@@ -175,6 +197,7 @@ def classify_command(
             reclassify=reclassify,
             progress_callback=lambda msg: click.echo(f"  {msg}"),
             show_jira_signals=show_jira_signals,
+            coverage_threshold=coverage_threshold,
         )
 
         if result.errors:
@@ -191,6 +214,48 @@ def classify_command(
             + (f" ({result.skipped_batches} skipped)" if result.skipped_batches else "")
         )
 
+        # Issue #65: when --validate-coverage is set, surface a prominent
+        # warning block and exit non-zero so CI pipelines fail when any
+        # repository's classification coverage is below threshold.
+        if validate_coverage:
+            low_coverage = {
+                path: pct
+                for path, pct in result.coverage_by_repo.items()
+                if pct < coverage_threshold
+            }
+            if low_coverage:
+                click.echo("")
+                click.echo("=" * 72, err=True)
+                click.echo(
+                    f"WARNING: classification coverage validation failed "
+                    f"(threshold: {coverage_threshold:.1f}%)",
+                    err=True,
+                )
+                click.echo("=" * 72, err=True)
+                # Map repo_path back to the friendly name for output.
+                repo_names = {str(repo.path): repo.name for repo in cfg.repositories}
+                for path, pct in sorted(low_coverage.items(), key=lambda x: x[1]):
+                    name = repo_names.get(path, path)
+                    fallthrough = 100.0 - pct
+                    click.echo(
+                        f"  - {name}: {pct:.1f}% coverage "
+                        f"({fallthrough:.1f}% fell to maintenance/KTLO)",
+                        err=True,
+                    )
+                click.echo("=" * 72, err=True)
+                click.echo(
+                    "Hint: configure 'jira_project_mappings' in config.yaml "
+                    "or adopt conventional commit prefixes "
+                    "(feat:/fix:/docs:/refactor:/test:/...).",
+                    err=True,
+                )
+                sys.exit(1)
+
+    except SystemExit:
+        # Allow sys.exit(1) above to propagate without being swallowed by
+        # the broad except below (which was hiding the validate-coverage
+        # exit code under "Error: 1").
+        raise
     except Exception as exc:
         click.echo(f"\nError: {exc}", err=True)
         sys.exit(1)

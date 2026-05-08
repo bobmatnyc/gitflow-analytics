@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from .constants import Thresholds
 from .pipeline_types import ClassifyResult
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ def run_classify(
     reclassify: bool = False,
     progress_callback: Callable[[str], None] | None = None,
     show_jira_signals: bool = False,
+    coverage_threshold: float = Thresholds.CLASSIFICATION_COVERAGE_DEFAULT,
 ) -> ClassifyResult:
     """Run batch LLM classification on commits that are already in the cache.
 
@@ -32,9 +34,15 @@ def run_classify(
         progress_callback: Optional function called with status messages.
         show_jira_signals: When True, log INFO-level messages for every commit
             classified via the JIRA project-key mapping (issue #62).
+        coverage_threshold: Per-repo classification coverage percentage below
+            which a ``logging.warning()`` is emitted (issue #65). The warning
+            is informational and does not affect the return value; CLI gating
+            via ``--validate-coverage`` is handled by the caller.
 
     Returns:
-        A :class:`ClassifyResult` with summary statistics.
+        A :class:`ClassifyResult` with summary statistics, including
+        :attr:`coverage_by_repo` populated for every repository that had
+        classified commits in the analysed period.
     """
     from .classification.batch_classifier import BatchCommitClassifier
     from .core.cache import GitAnalysisCache
@@ -153,6 +161,20 @@ def run_classify(
         if result.skipped_batches:
             _emit(f"Skipped {result.skipped_batches} already-classified batches")
 
+        # Issue #65: measure per-repo classification coverage and emit
+        # warnings when too many commits fell to maintenance/KTLO.  This
+        # always runs (regardless of --validate-coverage) so users see the
+        # warning even if they are not running in CI.
+        _measure_and_warn_coverage(
+            cache=cache,
+            cfg=cfg,
+            start_date=start_date,
+            end_date=end_date,
+            coverage_threshold=coverage_threshold,
+            result=result,
+            emit=_emit,
+        )
+
     except Exception as exc:
         msg = f"Classification failed: {exc}"
         logger.error(msg, exc_info=True)
@@ -160,3 +182,90 @@ def run_classify(
         result.errors.append(msg)
 
     return result
+
+
+def _measure_and_warn_coverage(
+    cache: Any,
+    cfg: Any,
+    start_date: datetime,
+    end_date: datetime,
+    coverage_threshold: float,
+    result: ClassifyResult,
+    emit: Callable[[str], None],
+) -> None:
+    """Compute per-repo coverage, log warnings, and persist to the summary table.
+
+    Why split out: keeps :func:`run_classify` focused on orchestration; the
+    coverage logic touches three separate concerns (compute, log, persist)
+    and is easier to test in isolation.
+
+    Args:
+        cache: ``GitAnalysisCache`` instance whose session is reused.
+        cfg: Loaded configuration (used for repository name lookups).
+        start_date: Inclusive lower bound on commit timestamps.
+        end_date: Inclusive upper bound on commit timestamps.
+        coverage_threshold: Warn when per-repo coverage falls below this %.
+        result: Mutated to populate :attr:`coverage_by_repo`.
+        emit: Progress callback for user-visible output.
+    """
+    from .classification.coverage import (
+        compute_repo_coverage,
+        format_low_coverage_warning,
+    )
+    from .models.database import RepositoryAnalysisStatus
+
+    repo_paths_by_name: dict[str, str] = {str(repo.path): repo.name for repo in cfg.repositories}
+
+    with cache.get_session() as session:
+        for repo_path, repo_name in repo_paths_by_name.items():
+            try:
+                coverage_pct = compute_repo_coverage(
+                    session=session,
+                    repo_path=repo_path,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            except Exception as e:
+                # Coverage measurement should never break classification.
+                logger.debug("Coverage computation failed for %s: %s", repo_name, e)
+                continue
+
+            if coverage_pct is None:
+                # No classified commits in the period — undefined coverage.
+                continue
+
+            # Defensive: skip non-numeric returns (e.g. when callers passed
+            # a MagicMock-backed session in tests; production callers always
+            # supply a real SQLAlchemy session that returns float|None).
+            if not isinstance(coverage_pct, (int, float)):
+                continue
+
+            result.coverage_by_repo[repo_path] = float(coverage_pct)
+
+            if coverage_pct < coverage_threshold:
+                warning_msg = format_low_coverage_warning(repo_name, coverage_pct)
+                logger.warning("WARNING: %s", warning_msg)
+                emit(f"WARNING: {warning_msg}")
+
+            # Persist on RepositoryAnalysisStatus rows that match this repo.
+            # We update every row for the period rather than inserting a new
+            # one because RepositoryAnalysisStatus is created by the analyze
+            # workflow (not by classify alone), so we just upsert the column
+            # on existing rows when present.
+            try:
+                rows = (
+                    session.query(RepositoryAnalysisStatus)
+                    .filter(RepositoryAnalysisStatus.repo_path == repo_path)
+                    .all()
+                )
+                for row in rows:
+                    row.classification_coverage_pct = coverage_pct
+                if rows:
+                    session.commit()
+            except Exception as e:
+                logger.debug(
+                    "Could not persist classification_coverage_pct for %s: %s",
+                    repo_name,
+                    e,
+                )
+                session.rollback()

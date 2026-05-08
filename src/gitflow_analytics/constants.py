@@ -66,3 +66,20 @@ class Thresholds:
 
     # Percentage calculations
     PERCENTAGE_MULTIPLIER = 100  # Standard percentage calculation multiplier
+
+    # Issue #65: classification coverage warning threshold (in percent).
+    # Coverage is the fraction of commits whose work_type is anything OTHER
+    # than maintenance/ktlo/other/unknown.  When coverage drops below this
+    # value the pipeline emits a logging.warning() suggesting that the user
+    # add jira_project_mappings or adopt conventional commit prefixes.
+    CLASSIFICATION_COVERAGE_DEFAULT = 20.0
+
+
+# Issue #65: categories that count as "fall-through" classifications.
+# A commit is considered MEANINGFULLY classified when its work_type is NOT
+# in this set.  We count maintenance/ktlo as fallthrough because those are
+# what every commit defaults to when no JIRA mapping or conventional commit
+# prefix matches; "other" and "unknown" are the explicit unmatched buckets.
+CLASSIFICATION_FALLTHROUGH_CATEGORIES: frozenset[str] = frozenset(
+    {"maintenance", "ktlo", "other", "unknown"}
+)

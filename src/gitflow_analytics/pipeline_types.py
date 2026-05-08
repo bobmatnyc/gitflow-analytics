@@ -30,6 +30,13 @@ class ClassifyResult:
     total_commits: int = 0
     skipped_batches: int = 0
     errors: list[str] = field(default_factory=list)
+    # Issue #65: per-repository classification coverage percentage.
+    # Maps repo_path -> % of commits that were classified as a meaningful
+    # work_type (anything except maintenance/ktlo/other/unknown).  Populated
+    # after each repository's classification completes so downstream code can
+    # surface low-coverage warnings and the --validate-coverage CLI flag can
+    # decide whether to exit non-zero.
+    coverage_by_repo: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
