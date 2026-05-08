@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with timezone-aware `datetime.now(timezone.utc)`; naive cached_at values are
   normalized to UTC consistently.
 
+## [3.16.2] - 2026-05-08
+
+### Fixed
+- Mark unused method parameters as intentionally discarded to silence Pyright warnings
+- Silence SQLAlchemy `Column` type errors in `batch_classifier_impl` via targeted `# type: ignore` comments
+- Remove unused variable warnings in batch classifier and issuetype tests
+
 ## [3.16.1] - 2026-05-08
 
 ### Added
