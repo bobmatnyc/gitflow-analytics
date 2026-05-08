@@ -22,25 +22,28 @@ import pytest
 from gitflow_analytics.classification.batch_classifier import BatchCommitClassifier
 
 
-class _MockLLMConfig:
-    """Minimal LLM config stub matching the duck-typed interface used by
-    ``BatchCommitClassifier.__init__`` (sufficient for these unit tests)."""
+def _mock_llm_config() -> dict[str, Any]:
+    """Minimal LLM config dict matching the interface used by
+    ``BatchCommitClassifier.__init__`` (sufficient for these unit tests).
 
-    def __init__(self) -> None:
-        self.enable_caching = False
-        self.cache_duration_days = 7
-        self.model = "test-model"
-        self.api_key = ""  # Empty so llm_enabled is False — keeps tests offline.
-        self.max_tokens = 1000
-        self.temperature = 0.1
-        self.timeout_seconds = 30
-        self.confidence_threshold = 0.7
-        self.batch_size = 10
-        self.max_daily_requests = 1000
-        self.aws_region = None
-        self.aws_profile = None
-        self.bedrock_model_id = "anthropic.claude-3-haiku-20240307-v1:0"
-        self.provider = "auto"
+    Empty ``api_key`` keeps ``llm_enabled`` False so tests stay offline.
+    """
+    return {
+        "enable_caching": False,
+        "cache_duration_days": 7,
+        "model": "test-model",
+        "api_key": "",
+        "max_tokens": 1000,
+        "temperature": 0.1,
+        "timeout_seconds": 30,
+        "confidence_threshold": 0.7,
+        "batch_size": 10,
+        "max_daily_requests": 1000,
+        "aws_region": None,
+        "aws_profile": None,
+        "bedrock_model_id": "anthropic.claude-3-haiku-20240307-v1:0",
+        "provider": "auto",
+    }
 
 
 def _make_classifier(
@@ -52,7 +55,7 @@ def _make_classifier(
     tmp = tempfile.mkdtemp()
     return BatchCommitClassifier(
         cache_dir=Path(tmp),
-        llm_config=_MockLLMConfig(),
+        llm_config=_mock_llm_config(),
         batch_size=10,
         confidence_threshold=0.7,
         fallback_enabled=True,
