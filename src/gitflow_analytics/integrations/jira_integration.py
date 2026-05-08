@@ -663,16 +663,16 @@ class JIRAIntegration:
 
         except socket.gaierror as e:
             print(f"   ❌ DNS resolution error: {self._format_dns_error(e)}")
-            print(f"      Hostname: {hostname}")
+            print(f"      Hostname: {hostname}")  # type: ignore[possibly-undefined]
             print("      Troubleshooting:")
-            print(f"        1. Verify the hostname is correct: {hostname}")
+            print(f"        1. Verify the hostname is correct: {hostname}")  # type: ignore[possibly-undefined]
             print("        2. Check your internet connection")
-            print(f"        3. Verify DNS settings (try: nslookup {hostname})")
+            print(f"        3. Verify DNS settings (try: nslookup {hostname})")  # type: ignore[possibly-undefined]
             print("        4. Check if behind corporate firewall/proxy")
             print("        5. Verify JIRA instance is accessible externally")
             return False
         except socket.timeout:
-            print(f"   ⏱️  DNS resolution timeout for {hostname} (>{self.dns_timeout}s)")
+            print(f"   ⏱️  DNS resolution timeout for {hostname} (>{self.dns_timeout}s)")  # type: ignore[possibly-undefined]
             print("      Consider increasing dns_timeout or checking network latency")
             return False
         except Exception as e:
