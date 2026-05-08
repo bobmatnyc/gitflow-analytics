@@ -69,6 +69,39 @@ jira_project_mappings:
 - To audit which commits are being short-circuited, run
   `gfa classify --show-jira-signals -c config.yaml`.
 
+## 🏷️ Taxonomy Mapping (Issue #69)
+
+`taxonomy_mapping` is an optional top-level config block that maps gfa's native
+`change_type` values to custom, org-specific `work_type` labels.  This lets
+teams keep gfa's internal classifier output unchanged while surfacing the labels
+that match their own vocabulary in reports and dashboards.
+
+```yaml
+# Maps gfa's native change_type values to custom work_type labels
+taxonomy_mapping:
+  change_type:
+    feature: "NPS enhancements"
+    bugfix: "Bug fixes"
+    platform: "Platform work"
+    maintenance: "KTLO"
+    integration: "Integrations"
+    content: "Content"
+    other: "Other"
+```
+
+**Behaviour notes:**
+
+- `work_type` is written to the `qualitative_commits` table alongside
+  `change_type` (which is always preserved). When no mapping is configured,
+  `work_type` falls back to the raw `change_type` value.
+- The v18 schema migration adds the `work_type` column automatically on first
+  run after upgrading.
+- To apply the mapping to all historical commits without re-running the LLM,
+  use `gfa classify --reclassify`. The remap completes in seconds regardless
+  of corpus size.
+- Any `change_type` not listed in the mapping is left unchanged (its
+  `work_type` will equal its `change_type`).
+
 ## 🔑 GitHub Configuration
 
 ### Required Fields

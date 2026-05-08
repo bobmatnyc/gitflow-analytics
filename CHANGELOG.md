@@ -28,6 +28,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with timezone-aware `datetime.now(timezone.utc)`; naive cached_at values are
   normalized to UTC consistently.
 
+## [3.16.3] - 2026-05-08
+
+### Added
+- **`platform` native change_type**: New first-class classifier category distinct from `maintenance` — captures deliberate infrastructure/architectural investment, internal tooling, and DevOps improvements. LLM prompt updated to distinguish `platform` (new capability) from `maintenance` (routine upkeep). Fallback patterns and NLP classifier updated. (#69)
+- **Config-driven taxonomy mapping**: `taxonomy_mapping.change_type` config block maps gfa's native `change_type` values to custom org-specific labels (e.g. `maintenance` → "KTLO", `platform` → "Platform work"). (#69)
+- **`work_type` column** on `qualitative_commits` (v18 migration): populated from `taxonomy_mapping` when configured; falls back to `change_type` when no mapping is present. (#69)
+- **Fast taxonomy remap**: `gfa classify --reclassify` applies taxonomy mapping to all historical commits in seconds — no LLM calls required for pure label remaps. (#69)
+
+### Changed
+- `pipeline_report` now exposes `work_type` (with `change_type` fallback) on all commit dicts for downstream report rendering
+- `platform` added to fallback patterns, NLP classifier, and ISSUETYPE_CHANGE_TYPE_MAP (Infrastructure → platform)
+
+### Fixed
+- "Platform work" metric collapse resolved: `platform` change_type + taxonomy mapping provides a clean, unambiguous path from classifier output to org-specific analytics labels
+- Pyright: string annotations for optional spaCy `Doc` type in `change_type.py`
+
 ## [3.16.2] - 2026-05-08
 
 ### Fixed
