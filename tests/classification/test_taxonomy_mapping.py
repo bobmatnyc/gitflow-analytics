@@ -78,7 +78,7 @@ def _seed_commit(classifier: BatchCommitClassifier, commit_hash: str) -> int:
         )
         session.add(c)
         session.commit()
-        return int(c.id)
+        return int(str(c.id))  # type: ignore[arg-type]
     finally:
         session.close()
 
@@ -114,8 +114,8 @@ def test_taxonomy_mapping_applied_at_storage(tmp_path: Path) -> None:
             .first()
         )
         assert row is not None
-        assert row.change_type == "feature"
-        assert row.work_type == "NPS enhancements"
+        assert row.change_type == "feature"  # type: ignore[truthy-bool]
+        assert row.work_type == "NPS enhancements"  # type: ignore[truthy-bool]
     finally:
         session.close()
 
@@ -157,7 +157,7 @@ def test_unmapped_change_type_work_type_is_none(tmp_path: Path) -> None:
             .first()
         )
         assert row is not None
-        assert row.change_type == "bugfix"
+        assert row.change_type == "bugfix"  # type: ignore[truthy-bool]
         assert row.work_type is None
     finally:
         session.close()
@@ -186,8 +186,8 @@ def test_multiple_change_types_map_to_same_work_type(tmp_path: Path) -> None:
             .first()
         )
         assert a is not None and b is not None
-        assert a.work_type == "Content"
-        assert b.work_type == "Content"
+        assert a.work_type == "Content"  # type: ignore[truthy-bool]
+        assert b.work_type == "Content"  # type: ignore[truthy-bool]
     finally:
         session.close()
 
@@ -230,7 +230,7 @@ def test_fast_remap_updates_existing_rows(tmp_path: Path) -> None:
             .first()
         )
         assert row is not None
-        assert row.work_type == "NPS enhancements"
+        assert row.work_type == "NPS enhancements"  # type: ignore[truthy-bool]
     finally:
         session.close()
 

@@ -120,6 +120,8 @@ class LLMFallback:
 
         # Token encoder for cost estimation
         try:
+            if tiktoken is None:
+                raise ImportError("tiktoken not available")
             self.encoding = tiktoken.get_encoding("cl100k_base")  # GPT-4 encoding
         except Exception:
             self.encoding = None
@@ -129,7 +131,7 @@ class LLMFallback:
 
         self.logger.info("LLM fallback system initialized with OpenRouter")
 
-    def _initialize_openrouter_client(self) -> openai.OpenAI:
+    def _initialize_openrouter_client(self) -> "openai.OpenAI":  # type: ignore[name-defined]
         """Initialize OpenRouter client with API key.
 
         Returns:
@@ -145,10 +147,10 @@ class LLMFallback:
             )
 
         return openai.OpenAI(
-            base_url=self.config.base_url,
-            api_key=api_key,
-            timeout=30.0,  # 30 second timeout to prevent hanging
-            default_headers={
+            base_url=self.config.base_url,  # type: ignore[call-arg]
+            api_key=api_key,  # type: ignore[call-arg]
+            timeout=30.0,  # type: ignore[call-arg]  # 30 second timeout to prevent hanging
+            default_headers={  # type: ignore[call-arg]
                 "HTTP-Referer": "https://github.com/bobmatnyc/gitflow-analytics",
                 "X-Title": "GitFlow Analytics - Qualitative Analysis",
             },

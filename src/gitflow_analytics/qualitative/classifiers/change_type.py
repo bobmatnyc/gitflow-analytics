@@ -3,17 +3,17 @@
 import importlib.util
 import logging
 import re
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from ..models.schemas import ChangeTypeConfig
 
 # Check if spacy is available without importing it
 SPACY_AVAILABLE = importlib.util.find_spec("spacy") is not None
 
-if SPACY_AVAILABLE:
+if TYPE_CHECKING or SPACY_AVAILABLE:
     from spacy.tokens import Doc
 else:
-    Doc = Any
+    Doc = Any  # type: ignore[assignment,misc]
 
 
 class ChangeTypeClassifier:
