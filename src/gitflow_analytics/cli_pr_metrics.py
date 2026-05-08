@@ -222,9 +222,9 @@ def aggregate_week(
             .all()
         )
         for pr in opened:
-            if not pr.author:
+            if not cast(str | None, pr.author):
                 continue
-            entry = counts[pr.author]
+            entry = counts[cast(str, pr.author)]
             entry["prs_opened"] += 1
 
             # Issue #66: aggregate change_requests_received and revision stats
@@ -254,8 +254,10 @@ def aggregate_week(
         )
         for pr in merged:
             # is_merged may be NULL on legacy rows — fall back to merged_at presence
-            is_merged = pr.is_merged if pr.is_merged is not None else (pr.merged_at is not None)
-            author = cast(str, pr.author) if pr.author else None
+            is_merged = (
+                bool(pr.is_merged) if pr.is_merged is not None else (pr.merged_at is not None)
+            )
+            author = cast(str, pr.author) if pr.author is not None else None
             if not is_merged or author is None:
                 continue
             entry = counts[author]
