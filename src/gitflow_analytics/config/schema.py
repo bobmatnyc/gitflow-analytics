@@ -716,6 +716,14 @@ class Config:
     github_issues: Optional[GitHubIssuesConfig] = None
     confluence: Optional[ConfluenceConfig] = None
     launcher: Optional[LauncherPreferences] = None
+    # JIRA project key → work_type mapping (tier-3 classification signal).
+    # Example: {"ADV": "feature", "FD": "feature", "BI": "analytics", "KTLO": "maintenance"}
+    # When a commit message contains a JIRA ticket reference whose project key
+    # appears in this mapping, the batch classifier short-circuits the LLM call
+    # and assigns the configured work_type with high confidence (0.95). This
+    # corrects the largest source of misclassification (feature work tagged as
+    # maintenance) when projects already use disciplined JIRA prefixes.
+    jira_project_mappings: dict[str, str] = field(default_factory=dict)
 
     def discover_organization_repositories(
         self, clone_base_path: Optional[Path] = None, progress_callback=None

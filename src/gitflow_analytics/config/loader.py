@@ -339,6 +339,20 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
         confluence_data = data.get("confluence", {})
         confluence_config = cls._process_confluence_config(confluence_data)
 
+        # JIRA project-key → work_type mapping (top-level key "jira_project_mappings").
+        # Issue #62: tier-3 classification signal. Keys are normalised to upper-case
+        # so users can write "adv" or "ADV"; the matcher always compares uppercase.
+        raw_jira_mappings = data.get("jira_project_mappings", {}) or {}
+        jira_project_mappings: dict[str, str] = {}
+        if isinstance(raw_jira_mappings, dict):
+            for key, value in raw_jira_mappings.items():
+                if not isinstance(key, str) or not isinstance(value, str):
+                    continue
+                normalized_key = key.strip().upper()
+                normalized_value = value.strip()
+                if normalized_key and normalized_value:
+                    jira_project_mappings[normalized_key] = normalized_value
+
         # Create configuration object
         config = Config(
             repositories=repositories,
@@ -359,6 +373,7 @@ class ConfigLoader(ConfigLoaderSectionsMixin):
             boilerplate_filter=boilerplate_filter_config,
             github_issues=github_issues_config,
             confluence=confluence_config,
+            jira_project_mappings=jira_project_mappings,
         )
 
         # Validate configuration

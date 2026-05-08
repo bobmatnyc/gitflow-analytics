@@ -123,7 +123,21 @@ def collect_command(config_path: Path, weeks: int, force: bool, log: str) -> Non
     default="none",
     help="Enable logging with specified level",
 )
-def classify_command(config_path: Path, weeks: int, reclassify: bool, log: str) -> None:
+@click.option(
+    "--show-jira-signals",
+    is_flag=True,
+    help=(
+        "Log every commit short-circuited by the JIRA project-key mapping "
+        "(see 'jira_project_mappings' in config.yaml; issue #62)."
+    ),
+)
+def classify_command(
+    config_path: Path,
+    weeks: int,
+    reclassify: bool,
+    log: str,
+    show_jira_signals: bool,
+) -> None:
     """Stage 2: Classify collected commits using batch LLM classification.
 
     \b
@@ -160,6 +174,7 @@ def classify_command(config_path: Path, weeks: int, reclassify: bool, log: str) 
             weeks=weeks,
             reclassify=reclassify,
             progress_callback=lambda msg: click.echo(f"  {msg}"),
+            show_jira_signals=show_jira_signals,
         )
 
         if result.errors:

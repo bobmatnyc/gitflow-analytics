@@ -106,6 +106,39 @@ gfa fetch -c config.yaml --backfill-since 2025-01-01
 gfa fetch -c config.yaml --backfill-since 2025-06-01 --backfill-prs-since 2025-01-01
 ```
 
+### classify
+Run batch LLM classification on commits already in the cache (Stage 2 of the
+collect → classify → report pipeline).
+
+```bash
+gfa classify -c config.yaml [OPTIONS]
+```
+
+**Options**:
+- `-c, --config PATH` - Path to YAML configuration file (required)
+- `-w, --weeks INTEGER` - Number of weeks to classify (default: 4; should match the `collect --weeks` value)
+- `--reclassify` - Re-classify commits that were already classified
+- `--show-jira-signals` - Log every commit short-circuited by the JIRA project-key
+  mapping (issue #62). Useful for auditing which commits hit the tier-3
+  classification path defined in `jira_project_mappings`.
+- `--log [none|INFO|DEBUG]` - Enable logging at the specified level (default: none)
+
+**Examples**:
+```bash
+# Standard classification for the last 4 weeks
+gfa classify -c config.yaml
+
+# Force re-classification of all commits in range
+gfa classify -c config.yaml --reclassify
+
+# Audit which commits were classified via the JIRA project-key mapping
+gfa classify -c config.yaml --show-jira-signals --log INFO
+```
+
+**Prerequisite**: `gfa collect -c config.yaml`
+
+**Next step**: `gfa report -c config.yaml`
+
 ### identities
 Manage developer identity resolution and consolidation.
 

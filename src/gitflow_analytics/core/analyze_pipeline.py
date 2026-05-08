@@ -550,6 +550,8 @@ def classify_commits_batch(
         batch_size=50,
         confidence_threshold=llm_cfg.confidence_threshold,
         fallback_enabled=True,
+        # Issue #62: JIRA project-key → work_type mapping (tier-3 signal).
+        jira_project_mappings=getattr(cfg, "jira_project_mappings", None) or {},
     )
 
     project_keys = [repo.project_key or repo.name for repo in repositories]

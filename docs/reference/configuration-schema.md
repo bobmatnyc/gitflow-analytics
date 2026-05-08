@@ -29,8 +29,45 @@ ml_categorization: {}       # Machine learning settings
 
 jira: {}                    # JIRA integration (optional)
 
+jira_project_mappings: {}   # JIRA project key → work_type mapping (issue #62)
+
 logging: {}                 # Logging configuration
 ```
+
+## 🎯 JIRA Project Key → Work Type Mapping (Issue #62)
+
+`jira_project_mappings` is an optional top-level mapping from JIRA project
+keys (the prefix before the dash in a ticket ID such as `ADV` in `ADV-1234`)
+to canonical work_type categories. It acts as a **tier-3 classification
+signal**: when a commit message contains a JIRA ticket reference whose
+project key appears in this mapping, the batch classifier short-circuits
+the LLM call entirely and assigns the configured work_type with high
+confidence (0.95).
+
+This corrects the largest single source of misclassification — feature work
+incorrectly tagged as KTLO/maintenance — when teams already use disciplined
+JIRA project prefixes.
+
+```yaml
+jira_project_mappings:
+  ADV: feature        # Advance project → feature work
+  FD: feature         # Feature Development project → feature work
+  BI: analytics       # Business Intelligence → analytics work
+  KTLO: maintenance   # Keep The Lights On → maintenance
+  OPS: maintenance    # Operations → maintenance
+```
+
+**Behaviour notes:**
+
+- Project keys are case-insensitive; they are normalised to upper-case at
+  load time, so `adv: feature` and `ADV: feature` are equivalent.
+- Only JIRA-style ticket references are matched (commits with
+  `platform: "jira"` ticket refs). Other platforms fall through to the
+  existing classification pipeline.
+- Commits whose project key is **not** in the mapping fall through to the
+  conventional-commit, LLM, and rule-based fallback signals as before.
+- To audit which commits are being short-circuited, run
+  `gfa classify --show-jira-signals -c config.yaml`.
 
 ## 🔑 GitHub Configuration
 

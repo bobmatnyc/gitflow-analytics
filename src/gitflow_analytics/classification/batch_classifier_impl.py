@@ -58,7 +58,112 @@ class BatchClassifierImplMixin:
     circuit_breaker_open: bool
     fallback_patterns: dict[str, list[str]]
     cache_dir: Path
+    # Tier-3 classification signal: JIRA project key → work_type mapping
+    # (issue #62). Populated by ``BatchCommitClassifier.__init__``.
+    jira_project_mappings: dict[str, str]
+    show_jira_signals: bool
+    JIRA_PROJECT_KEY_CONFIDENCE: float
     LOW_CONFIDENCE_THRESHOLD: float = 0.30
+
+    def _classify_via_jira_project_key(self, commit: dict[str, Any]) -> tuple[str, str] | None:
+        """Look up commit's JIRA project key in the configured mapping.
+
+        Why: JIRA project keys are a near-perfect predictor of work_type when
+        teams have disciplined ticket prefixes (issue #62). For example a
+        commit referencing ``ADV-1234`` is almost certainly feature work even
+        if the message text contains words like "fix" or "cleanup".
+
+        Args:
+            commit: Commit dict — expected to contain ``ticket_references``
+                as either a list of dicts (with ``platform`` and ``id`` keys,
+                the canonical extractor output) or a list of plain ticket
+                identifier strings (e.g. ``"ADV-123"``) for back-compat with
+                older cached data.
+
+        Returns:
+            Tuple of (work_type, matched_project_key) on first hit, or ``None``
+            when no JIRA reference matches a configured project key. The first
+            match wins to keep behaviour deterministic.
+
+        Test: with ``jira_project_mappings={"ADV": "feature"}``, a commit whose
+        ``ticket_references`` is ``[{"platform": "jira", "id": "ADV-1"}]``
+        should return ``("feature", "ADV")``; an unmapped key like
+        ``[{"platform": "jira", "id": "ZZZ-1"}]`` should return ``None``.
+        """
+        mappings = getattr(self, "jira_project_mappings", None)
+        if not mappings:
+            return None
+
+        ticket_refs = commit.get("ticket_references") or []
+        for ref in ticket_refs:
+            ticket_id: str | None = None
+            platform: str | None = None
+            if isinstance(ref, dict):
+                # Canonical extractor format
+                platform = ref.get("platform")
+                ticket_id = ref.get("id") or ref.get("full_id")
+            elif isinstance(ref, str):
+                # Back-compat: bare ticket id like "ADV-123"
+                ticket_id = ref
+                platform = "jira"
+
+            if not ticket_id or not isinstance(ticket_id, str):
+                continue
+
+            # Only apply to JIRA-style refs. We accept ``platform == "jira"``
+            # as well as ``platform`` unset (older caches), since the project
+            # key prefix is itself the discriminator.
+            if platform and platform.lower() not in ("jira", ""):
+                continue
+
+            # Extract the project key — everything before the first "-".
+            if "-" not in ticket_id:
+                continue
+            project_key = ticket_id.split("-", 1)[0].strip().upper()
+            if not project_key:
+                continue
+
+            work_type = mappings.get(project_key)
+            if work_type:
+                return work_type, project_key
+
+        return None
+
+    def _merge_jira_with_llm_results(
+        self,
+        original_commits: list[dict[str, Any]],
+        jira_classified: dict[str, dict[str, Any]],
+        llm_or_fallback_results: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Merge JIRA short-circuited results with LLM/fallback results.
+
+        Why: ``_classify_commit_batch_with_llm`` splits the input batch into
+        commits classified via the JIRA project key (tier 3) and commits that
+        still need the LLM/fallback pipeline. Downstream code expects the
+        return list to align with ``original_commits`` order, so we re-zip
+        results back into the original sequence here.
+
+        Args:
+            original_commits: The full input batch in caller order.
+            jira_classified: Map of commit_hash → tier-3 result for commits
+                short-circuited by the JIRA project-key mapping.
+            llm_or_fallback_results: Results for the remaining commits, in the
+                same order they were passed to the LLM/fallback path.
+
+        Returns:
+            One result dict per ``original_commits`` entry, in caller order.
+        """
+        llm_by_hash = {r["commit_hash"]: r for r in llm_or_fallback_results}
+        merged: list[dict[str, Any]] = []
+        for commit in original_commits:
+            commit_hash = commit["commit_hash"]
+            if commit_hash in jira_classified:
+                merged.append(jira_classified[commit_hash])
+            elif commit_hash in llm_by_hash:
+                merged.append(llm_by_hash[commit_hash])
+            # If neither path produced a result we skip the commit rather than
+            # synthesising a bogus row — the surrounding logic logs the gap.
+        return merged
 
     def _classify_weekly_batches(self, weekly_batches: list[DailyCommitBatch]) -> dict[str, Any]:
         """Classify all batches for a single week with shared context.
@@ -416,9 +521,57 @@ class BatchClassifierImplMixin:
                 f"Consider reducing batch_size if timeouts occur."
             )
 
-        # Prepare batch for LLM classification
-        enhanced_commits = []
+        # Tier-3 classification signal: JIRA project key → work_type mapping
+        # (issue #62). Apply BEFORE building the LLM batch so commits we can
+        # confidently classify by project key never burn an LLM token. We
+        # split ``commits`` into:
+        #   - ``jira_classified``: commits short-circuited via project key
+        #   - ``commits_for_llm``: everything else, sent to the LLM as before
+        # The final list returned preserves caller order so downstream code
+        # (which zips results back onto the original commits) stays correct.
+        jira_classified: dict[str, dict[str, Any]] = {}
+        commits_for_llm: list[dict[str, Any]] = []
         for commit in commits:
+            jira_match = self._classify_via_jira_project_key(commit)
+            if jira_match is not None:
+                work_type, matched_key = jira_match
+                if getattr(self, "show_jira_signals", False):
+                    logger.info(
+                        "JIRA project-key signal: commit %s matched key=%s -> work_type=%s",
+                        commit.get("commit_hash", "")[:7],
+                        matched_key,
+                        work_type,
+                    )
+                jira_classified[commit["commit_hash"]] = {
+                    "commit_hash": commit["commit_hash"],
+                    "category": work_type,
+                    "confidence": getattr(self, "JIRA_PROJECT_KEY_CONFIDENCE", 0.95),
+                    "method": "jira_project_key",
+                    "matched_project_key": matched_key,
+                    "batch_id": batch_id,
+                    # Tier-3 short-circuit path: no LLM complexity rating.
+                    "complexity": None,
+                }
+            else:
+                commits_for_llm.append(commit)
+
+        if jira_classified:
+            logger.info(
+                "JIRA project-key signal short-circuited %d/%d commits in batch %s",
+                len(jira_classified),
+                len(commits),
+                batch_id[:8],
+            )
+
+        # If every commit was classified via the JIRA project key signal we
+        # can return immediately without calling the LLM at all.
+        if not commits_for_llm:
+            return [jira_classified[c["commit_hash"]] for c in commits]
+
+        # Prepare batch for LLM classification (only commits that didn't hit
+        # the JIRA short-circuit path).
+        enhanced_commits = []
+        for commit in commits_for_llm:
             enhanced_commit = commit.copy()
 
             # Add ticket context to commit
@@ -434,14 +587,16 @@ class BatchClassifierImplMixin:
         # Check if LLM is enabled before attempting classification
         if not self.llm_enabled:
             logger.debug(f"LLM disabled, using fallback for batch {batch_id[:8]}")
-            # Skip directly to fallback
-            fallback_results = []
-            for commit in commits:
-                category = self._fallback_classify_commit(commit)
-                fallback_results.append(
+            # Skip directly to fallback. JIRA-classified commits keep their
+            # high-confidence project-key result; the rest go through the
+            # rule-based fallback as before.
+            return self._merge_jira_with_llm_results(
+                commits,
+                jira_classified,
+                [
                     {
                         "commit_hash": commit["commit_hash"],
-                        "category": category,
+                        "category": self._fallback_classify_commit(commit),
                         "confidence": 0.3,  # Low confidence for fallback
                         "method": "fallback_only",
                         "error": "LLM not configured",
@@ -449,8 +604,9 @@ class BatchClassifierImplMixin:
                         # Rule-based path: no complexity rating
                         "complexity": None,
                     }
-                )
-            return fallback_results
+                    for commit in commits_for_llm
+                ],
+            )
 
         # Check circuit breaker status
         if self.circuit_breaker_open:
@@ -458,14 +614,15 @@ class BatchClassifierImplMixin:
                 f"Circuit breaker OPEN - Skipping LLM API call for batch {batch_id[:8]} "
                 f"after {self.api_failure_count} consecutive failures. Using fallback classification."
             )
-            # Use fallback for all commits
-            fallback_results = []
-            for commit in commits:
-                category = self._fallback_classify_commit(commit)
-                fallback_results.append(
+            # Use fallback for non-JIRA commits; JIRA-classified commits keep
+            # their high-confidence project-key result.
+            return self._merge_jira_with_llm_results(
+                commits,
+                jira_classified,
+                [
                     {
                         "commit_hash": commit["commit_hash"],
-                        "category": category,
+                        "category": self._fallback_classify_commit(commit),
                         "confidence": 0.3,  # Low confidence for fallback
                         "method": "circuit_breaker_fallback",
                         "error": "Circuit breaker open - API repeatedly failing",
@@ -473,8 +630,9 @@ class BatchClassifierImplMixin:
                         # Rule-based path: no complexity rating
                         "complexity": None,
                     }
-                )
-            return fallback_results
+                    for commit in commits_for_llm
+                ],
+            )
 
         try:
             # Use LLM classifier with enhanced context
@@ -497,16 +655,18 @@ class BatchClassifierImplMixin:
             self.api_failure_count = 0
             self.circuit_breaker_open = False
 
-            # Process LLM results and add fallbacks
-            processed_results = []
-            for _, (commit, llm_result) in enumerate(zip(commits, llm_results)):
+            # Process LLM results and add fallbacks. ``llm_results`` aligns
+            # with ``commits_for_llm`` (NOT the original ``commits``), since we
+            # only sent unmapped commits to the LLM.
+            processed_llm_results: list[dict[str, Any]] = []
+            for _, (commit, llm_result) in enumerate(zip(commits_for_llm, llm_results)):
                 confidence = llm_result.get("confidence", 0.0)
                 predicted_category = llm_result.get("category", "other")
 
                 # Apply confidence threshold and fallback
                 if confidence < self.confidence_threshold and self.fallback_enabled:
                     fallback_category = self._fallback_classify_commit(commit)
-                    processed_results.append(
+                    processed_llm_results.append(
                         {
                             "commit_hash": commit["commit_hash"],
                             "category": fallback_category,
@@ -520,7 +680,7 @@ class BatchClassifierImplMixin:
                         }
                     )
                 else:
-                    processed_results.append(
+                    processed_llm_results.append(
                         {
                             "commit_hash": commit["commit_hash"],
                             "category": predicted_category,
@@ -531,10 +691,11 @@ class BatchClassifierImplMixin:
                         }
                     )
 
-            logger.info(
-                f"LLM classification completed for batch {batch_id}: {len(processed_results)} commits"
+            merged = self._merge_jira_with_llm_results(
+                commits, jira_classified, processed_llm_results
             )
-            return processed_results
+            logger.info(f"LLM classification completed for batch {batch_id}: {len(merged)} commits")
+            return merged
 
         except Exception as e:
             # Track consecutive failures for circuit breaker
@@ -572,27 +733,35 @@ class BatchClassifierImplMixin:
                     "  3. Firewall/proxy settings"
                 )
 
-            # Fall back to rule-based classification for entire batch
+            # Fall back to rule-based classification for entire batch.
+            # JIRA-classified commits still keep their tier-3 result; only the
+            # LLM-bound commits drop to fallback patterns.
             if self.fallback_enabled:
-                fallback_results = []
-                for commit in commits:
-                    category = self._fallback_classify_commit(commit)
-                    fallback_results.append(
-                        {
-                            "commit_hash": commit["commit_hash"],
-                            "category": category,
-                            "confidence": 0.3,  # Low confidence for fallback
-                            "method": "fallback_only",
-                            "error": str(e),
-                            "batch_id": batch_id,
-                            # Rule-based path: no complexity rating
-                            "complexity": None,
-                        }
-                    )
-
+                fallback_only = [
+                    {
+                        "commit_hash": commit["commit_hash"],
+                        "category": self._fallback_classify_commit(commit),
+                        "confidence": 0.3,  # Low confidence for fallback
+                        "method": "fallback_only",
+                        "error": str(e),
+                        "batch_id": batch_id,
+                        # Rule-based path: no complexity rating
+                        "complexity": None,
+                    }
+                    for commit in commits_for_llm
+                ]
+                merged = self._merge_jira_with_llm_results(commits, jira_classified, fallback_only)
                 logger.info(f"Fallback classification completed for batch {batch_id}")
-                return fallback_results
+                return merged
 
+            # No fallback available — still return JIRA short-circuited
+            # results when present rather than dropping them on the floor.
+            if jira_classified:
+                return [
+                    jira_classified[c["commit_hash"]]
+                    for c in commits
+                    if c["commit_hash"] in jira_classified
+                ]
             return []
 
     def _fallback_classify_commit(self, commit: dict[str, Any]) -> str:

@@ -17,6 +17,7 @@ def run_classify(
     weeks: int,
     reclassify: bool = False,
     progress_callback: Callable[[str], None] | None = None,
+    show_jira_signals: bool = False,
 ) -> ClassifyResult:
     """Run batch LLM classification on commits that are already in the cache.
 
@@ -29,6 +30,8 @@ def run_classify(
         weeks: Number of weeks to classify (used to compute the date range).
         reclassify: When True, re-classify commits that were already classified.
         progress_callback: Optional function called with status messages.
+        show_jira_signals: When True, log INFO-level messages for every commit
+            classified via the JIRA project-key mapping (issue #62).
 
     Returns:
         A :class:`ClassifyResult` with summary statistics.
@@ -123,6 +126,9 @@ def run_classify(
         batch_size=50,
         confidence_threshold=cfg.analysis.llm_classification.confidence_threshold,
         fallback_enabled=True,
+        # Issue #62: JIRA project-key → work_type mapping (tier-3 signal).
+        jira_project_mappings=getattr(cfg, "jira_project_mappings", None) or {},
+        show_jira_signals=show_jira_signals,
     )
 
     project_keys = [repo_config.project_key or repo_config.name for repo_config in cfg.repositories]

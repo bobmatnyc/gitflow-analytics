@@ -49,6 +49,8 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
         confidence_threshold: float = 0.7,
         fallback_enabled: bool = True,
         max_processing_time_minutes: int = 30,  # Maximum time for classification
+        jira_project_mappings: Optional[dict[str, str]] = None,
+        show_jira_signals: bool = False,
     ):
         """Initialize the batch classifier.
 
@@ -58,6 +60,15 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
             batch_size: Number of commits per batch (max 50 for token limits)
             confidence_threshold: Minimum confidence for LLM classification
             fallback_enabled: Whether to fall back to rule-based classification
+            jira_project_mappings: Optional dict mapping JIRA project keys
+                (e.g. "ADV") to work_type categories (e.g. "feature"). When a
+                commit's ticket references include a project key in this map,
+                the LLM call is short-circuited and the configured work_type is
+                used with high confidence (0.95). This is the tier-3
+                classification signal added in issue #62.
+            show_jira_signals: When True, log INFO-level messages for every
+                commit classified via the JIRA project-key mapping so users
+                can audit which commits hit the short-circuit path.
         """
         self.cache_dir = cache_dir
         self.database = Database(cache_dir / "gitflow_cache.db")
@@ -66,6 +77,20 @@ class BatchCommitClassifier(BatchClassifierImplMixin):
         self.fallback_enabled = fallback_enabled
         self.max_processing_time_minutes = max_processing_time_minutes
         self.classification_start_time = None
+
+        # Normalise JIRA project keys to upper-case so matching is robust to
+        # config-case differences. Values are stored as-is.
+        normalized_mappings: dict[str, str] = {}
+        if jira_project_mappings:
+            for key, value in jira_project_mappings.items():
+                if isinstance(key, str) and isinstance(value, str):
+                    normalized_mappings[key.strip().upper()] = value.strip()
+        self.jira_project_mappings: dict[str, str] = normalized_mappings
+        self.show_jira_signals: bool = show_jira_signals
+        # High confidence assigned to JIRA project-key short-circuited results.
+        # Higher than the LLM confidence_threshold (0.7) so these results survive
+        # the threshold check and are always preferred over fallback patterns.
+        self.JIRA_PROJECT_KEY_CONFIDENCE: float = 0.95
 
         # Initialize LLM classifier
         # Handle different config types

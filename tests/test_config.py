@@ -42,6 +42,67 @@ output:
         finally:
             temp_path.unlink()
 
+    def test_jira_project_mappings_loaded(self, monkeypatch):
+        """Issue #62: jira_project_mappings is loaded and case-normalised."""
+        # ConfigLoader requires GITHUB_TOKEN; provide it for this test.
+        monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+
+        yaml_content = """version: "1.0"
+github:
+  token: "${GITHUB_TOKEN}"
+  owner: "test-owner"
+repositories:
+  - name: "test-repo"
+    path: "/path/to/repo"
+analysis:
+  story_point_patterns:
+    - "SP: (\\\\d+)"
+output:
+  formats: ["csv"]
+jira_project_mappings:
+  ADV: feature
+  fd: feature  # lowercase key — should be normalised to FD
+  BI: analytics
+  KTLO: maintenance
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(yaml_content)
+            temp_path = Path(f.name)
+
+        try:
+            cfg = ConfigLoader.load(temp_path)
+            mappings = cfg.jira_project_mappings
+            assert mappings["ADV"] == "feature"
+            assert mappings["FD"] == "feature"  # normalised from "fd"
+            assert mappings["BI"] == "analytics"
+            assert mappings["KTLO"] == "maintenance"
+        finally:
+            temp_path.unlink()
+
+    def test_jira_project_mappings_default_empty(self, monkeypatch):
+        """Issue #62: when omitted, jira_project_mappings defaults to {}."""
+        monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+
+        yaml_content = """version: "1.0"
+github:
+  token: "${GITHUB_TOKEN}"
+  owner: "test-owner"
+repositories:
+  - name: "test-repo"
+    path: "/path/to/repo"
+output:
+  formats: ["csv"]
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(yaml_content)
+            temp_path = Path(f.name)
+
+        try:
+            cfg = ConfigLoader.load(temp_path)
+            assert cfg.jira_project_mappings == {}
+        finally:
+            temp_path.unlink()
+
     def test_yaml_tab_character_error(self):
         """Test friendly error handling for tab characters in YAML."""
         yaml_content = """version: "1.0"
