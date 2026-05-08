@@ -43,7 +43,7 @@ class ModelRouter:
         self.cost_tracker = cost_tracker
         self.logger = logging.getLogger(__name__)
 
-    def select_model(self, complexity_score: float, batch_size: int) -> str:
+    def select_model(self, complexity_score: float, _batch_size: int) -> str:
         """Select appropriate model based on complexity and budget.
 
         Args:

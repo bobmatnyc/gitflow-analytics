@@ -3,17 +3,15 @@
 import importlib.util
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 from ..models.schemas import ChangeTypeConfig
 
 # Check if spacy is available without importing it
 SPACY_AVAILABLE = importlib.util.find_spec("spacy") is not None
 
-if TYPE_CHECKING or SPACY_AVAILABLE:
+if TYPE_CHECKING:
     from spacy.tokens import Doc
-else:
-    Doc = Any  # type: ignore[assignment,misc]
 
 
 class ChangeTypeClassifier:
@@ -532,7 +530,7 @@ class ChangeTypeClassifier:
                 re.compile(pattern, re.IGNORECASE) for pattern in patterns
             ]
 
-    def classify(self, message: str, doc: Doc, files: list[str]) -> tuple[str, float]:
+    def classify(self, message: str, doc: "Doc", files: list[str]) -> tuple[str, float]:
         """Classify commit change type with confidence score.
 
         Args:
@@ -602,7 +600,7 @@ class ChangeTypeClassifier:
 
         return None
 
-    def _analyze_semantic_content(self, message: str, doc: Doc) -> dict[str, float]:
+    def _analyze_semantic_content(self, message: str, doc: "Doc") -> dict[str, float]:
         """Analyze semantic content of commit message.
 
         Args:
@@ -628,7 +626,7 @@ class ChangeTypeClassifier:
 
         return scores
 
-    def _extract_semantic_features(self, doc: Doc) -> dict[str, set[str]]:
+    def _extract_semantic_features(self, doc: "Doc") -> dict[str, set[str]]:
         """Extract semantic features from spaCy document.
 
         Args:
