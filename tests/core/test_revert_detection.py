@@ -192,8 +192,8 @@ class TestDailyMetricsReversionCommits:
 
         with storage.get_session() as session:
             row = session.query(DailyMetrics).filter(DailyMetrics.project_key == "PROJ").one()
-            assert row.reversion_commits == 1
-            assert row.total_commits == 2
+            assert int(row.reversion_commits) == 1  # type: ignore[arg-type]
+            assert int(row.total_commits) == 2  # type: ignore[arg-type]
 
     def test_falls_back_to_message_regex_when_flag_missing(self, temp_dir) -> None:
         """When is_revert key is absent, the aggregator re-derives from message."""
@@ -225,7 +225,7 @@ class TestDailyMetricsReversionCommits:
         storage.store_daily_metrics(target, commits, identities)
         with storage.get_session() as session:
             row = session.query(DailyMetrics).one()
-            assert row.reversion_commits == 1
+            assert int(row.reversion_commits) == 1  # type: ignore[arg-type]
 
 
 class TestBackfillRevertFlags:

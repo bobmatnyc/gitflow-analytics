@@ -10,6 +10,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from src.gitflow_analytics.extractors.ml_tickets import MLTicketExtractor
 from src.gitflow_analytics.extractors.tickets import filter_git_artifacts
 from src.gitflow_analytics.qualitative.classifiers.llm_commit_classifier import (
@@ -164,6 +166,7 @@ class TestLLMPredictionCache(unittest.TestCase):
         cached_result = self.cache.get_prediction(message, files_changed)
 
         self.assertIsNotNone(cached_result)
+        assert cached_result is not None
         self.assertEqual(cached_result["category"], "bugfix")
         self.assertEqual(cached_result["confidence"], 0.85)
         self.assertEqual(cached_result["method"], "cached")  # Method should be overridden
@@ -311,6 +314,7 @@ class TestMLTicketExtractorLLMIntegration(unittest.TestCase):
     @patch("src.gitflow_analytics.extractors.ml_tickets.SPACY_AVAILABLE", True)
     def test_extractor_initialization_both_enabled(self):
         """Test extractor with both ML and LLM enabled."""
+        pytest.importorskip("spacy")
         extractor = MLTicketExtractor(
             enable_ml=True, enable_llm=True, llm_config=self.llm_config, cache_dir=self.temp_dir
         )
