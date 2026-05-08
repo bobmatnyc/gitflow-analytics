@@ -134,6 +134,10 @@ class IssueCache(Base):
     title = Column(String)
     description = Column(String)
     status = Column(String)
+    # WHY (issue #68): persist the issuetype name (e.g. "Bug", "Story", "Task")
+    # so the tier-1.5 classifier can route issue-linked commits straight to a
+    # work_type without burning an LLM token.
+    issue_type = Column(String, nullable=True)
     assignee = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True))

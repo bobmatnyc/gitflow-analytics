@@ -31,6 +31,7 @@ from ..models.database import (
     ClassificationOverride,
     DailyCommitBatch,
     DetailedTicketData,
+    IssueCache,
     QualitativeCommitData,
 )
 
@@ -65,6 +66,247 @@ class BatchClassifierImplMixin:
     show_jira_signals: bool
     JIRA_PROJECT_KEY_CONFIDENCE: float
     LOW_CONFIDENCE_THRESHOLD: float = 0.30
+
+    # ------------------------------------------------------------------
+    # Tier-1.5 classifier (issue #68): JIRA/GH issuetype → work_type
+    # ------------------------------------------------------------------
+    # Confidence is below the JIRA project-key signal (0.95) because the
+    # issuetype is set per-ticket and can occasionally be wrong (e.g. a Bug
+    # ticket whose actual fix is a refactor), but well above the LLM
+    # threshold so it short-circuits the LLM call when present.
+    ISSUETYPE_CONFIDENCE: float = 0.90
+
+    # Mapping from normalised (lower-cased) issuetype name → work_type.
+    # ``None`` means "ambiguous — check labels, else fall through".
+    ISSUETYPE_CHANGE_TYPE_MAP: dict[str, str | None] = {
+        "bug": "bugfix",
+        "defect": "bugfix",
+        "error": "bugfix",
+        "story": "feature",
+        "feature": "feature",
+        "new feature": "feature",
+        "epic": "feature",
+        "improvement": "feature",
+        "enhancement": "feature",
+        "task": None,  # ambiguous — check labels, else fall through
+        "sub-task": None,  # ambiguous — fall through
+        "subtask": None,
+        "technical task": "maintenance",
+        "tech debt": "refactor",
+        "spike": "research",
+        "documentation": "documentation",
+        "test": "test",
+    }
+
+    # Label keywords that disambiguate "task" / "sub-task" issuetypes.
+    PLATFORM_LABEL_KEYWORDS: set[str] = {
+        "platform",
+        "infra",
+        "infrastructure",
+        "devops",
+        "ops",
+        "tooling",
+    }
+    REFACTOR_LABEL_KEYWORDS: set[str] = {
+        "refactor",
+        "tech-debt",
+        "techdebt",
+        "cleanup",
+        "clean-up",
+    }
+    MAINTENANCE_LABEL_KEYWORDS: set[str] = {
+        "maintenance",
+        "chore",
+        "dependency",
+        "deps",
+        "upgrade",
+    }
+
+    def _classify_via_issuetype(
+        self,
+        commit: dict[str, Any],
+        session: Any,
+    ) -> tuple[str, str, str] | None:
+        """Tier-1.5 classifier: route issue-linked commits via JIRA/GH issuetype.
+
+        Why (issue #68): when a commit is linked to a ticket whose
+        ``issuetype`` is "Bug", the commit is overwhelmingly a bugfix even if
+        the message says "refactor logger". This signal is more specific than
+        the JIRA project-key mapping (which is per-project) but less specific
+        than a manual override. We place it between the project-key tier and
+        the LLM tier so that issue-linked commits never burn LLM tokens.
+
+        Lookup precedence (most-normalised first):
+            1. ``DetailedTicketData.ticket_type`` — already extracted by the
+               PM framework adapter, the cleanest source.
+            2. ``IssueCache.issue_type`` — newly persisted in v17 migration.
+            3. ``IssueCache.platform_data["fields"]["issuetype"]["name"]`` —
+               raw API response, used as a final fallback for caches that
+               predate the v17 migration but still have the JSON blob.
+
+        Args:
+            commit: Commit dict — must expose ``ticket_references``.
+            session: Active SQLAlchemy session (managed by caller).
+
+        Returns:
+            Tuple of (work_type, matched_issuetype_name, business_domain) on
+            success, or ``None`` to fall through to the LLM. ``business_domain``
+            is derived from the ticket's components/labels and defaults to
+            ``"unknown"`` when no signal is available.
+
+        Test: see ``tests/classification/test_issuetype_classifier.py``.
+        """
+        ticket_refs = commit.get("ticket_references") or []
+        if not ticket_refs:
+            return None
+
+        # Ticket refs may be a list of dicts (canonical extractor format) or a
+        # list of bare strings (back-compat).
+        ticket_ids: list[str] = []
+        for ref in ticket_refs:
+            if isinstance(ref, dict):
+                tid = ref.get("id") or ref.get("full_id")
+            elif isinstance(ref, str):
+                tid = ref
+            else:
+                tid = None
+            if tid and isinstance(tid, str):
+                ticket_ids.append(tid)
+        if not ticket_ids:
+            return None
+
+        issuetype_name: str | None = None
+        labels: list[str] = []
+        components: list[str] = []
+
+        # Source 1: DetailedTicketData (already normalised by PM adapter).
+        try:
+            detailed = (
+                session.query(DetailedTicketData)
+                .filter(DetailedTicketData.ticket_id.in_(ticket_ids))
+                .first()
+            )
+        except Exception as e:  # pragma: no cover — defensive only
+            logger.debug("DetailedTicketData lookup failed for issuetype tier: %s", e)
+            detailed = None
+
+        if detailed is not None:
+            if detailed.ticket_type:
+                issuetype_name = str(detailed.ticket_type)
+            if detailed.labels:
+                raw_labels = detailed.labels if isinstance(detailed.labels, list) else []
+                labels = [str(label).lower() for label in raw_labels]
+
+        # Source 2 + 3: IssueCache (issue_type column or platform_data fallback).
+        if not issuetype_name or not (labels or components):
+            try:
+                cached = (
+                    session.query(IssueCache).filter(IssueCache.issue_id.in_(ticket_ids)).first()
+                )
+            except Exception as e:  # pragma: no cover — defensive only
+                logger.debug("IssueCache lookup failed for issuetype tier: %s", e)
+                cached = None
+
+            if cached is not None:
+                if not issuetype_name:
+                    if cached.issue_type:
+                        issuetype_name = str(cached.issue_type)
+                    elif cached.platform_data:
+                        # Fallback for caches that predate the v17 migration.
+                        platform_data = cached.platform_data
+                        if isinstance(platform_data, dict):
+                            fields = platform_data.get("fields") or {}
+                            if isinstance(fields, dict):
+                                itype = fields.get("issuetype") or {}
+                                if isinstance(itype, dict):
+                                    name = itype.get("name")
+                                    if isinstance(name, str) and name:
+                                        issuetype_name = name
+                # Always try to harvest components for business_domain.
+                if cached.platform_data and not components:
+                    platform_data = cached.platform_data
+                    if isinstance(platform_data, dict):
+                        fields = platform_data.get("fields") or {}
+                        if isinstance(fields, dict):
+                            comps = fields.get("components") or []
+                            if isinstance(comps, list):
+                                components = [
+                                    str(c.get("name", ""))
+                                    for c in comps
+                                    if isinstance(c, dict) and c.get("name")
+                                ]
+                if not labels and cached.labels:
+                    raw_labels = cached.labels if isinstance(cached.labels, list) else []
+                    labels = [str(label).lower() for label in raw_labels]
+
+        if not issuetype_name:
+            return None
+
+        key = issuetype_name.lower().strip()
+        # ``ISSUETYPE_CHANGE_TYPE_MAP.get(key)`` returns:
+        #   - a non-empty str for unambiguous mappings,
+        #   - None for ambiguous types ("task", "sub-task"),
+        #   - missing-key (also None via .get()) for unknown types.
+        change_type: str | None
+        if key in self.ISSUETYPE_CHANGE_TYPE_MAP:
+            change_type = self.ISSUETYPE_CHANGE_TYPE_MAP[key]
+        else:
+            return None
+
+        # Resolve ambiguous "task" / "sub-task" via labels.
+        if change_type is None and key in {"task", "sub-task", "subtask"}:
+            label_set = set(labels)
+            if label_set & self.PLATFORM_LABEL_KEYWORDS:
+                change_type = "maintenance"
+            elif label_set & self.REFACTOR_LABEL_KEYWORDS:
+                change_type = "refactor"
+            elif label_set & self.MAINTENANCE_LABEL_KEYWORDS:
+                change_type = "maintenance"
+            else:
+                return None  # truly ambiguous — let the LLM decide
+
+        if change_type is None:
+            return None
+
+        # Derive business_domain from components/labels. First component name
+        # wins; if absent, fall back to the first label that looks like a
+        # domain keyword. Otherwise default to "unknown".
+        business_domain = self._derive_business_domain(components, labels)
+
+        return (change_type, issuetype_name, business_domain)
+
+    def _derive_business_domain(
+        self,
+        components: list[str],
+        labels: list[str],
+    ) -> str:
+        """Derive a business_domain string from ticket components/labels.
+
+        Why (issue #68): ``QualitativeCommitData.business_domain`` was
+        previously hard-coded to ``"unknown"`` for batch-classified commits.
+        Issue-linked commits routed through tier-1.5 carry rich domain signal
+        in the ticket's components and labels, so we surface that here.
+
+        Heuristic:
+        - Use the first non-empty component name (e.g. "Platform", "Billing").
+        - Else, use the first label that matches a known domain keyword.
+        - Else, return "unknown".
+
+        Returns: lower-cased domain string, or "unknown".
+        """
+        for comp in components:
+            if comp and isinstance(comp, str):
+                return comp.strip().lower()
+        # Use any platform/refactor/maintenance label as a coarse domain signal.
+        all_keywords = (
+            self.PLATFORM_LABEL_KEYWORDS
+            | self.REFACTOR_LABEL_KEYWORDS
+            | self.MAINTENANCE_LABEL_KEYWORDS
+        )
+        for label in labels:
+            if label in all_keywords:
+                return label
+        return "unknown"
 
     def _lookup_classification_overrides(
         self, commits: list[dict[str, Any]]
@@ -640,6 +882,52 @@ class BatchClassifierImplMixin:
         # project-key signal. Filter them out of the downstream pipeline.
         post_override_commits = [c for c in commits if c["commit_hash"] not in manual_overrides]
 
+        # Tier-1.5 classification signal: JIRA/GH issuetype → work_type
+        # (issue #68). The ticket's issuetype field (Bug, Story, Task, …) is a
+        # stronger predictor than the project-key tier because it is set
+        # per-ticket rather than per-project. We run this BEFORE the JIRA
+        # project-key tier so that, e.g., a commit linked to a Bug ticket in
+        # the FEATURE-tagged ADV project is correctly classified as bugfix.
+        # Database lookups are wrapped in a single session so the per-batch
+        # cost is bounded.
+        issuetype_classified: dict[str, dict[str, Any]] = {}
+        post_issuetype_commits: list[dict[str, Any]] = []
+        database = getattr(self, "database", None)
+        if database is not None and post_override_commits:
+            session = database.get_session()
+            try:
+                for commit in post_override_commits:
+                    issuetype_match = self._classify_via_issuetype(commit, session)
+                    if issuetype_match is not None:
+                        work_type, matched_issuetype, business_domain = issuetype_match
+                        issuetype_classified[commit["commit_hash"]] = {
+                            "commit_hash": commit["commit_hash"],
+                            "category": work_type,
+                            "confidence": self.ISSUETYPE_CONFIDENCE,
+                            "method": "jira_issuetype",
+                            "matched_issuetype": matched_issuetype,
+                            "business_domain": business_domain,
+                            "batch_id": batch_id,
+                            # Tier-1.5 short-circuit path: no LLM complexity rating.
+                            "complexity": None,
+                        }
+                    else:
+                        post_issuetype_commits.append(commit)
+            finally:
+                session.close()
+        else:
+            # No DB available (e.g. unit tests bypassing __init__) — skip
+            # tier 1.5 silently and pass everything through to the next tier.
+            post_issuetype_commits = list(post_override_commits)
+
+        if issuetype_classified:
+            logger.info(
+                "JIRA issuetype signal short-circuited %d/%d commits in batch %s",
+                len(issuetype_classified),
+                len(commits),
+                batch_id[:8],
+            )
+
         # Tier-3 classification signal: JIRA project key → work_type mapping
         # (issue #62). Apply BEFORE building the LLM batch so commits we can
         # confidently classify by project key never burn an LLM token. We
@@ -650,7 +938,7 @@ class BatchClassifierImplMixin:
         # (which zips results back onto the original commits) stays correct.
         jira_classified: dict[str, dict[str, Any]] = {}
         commits_for_llm: list[dict[str, Any]] = []
-        for commit in post_override_commits:
+        for commit in post_issuetype_commits:
             jira_match = self._classify_via_jira_project_key(commit)
             if jira_match is not None:
                 work_type, matched_key = jira_match
@@ -682,12 +970,17 @@ class BatchClassifierImplMixin:
                 batch_id[:8],
             )
 
-        # Combine short-circuit results (manual overrides + JIRA project key)
-        # so the existing merge logic returns them in caller order. Manual
-        # overrides win when both keys are present (defensive — should never
-        # happen since override commits are filtered out of the JIRA loop).
+        # Combine short-circuit results (manual overrides + JIRA issuetype +
+        # JIRA project key) so the existing merge logic returns them in caller
+        # order. Precedence (highest wins on dup keys, last in dict-merge):
+        #   project_key < issuetype < manual_override
+        # Manual overrides win because they are the curated source of truth;
+        # issuetype wins over project_key because it's per-ticket vs per-project.
+        # In practice no commit should appear in multiple maps because each
+        # tier filters out commits classified by an earlier tier.
         short_circuit_results: dict[str, dict[str, Any]] = {
             **jira_classified,
+            **issuetype_classified,
             **manual_overrides,
         }
 
@@ -950,6 +1243,16 @@ class BatchClassifierImplMixin:
                 .first()
             )
 
+            # Issue #68: tier-1.5 issuetype path provides a real business_domain
+            # derived from ticket components/labels. Other paths still default
+            # to "unknown" with low confidence.
+            business_domain = classification_result.get("business_domain") or "unknown"
+            domain_confidence = (
+                self.ISSUETYPE_CONFIDENCE
+                if method == "jira_issuetype" and business_domain != "unknown"
+                else 0.0
+            )
+
             if qualitative:
                 # Update existing classification record
                 qualitative.change_type = category
@@ -958,6 +1261,12 @@ class BatchClassifierImplMixin:
                 qualitative.processing_method = method
                 qualitative.analyzed_at = datetime.now(timezone.utc)
                 qualitative.complexity = classification_result.get("complexity")
+                # Only overwrite business_domain when the new result actually
+                # carries a domain signal — avoid clobbering a previous good
+                # value with "unknown" from a fallback path.
+                if business_domain != "unknown":
+                    qualitative.business_domain = business_domain
+                    qualitative.domain_confidence = domain_confidence
             else:
                 # Create new classification record
                 qualitative = QualitativeCommitData(
@@ -966,8 +1275,8 @@ class BatchClassifierImplMixin:
                     change_type_confidence=confidence,
                     # business_domain and domain_confidence are required NOT NULL —
                     # use sensible defaults when the batch classifier does not provide them.
-                    business_domain="unknown",
-                    domain_confidence=0.0,
+                    business_domain=business_domain,
+                    domain_confidence=domain_confidence,
                     risk_level="low",
                     risk_factors=[],
                     intent_signals={"batch_id": classification_result.get("batch_id")},

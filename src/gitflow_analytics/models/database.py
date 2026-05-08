@@ -715,6 +715,15 @@ class Database:
                 # NULL until the next classify run populates the value.
                 self._migrate_classification_coverage_v16(conn)
 
+                # --- IssueCache.issue_type column (v17.0 migration, issue #68) ---
+                # WHY: Tier-1.5 classifier routes issue-linked commits via the
+                # JIRA/GH issuetype field (Bug → bugfix, Story → feature, …).
+                # Persisting issue_type on issue_cache lets the lookup happen
+                # without re-parsing platform_data on every classify run.
+                # Migration is additive — existing rows receive NULL until the
+                # next JIRA fetch populates the column.
+                self._migrate_issue_cache_v17(conn)
+
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
             logger.debug(
@@ -1555,5 +1564,50 @@ class Database:
         except Exception as e:
             logger.debug(
                 "Could not add repository_analysis_status.classification_coverage_pct "
+                f"(may already exist or DB is readonly): {e}"
+            )
+
+    def _migrate_issue_cache_v17(self, conn) -> None:
+        """Add issue_type column to issue_cache (v17.0 migration, issue #68).
+
+        WHY: Tier-1.5 of the commit classification cascade routes issue-linked
+        commits to a work_type using the JIRA/GH issuetype field. Persisting
+        the issuetype name on ``issue_cache`` lets the lookup happen via a
+        cheap indexed query instead of re-parsing ``platform_data`` JSON on
+        every classify run.
+
+        The migration is additive and idempotent:
+        - Existing rows receive NULL (= "issue_type unknown") and will be
+          backfilled when the next JIRA fetch runs ``cache_issue``.
+        - Fresh databases get the column via ``Base.metadata.create_all``.
+
+        Columns added:
+            issue_cache.issue_type  TEXT
+
+        Args:
+            conn: Active SQLAlchemy connection.
+        """
+        try:
+            result = conn.execute(text("PRAGMA table_info(issue_cache)"))
+            existing = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read issue_cache schema for v17: {e}")
+            return
+
+        if not existing:
+            # Table not present — fresh databases create the column via
+            # Base.metadata.create_all, so silently skip.
+            return
+
+        if "issue_type" in existing:
+            return
+
+        try:
+            conn.execute(text("ALTER TABLE issue_cache ADD COLUMN issue_type TEXT"))
+            conn.commit()
+            logger.info("Applied v17.0 migration (issue #68): added issue_cache.issue_type")
+        except Exception as e:
+            logger.debug(
+                f"Could not add issue_cache.issue_type "
                 f"(may already exist or DB is readonly): {e}"
             )

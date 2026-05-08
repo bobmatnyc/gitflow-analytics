@@ -258,10 +258,24 @@ class JIRAIntegration:
                 except (ValueError, TypeError):
                     continue
 
+        # WHY (issue #68): tier-1.5 classifier needs issuetype + labels +
+        # components to route commits to a work_type without LLM. Surface them
+        # here so ``_cache_ticket`` can persist them on IssueCache.
+        issuetype_obj = fields.get("issuetype") or {}
+        issue_type = issuetype_obj.get("name") if isinstance(issuetype_obj, dict) else None
+        labels = fields.get("labels") or []
+        components_raw = fields.get("components") or []
+        components = [
+            (c.get("name") or "") for c in components_raw if isinstance(c, dict) and c.get("name")
+        ]
+
         return {
             "id": issue["key"],
             "summary": fields.get("summary", ""),
             "status": fields.get("status", {}).get("name", ""),
+            "issue_type": issue_type or "",
+            "labels": list(labels) if isinstance(labels, list) else [],
+            "components": components,
             "story_points": int(story_points) if story_points else 0,
             "assignee": (
                 fields.get("assignee", {}).get("displayName", "") if fields.get("assignee") else ""
@@ -342,18 +356,21 @@ class JIRAIntegration:
             ticket_id: JIRA ticket ID
             ticket_data: Ticket data from JIRA API
         """
-        # Use the existing cache_issue method which handles JIRA tickets
+        # Use the existing cache_issue method which handles JIRA tickets.
+        # WHY (issue #68): pass through issue_type + labels so the tier-1.5
+        # classifier can short-circuit issue-linked commits without LLM.
         cache_data = {
             "id": ticket_id,
             "project_key": self._extract_project_key(ticket_id),
             "title": ticket_data.get("summary", ""),
             "description": "",  # Not typically needed for analytics
             "status": ticket_data.get("status", ""),
+            "issue_type": ticket_data.get("issue_type") or None,
             "assignee": ticket_data.get("assignee", ""),
             "created_at": self._parse_jira_date(ticket_data.get("created")),
             "updated_at": self._parse_jira_date(ticket_data.get("updated")),
             "story_points": ticket_data.get("story_points", 0),
-            "labels": [],  # Could extract from JIRA data if needed
+            "labels": list(ticket_data.get("labels") or []),
             "platform_data": ticket_data,  # Store full JIRA response for future use
         }
 

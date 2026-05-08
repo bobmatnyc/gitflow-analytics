@@ -646,6 +646,8 @@ class CommitCacheMixin(_Base):
                 existing.title = issue_data.get("title")  # type: ignore[assignment]
                 existing.description = issue_data.get("description")  # type: ignore[assignment]
                 existing.status = issue_data.get("status")  # type: ignore[assignment]
+                # Issue #68: persist issuetype name for tier-1.5 classifier.
+                existing.issue_type = issue_data.get("issue_type")  # type: ignore[assignment]
                 existing.assignee = issue_data.get("assignee")  # type: ignore[assignment]
                 existing.created_at = issue_data.get("created_at")  # type: ignore[assignment]
                 existing.updated_at = issue_data.get("updated_at")  # type: ignore[assignment]
@@ -664,6 +666,7 @@ class CommitCacheMixin(_Base):
                     title=issue_data.get("title"),
                     description=issue_data.get("description"),
                     status=issue_data.get("status"),
+                    issue_type=issue_data.get("issue_type"),
                     assignee=issue_data.get("assignee"),
                     created_at=issue_data.get("created_at"),
                     updated_at=issue_data.get("updated_at"),
