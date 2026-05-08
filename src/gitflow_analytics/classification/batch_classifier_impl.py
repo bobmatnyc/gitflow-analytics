@@ -494,11 +494,12 @@ class BatchClassifierImplMixin:
         session = self.database.get_session()
         batches_processed = 0
         commits_processed = 0
+        live_batches: list[DailyCommitBatch] = []
 
         try:
             # Re-fetch fresh (attached) ORM objects for this session so that
             # status updates are actually persisted on commit.
-            live_batches: list[DailyCommitBatch] = (
+            live_batches = (
                 session.query(DailyCommitBatch)
                 .filter(DailyCommitBatch.id.in_(batch_ids))
                 .order_by(DailyCommitBatch.date)
@@ -547,6 +548,7 @@ class BatchClassifierImplMixin:
                         live_batch.classified_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                     session.commit()
                     return {"batches_processed": 0, "commits_processed": 0}
+
                 logger.warning(f"No commits found for weekly batches (expected {expected} commits)")
                 # Mark batches as failed due to missing commits
                 for live_batch in live_batches:
@@ -643,11 +645,12 @@ class BatchClassifierImplMixin:
             # Mark batches as failed.  ``live_batches`` may be unbound if the
             # re-fetch query itself raised, so guard with a try/except.
             try:
-                for live_batch in live_batches:  # type: ignore[possibly-undefined]
+                for live_batch in live_batches:
                     live_batch.classification_status = "failed"  # type: ignore[assignment]
                 session.commit()
             except Exception:
                 session.rollback()
+
         finally:
             session.close()
 
@@ -668,7 +671,7 @@ class BatchClassifierImplMixin:
         bump it to 0.90 and assert it returns False.
         """
         threshold = getattr(self, "LOW_CONFIDENCE_THRESHOLD", 0.30)
-        batch_dt: datetime = batch.date  # type: ignore[assignment]
+        batch_dt = batch.date  # type: ignore[assignment]
         batch_day = batch_dt.date()
         start_of_day = datetime.combine(batch_day, datetime.min.time(), tzinfo=timezone.utc)
         end_of_day = datetime.combine(batch_day, datetime.max.time(), tzinfo=timezone.utc)
@@ -703,7 +706,7 @@ class BatchClassifierImplMixin:
             # CRITICAL FIX: CachedCommit.timestamp is timezone-aware UTC (from analyzer.py line 806)
             # but we were creating timezone-naive boundaries, causing comparison to fail
             # Create timezone-aware UTC boundaries to match CachedCommit.timestamp format
-            batch_dt: datetime = batch.date  # type: ignore[assignment]
+            batch_dt = batch.date  # type: ignore[assignment]
             batch_day = batch_dt.date()
             start_of_day = datetime.combine(batch_day, datetime.min.time(), tzinfo=timezone.utc)
             end_of_day = datetime.combine(batch_day, datetime.max.time(), tzinfo=timezone.utc)
