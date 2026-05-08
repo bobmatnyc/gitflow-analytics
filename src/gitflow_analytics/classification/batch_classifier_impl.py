@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 from ..core.progress import get_progress_service
 from ..models.database import (
     CachedCommit,
+    ClassificationOverride,
     DailyCommitBatch,
     DetailedTicketData,
     QualitativeCommitData,
@@ -64,6 +65,74 @@ class BatchClassifierImplMixin:
     show_jira_signals: bool
     JIRA_PROJECT_KEY_CONFIDENCE: float
     LOW_CONFIDENCE_THRESHOLD: float = 0.30
+
+    def _lookup_classification_overrides(
+        self, commits: list[dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        """Look up manual classification overrides for a batch of commits.
+
+        Why (issue #63): Manual corrections persisted in
+        ``classification_overrides`` must take priority over every classifier
+        (LLM, JIRA project-key, fallback). This helper performs a single
+        bulk SELECT keyed on (commit_hash, repo_path) and returns a map of
+        commit_hash -> override result dict ready to be merged into the
+        result list with method=``manual_override`` and confidence 1.0.
+
+        Args:
+            commits: Batch of commit dicts. Each must expose ``commit_hash``
+                and ``repo_path``.
+
+        Returns:
+            Map of ``commit_hash`` -> classification result dict. Commits
+            without an override are simply absent from the map.
+        """
+        if not commits:
+            return {}
+
+        # Build lookup keys; we filter on the union of hashes and verify the
+        # repo_path in Python so a single IN-clause query is sufficient.
+        hashes = [c["commit_hash"] for c in commits if c.get("commit_hash")]
+        if not hashes:
+            return {}
+        commit_repo_pairs = {
+            (c["commit_hash"], c.get("repo_path", "")) for c in commits if c.get("commit_hash")
+        }
+
+        # Defensive: tests sometimes instantiate the mixin via __new__ without
+        # calling __init__, leaving ``database`` unset. Skip the lookup in
+        # that scenario rather than crashing — those tests verify orthogonal
+        # behaviour (e.g. complexity propagation) that does not depend on
+        # overrides.
+        database = getattr(self, "database", None)
+        if database is None:
+            return {}
+        session = database.get_session()
+        try:
+            rows = (
+                session.query(ClassificationOverride)
+                .filter(ClassificationOverride.commit_hash.in_(hashes))
+                .all()
+            )
+            overrides: dict[str, dict[str, Any]] = {}
+            for row in rows:
+                key = (str(row.commit_hash), str(row.repo_path))
+                if key not in commit_repo_pairs:
+                    continue
+                overrides[str(row.commit_hash)] = {
+                    "commit_hash": str(row.commit_hash),
+                    "category": str(row.work_type),
+                    "confidence": float(row.confidence) if row.confidence is not None else 1.0,
+                    "method": "manual_override",
+                    "override_reason": row.reason,
+                    "override_created_by": row.created_by,
+                    "complexity": None,
+                }
+            return overrides
+        except Exception as e:
+            logger.warning("Could not look up classification overrides: %s", e)
+            return {}
+        finally:
+            session.close()
 
     def _classify_via_jira_project_key(self, commit: dict[str, Any]) -> tuple[str, str] | None:
         """Look up commit's JIRA project key in the configured mapping.
@@ -418,22 +487,49 @@ class BatchClassifierImplMixin:
             threshold = getattr(self, "LOW_CONFIDENCE_THRESHOLD", 0.30)
             commit_ids = [c.id for c in commits]
             existing_confidence: dict[int, float] = {}
+            existing_method: dict[int, str] = {}
             if commit_ids:
                 for row in (
                     session.query(
                         QualitativeCommitData.commit_id,
                         QualitativeCommitData.confidence_score,
+                        QualitativeCommitData.processing_method,
                     )
                     .filter(QualitativeCommitData.commit_id.in_(commit_ids))
                     .all()
                 ):
                     existing_confidence[row[0]] = float(row[1] or 0.0)
+                    existing_method[row[0]] = str(row[2] or "")
 
-            commits = [
-                c
-                for c in commits
-                if c.id not in existing_confidence or existing_confidence[c.id] <= threshold
-            ]
+            # Issue #63: Always include commits that have a manual override on
+            # file but whose stored classification has not yet been replaced
+            # with method=``manual_override``. This guarantees newly-added
+            # overrides are applied even if the existing classification has a
+            # high confidence value (e.g. 0.95 from JIRA project key).
+            commit_hashes = [c.commit_hash for c in commits]
+            override_hashes: set[str] = set()
+            if commit_hashes:
+                override_rows = (
+                    session.query(ClassificationOverride.commit_hash)
+                    .filter(
+                        ClassificationOverride.commit_hash.in_(commit_hashes),
+                        ClassificationOverride.repo_path == batch.repo_path,
+                    )
+                    .all()
+                )
+                override_hashes = {str(r[0]) for r in override_rows}
+
+            def _needs_reclassification(c: Any) -> bool:
+                # Pending override that hasn't been stamped onto qualitative_commits yet.
+                if (
+                    c.commit_hash in override_hashes
+                    and existing_method.get(c.id) != "manual_override"
+                ):
+                    return True
+                # Original logic: missing or low-confidence existing row.
+                return c.id not in existing_confidence or existing_confidence[c.id] <= threshold
+
+            commits = [c for c in commits if _needs_reclassification(c)]
 
             logger.debug(f"Found {len(commits)} commits for batch on {batch.date}")
 
@@ -521,6 +617,29 @@ class BatchClassifierImplMixin:
                 f"Consider reducing batch_size if timeouts occur."
             )
 
+        # Manual classification overrides (issue #63) take priority over
+        # EVERY classifier. Apply BEFORE the JIRA project-key short-circuit and
+        # the LLM call so curated work_type values survive every rerun.
+        manual_overrides = self._lookup_classification_overrides(commits)
+        if manual_overrides:
+            for hash_, override in manual_overrides.items():
+                override["batch_id"] = batch_id
+                logger.info(
+                    "Manual override: commit %s -> work_type=%s",
+                    hash_[:7],
+                    override.get("category"),
+                )
+            logger.info(
+                "Manual overrides short-circuited %d/%d commits in batch %s",
+                len(manual_overrides),
+                len(commits),
+                batch_id[:8],
+            )
+
+        # Commits with overrides bypass every other classifier — even the JIRA
+        # project-key signal. Filter them out of the downstream pipeline.
+        post_override_commits = [c for c in commits if c["commit_hash"] not in manual_overrides]
+
         # Tier-3 classification signal: JIRA project key → work_type mapping
         # (issue #62). Apply BEFORE building the LLM batch so commits we can
         # confidently classify by project key never burn an LLM token. We
@@ -531,7 +650,7 @@ class BatchClassifierImplMixin:
         # (which zips results back onto the original commits) stays correct.
         jira_classified: dict[str, dict[str, Any]] = {}
         commits_for_llm: list[dict[str, Any]] = []
-        for commit in commits:
+        for commit in post_override_commits:
             jira_match = self._classify_via_jira_project_key(commit)
             if jira_match is not None:
                 work_type, matched_key = jira_match
@@ -563,10 +682,23 @@ class BatchClassifierImplMixin:
                 batch_id[:8],
             )
 
-        # If every commit was classified via the JIRA project key signal we
-        # can return immediately without calling the LLM at all.
+        # Combine short-circuit results (manual overrides + JIRA project key)
+        # so the existing merge logic returns them in caller order. Manual
+        # overrides win when both keys are present (defensive — should never
+        # happen since override commits are filtered out of the JIRA loop).
+        short_circuit_results: dict[str, dict[str, Any]] = {
+            **jira_classified,
+            **manual_overrides,
+        }
+
+        # If every commit was classified via a short-circuit path we can
+        # return immediately without calling the LLM at all.
         if not commits_for_llm:
-            return [jira_classified[c["commit_hash"]] for c in commits]
+            return [
+                short_circuit_results[c["commit_hash"]]
+                for c in commits
+                if c["commit_hash"] in short_circuit_results
+            ]
 
         # Prepare batch for LLM classification (only commits that didn't hit
         # the JIRA short-circuit path).
@@ -592,7 +724,7 @@ class BatchClassifierImplMixin:
             # rule-based fallback as before.
             return self._merge_jira_with_llm_results(
                 commits,
-                jira_classified,
+                short_circuit_results,
                 [
                     {
                         "commit_hash": commit["commit_hash"],
@@ -618,7 +750,7 @@ class BatchClassifierImplMixin:
             # their high-confidence project-key result.
             return self._merge_jira_with_llm_results(
                 commits,
-                jira_classified,
+                short_circuit_results,
                 [
                     {
                         "commit_hash": commit["commit_hash"],
@@ -692,7 +824,7 @@ class BatchClassifierImplMixin:
                     )
 
             merged = self._merge_jira_with_llm_results(
-                commits, jira_classified, processed_llm_results
+                commits, short_circuit_results, processed_llm_results
             )
             logger.info(f"LLM classification completed for batch {batch_id}: {len(merged)} commits")
             return merged
@@ -750,17 +882,19 @@ class BatchClassifierImplMixin:
                     }
                     for commit in commits_for_llm
                 ]
-                merged = self._merge_jira_with_llm_results(commits, jira_classified, fallback_only)
+                merged = self._merge_jira_with_llm_results(
+                    commits, short_circuit_results, fallback_only
+                )
                 logger.info(f"Fallback classification completed for batch {batch_id}")
                 return merged
 
-            # No fallback available — still return JIRA short-circuited
-            # results when present rather than dropping them on the floor.
-            if jira_classified:
+            # No fallback available — still return short-circuited results
+            # (manual overrides + JIRA project key) rather than dropping them.
+            if short_circuit_results:
                 return [
-                    jira_classified[c["commit_hash"]]
+                    short_circuit_results[c["commit_hash"]]
                     for c in commits
-                    if c["commit_hash"] in jira_classified
+                    if c["commit_hash"] in short_circuit_results
                 ]
             return []
 

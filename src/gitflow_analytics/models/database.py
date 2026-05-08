@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 from .database_base import Base, utcnow_tz_aware  # noqa: E402
 from .database_commit_models import (  # noqa: E402
     CachedCommit,
+    ClassificationOverride,
     CommitClassificationBatch,
     CommitTicketCorrelation,
     DailyCommitBatch,
@@ -78,6 +79,7 @@ __all__ = [
     "SchemaVersion",
     "TicketingActivityCache",
     "ConfluencePageCache",
+    "ClassificationOverride",
     "Database",
 ]
 
@@ -689,6 +691,29 @@ class Database:
                 # comparing None vs int.  This idempotent UPDATE sets any
                 # legacy NULL rows to 0.
                 self._migrate_developer_identities_null_stats(conn)
+
+                # --- classification_overrides table (v14.0 migration, issue #63) ---
+                # WHY: Manual classification corrections need a persistent home so
+                # reruns of the classify pipeline don't overwrite curated results.
+                # Migration is purely additive — creates the table only when it
+                # does not already exist.  Base.metadata.create_all handles the
+                # initial creation for fresh databases; this method covers
+                # upgrades of existing caches.
+                self._migrate_classification_overrides_v14(conn)
+
+                # --- Revert tracking columns (v15.0 migration, issue #64) ---
+                # WHY: Persist is_revert on cached_commits and reversion_commits
+                # on daily_metrics + weekly_trends so revert/rollback activity is
+                # tracked from a single source of truth.  All migrations are
+                # additive — existing rows receive FALSE / 0 defaults.
+                self._migrate_revert_tracking_v15(conn)
+
+                # --- Classification coverage column (v16.0 migration, issue #65) ---
+                # WHY: Persist the per-repo classification coverage percentage so
+                # downstream reports can flag repositories whose commits all fall
+                # to maintenance/KTLO.  Migration is additive — existing rows get
+                # NULL until the next classify run populates the value.
+                self._migrate_classification_coverage_v16(conn)
 
         except Exception as e:
             # Don't fail if migrations can't be applied (e.g., in-memory database)
@@ -1363,3 +1388,172 @@ class Database:
                     )
             except Exception as e:
                 logger.debug(f"Could not back-fill developer_identities.{column}: {e}")
+
+    def _migrate_classification_overrides_v14(self, conn) -> None:
+        """Create classification_overrides table if missing (v14.0, issue #63).
+
+        WHY: Persists manual classification corrections so the classify pipeline
+        can short-circuit those commits with confidence 1.0 and never overwrite
+        them on reruns.  This migration is purely additive — it creates the
+        table only when it does not already exist.  Existing databases are
+        untouched aside from the new table.
+
+        Args:
+            conn: Active SQLAlchemy connection.
+        """
+        try:
+            result = conn.execute(
+                text(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name='classification_overrides'"
+                )
+            )
+            if result.fetchone():
+                return
+
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE classification_overrides (
+                      id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      commit_hash TEXT NOT NULL,
+                      repo_path TEXT NOT NULL,
+                      work_type TEXT NOT NULL,
+                      confidence REAL NOT NULL DEFAULT 1.0,
+                      reason TEXT,
+                      created_by TEXT,
+                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                      UNIQUE(commit_hash, repo_path)
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_classification_override_commit "
+                    "ON classification_overrides (commit_hash)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_classification_override_repo "
+                    "ON classification_overrides (repo_path)"
+                )
+            )
+            conn.commit()
+            logger.info(
+                "Applied classification_overrides v14.0 migration: created table (issue #63)"
+            )
+        except Exception as e:
+            logger.debug(
+                f"Could not create classification_overrides table "
+                f"(may already exist or DB is readonly): {e}"
+            )
+
+    def _migrate_revert_tracking_v15(self, conn) -> None:
+        """Add revert tracking columns (v15.0 migration, issue #64).
+
+        WHY: Persists revert/rollback detection at ingestion time on
+        ``cached_commits`` and aggregates the count onto ``daily_metrics`` and
+        ``weekly_trends``.  All three ALTER TABLEs are additive and idempotent:
+        existing rows receive ``FALSE``/``0`` defaults so legacy data remains
+        valid.  Each ALTER is wrapped in its own try/except to be tolerant of
+        partial-state databases (e.g. a previous run that crashed between
+        statements).
+
+        Columns added:
+            cached_commits.is_revert         BOOLEAN  - revert pattern matched
+            daily_metrics.reversion_commits  INTEGER  - count per day
+            weekly_trends.reversion_commits  INTEGER  - count per ISO week
+
+        Args:
+            conn: Active SQLAlchemy connection.
+        """
+        targets: list[tuple[str, str, str]] = [
+            ("cached_commits", "is_revert", "BOOLEAN DEFAULT 0 NOT NULL"),
+            ("daily_metrics", "reversion_commits", "INTEGER DEFAULT 0"),
+            ("weekly_trends", "reversion_commits", "INTEGER DEFAULT 0"),
+        ]
+
+        for table, column, ddl in targets:
+            try:
+                result = conn.execute(text(f"PRAGMA table_info({table})"))
+                existing = {row[1] for row in result}
+            except Exception as e:
+                logger.debug(f"Could not read {table} schema for v15 migration: {e}")
+                continue
+
+            if not existing:
+                # Table not present — fresh databases get the column via
+                # Base.metadata.create_all, so silently skip.
+                continue
+
+            if column in existing:
+                continue
+
+            try:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                conn.commit()
+                logger.info(
+                    "Applied v15.0 migration (issue #64): added %s.%s",
+                    table,
+                    column,
+                )
+            except Exception as e:
+                logger.debug(
+                    f"Could not add {table}.{column} " f"(may already exist or DB is readonly): {e}"
+                )
+
+    def _migrate_classification_coverage_v16(self, conn) -> None:
+        """Add classification_coverage_pct column (v16.0 migration, issue #65).
+
+        WHY: When a repo has no jira_project_mappings or conventional commit
+        prefixes, every commit falls to the maintenance/KTLO bucket without
+        any warning to the user.  Storing the per-repo coverage percentage
+        on ``repository_analysis_status`` lets reports surface the issue and
+        powers the optional ``--validate-coverage`` CLI gate for CI use.
+
+        The migration is additive and idempotent:
+        - Existing rows receive NULL (= "not yet measured") and will be
+          populated on the next classify run.
+        - Fresh databases get the column via ``Base.metadata.create_all``.
+
+        Columns added:
+            repository_analysis_status.classification_coverage_pct  REAL
+
+        Args:
+            conn: Active SQLAlchemy connection.
+        """
+        try:
+            result = conn.execute(text("PRAGMA table_info(repository_analysis_status)"))
+            existing = {row[1] for row in result}
+        except Exception as e:
+            logger.debug(f"Could not read repository_analysis_status schema for v16: {e}")
+            return
+
+        if not existing:
+            # Table not present — fresh databases create the column via
+            # Base.metadata.create_all, so silently skip.
+            return
+
+        if "classification_coverage_pct" in existing:
+            return
+
+        try:
+            conn.execute(
+                text(
+                    "ALTER TABLE repository_analysis_status "
+                    "ADD COLUMN classification_coverage_pct REAL"
+                )
+            )
+            conn.commit()
+            logger.info(
+                "Applied v16.0 migration (issue #65): "
+                "added repository_analysis_status.classification_coverage_pct"
+            )
+        except Exception as e:
+            logger.debug(
+                "Could not add repository_analysis_status.classification_coverage_pct "
+                f"(may already exist or DB is readonly): {e}"
+            )

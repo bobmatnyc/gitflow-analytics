@@ -133,6 +133,11 @@ from .cli_backfill_ai_detection import register_backfill_ai_detection_commands  
 
 register_backfill_ai_detection_commands(cli)
 
+# Manual classification overrides (issue #63)
+from .cli_overrides import register_override_commands  # noqa: E402
+
+register_override_commands(cli)
+
 
 def main() -> None:
     """Main entry point."""

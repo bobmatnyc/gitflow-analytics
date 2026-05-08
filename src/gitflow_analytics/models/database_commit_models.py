@@ -36,6 +36,12 @@ class CachedCommit(Base):
     timestamp = Column(DateTime(timezone=True))  # CRITICAL: Preserve timezone for date filtering
     branch = Column(String)
     is_merge = Column(Boolean, default=False)
+    # Issue #64: persist whether the commit looks like a revert / rollback so
+    # downstream metrics (daily_metrics.reversion_commits, weekly_trends.
+    # reversion_commits) can be computed from a single source of truth.
+    # Populated by utils.revert_detection.is_revert_commit() at ingestion and
+    # by the ``gfa backfill-revert-flags`` CLI for legacy rows.
+    is_revert = Column(Boolean, default=False, nullable=False)
 
     # Metrics
     files_changed = Column(Integer)
@@ -121,6 +127,14 @@ class RepositoryAnalysisStatus(Base):
     # Analysis performance metrics
     processing_time_seconds = Column(Float, nullable=True)
     cache_hit_rate_percent = Column(Float, nullable=True)
+
+    # Issue #65: classification quality metric.
+    # Percentage of classified commits whose work_type is NOT one of
+    # maintenance/ktlo/other/unknown.  Low values typically indicate that
+    # ``jira_project_mappings`` is missing or that authors are not using
+    # conventional commit prefixes.  NULL means "not yet measured" — older
+    # databases predating issue #65 will retain NULL until reclassified.
+    classification_coverage_pct = Column(Float, nullable=True)
 
     # Status tracking
     status = Column(String, default="pending")  # pending, in_progress, completed, failed
@@ -403,6 +417,9 @@ class DailyMetrics(Base):
     # Work pattern indicators
     merge_commits = Column(Integer, default=0)
     complex_commits = Column(Integer, default=0)  # Commits with >5 files changed
+    # Issue #64: count of commits in this day-bucket whose cached_commits.is_revert
+    # is True.  Aggregated from cached_commits at metrics-storage time.
+    reversion_commits = Column(Integer, default=0)
 
     # AI tool usage tracking (per-developer, per-day)
     ai_assisted_commits = Column(Integer, default=0)  # Commits with any AI tool marker
@@ -451,6 +468,10 @@ class WeeklyTrends(Base):
     feature_commits = Column(Integer, default=0)
     bug_fix_commits = Column(Integer, default=0)
     refactor_commits = Column(Integer, default=0)
+    # Issue #64: count of commits in this week whose cached_commits.is_revert
+    # is True.  Mirrors daily_metrics.reversion_commits and is summed across
+    # all days in the ISO week for fast trend queries.
+    reversion_commits = Column(Integer, default=0)
 
     # Week-over-week changes (percentage)
     total_commits_change = Column(Float, default=0.0)
@@ -575,6 +596,40 @@ class WeeklyPRMetrics(Base):
     __table_args__ = (
         Index("idx_weekly_pr_metrics_week", "iso_week"),
         Index("idx_weekly_pr_metrics_engineer", "engineer_identifier"),
+    )
+
+
+class ClassificationOverride(Base):
+    """Manual classification override for a specific commit.
+
+    WHY (issue #63): Reruns of the classification pipeline regenerate work_type
+    for every commit, which would otherwise overwrite hand-curated corrections.
+    This table persists explicit manual overrides keyed by (commit_hash,
+    repo_path) so the pipeline can apply them BEFORE any classifier runs and
+    short-circuit those commits with confidence 1.0 and method
+    "manual_override".
+
+    Schema mirrors the SQL spec in issue #63 — fields are nullable where the
+    spec marks them optional (reason, created_by) and UNIQUE(commit_hash,
+    repo_path) enforces one override per commit.
+    """
+
+    __tablename__ = "classification_overrides"
+
+    id = Column(Integer, primary_key=True)
+    commit_hash = Column(String, nullable=False)
+    repo_path = Column(String, nullable=False)
+    work_type = Column(String, nullable=False)
+    confidence = Column(Float, nullable=False, default=1.0)
+    reason = Column(String, nullable=True)
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow_tz_aware)
+    updated_at = Column(DateTime(timezone=True), default=utcnow_tz_aware, onupdate=utcnow_tz_aware)
+
+    __table_args__ = (
+        UniqueConstraint("commit_hash", "repo_path", name="uq_classification_override_commit"),
+        Index("idx_classification_override_commit", "commit_hash"),
+        Index("idx_classification_override_repo", "repo_path"),
     )
 
 
