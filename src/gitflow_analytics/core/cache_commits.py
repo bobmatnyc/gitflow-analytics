@@ -20,7 +20,55 @@ logger = logging.getLogger(__name__)
 # JIRA-style ticket ID pattern (e.g. DUE-1234, CORE-567).
 # Used as fallback when no TicketExtractor is available.  Anchored on word
 # boundaries to avoid matching mid-word.
-_TICKET_ID_PATTERN = re.compile(r"\b[A-Z]+-\d+\b")
+#
+# WHY length 2-10: Single-letter prefixes like "A-1" are almost always false
+# positives (test fixtures, math expressions).  Real JIRA project keys are
+# typically 2-10 uppercase letters.
+_TICKET_ID_PATTERN = re.compile(r"\b[A-Z]{2,10}-\d+\b")
+
+# Known non-ticket prefixes that match the JIRA-style shape but are standards,
+# specs, or technology acronyms — never project keys.  Issue #54: scanning PR
+# titles surfaced false positives like "CVE-2024-1234" being treated as
+# tickets, inflating ticket linkage rates.  Membership check is uppercase.
+_TICKET_ID_FALSE_POSITIVE_PREFIXES: frozenset[str] = frozenset(
+    {
+        "CVE",
+        "CWE",
+        "RFC",
+        "ISO",
+        "HTTP",
+        "API",
+        "SQL",
+        "URL",
+        "CSS",
+        "HTML",
+        "JSON",
+        "XML",
+        "PDF",
+        "AWS",
+        "GCP",
+        "SDK",
+    }
+)
+
+
+def _is_valid_ticket_id(ticket_id: str) -> bool:
+    """Return True if ``ticket_id`` looks like a real project ticket reference.
+
+    WHY: ``_TICKET_ID_PATTERN`` matches anything of the shape ``[A-Z]{2,10}-\\d+``,
+    which includes well-known non-ticket identifiers (CVE-2024-1234, CWE-89,
+    RFC-2616).  This filter excludes those by checking the prefix against a
+    known-bad list.  Issue #54.
+
+    Args:
+        ticket_id: Candidate ticket ID, already uppercased and matching the
+            base pattern.
+
+    Returns:
+        True when the prefix is not in the false-positive exclusion set.
+    """
+    prefix, _, _ = ticket_id.partition("-")
+    return prefix not in _TICKET_ID_FALSE_POSITIVE_PREFIXES
 
 
 def _ensure_ai_detection_fields(commit_data: dict[str, Any]) -> None:
@@ -75,7 +123,10 @@ def _extract_ticket_ids_from_messages(messages: list[str]) -> list[str]:
         if not msg:
             continue
         for match in _TICKET_ID_PATTERN.findall(msg):
-            found.add(match.upper())
+            candidate = match.upper()
+            # Issue #54: filter known non-ticket prefixes (CVE, CWE, RFC, ...)
+            if _is_valid_ticket_id(candidate):
+                found.add(candidate)
     return sorted(found)
 
 
@@ -429,13 +480,24 @@ class CommitCacheMixin(_Base):
                 commit_hashes_payload = []
         derived_commit_count = len(commit_hashes_payload)
 
-        # ticket_ids is derived from commit_messages when supplied.  When the
-        # payload omits commit_messages we don't know the messages, so we
-        # leave the column unchanged (None on first write).
+        # ticket_ids is derived from PR title (issue #54) and commit_messages
+        # (issue #53) when supplied.  PR title is always available when
+        # caching, so we always have at least the title to scan.  If
+        # commit_messages is omitted we still extract from the title alone.
         derived_ticket_ids_json: Optional[str] = None
+        title_value = pr_data.get("title")
+        title_messages: list[str] = (
+            [title_value] if isinstance(title_value, str) and title_value else []
+        )
         if "commit_messages" in pr_data:
             messages = pr_data.get("commit_messages") or []
-            ids = _extract_ticket_ids_from_messages(messages)
+            ids = _extract_ticket_ids_from_messages(title_messages + list(messages))
+            derived_ticket_ids_json = json.dumps(ids)
+        elif title_messages:
+            # No commit_messages supplied — still derive from title alone
+            # rather than leaving NULL (issue #54).  This is a strict
+            # improvement: previously we would skip extraction entirely.
+            ids = _extract_ticket_ids_from_messages(title_messages)
             derived_ticket_ids_json = json.dumps(ids)
 
         with self.get_session() as session:

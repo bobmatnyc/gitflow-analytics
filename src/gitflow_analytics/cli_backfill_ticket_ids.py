@@ -2,11 +2,18 @@
 
 Issue #53: pull_request_cache gained two derived columns
     - commit_count: len(commit_hashes)
-    - ticket_ids:   JSON list of [A-Z]+-\\d+ tickets extracted from commit messages
+    - ticket_ids:   JSON list of [A-Z]{2,10}-\\d+ tickets extracted from commit
+                    messages and PR titles.
 
 For PRs cached before this change both columns are NULL.  This command joins
 ``pull_request_cache`` against ``cached_commits`` (by commit hash membership)
 to backfill the values without re-hitting the GitHub API.
+
+Issue #54: also scans ``pull_request_cache.title`` for ticket references —
+many PRs reference tickets only in the title, not in their commit messages
+(414 such PRs in the original report, lifting linkage from 33.7% -> ~60.3%).
+The regex was tightened in the same change to exclude known non-ticket
+prefixes (CVE, CWE, RFC, ...) which were inflating false-positive matches.
 """
 
 from __future__ import annotations
@@ -91,10 +98,25 @@ def backfill_pr_cache(db: Database, repo_filter: str | None = None) -> dict[str,
                 values["commit_count"] = len(hashes)
                 stats["commit_count_set"] += 1
 
-            # Backfill ticket_ids when NULL by joining against cached_commits.
+            # Backfill ticket_ids when NULL by joining against cached_commits
+            # AND scanning the PR title (issue #54).  Both sources contribute;
+            # results are deduplicated by _extract_ticket_ids_from_messages.
             if pr.ticket_ids is None:
+                # Issue #54: PR title is a first-class source of ticket refs.
+                # Include it even when there are no commit hashes — many PRs
+                # have the ticket only in the title.
+                # WHY: pr.title is typed as Column[str] by SQLAlchemy; coerce
+                # via str() and then check the runtime value to satisfy
+                # Pyright's reportGeneralTypeIssues check on Column conditionals.
+                raw_title = pr.title
+                title_text = raw_title if isinstance(raw_title, str) else None
+                title_messages: list[str] = (
+                    [title_text] if title_text is not None and len(title_text) > 0 else []
+                )
+
                 if not hashes:
-                    values["ticket_ids"] = json.dumps([])
+                    ids = _extract_ticket_ids_from_messages(title_messages)
+                    values["ticket_ids"] = json.dumps(ids)
                     stats["ticket_ids_set"] += 1
                 else:
                     rows = (
@@ -102,8 +124,8 @@ def backfill_pr_cache(db: Database, repo_filter: str | None = None) -> dict[str,
                         .filter(CachedCommit.commit_hash.in_(hashes))
                         .all()
                     )
-                    messages = [str(r[0]) for r in rows if r and r[0]]
-                    ids = _extract_ticket_ids_from_messages(messages)
+                    commit_messages = [str(r[0]) for r in rows if r and r[0]]
+                    ids = _extract_ticket_ids_from_messages(title_messages + commit_messages)
                     values["ticket_ids"] = json.dumps(ids)
                     stats["ticket_ids_set"] += 1
 
