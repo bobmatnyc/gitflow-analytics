@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with timezone-aware `datetime.now(timezone.utc)`; naive cached_at values are
   normalized to UTC consistently.
 
+## [3.16.4] - 2026-05-08
+
+### Added
+- **`--week YYYY-Www`** flag on `gfa collect`, `gfa classify`, and `gfa report` — target a specific ISO week (repeatable for multiple discrete weeks) (#70)
+- **`--from YYYY-Www --to YYYY-Www`** flag pair on all three commands — target an inclusive ISO week range (#70)
+- `src/gitflow_analytics/utils/iso_week.py` — `parse_iso_week()` and `iso_week_range()` helpers for ISO 8601 week string parsing
+- `_resolve_date_range()` shared helper in CLI centralises mutual-exclusivity validation for all three commands
+
+### Changed
+- `--week`/`--from`/`--to` are mutually exclusive with an explicit `--weeks N` value; clear UsageError is raised when combined
+- Progress output shows ISO week range when targeted: `Classifying 2026-W01 → 2026-W07 (targeted window)`
+- Taxonomy-only remaps (`work_type` label updates via `taxonomy_mapping` config) still apply instantly regardless of targeted window
+
 ## [3.16.3] - 2026-05-08
 
 ### Added

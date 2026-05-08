@@ -117,6 +117,9 @@ gfa classify -c config.yaml [OPTIONS]
 **Options**:
 - `-c, --config PATH` - Path to YAML configuration file (required)
 - `-w, --weeks INTEGER` - Number of weeks to classify (default: 4; should match the `collect --weeks` value)
+- `--week YYYY-Www` - Target a specific ISO week (e.g. `2026-W07`). Repeatable for multiple discrete weeks. Mutually exclusive with `--weeks N`, `--from`, and `--to`.
+- `--from YYYY-Www` - Start of an inclusive ISO week range (e.g. `--from 2026-W01`). Must be paired with `--to`. Mutually exclusive with `--weeks N` and `--week`.
+- `--to YYYY-Www` - End of an inclusive ISO week range (e.g. `--to 2026-W18`). Must be paired with `--from`. Mutually exclusive with `--weeks N` and `--week`.
 - `--reclassify` - Re-classify commits that were already classified
 - `--show-jira-signals` - Log every commit short-circuited by the JIRA project-key
   mapping (issue #62). Useful for auditing which commits hit the tier-3
@@ -136,6 +139,15 @@ gfa classify -c config.yaml
 # Force re-classification of all commits in range
 gfa classify -c config.yaml --reclassify
 
+# Classify a single ISO week
+gfa classify -c config.yaml --week 2026-W07 --reclassify
+
+# Classify an inclusive ISO week range
+gfa classify -c config.yaml --from 2026-W01 --to 2026-W18 --reclassify
+
+# Classify multiple discrete weeks (--week is repeatable)
+gfa classify -c config.yaml --week 2026-W07 --week 2026-W08 --reclassify
+
 # Audit which commits were classified via the JIRA project-key mapping
 gfa classify -c config.yaml --show-jira-signals --log INFO
 
@@ -149,6 +161,68 @@ gfa classify -c config.yaml --validate-coverage --coverage-threshold 0.9
 **Prerequisite**: `gfa collect -c config.yaml`
 
 **Next step**: `gfa report -c config.yaml`
+
+### collect
+Collect commits and pull request data from GitHub into the local cache database
+(Stage 1 of the collect → classify → report pipeline).
+
+```bash
+gfa collect -c config.yaml [OPTIONS]
+```
+
+**Options**:
+- `-c, --config PATH` - Path to YAML configuration file (required)
+- `-w, --weeks INTEGER` - Number of weeks to collect (default: 4)
+- `--week YYYY-Www` - Target a specific ISO week (e.g. `2026-W07`). Repeatable for multiple discrete weeks. Mutually exclusive with `--weeks N`, `--from`, and `--to`.
+- `--from YYYY-Www` - Start of an inclusive ISO week range (e.g. `--from 2026-W01`). Must be paired with `--to`. Mutually exclusive with `--weeks N` and `--week`.
+- `--to YYYY-Www` - End of an inclusive ISO week range (e.g. `--to 2026-W04`). Must be paired with `--from`. Mutually exclusive with `--weeks N` and `--week`.
+- `--log [none|INFO|DEBUG]` - Enable logging at the specified level (default: none)
+
+**Examples**:
+```bash
+# Standard incremental collect for the last 4 weeks
+gfa collect -c config.yaml
+
+# Collect a single ISO week
+gfa collect -c config.yaml --week 2026-W07
+
+# Collect multiple discrete weeks
+gfa collect -c config.yaml --week 2026-W07 --week 2026-W08
+```
+
+**Next step**: `gfa classify -c config.yaml`
+
+### report
+Generate reports from classified commit data already in the local cache
+(Stage 3 of the collect → classify → report pipeline).
+
+```bash
+gfa report -c config.yaml [OPTIONS]
+```
+
+**Options**:
+- `-c, --config PATH` - Path to YAML configuration file (required)
+- `-w, --weeks INTEGER` - Number of weeks to include in the report (default: 4)
+- `--week YYYY-Www` - Target a specific ISO week (e.g. `2026-W07`). Repeatable for multiple discrete weeks. Mutually exclusive with `--weeks N`, `--from`, and `--to`.
+- `--from YYYY-Www` - Start of an inclusive ISO week range (e.g. `--from 2026-W01`). Must be paired with `--to`. Mutually exclusive with `--weeks N` and `--week`.
+- `--to YYYY-Www` - End of an inclusive ISO week range (e.g. `--to 2026-W04`). Must be paired with `--from`. Mutually exclusive with `--weeks N` and `--week`.
+- `--format [csv|json|markdown|all]` - Output format(s) to generate
+- `--output-dir PATH` - Override output directory from config
+- `--log [none|INFO|DEBUG]` - Enable logging at the specified level (default: none)
+
+**Examples**:
+```bash
+# Generate a report for the last 4 weeks
+gfa report -c config.yaml
+
+# Report for a single ISO week
+gfa report -c config.yaml --week 2026-W07
+
+# Report for an inclusive ISO week range
+gfa report -c config.yaml --from 2026-W01 --to 2026-W04
+```
+
+**Prerequisite**: `gfa classify -c config.yaml`
 
 ### identities
 Manage developer identity resolution and consolidation.
