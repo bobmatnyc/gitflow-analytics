@@ -49,6 +49,7 @@ class IntegrationOrchestrator:
                 config.github.backoff_factor,
                 allowed_ticket_platforms=getattr(config.analysis, "ticket_platforms", None),
                 fetch_pr_reviews=getattr(config.github, "fetch_pr_reviews", False),
+                open_pr_refresh_ttl_hours=getattr(config.github, "open_pr_refresh_ttl_hours", 1.0),
             )
 
         # Initialize JIRA integration if configured

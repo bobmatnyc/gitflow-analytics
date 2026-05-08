@@ -23,6 +23,7 @@ class GitHubIntegration:
         allowed_ticket_platforms: Optional[list[str]] = None,
         fetch_pr_reviews: bool = False,
         stale_open_pr_refresh_cap: int = 50,
+        open_pr_refresh_ttl_hours: float = 1.0,
     ):
         """Initialize GitHub integration.
 
@@ -38,6 +39,9 @@ class GitHubIntegration:
             stale_open_pr_refresh_cap: Maximum number of cached "open" PRs to re-fetch
                 per run.  Caps GitHub API usage when many open PRs have since been
                 merged or closed.  Defaults to 50.
+            open_pr_refresh_ttl_hours: Per-PR refresh TTL.  An open PR will only be
+                re-fetched if its cached_at timestamp is older than this many hours.
+                Prevents redundant API calls on back-to-back runs.  Defaults to 1.0.
         """
         self.github = Github(token)
         self.cache = cache
@@ -46,6 +50,7 @@ class GitHubIntegration:
         self.allowed_ticket_platforms = allowed_ticket_platforms
         self.fetch_pr_reviews = fetch_pr_reviews
         self.stale_open_pr_refresh_cap = stale_open_pr_refresh_cap
+        self.open_pr_refresh_ttl_hours = open_pr_refresh_ttl_hours
 
         # Initialize schema version manager for incremental API data fetching
         self.schema_manager = create_schema_manager(cache.cache_dir)
@@ -59,6 +64,42 @@ class GitHubIntegration:
 
         self._sp_extractor = StoryPointExtractor()
         self._ticket_extractor = TicketExtractor(allowed_platforms=self.allowed_ticket_platforms)
+
+    def _get_most_recent_cached_pr_timestamp(self, repo_name: str) -> Optional[datetime]:
+        """Return the most recent cached_at for a repo's PRs, or None if empty.
+
+        WHY: Used as a watermark anchor for incremental PR fetches.  GitHub PR
+        listings are paginated by ``updated_at`` desc; if every run starts paging
+        from ``start_date`` we re-scan the entire window even though the cache
+        already has those PRs.  Anchoring to the most recent cached PR's
+        ``cached_at`` lets us request only PRs updated since then.
+
+        ``cache_pr()`` upsert is idempotent so any PR returned that already
+        exists in the cache will simply be re-cached safely.
+
+        Returns:
+            The MAX(cached_at) from pull_request_cache for ``repo_name``, as a
+            timezone-aware UTC datetime, or None if no rows exist.
+        """
+        try:
+            with self.cache.get_session() as session:
+                from sqlalchemy import func
+
+                from ..models.database import PullRequestCache
+
+                latest = (
+                    session.query(func.max(PullRequestCache.cached_at))
+                    .filter(PullRequestCache.repo_path == repo_name)
+                    .scalar()
+                )
+        except Exception:
+            return None
+
+        if latest is None:
+            return None
+        if latest.tzinfo is None:
+            latest = latest.replace(tzinfo=timezone.utc)
+        return latest
 
     def _get_incremental_fetch_date(
         self,
@@ -170,11 +211,38 @@ class GitHubIntegration:
             "github", since, github_config, force_since=backfill_since
         )
 
-        # Check cache first for existing PRs in this time period
+        # Check cache first for existing PRs in this time period.  We always
+        # use ``fetch_since`` (the user-requested window) for cache lookups so
+        # the report has the full historical context, regardless of the
+        # narrower watermark used for the API pagination anchor below.
         cached_prs_data = self._get_cached_prs_bulk(repo_name, fetch_since)
 
+        # WHY (Fix 2 — narrow API pagination anchor): paginating GitHub PRs
+        # always from ``fetch_since`` re-scans pages we have already cached.
+        # Use ``max(most_recent_cached_pr_cached_at, fetch_since)`` as a
+        # watermark — any PR updated after our most recent cache write is
+        # what we actually need to learn about.  ``cache_pr()`` upsert is
+        # idempotent so any overlap is safely re-cached.
+        #
+        # Backfill mode (``backfill_since`` set) intentionally bypasses this
+        # optimization so historical PRs that pre-date the watermark can be
+        # hydrated.  First-run / empty-cache also falls back to fetch_since.
+        if backfill_since is not None:
+            api_since = fetch_since
+        else:
+            watermark = self._get_most_recent_cached_pr_timestamp(repo_name)
+            if watermark is None:
+                api_since = fetch_since
+            else:
+                api_since = max(watermark, fetch_since)
+                if api_since > fetch_since:
+                    print(
+                        f"   ⚡ GitHub PR pagination anchored to cache watermark "
+                        f"{api_since.isoformat()} (vs requested {fetch_since.isoformat()})"
+                    )
+
         # Get PRs for the time period (may be incremental)
-        prs = self._get_pull_requests(repo, fetch_since)
+        prs = self._get_pull_requests(repo, api_since)
 
         # Track cache performance
         cached_pr_numbers = {pr["number"] for pr in cached_prs_data}
@@ -278,6 +346,11 @@ class GitHubIntegration:
         by the incremental ``get_pulls`` call in the same run) are skipped to avoid
         double-counting API quota.
 
+        Additionally, a per-PR TTL guard (``self.open_pr_refresh_ttl_hours``) skips
+        any open PR whose ``cached_at`` is newer than ``now - TTL``.  Without this,
+        every run re-fetches the same open PRs even if they were refreshed minutes
+        ago, wasting API quota on back-to-back runs.
+
         Args:
             repo: PyGitHub Repository object.
             repo_name: Repository name string (for cache writes).
@@ -288,12 +361,45 @@ class GitHubIntegration:
         Returns:
             List of PR data dicts for successfully re-fetched PRs (may be empty).
         """
+        from datetime import timedelta
+
         # Identify open PRs from cache that we have not already re-fetched
         stale_open = [
             pr
             for pr in cached_prs
             if pr.get("pr_state") == "open" and pr["number"] not in already_fetched_numbers
         ]
+
+        if not stale_open:
+            return []
+
+        # Per-PR TTL guard: skip PRs cached more recently than the TTL window.
+        # WHY: Without this, every run re-fetches every open PR via repo.get_pull(),
+        # which is an expensive per-PR API call.  cached_at on the PR row tells us
+        # when the cached snapshot was taken; if that's within the TTL window the
+        # cached state is still fresh enough.
+        if self.open_pr_refresh_ttl_hours > 0:
+            now_utc = datetime.now(timezone.utc)
+            ttl_threshold = now_utc - timedelta(hours=self.open_pr_refresh_ttl_hours)
+
+            def _is_within_ttl(cached_at: Optional[datetime]) -> bool:
+                """True if cached_at is newer than ttl_threshold (skip refresh)."""
+                if cached_at is None:
+                    return False
+                # Normalize naive timestamps (SQLite returns naive UTC) so the
+                # comparison with ttl_threshold (aware) is well-defined.
+                if cached_at.tzinfo is None:
+                    cached_at = cached_at.replace(tzinfo=timezone.utc)
+                return cached_at >= ttl_threshold
+
+            before_count = len(stale_open)
+            stale_open = [pr for pr in stale_open if not _is_within_ttl(pr.get("cached_at"))]
+            skipped = before_count - len(stale_open)
+            if skipped > 0:
+                print(
+                    f"   ⏭️  Skipped {skipped} open PR refresh(es) within "
+                    f"{self.open_pr_refresh_ttl_hours}h TTL"
+                )
 
         if not stale_open:
             return []
@@ -428,6 +534,9 @@ class GitHubIntegration:
                         "changed_files": getattr(cached_pr, "changed_files", None) or 0,
                         "additions": getattr(cached_pr, "additions", None) or 0,
                         "deletions": getattr(cached_pr, "deletions", None) or 0,
+                        # WHY: Expose cached_at so _refresh_stale_open_prs() can apply
+                        # a per-PR TTL guard (avoid re-fetching PRs cached recently).
+                        "cached_at": cached_pr.cached_at,
                     }
                     cached_prs.append(pr_data)
 

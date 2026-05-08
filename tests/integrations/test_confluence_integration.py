@@ -564,3 +564,93 @@ def test_confluence_verify_credentials_empty_token_raises(
     # No HTTP request should be issued when creds are missing.
     mock_get.assert_not_called()
     assert "Confluence authentication failed" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: incremental fetch helpers
+# ---------------------------------------------------------------------------
+
+
+def test_get_effective_since_returns_requested_when_no_checkpoint(
+    integration: ConfluenceIntegration,
+) -> None:
+    integration.schema_manager.get_last_processed_date = MagicMock(return_value=None)
+    requested = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    assert integration._get_effective_since(requested) == requested
+
+
+def test_get_effective_since_advances_to_last_processed(
+    integration: ConfluenceIntegration,
+) -> None:
+    """When last_processed is more recent, it must override the requested date."""
+    last = datetime(2026, 4, 1, tzinfo=timezone.utc)
+    integration.schema_manager.get_last_processed_date = MagicMock(return_value=last)
+    requested = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    assert integration._get_effective_since(requested) == last
+
+
+def test_get_effective_since_keeps_requested_when_more_recent(
+    integration: ConfluenceIntegration,
+) -> None:
+    """If the user asks for a wider window than the checkpoint, honor the user."""
+    last = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    integration.schema_manager.get_last_processed_date = MagicMock(return_value=last)
+    requested = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert integration._get_effective_since(requested) == requested
+
+
+def test_full_scan_ttl_skips_recent_run(integration: ConfluenceIntegration) -> None:
+    """When last successful scan is within TTL, fetch_space_activity must skip."""
+    from datetime import timedelta
+
+    recent = datetime.now(timezone.utc) - timedelta(minutes=5)
+    integration.schema_manager.get_last_processed_date = MagicMock(return_value=recent)
+
+    # _get_with_retries should NOT be called when the TTL guard fires.
+    with patch.object(integration, "_get_with_retries") as mock_get:
+        events = integration.fetch_space_activity("DOC", datetime(2024, 1, 1, tzinfo=timezone.utc))
+        assert events == []
+        mock_get.assert_not_called()
+
+
+def test_full_scan_ttl_runs_when_stale(integration: ConfluenceIntegration) -> None:
+    """When last successful scan is older than TTL, scan should run."""
+    from datetime import timedelta
+
+    stale = datetime.now(timezone.utc) - timedelta(hours=10)
+    integration.schema_manager.get_last_processed_date = MagicMock(return_value=stale)
+
+    with patch.object(
+        integration,
+        "_get_with_retries",
+        return_value=_make_response(payload={"results": [], "size": 0}),
+    ) as mock_get:
+        integration.fetch_space_activity("DOC", datetime(2024, 1, 1, tzinfo=timezone.utc))
+        mock_get.assert_called()
+
+
+def test_full_scan_ttl_zero_disables_skip(tmp_cache: GitAnalysisCache) -> None:
+    """Setting full_scan_ttl_hours=0 must disable the TTL guard."""
+    from datetime import timedelta
+
+    integ = ConfluenceIntegration(
+        base_url="https://example.atlassian.net/wiki",
+        username="user@x",
+        api_token="token",
+        cache=tmp_cache,
+        spaces=["DOC"],
+        fetch_page_history=False,
+        max_retries=1,
+        backoff_factor=0.01,
+        full_scan_ttl_hours=0.0,
+    )
+    recent = datetime.now(timezone.utc) - timedelta(seconds=1)
+    integ.schema_manager.get_last_processed_date = MagicMock(return_value=recent)
+
+    with patch.object(
+        integ,
+        "_get_with_retries",
+        return_value=_make_response(payload={"results": [], "size": 0}),
+    ) as mock_get:
+        integ.fetch_space_activity("DOC", datetime(2024, 1, 1, tzinfo=timezone.utc))
+        mock_get.assert_called()

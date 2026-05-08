@@ -548,3 +548,112 @@ class TestGetPullRequestsPagination:
         numbers = [pr.number for pr in result]
 
         assert numbers == [1, 2, 3], f"Counter reset failed — expected [1,2,3], got {numbers}"
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: PR pagination watermark anchor
+# ---------------------------------------------------------------------------
+
+
+class TestPrPaginationWatermarkAnchor:
+    """``enrich_repository_with_prs`` should anchor PR pagination to the most
+    recent cached PR's ``cached_at`` so we don't re-scan from start_date on
+    every run.  Backfill mode must bypass this optimization.
+    """
+
+    def test_watermark_used_when_cache_has_recent_pr(self) -> None:
+        integration = _make_integration()
+        integration.schema_manager.has_schema_changed = MagicMock(return_value=False)
+        integration.schema_manager.get_last_processed_date = MagicMock(return_value=None)
+        integration.schema_manager.mark_date_processed = MagicMock()
+
+        repo_obj = Mock()
+        integration.github.get_repo = MagicMock(return_value=repo_obj)
+        integration._get_pull_requests = MagicMock(return_value=[])
+        integration._get_cached_prs_bulk = MagicMock(return_value=[])
+        integration._refresh_stale_open_prs = MagicMock(return_value=[])
+
+        # Cache watermark is much more recent than the requested window.
+        watermark = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        integration._get_most_recent_cached_pr_timestamp = MagicMock(return_value=watermark)
+
+        requested_since = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        integration.enrich_repository_with_prs("owner/repo", commits=[], since=requested_since)
+
+        # API pagination MUST use the watermark, not the user-requested since.
+        called_args = integration._get_pull_requests.call_args
+        _, since_arg = called_args.args
+        assert since_arg == watermark
+
+    def test_falls_back_to_requested_since_when_cache_empty(self) -> None:
+        integration = _make_integration()
+        integration.schema_manager.has_schema_changed = MagicMock(return_value=False)
+        integration.schema_manager.get_last_processed_date = MagicMock(return_value=None)
+        integration.schema_manager.mark_date_processed = MagicMock()
+
+        repo_obj = Mock()
+        integration.github.get_repo = MagicMock(return_value=repo_obj)
+        integration._get_pull_requests = MagicMock(return_value=[])
+        integration._get_cached_prs_bulk = MagicMock(return_value=[])
+        integration._refresh_stale_open_prs = MagicMock(return_value=[])
+        integration._get_most_recent_cached_pr_timestamp = MagicMock(return_value=None)
+
+        requested_since = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        integration.enrich_repository_with_prs("owner/repo", commits=[], since=requested_since)
+
+        called_args = integration._get_pull_requests.call_args
+        _, since_arg = called_args.args
+        assert since_arg == requested_since
+
+    def test_backfill_mode_bypasses_watermark(self) -> None:
+        integration = _make_integration()
+        integration.schema_manager.has_schema_changed = MagicMock(return_value=False)
+        integration.schema_manager.get_last_processed_date = MagicMock(return_value=None)
+        integration.schema_manager.mark_date_processed = MagicMock()
+
+        repo_obj = Mock()
+        integration.github.get_repo = MagicMock(return_value=repo_obj)
+        integration._get_pull_requests = MagicMock(return_value=[])
+        integration._get_cached_prs_bulk = MagicMock(return_value=[])
+        integration._refresh_stale_open_prs = MagicMock(return_value=[])
+
+        # Watermark exists but should be IGNORED in backfill mode.
+        watermark = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        integration._get_most_recent_cached_pr_timestamp = MagicMock(return_value=watermark)
+
+        backfill = datetime(2025, 6, 1, tzinfo=timezone.utc)
+        integration.enrich_repository_with_prs(
+            "owner/repo",
+            commits=[],
+            since=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            backfill_since=backfill,
+        )
+
+        called_args = integration._get_pull_requests.call_args
+        _, since_arg = called_args.args
+        assert since_arg == backfill
+
+    def test_watermark_used_only_when_newer_than_requested(self) -> None:
+        """If watermark is OLDER than requested_since, requested_since wins."""
+        integration = _make_integration()
+        integration.schema_manager.has_schema_changed = MagicMock(return_value=False)
+        integration.schema_manager.get_last_processed_date = MagicMock(return_value=None)
+        integration.schema_manager.mark_date_processed = MagicMock()
+
+        repo_obj = Mock()
+        integration.github.get_repo = MagicMock(return_value=repo_obj)
+        integration._get_pull_requests = MagicMock(return_value=[])
+        integration._get_cached_prs_bulk = MagicMock(return_value=[])
+        integration._refresh_stale_open_prs = MagicMock(return_value=[])
+
+        # Watermark is OLDER than requested_since — should not move the
+        # anchor backwards.
+        watermark = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        integration._get_most_recent_cached_pr_timestamp = MagicMock(return_value=watermark)
+
+        requested_since = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        integration.enrich_repository_with_prs("owner/repo", commits=[], since=requested_since)
+
+        called_args = integration._get_pull_requests.call_args
+        _, since_arg = called_args.args
+        assert since_arg == requested_since

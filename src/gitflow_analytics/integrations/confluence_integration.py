@@ -41,6 +41,7 @@ class ConfluenceIntegration:
         connection_timeout: int = 30,
         max_retries: int = 3,
         backoff_factor: float = 1.0,
+        full_scan_ttl_hours: float = 1.0,
     ):
         """Initialize Confluence integration.
 
@@ -58,6 +59,10 @@ class ConfluenceIntegration:
             connection_timeout: HTTP timeout (seconds).
             max_retries: Retry attempts on 429/5xx.
             backoff_factor: Exponential backoff base (seconds).
+            full_scan_ttl_hours: Skip the per-space content scan entirely if
+                the last successful scan completed within this many hours.
+                Avoids re-paginating every page on back-to-back runs.
+                Defaults to 1 hour.
         """
         self.base_url = (base_url or "").rstrip("/")
         self.username = username
@@ -69,6 +74,7 @@ class ConfluenceIntegration:
         self.connection_timeout = connection_timeout
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
+        self.full_scan_ttl_hours = full_scan_ttl_hours
         self.debug_mode = is_debug_mode()
 
         self.schema_manager = create_schema_manager(cache.cache_dir)
@@ -159,6 +165,60 @@ class ConfluenceIntegration:
             )
 
     # ------------------------------------------------------------------
+    # Incremental fetch helpers
+    # ------------------------------------------------------------------
+    def _get_effective_since(self, requested_since: datetime) -> datetime:
+        """Compute incremental fetch start date via schema-version manager.
+
+        WHY: Mirror the pattern from JIRAActivityIntegration._get_effective_since.
+        Without this, every run re-scans the full content listing from the user-
+        supplied ``since`` even when the last successful scan completed minutes
+        ago.  Anchoring to ``last_processed_date`` lets us skip pages that have
+        not been updated since.
+        """
+        if requested_since.tzinfo is None:
+            requested_since = requested_since.replace(tzinfo=timezone.utc)
+
+        try:
+            last_processed = self.schema_manager.get_last_processed_date(self.COMPONENT_NAME)
+        except Exception:  # noqa: BLE001
+            last_processed = None
+
+        if last_processed is None:
+            return requested_since
+
+        if last_processed.tzinfo is None:
+            last_processed = last_processed.replace(tzinfo=timezone.utc)
+
+        return max(last_processed, requested_since)
+
+    def _is_within_full_scan_ttl(self) -> bool:
+        """True if last successful scan is newer than the full-scan TTL window.
+
+        WHY: The Confluence v1 REST content endpoint does not accept a
+        ``lastModified`` filter directly, so we fall back to skipping the
+        full-space scan entirely when our checkpoint is fresh.  This is a
+        coarse-grained but cheap optimization for back-to-back runs.
+        """
+        if self.full_scan_ttl_hours <= 0:
+            return False
+
+        try:
+            last_processed = self.schema_manager.get_last_processed_date(self.COMPONENT_NAME)
+        except Exception:  # noqa: BLE001
+            return False
+
+        if last_processed is None:
+            return False
+        if last_processed.tzinfo is None:
+            last_processed = last_processed.replace(tzinfo=timezone.utc)
+
+        from datetime import timedelta
+
+        ttl_threshold = datetime.now(timezone.utc) - timedelta(hours=self.full_scan_ttl_hours)
+        return last_processed >= ttl_threshold
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def fetch_space_activity(self, space_key: str, since: datetime) -> list[dict[str, Any]]:
@@ -175,8 +235,27 @@ class ConfluenceIntegration:
             return []
 
         since = _ensure_aware(since)
+
+        # Fix 3: Skip the entire content scan if the last successful run was
+        # within the TTL window.  Confluence v1 REST does not support a
+        # ``lastModified`` filter, so without this guard every run re-paginates
+        # the full space listing.
+        if self._is_within_full_scan_ttl():
+            if self.debug_mode:
+                print(
+                    f"   ⏭️  Confluence: skipping space={space_key} scan "
+                    f"(last scan within {self.full_scan_ttl_hours}h TTL)"
+                )
+            return []
+
+        # Fix 3: Anchor the lower bound to max(last_processed, requested_since)
+        # so re-runs do not re-fetch pages that have not changed.
+        effective_since = self._get_effective_since(since)
         if self.debug_mode:
-            print(f"   🔍 Confluence: fetching space={space_key} since={since.isoformat()}")
+            print(
+                f"   🔍 Confluence: fetching space={space_key} since={effective_since.isoformat()}"
+            )
+        since = effective_since
 
         events: list[dict[str, Any]] = []
         pages_to_upsert: list[dict[str, Any]] = []

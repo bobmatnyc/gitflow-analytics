@@ -122,27 +122,27 @@ class TestPullRequestCacheModelColumnsV4:
 
         mapper = inspect(PullRequestCache)
         col = mapper.columns["pr_state"]
-        assert isinstance(col.type, SAString), (
-            f"pr_state should be String but is {type(col.type).__name__}"
-        )
+        assert isinstance(
+            col.type, SAString
+        ), f"pr_state should be String but is {type(col.type).__name__}"
 
     def test_closed_at_is_datetime(self) -> None:
         from sqlalchemy import DateTime as SADateTime
 
         mapper = inspect(PullRequestCache)
         col = mapper.columns["closed_at"]
-        assert isinstance(col.type, SADateTime), (
-            f"closed_at should be DateTime but is {type(col.type).__name__}"
-        )
+        assert isinstance(
+            col.type, SADateTime
+        ), f"closed_at should be DateTime but is {type(col.type).__name__}"
 
     def test_is_merged_is_boolean(self) -> None:
         from sqlalchemy import Boolean as SABoolean
 
         mapper = inspect(PullRequestCache)
         col = mapper.columns["is_merged"]
-        assert isinstance(col.type, SABoolean), (
-            f"is_merged should be Boolean but is {type(col.type).__name__}"
-        )
+        assert isinstance(
+            col.type, SABoolean
+        ), f"is_merged should be Boolean but is {type(col.type).__name__}"
 
     def test_all_v4_columns_are_nullable(self) -> None:
         """All three columns must be nullable for backward-compat with old rows."""
@@ -259,9 +259,9 @@ class TestMigrationAppliesV4Columns:
             actual_columns = {row[1] for row in result}
 
         for col in PR_V4_COLUMNS:
-            assert col in actual_columns, (
-                f"v4.0 migration failed to add column '{col}' to legacy pull_request_cache"
-            )
+            assert (
+                col in actual_columns
+            ), f"v4.0 migration failed to add column '{col}' to legacy pull_request_cache"
 
     def test_migration_preserves_existing_rows(self, tmp_path: Path) -> None:
         """Existing PR rows must not be deleted during v4.0 migration."""
@@ -415,9 +415,9 @@ class TestCachePrV4Update:
         result = cache.get_cached_pr(repo, 42)
         assert result is not None
         # pr_state from the first write must survive the partial update
-        assert result["pr_state"] == "merged", (
-            "pr_state should not be overwritten by a payload that omits it"
-        )
+        assert (
+            result["pr_state"] == "merged"
+        ), "pr_state should not be overwritten by a payload that omits it"
 
 
 # ---------------------------------------------------------------------------
@@ -728,6 +728,155 @@ class TestRefreshStaleOpenPrs:
 
         assert result == []
         repo.get_pull.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 8b. Open-PR refresh per-PR TTL guard (Fix 1)
+# ---------------------------------------------------------------------------
+
+
+def _make_integration_with_ttl(open_pr_refresh_ttl_hours: float = 1.0, cap: int = 50) -> Any:
+    """Instantiate GitHubIntegration with TTL-aware kwargs."""
+    from gitflow_analytics.integrations.github_integration import GitHubIntegration
+
+    with (
+        patch("gitflow_analytics.integrations.github_integration.Github"),
+        patch("gitflow_analytics.integrations.github_integration.create_schema_manager"),
+    ):
+        cache = Mock()
+        cache.cache_dir = "/tmp/test-cache"
+        integration = GitHubIntegration(
+            token="fake-token",
+            cache=cache,
+            stale_open_pr_refresh_cap=cap,
+            open_pr_refresh_ttl_hours=open_pr_refresh_ttl_hours,
+        )
+    return integration
+
+
+class TestRefreshStaleOpenPrsTTL:
+    """Per-PR TTL guard for open-PR refresh (Fix 1)."""
+
+    def test_skips_open_pr_within_ttl_window(self) -> None:
+        """An open PR cached within the TTL window must NOT be re-fetched."""
+        integration = _make_integration_with_ttl(open_pr_refresh_ttl_hours=1.0)
+        repo = Mock()
+
+        # cached_at is 5 minutes ago — well inside the 1-hour TTL.
+        from datetime import timedelta
+
+        recent = datetime.now(timezone.utc) - timedelta(minutes=5)
+        cached_prs = [{"number": 42, "pr_state": "open", "cached_at": recent}]
+
+        result = integration._refresh_stale_open_prs(
+            repo, "owner/repo", cached_prs, already_fetched_numbers=set()
+        )
+
+        assert result == []
+        repo.get_pull.assert_not_called()
+
+    def test_refreshes_open_pr_outside_ttl_window(self) -> None:
+        """An open PR whose cached_at is older than TTL must be re-fetched."""
+        from datetime import timedelta
+
+        integration = _make_integration_with_ttl(open_pr_refresh_ttl_hours=1.0)
+        repo = Mock()
+        gh_pr = _make_gh_pr(number=42, merged=True)
+        repo.get_pull.return_value = gh_pr
+
+        # cached_at is 2 hours ago — well outside 1-hour TTL.
+        stale = datetime.now(timezone.utc) - timedelta(hours=2)
+        cached_prs = [{"number": 42, "pr_state": "open", "cached_at": stale}]
+
+        with (
+            patch(
+                "gitflow_analytics.extractors.story_points.StoryPointExtractor.extract_from_text",
+                return_value=None,
+            ),
+            patch(
+                "gitflow_analytics.extractors.tickets.TicketExtractor.extract_from_text",
+                return_value=[],
+            ),
+        ):
+            result = integration._refresh_stale_open_prs(
+                repo, "owner/repo", cached_prs, already_fetched_numbers=set()
+            )
+
+        assert len(result) == 1
+        repo.get_pull.assert_called_once_with(42)
+
+    def test_ttl_zero_disables_guard(self) -> None:
+        """Setting open_pr_refresh_ttl_hours=0 must disable the TTL skip."""
+        from datetime import timedelta
+
+        integration = _make_integration_with_ttl(open_pr_refresh_ttl_hours=0.0)
+        repo = Mock()
+        gh_pr = _make_gh_pr(number=42, merged=True)
+        repo.get_pull.return_value = gh_pr
+
+        recent = datetime.now(timezone.utc) - timedelta(seconds=1)
+        cached_prs = [{"number": 42, "pr_state": "open", "cached_at": recent}]
+
+        with (
+            patch(
+                "gitflow_analytics.extractors.story_points.StoryPointExtractor.extract_from_text",
+                return_value=None,
+            ),
+            patch(
+                "gitflow_analytics.extractors.tickets.TicketExtractor.extract_from_text",
+                return_value=[],
+            ),
+        ):
+            result = integration._refresh_stale_open_prs(
+                repo, "owner/repo", cached_prs, already_fetched_numbers=set()
+            )
+
+        assert len(result) == 1
+        repo.get_pull.assert_called_once_with(42)
+
+    def test_naive_cached_at_normalized_to_utc(self) -> None:
+        """Naive (SQLite-style) cached_at values must be treated as UTC."""
+        from datetime import timedelta
+
+        integration = _make_integration_with_ttl(open_pr_refresh_ttl_hours=1.0)
+        repo = Mock()
+
+        # Naive datetime, 5 minutes in the past (normalized as UTC) — should skip.
+        naive_recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).replace(tzinfo=None)
+        cached_prs = [{"number": 42, "pr_state": "open", "cached_at": naive_recent}]
+
+        result = integration._refresh_stale_open_prs(
+            repo, "owner/repo", cached_prs, already_fetched_numbers=set()
+        )
+
+        assert result == []
+        repo.get_pull.assert_not_called()
+
+    def test_missing_cached_at_does_not_skip(self) -> None:
+        """If cached_at is missing/None we cannot prove freshness — must refresh."""
+        integration = _make_integration_with_ttl(open_pr_refresh_ttl_hours=1.0)
+        repo = Mock()
+        gh_pr = _make_gh_pr(number=42, merged=True)
+        repo.get_pull.return_value = gh_pr
+
+        cached_prs = [{"number": 42, "pr_state": "open", "cached_at": None}]
+
+        with (
+            patch(
+                "gitflow_analytics.extractors.story_points.StoryPointExtractor.extract_from_text",
+                return_value=None,
+            ),
+            patch(
+                "gitflow_analytics.extractors.tickets.TicketExtractor.extract_from_text",
+                return_value=[],
+            ),
+        ):
+            result = integration._refresh_stale_open_prs(
+                repo, "owner/repo", cached_prs, already_fetched_numbers=set()
+            )
+
+        assert len(result) == 1
+        repo.get_pull.assert_called_once_with(42)
 
 
 # ---------------------------------------------------------------------------

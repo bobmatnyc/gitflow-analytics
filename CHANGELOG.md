@@ -5,6 +5,29 @@ All notable changes to GitFlow Analytics will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Performance
+- Eliminate redundant API fetches across incremental data pulls — every
+  unnecessary call costs money and consumes rate-limit budget:
+  - **GitHub open-PR refresh now has a per-PR TTL guard.** Previously
+    `_refresh_stale_open_prs()` re-fetched up to 50 open PRs on every run with
+    no freshness check. PRs whose `cached_at` is newer than
+    `open_pr_refresh_ttl_hours` (default 1.0) are now skipped. Configurable via
+    `github.open_pr_refresh_ttl_hours` in YAML; set to `0` to disable.
+  - **GitHub PR pagination now anchors to a cache watermark.** Re-introduced
+    `since = max(MAX(cached_at), requested_since)` so back-to-back runs no
+    longer re-paginate from the user-supplied `start_date`. `cache_pr()` upsert
+    is idempotent so any overlap is safe. `--backfill-since` /
+    `--backfill-prs-since` bypass this optimization.
+  - **Confluence space scan now respects an incremental watermark + TTL.**
+    Mirrors the JIRA-activity `_get_effective_since` pattern: scan is skipped
+    entirely when the last successful scan completed within
+    `full_scan_ttl_hours` (default 1.0); otherwise the lower bound advances to
+    `max(last_processed, requested_since)` to avoid re-scanning unchanged pages.
+- Replace deprecated `datetime.utcnow()` in `JIRAIntegration._is_ticket_stale`
+  with timezone-aware `datetime.now(timezone.utc)`; naive cached_at values are
+  normalized to UTC consistently.
+
 ## [3.15.2] - 2026-05-06
 ### Fixed
 - Resolve Pyright type errors in reports factory and example_usage introduced

@@ -38,6 +38,12 @@ class GitHubConfig:
     # get_issue_comments).  This flag allows existing users to keep their
     # current rate-limit budget unchanged while opting in to richer data.
     fetch_pr_reviews: bool = False
+    # WHY: Open PRs cached from a previous run may have since been merged or
+    # closed, but re-fetching every "open" PR on every run wastes API quota.
+    # This TTL acts as a per-PR throttle: skip refresh if cached_at is newer
+    # than (now - open_pr_refresh_ttl_hours).  Default 1 hour balances
+    # freshness vs. rate-limit usage.
+    open_pr_refresh_ttl_hours: float = 1.0
 
     def get_repo_full_name(self, repo_name: str) -> str:
         """Get full repository name including owner."""

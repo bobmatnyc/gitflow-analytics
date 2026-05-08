@@ -3,7 +3,7 @@
 import base64
 import socket
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import requests
@@ -373,7 +373,12 @@ class JIRAIntegration:
         if self.cache.ttl_hours == 0:  # No expiration
             return False
 
-        stale_threshold = datetime.utcnow() - timedelta(hours=self.cache.ttl_hours)
+        # WHY: datetime.utcnow() is deprecated in Python 3.12+.  Use a
+        # timezone-aware UTC datetime and normalize the cached_at side too,
+        # since SQLite returns naive UTC strings.
+        stale_threshold = datetime.now(timezone.utc) - timedelta(hours=self.cache.ttl_hours)
+        if cached_at.tzinfo is None:
+            cached_at = cached_at.replace(tzinfo=timezone.utc)
         return cached_at < stale_threshold
 
     def _extract_project_key(self, ticket_id: str) -> str:
