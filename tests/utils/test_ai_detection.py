@@ -360,6 +360,126 @@ class TestDetectAiCommitPrecedence:
         assert confidence == 0.70
 
 
+class TestDetectAiCommitMadeWithSignals:
+    """``Made-with:`` footer trailer signals (issue #61).
+
+    The ``Made-with:`` trailer is the default footer used by Cursor, Claude
+    Code, and Copilot.  Each maps to a dedicated ``made_with_*`` signal at
+    confidence 0.92 — below explicit co-author trailers (0.95) but above the
+    legacy ``cursor_pattern`` (0.90) and file-path signals (≤0.75).
+    """
+
+    def test_made_with_claude_fires(self) -> None:
+        msg = "fix: some bug fix\n\nMade-with: Claude Code (claude.ai/code)"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "made_with_claude"
+        assert confidence == 0.92
+
+    def test_made_with_cursor_fires(self) -> None:
+        msg = "feat: add widget\n\nMade-with: Cursor"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "made_with_cursor"
+        assert confidence == 0.92
+
+    def test_made_with_copilot_fires(self) -> None:
+        msg = "chore: bump deps\n\nMade-with: Copilot"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "made_with_copilot"
+        assert confidence == 0.92
+
+    def test_made_with_github_copilot_fires(self) -> None:
+        msg = "feat: thing\n\nMade-with: GitHub Copilot"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "made_with_copilot"
+        assert confidence == 0.92
+
+    def test_made_with_case_insensitive_lower(self) -> None:
+        msg = "fix: bug\n\nmade-with: cursor"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "made_with_cursor"
+        assert confidence == 0.92
+
+    def test_made_with_case_insensitive_upper(self) -> None:
+        msg = "fix: bug\n\nMADE-WITH: CLAUDE CODE"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "made_with_claude"
+        assert confidence == 0.92
+
+    def test_made_with_no_space_after_colon(self) -> None:
+        # Trailer formatting may vary in real-world usage.
+        msg = "fix: bug\n\nMade-with:Cursor"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "made_with_cursor"
+        assert confidence == 0.92
+
+    def test_made_with_extra_whitespace(self) -> None:
+        msg = "fix: bug\n\nMade-with:    Claude"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "made_with_claude"
+        assert confidence == 0.92
+
+    def test_co_author_claude_beats_made_with(self) -> None:
+        # Explicit co-author trailer (0.95) outranks Made-with (0.92).
+        msg = "feat: x\n\n" "Co-authored-by: Claude <noreply@anthropic.com>\n" "Made-with: Cursor"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "co_author_claude"
+        assert confidence == 0.95
+
+    def test_made_with_beats_cursor_pattern(self) -> None:
+        # Made-with (0.92) outranks legacy cursor_pattern (0.90).
+        msg = "feat: x\n\nGenerated with Cursor\nMade-with: Claude"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "made_with_claude"
+        assert confidence == 0.92
+
+    def test_made_with_beats_cursorrules_touch(self) -> None:
+        msg = "chore: rules\n\nMade-with: Cursor"
+        confidence, method = detect_ai_commit(msg, [".cursorrules"])
+        assert method == "made_with_cursor"
+        assert confidence == 0.92
+
+    def test_no_made_with_returns_none(self) -> None:
+        msg = "fix: regular human commit"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "none"
+        assert confidence == 0.0
+
+    def test_made_with_unknown_tool_does_not_match(self) -> None:
+        # ``Made-with: CustomBot`` is not one of our known tools — should not
+        # fire any made_with_* signal.  Falls through to ``none``.
+        msg = "fix: bug\n\nMade-with: SomeRandomTool"
+        confidence, method = detect_ai_commit(msg)
+        assert method == "none"
+        assert confidence == 0.0
+
+
+class TestDetectAiToolMadeWith:
+    """``detect_ai_tool()`` should resolve Made-with trailers to tool names."""
+
+    def test_made_with_claude_resolves_to_claude_code(self) -> None:
+        msg = "fix: x\n\nMade-with: Claude Code"
+        assert detect_ai_tool(msg) == "claude_code"
+
+    def test_made_with_cursor_resolves_to_cursor(self) -> None:
+        msg = "feat: x\n\nMade-with: Cursor"
+        assert detect_ai_tool(msg) == "cursor"
+
+    def test_made_with_copilot_resolves_to_copilot(self) -> None:
+        msg = "chore: x\n\nMade-with: Copilot"
+        assert detect_ai_tool(msg) == "copilot"
+
+    def test_made_with_github_copilot_resolves_to_copilot(self) -> None:
+        msg = "chore: x\n\nMade-with: GitHub Copilot"
+        assert detect_ai_tool(msg) == "copilot"
+
+    def test_made_with_is_ai_assisted(self) -> None:
+        assert is_ai_assisted("foo\n\nMade-with: Cursor") is True
+
+    def test_made_with_two_tools_returns_mixed(self) -> None:
+        msg = "feat: x\n\nMade-with: Cursor\nMade-with: Claude"
+        assert detect_ai_tool(msg) == "mixed"
+
+
 class TestDetectAiCommitBackfillBehavior:
     """Backfill path (changed_files=None) skips file-based signals gracefully."""
 

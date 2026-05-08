@@ -39,6 +39,22 @@ _CO_AUTHOR_CURSOR_PATTERNS: list[str] = [
     r"cursor ai",
 ]
 
+# ``Made-with:`` git trailer/footer patterns (issue #61).  Used by Cursor,
+# Claude Code, and GitHub Copilot as their default commit footer in lieu of a
+# ``Co-Authored-By:`` trailer.  Confidence sits at 0.92 — below explicit
+# co-author trailers (0.95) but above file-path signals (0.75/0.70).
+_MADE_WITH_CLAUDE_PATTERNS: list[str] = [
+    r"made-with:\s*claude",
+]
+
+_MADE_WITH_CURSOR_PATTERNS: list[str] = [
+    r"made-with:\s*cursor",
+]
+
+_MADE_WITH_COPILOT_PATTERNS: list[str] = [
+    r"made-with:\s*(github\s*)?copilot",
+]
+
 # File-based signals (only evaluated when changed_files provided).
 _CURSORRULES_FILE = ".cursorrules"
 _COPILOT_INSTRUCTIONS_FILE = ".github/copilot-instructions.md"
@@ -59,6 +75,9 @@ _AI_MESSAGE_PHRASES: list[str] = [
 _SIGNAL_CONFIDENCES: dict[str, float] = {
     "co_author_claude": 0.95,
     "co_author_copilot": 0.95,
+    "made_with_claude": 0.92,
+    "made_with_copilot": 0.92,
+    "made_with_cursor": 0.92,
     "cursor_pattern": 0.90,
     "cursorrules_touch": 0.75,
     "copilot_instructions_touch": 0.70,
@@ -81,11 +100,14 @@ def detect_ai_commit(
     Signal order:
       1. ``co_author_claude``        (0.95) — Claude co-author trailer
       2. ``co_author_copilot``       (0.95) — GitHub Copilot co-author trailer
-      3. ``cursor_pattern``          (0.90) — Cursor trailer / marker
-      4. ``cursorrules_touch``       (0.75) — ``.cursorrules`` in changed files
-      5. ``copilot_instructions_touch`` (0.70) — ``.github/copilot-instructions.md`` touched
-      6. ``message_pattern``         (0.60) — AI phrase in message body
-      7. ``none``                    (0.00) — no signals fired
+      3. ``made_with_claude``        (0.92) — ``Made-with: Claude`` footer trailer
+      4. ``made_with_copilot``       (0.92) — ``Made-with: Copilot`` footer trailer
+      5. ``made_with_cursor``        (0.92) — ``Made-with: Cursor`` footer trailer
+      6. ``cursor_pattern``          (0.90) — Cursor trailer / marker
+      7. ``cursorrules_touch``       (0.75) — ``.cursorrules`` in changed files
+      8. ``copilot_instructions_touch`` (0.70) — ``.github/copilot-instructions.md`` touched
+      9. ``message_pattern``         (0.60) — AI phrase in message body
+     10. ``none``                    (0.00) — no signals fired
 
     Args:
         message: Full commit message (subject + body + trailers).
@@ -108,6 +130,17 @@ def detect_ai_commit(
 
     if any(re.search(p, msg_lower) for p in _CO_AUTHOR_COPILOT_PATTERNS):
         return (_SIGNAL_CONFIDENCES["co_author_copilot"], "co_author_copilot")
+
+    # ``Made-with:`` footer trailers (issue #61) — sit between explicit
+    # co-author trailers (0.95) and the legacy cursor_pattern signal (0.90).
+    if any(re.search(p, msg_lower) for p in _MADE_WITH_CLAUDE_PATTERNS):
+        return (_SIGNAL_CONFIDENCES["made_with_claude"], "made_with_claude")
+
+    if any(re.search(p, msg_lower) for p in _MADE_WITH_COPILOT_PATTERNS):
+        return (_SIGNAL_CONFIDENCES["made_with_copilot"], "made_with_copilot")
+
+    if any(re.search(p, msg_lower) for p in _MADE_WITH_CURSOR_PATTERNS):
+        return (_SIGNAL_CONFIDENCES["made_with_cursor"], "made_with_cursor")
 
     if any(re.search(p, msg_lower) for p in _CO_AUTHOR_CURSOR_PATTERNS):
         return (_SIGNAL_CONFIDENCES["cursor_pattern"], "cursor_pattern")
@@ -142,17 +175,20 @@ AI_PATTERNS: dict[str, list[str]] = {
         r"co-authored-by:.*noreply@anthropic\.com",
         r"🤖 generated with \[claude code\]",
         r"co-authored-by:.*claude.*<noreply@anthropic\.com>",
+        r"made-with:\s*claude",
     ],
     "copilot": [
         r"co-authored-by:.*copilot\[bot\]",
         r"co-authored-by:.*175728472\+copilot@users\.noreply\.github\.com",
         r"co-authored-by:.*copilot@github\.com",
         r"suggestion from @?copilot",
+        r"made-with:\s*(github\s*)?copilot",
     ],
     "cursor": [
         r"co-authored-by:.*cursor",
         r"generated with cursor",
         r"cursor ai",
+        r"made-with:\s*cursor",
     ],
 }
 
